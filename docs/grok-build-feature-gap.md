@@ -67,6 +67,10 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 
 `workspaceSymbol` 不再把缺失的 `file_path` 虚构成当前目录下的文件。canonical adapter 会传递空路径，LSP tool 对 workspace-wide 查询跳过文件存在性和文件扩展名检查，直接使用已连接的 language-server clients；位置型操作仍要求真实文件和 1-based cursor。
 
+### Canonical subagent background contract
+
+Grok profile 的 `task` schema 现在使用官方 `run_in_background` 和 `resume_from` 字段。省略 `run_in_background` 时按官方默认立即返回后台 task；adapter 再映射到 Apexo 内部的 `background` 和 `task_id`。已有 task resume 仍受父 Session ownership 和持久化 agent 校验保护。
+
 ## 功能差距矩阵
 
 状态含义：
@@ -86,7 +90,7 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 | 文件写入 | 官方完整 tool config 未单列 `write` | `write` | 🟡 | 说明为 Apexo 扩展，或移除并完全使用官方写入语义 |
 | Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | canonical `run_terminal_cmd`；0/正数等待值均可返回后台句柄 | 🟡 | 对齐完成通知、退出码、输出字段和取消行为 |
 | 后台 shell | `get_task_output`、`kill_task` | `task_ids` 多任务查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
-| Subagent | `task`、`send_subagent_message` | canonical `task` adapter；复用 task 时校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
+| Subagent | `task`、`send_subagent_message` | canonical `task` adapter；`run_in_background`/`resume_from` 已对齐，复用 task 校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
 | Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
 | LSP | `lsp` | profile 默认启用；位置操作和无 `file_path` 的 `workspaceSymbol` 均有 adapter | 🟡 | 结果格式和 LSP server lifecycle 仍需逐项对照 |
@@ -210,6 +214,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 16 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
 - 2026-10-13：`get_task_output` 的 `task_ids` 多任务 schema 已通过 focused tests，并在 CLI/Desktop HTTP registry 中返回相同 schema；Desktop production build 通过。
 - 2026-10-13：`workspaceSymbol` 无 `file_path` 的 canonical schema/执行路径已通过 focused tests，CLI/Desktop registry 一致；官方 ACP initialize smoke 继续通过。
+- 2026-10-13：`task` 的 `run_in_background`/`resume_from` schema 与 CLI/Desktop registry 已对齐，省略后台开关的 adapter test 通过；Desktop production build 通过。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 

@@ -242,6 +242,43 @@ describe("grok-build tool profile", () => {
     })
   })
 
+  test("maps the canonical task background and resume fields", async () => {
+    const captured: Record<string, unknown> = {}
+    const task = GrokBuildTools.adaptTools([fakeTool("task", (value) => Object.assign(captured, value as object))]).find(
+      (tool) => tool.id === "task",
+    )
+    if (!task) throw new Error("expected task")
+
+    await Effect.runPromise(task.execute({ description: "inspect", prompt: "check it" }, context))
+    expect(captured).toEqual({
+      description: "inspect",
+      prompt: "check it",
+      subagent_type: "general",
+      task_id: undefined,
+      background: true,
+    })
+
+    await Effect.runPromise(
+      task.execute(
+        {
+          description: "resume",
+          prompt: "continue",
+          subagent_type: "explore",
+          run_in_background: false,
+          resume_from: "ses_child",
+        },
+        context,
+      ),
+    )
+    expect(captured).toEqual({
+      description: "resume",
+      prompt: "continue",
+      subagent_type: "explore",
+      task_id: "ses_child",
+      background: false,
+    })
+  })
+
   test("maps plan mode tools to the canonical names", () => {
     const tools = GrokBuildTools.adaptTools([fakeTool("plan_enter", () => {}), fakeTool("plan_exit", () => {})])
 

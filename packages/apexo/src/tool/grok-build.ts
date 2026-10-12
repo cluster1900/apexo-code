@@ -40,9 +40,15 @@ const WriteParameters = Schema.Struct({
 const SpawnSubagentParameters = Schema.Struct({
   description: Schema.String.annotate({ description: "A short description of the task" }),
   prompt: Schema.String.annotate({ description: "The task for the agent to perform" }),
-  subagent_type: Schema.optional(Schema.String).annotate({ description: "The agent type, defaulting to build" }),
-  task_id: Schema.optional(Schema.String),
-  background: Schema.optional(Schema.Boolean),
+  subagent_type: Schema.optional(Schema.String).annotate({
+    description: "The agent type, defaulting to general-purpose",
+  }),
+  run_in_background: Schema.optional(Schema.Boolean).annotate({
+    description: "Return immediately with a subagent ID; defaults to true",
+  }),
+  resume_from: Schema.optional(Schema.String).annotate({
+    description: "Resume a previous subagent session from its ID",
+  }),
 })
 
 const SendSubagentMessageParameters = Schema.Struct({
@@ -126,9 +132,9 @@ const adapters: Record<string, readonly Adapter[]> = {
       return {
         description: value.description,
         prompt: value.prompt,
-        subagent_type: value.subagent_type ?? "build",
-        task_id: value.task_id,
-        background: value.background,
+        subagent_type: value.subagent_type ?? "general",
+        task_id: value.resume_from,
+        background: value.run_in_background ?? true,
       }
     }),
     adapter(
