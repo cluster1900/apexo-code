@@ -348,6 +348,7 @@ function taskOutput(background: BackgroundJob.Interface): Tool.Def {
               }
             }),
           ),
+          { concurrency: "unbounded" },
         )
         const metadata =
           results.length === 1

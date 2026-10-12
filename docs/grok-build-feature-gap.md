@@ -62,6 +62,7 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 ### Multi-task output retrieval
 
 `get_task_output` 已支持官方 canonical `task_ids` 数组和 `timeout_ms`，一次返回多个 task 的状态与输出；旧的单数 `task_id` 仍保留为兼容输入。多任务查询会逐个校验当前 Session ownership，避免跨 Session 泄露后台输出。
+多个 ID 使用共享超时预算并行等待，避免按任务数量线性放大等待时间。
 
 ### LSP workspace symbols
 
@@ -215,6 +216,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - 2026-10-13：`get_task_output` 的 `task_ids` 多任务 schema 已通过 focused tests，并在 CLI/Desktop HTTP registry 中返回相同 schema；Desktop production build 通过。
 - 2026-10-13：`workspaceSymbol` 无 `file_path` 的 canonical schema/执行路径已通过 focused tests，CLI/Desktop registry 一致；官方 ACP initialize smoke 继续通过。
 - 2026-10-13：`task` 的 `run_in_background`/`resume_from` schema 与 CLI/Desktop registry 已对齐，省略后台开关的 adapter test 通过；Desktop production build 通过。
+- 2026-10-13：多任务等待改为共享预算并行执行；CLI streaming、CLI/Desktop tool registry diff、官方 ACP initialize 和 Desktop production build 均通过。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 
