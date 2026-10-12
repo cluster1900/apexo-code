@@ -148,6 +148,45 @@ describe("grok-build tool profile", () => {
     expect(result.output).toContain(`Cancelled task ${job.id}.`)
   })
 
+  test("waits for bounded shell commands without killing the background job", async () => {
+    const captured: Record<string, unknown> = {}
+    const job = {
+      id: "job_bounded_shell",
+      type: "shell",
+      status: "running" as const,
+      started_at: Date.now(),
+      metadata: { ownerSessionId: context.sessionID },
+    }
+    const completed = { ...job, status: "completed" as const, output: "done" }
+    const background = {
+      start: (input: { run: Effect.Effect<string, unknown> }) => {
+        void Effect.runPromise(input.run)
+        return Effect.succeed(job)
+      },
+      wait: () => Effect.succeed({ info: completed, timedOut: false }),
+    } as never
+    const shell = GrokBuildTools.adaptTools(
+      [
+        {
+          ...fakeTool("bash", (value) => Object.assign(captured, value as object)),
+          execute: (args) => {
+            Object.assign(captured, args as object)
+            return Effect.succeed({ title: "shell", metadata: {}, output: "done" })
+          },
+        },
+      ],
+      { background },
+    ).find((tool) => tool.id === "run_terminal_cmd")
+    if (!shell) throw new Error("expected run_terminal_cmd")
+
+    const result = await Effect.runPromise(
+      shell.execute({ command: "sleep 1", description: "bounded", block_until_ms: 25 }, context),
+    )
+    expect(captured).toEqual({ command: "sleep 1", timeout: undefined })
+    expect(result.metadata).toEqual({ task_id: job.id, status: "completed", command: "sleep 1" })
+    expect(result.output).toContain(`<task id="${job.id}" status="completed">`)
+  })
+
   test("maps follow-up messages to the canonical subagent tool", async () => {
     const captured: Record<string, unknown> = {}
     const tools = GrokBuildTools.adaptTools([fakeTool("task", (value) => Object.assign(captured, value as object))])

@@ -1,7 +1,7 @@
 # Grok Build Feature Gap
 
-状态：P0/P1 核心切片已落地，剩余能力按下表继续排期  
-日期：2026-10-12  
+状态：P0 核心切片持续补齐，剩余能力按下表继续排期
+日期：2026-10-13
 对比基线：Apexo `grok-agent-roadmap` / `28952af`，官方 [xai-org/grok-build](https://github.com/xai-org/grok-build/tree/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8) / `2bdd1d6`
 
 ## 结论
@@ -39,7 +39,21 @@ get_task_output
 kill_task
 ```
 
-`web_search` 在 headless manifest 中会被列出，但当前未启用 Exa/Parallel 时不会出现在实际 HTTP tool list 中。这是现有 profile manifest 和 runtime capability 的一个小型不一致。
+这是 canonical 名称全集；运行时会按 provider/model 和 web capability 过滤。当前未启用 Exa/Parallel 时，`web_search` 不会出现在实际 HTTP tool list 或 CLI streaming `available_commands` 中。
+
+## 2026-10-13 已完成的切片
+
+### Runtime capability manifest
+
+CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` registry 生成，Desktop 与 CLI 继续共用同一个 server registry。没有解析到模型或 registry 请求失败时，CLI 使用同一份 capability-aware canonical fallback；因此 fallback 也不会在 web capability 未启用时宣称 `web_search`。
+
+验收结果：使用 `anthropic/claude-haiku-4-5` 查询时，CLI 和 Desktop 都返回 16 个相同的工具 ID、schema 和 description；CLI streaming 事件中的工具集合与 HTTP list 相同。官方 `grok agent stdio` 初始化成功，并返回官方 ACP capability contract；官方工具清单仍由 Grok runtime 自己管理，没有强行合并进 Apexo manifest。
+
+### Bounded shell execution
+
+`run_terminal_cmd.block_until_ms` 现在按官方语义处理：省略值时同步执行，`0` 立即返回后台 task，正数最多等待指定时间，超时返回可由 `get_task_output` 查询的 task handle。后台执行会移除 shell 的同步 timeout，因此超时只结束本次等待，不会把命令本身杀掉。
+
+这一切片仍是进程内 `BackgroundJob`，不包含进程重启恢复、跨实例查询或增量输出；这些仍属于未完成的后台任务生命周期工作。
 
 ## 功能差距矩阵
 
@@ -58,8 +72,8 @@ kill_task
 | 目录读取 | `list_dir` | `list_dir` | ✅ | 保持 schema 和结果格式一致 |
 | 精确编辑 | `search_replace` | `search_replace` | ✅ | 增加与官方边界条件的契约测试 |
 | 文件写入 | 官方完整 tool config 未单列 `write` | `write` | 🟡 | 说明为 Apexo 扩展，或移除并完全使用官方写入语义 |
-| Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | `run_terminal_command`，只把等待值映射成 timeout | 🟡 | 使用官方 ID；实现后台句柄、输出查询、完成通知和取消 |
-| 后台 shell | `get_task_output`、`kill_task` | `BackgroundJob` 查询、等待、取消；CLI/Desktop 共用 | ✅ | 增加重启/断线恢复和增量输出后再宣称完整 parity |
+| Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | canonical `run_terminal_cmd`；0/正数等待值均可返回后台句柄 | 🟡 | 对齐完成通知、退出码、输出字段和取消行为 |
+| 后台 shell | `get_task_output`、`kill_task` | `BackgroundJob` 查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
 | Subagent | `task`、`send_subagent_message` | canonical `task` adapter；消息工具复用 Task/BackgroundJob | ✅ | 补充跨进程恢复和更细的状态事件 |
 | Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
@@ -79,7 +93,7 @@ kill_task
 
 | 检查项 | 当前结果 | Feature 验收要求 |
 | --- | --- | --- |
-| CLI 与 Desktop 的 Tool Registry | 同一 profile 下实际 tool list、schema、description 相同 | 继续从 server registry/canonical manifest 生成，不允许客户端各自维护一份列表 |
+| CLI 与 Desktop 的 Tool Registry | 已实测实际 tool list、schema、description 相同 | 继续从 server registry/canonical manifest 生成，不允许客户端各自维护一份列表 |
 | CLI profile 选择 | `apexo run --profile grok-build` 可选择 | Desktop 需要明确 profile 选择或配置入口；不能只依赖隐藏环境变量 |
 | Session/Permission | 共用 Apexo server 和 durable Session record | 官方 bridge 连接时也必须保留 Session、permission 和 audit 边界 |
 | Streaming events | CLI 有 Apexo streaming JSON adapter；Desktop 走 HTTP/App events | 定义一份 event mapping，覆盖 text、thinking、tool call、tool result、permission、background task、error、finish |
@@ -96,16 +110,16 @@ kill_task
    - 选择 B：继续使用 Apexo loop，但把它命名为 Grok-compatible profile，不宣称官方 Grok Build parity。
    - 验收：README、CLI help、Desktop 设置和 feature manifest 使用同一术语。
 
-2. **Canonical capability manifest**
+2. **Canonical capability manifest** ✅ 第一切片
    - 以官方名称为 canonical ID：`run_terminal_cmd`、`task` 等。
    - adapter alias 只用于兼容旧客户端，不再把 `run_terminal_command`、`spawn_subagent` 当作官方名称。
    - CLI、Desktop、HTTP tool list、streaming `available_commands` 都从同一份 manifest 生成。
-   - 验收：开启同一 profile 时，声明的工具集合等于实际可执行工具集合。
+   - 验收：开启同一 profile 时，声明的工具集合等于实际可执行工具集合。CLI streaming JSON、Desktop HTTP 和 `/experimental/tool` 已完成这一切片。
 
-3. **Background task lifecycle**
+3. **Background task lifecycle** 🟡 第一切片
    - 实现 task ID、输出读取、取消、完成通知、重启/断线行为和权限审计。
    - shell 和 subagent 使用一致的 task state model。
-   - 验收：可启动后台命令，查询增量输出，取消命令，并在 CLI/Desktop 看到同一状态。
+   - 验收：可启动后台命令，查询输出，取消命令，并在 CLI/Desktop 看到同一状态；当前尚未完成增量输出和重启恢复。
 
 4. **Official ACP smoke path**
    - 最小切片只接通一个只读 prompt/tool flow。
@@ -181,6 +195,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - App、Desktop typecheck 和 Desktop production build pass。
 - Apexo CLI 和本机 `grok 1.0.50` 都完成只读单轮 smoke。
 - CLI/Desktop profile HTTP tool list 实测一致。
+- 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 16 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 

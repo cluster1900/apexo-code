@@ -24,8 +24,6 @@ const SearchReplaceParameters = Schema.Struct({
 })
 
 // Current Grok Build advertises command, description, and block_until_ms.
-// Apexo receives the wait value as its shell timeout until process management
-// adds Grok's background-task handle semantics.
 const RunTerminalParameters = Schema.Struct({
   command: Schema.String.annotate({ description: "The command to run" }),
   description: Schema.String.annotate({ description: "Why this command is needed" }),
@@ -208,6 +206,10 @@ export const legacyToolAliases = {
 
 export const toolNames = canonicalToolNames
 
+export function advertisedToolNames(options: { webSearch?: boolean } = {}) {
+  return canonicalToolNames.filter((name) => name !== "web_search" || options.webSearch === true)
+}
+
 export function canonicalToolName(id: string) {
   return legacyToolAliases[id as keyof typeof legacyToolAliases] ?? id
 }
@@ -227,7 +229,7 @@ function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interfa
     jsonSchema: undefined,
     execute: (args, ctx) =>
       Effect.flatMap(Schema.decodeUnknownEffect(item.parameters)(args), (decoded) => {
-        if (item.id !== "run_terminal_cmd" || !background || !isImmediateBackground(decoded)) {
+        if (item.id !== "run_terminal_cmd" || !background || !hasBoundedWait(decoded)) {
           return tool.execute(item.map(decoded), ctx)
         }
 
@@ -241,30 +243,50 @@ function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interfa
               command: input.command,
             },
             run: tool
-              .execute(item.map(decoded), {
-                ...ctx,
-                abort: new AbortController().signal,
-                metadata: () => Effect.void,
-              })
+              .execute(
+                { command: input.command, timeout: undefined },
+                {
+                  ...ctx,
+                  abort: new AbortController().signal,
+                  metadata: () => Effect.void,
+                },
+              )
               .pipe(Effect.map((result) => result.output)),
           })
+          if (input.block_until_ms === 0) return backgroundStarted(input, job)
+
+          const result = yield* background.wait({ id: job.id, timeout: input.block_until_ms })
+          if (result.timedOut || !result.info) {
+            return {
+              ...backgroundStarted(input, job),
+              metadata: { task_id: job.id, status: "running", command: input.command, timed_out: true },
+            }
+          }
           return {
             title: input.description,
-            metadata: { task_id: job.id, status: job.status, command: input.command },
-            output: `<task id="${job.id}" status="running">\nBackground command started.\n</task>`,
+            metadata: { task_id: result.info.id, status: result.info.status, command: input.command },
+            output: formatTaskOutput(result.info),
           }
         })
       }).pipe(Effect.orDie),
   }
 }
 
-function isImmediateBackground(value: unknown): value is Schema.Schema.Type<typeof RunTerminalParameters> {
+function hasBoundedWait(value: unknown): value is Schema.Schema.Type<typeof RunTerminalParameters> {
   return (
     typeof value === "object" &&
     value !== null &&
     "block_until_ms" in value &&
-    (value as { block_until_ms?: number }).block_until_ms === 0
+    typeof (value as { block_until_ms?: number }).block_until_ms === "number"
   )
+}
+
+function backgroundStarted(input: Schema.Schema.Type<typeof RunTerminalParameters>, job: BackgroundJob.Info) {
+  return {
+    title: input.description,
+    metadata: { task_id: job.id, status: job.status, command: input.command },
+    output: `<task id="${job.id}" status="running">\nBackground command started.\n</task>`,
+  }
 }
 
 export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {}) {
@@ -368,6 +390,7 @@ export const GrokBuild = {
   adaptTools,
   canonicalToolName,
   canonicalToolNames,
+  advertisedToolNames,
   isProfileTool,
   legacyToolAliases,
   toolNames,

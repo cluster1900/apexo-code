@@ -38,6 +38,47 @@ function pick(value: string | undefined): ModelInput | undefined {
   } as ModelInput
 }
 
+async function grokBuildToolNames(
+  client: ApexoClient,
+  agent: string | undefined,
+  requestedModel: string | undefined,
+  directory: string,
+  webSearch: boolean,
+) {
+  const fallback = () => GrokBuildTools.advertisedToolNames({ webSearch })
+  const model = pick(requestedModel)
+  const resolved =
+    model ??
+    (await client.app
+      .agents({ directory })
+      .then((result) => {
+        const agents = result.data ?? []
+        return (
+          agents.find((item) => item.name === agent)?.model ??
+          agents.find((item) => item.name === "build")?.model ??
+          agents.find((item) => item.mode === "primary" && item.hidden !== true)?.model
+        )
+      })
+      .catch(() => undefined))
+  if (!resolved) return fallback()
+
+  const tools = await client.tool
+    .list({
+      directory,
+      provider: resolved.providerID,
+      model: resolved.modelID,
+    })
+    .catch(() => undefined)
+  if (!tools?.data) return fallback()
+
+  const actual = new Set<string>(
+    tools.data
+      .map((item) => GrokBuildTools.canonicalToolName(item.id))
+      .filter((id) => GrokBuildTools.isProfileTool(id)),
+  )
+  return GrokBuildTools.advertisedToolNames({ webSearch }).filter((name) => actual.has(name))
+}
+
 function resolveRunInput(value?: string, piped?: string): string | undefined {
   if (!value) {
     return piped
@@ -920,23 +961,22 @@ export const RunCommand = effectCmd({
         const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
 
+        // Validate agent if specified
+        const agent = await pickAgent(client)
+
         if (args.format === "streaming-json") {
           const commands = await client.command.list({ directory: cwd })
           if (commands.data) {
+            const available =
+              flags.runtimeProfile === "grok-build"
+                ? await grokBuildToolNames(client, agent, args.model, cwd, flags.enableExa || flags.enableParallel)
+                : []
             emit("available_commands", {
-              tools:
-                flags.runtimeProfile === "grok-build"
-                  ? GrokBuildTools.toolNames.filter(
-                      (name) => name !== "web_search" || flags.enableExa || flags.enableParallel,
-                    )
-                  : [],
+              tools: available,
               commands: commands.data.map((item) => item.name),
             })
           }
         }
-
-        // Validate agent if specified
-        const agent = await pickAgent(client)
 
         if (!interactive) {
           const events = await client.event.subscribe()
