@@ -55,6 +55,10 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 
 这一切片仍是进程内 `BackgroundJob`，不包含进程重启恢复、跨实例查询或增量输出；这些仍属于未完成的后台任务生命周期工作。
 
+### Subagent task ownership
+
+复用 `task_id` 时，TaskTool 现在要求该 task 的 `parentID` 等于当前 Session，并优先沿用已持久化的 subagent agent。这样 `send_subagent_message` 即使通过兼容 adapter 默认传入 `build`，也不会改变已有 task 的 agent；跨 Session 的 task ID 会在 permission 和执行前拒绝。
+
 ## 功能差距矩阵
 
 状态含义：
@@ -74,7 +78,7 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 | 文件写入 | 官方完整 tool config 未单列 `write` | `write` | 🟡 | 说明为 Apexo 扩展，或移除并完全使用官方写入语义 |
 | Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | canonical `run_terminal_cmd`；0/正数等待值均可返回后台句柄 | 🟡 | 对齐完成通知、退出码、输出字段和取消行为 |
 | 后台 shell | `get_task_output`、`kill_task` | `BackgroundJob` 查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
-| Subagent | `task`、`send_subagent_message` | canonical `task` adapter；消息工具复用 Task/BackgroundJob | ✅ | 补充跨进程恢复和更细的状态事件 |
+| Subagent | `task`、`send_subagent_message` | canonical `task` adapter；复用 task 时校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
 | Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
 | LSP | `lsp` | profile 默认启用并将 snake_case schema 映射到 Apexo LSP | ✅ | 结果格式和 LSP server lifecycle 仍需逐项对照 |
