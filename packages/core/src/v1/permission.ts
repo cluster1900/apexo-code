@@ -6,6 +6,7 @@ import { ID } from "@apexo/schema/permission-v1"
 
 const GrokBuildPermissionAliases = {
   run_terminal_command: "bash",
+  run_terminal_cmd: "bash",
   read_file: "read",
   list_dir: "list",
   search_replace: "edit",

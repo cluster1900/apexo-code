@@ -25,6 +25,7 @@ import type { GrepTool } from "@/tool/grep"
 import type { InvalidTool } from "@/tool/invalid"
 import type { LspTool } from "@/tool/lsp"
 import type { PlanExitTool } from "@/tool/plan"
+import type { PlanEnterTool } from "@/tool/plan-enter"
 import type { QuestionTool } from "@/tool/question"
 import type { ReadTool } from "@/tool/read"
 import type { SkillTool } from "@/tool/skill"
@@ -110,6 +111,7 @@ type ToolDefs = {
   websearch: typeof WebSearchTool
   skill: typeof SkillTool
   plan_exit: typeof PlanExitTool
+  plan_enter: typeof PlanEnterTool
 }
 
 type ToolName = keyof ToolDefs
@@ -478,6 +480,15 @@ function runPlanExit(p: ToolProps<typeof PlanExitTool>): ToolInline {
   return {
     icon: "→",
     title: text(p.frame.state.title) || "Switching to build agent",
+    mode: "block",
+    body: p.frame.status === "completed" ? text(p.frame.state.output) : undefined,
+  }
+}
+
+function runPlanEnter(p: ToolProps<typeof PlanEnterTool>): ToolInline {
+  return {
+    icon: "→",
+    title: text(p.frame.state.title) || "Entering plan mode",
     mode: "block",
     body: p.frame.status === "completed" ? text(p.frame.state.output) : undefined,
   }
@@ -1233,6 +1244,16 @@ const TOOL_RULES = {
       start: () => "",
     },
   },
+  plan_enter: {
+    view: {
+      output: true,
+      final: false,
+    },
+    run: runPlanEnter,
+    scroll: {
+      start: () => "",
+    },
+  },
 } as const satisfies ToolRegistry
 
 function key(name: string): name is ToolName {
@@ -1249,21 +1270,26 @@ function rule(name?: string): AnyToolRule | undefined {
 
 function canonicalToolName(name: string): string {
   return (
-    {
-      run_terminal_command: "bash",
-      read_file: "read",
-      list_dir: "list",
-      search_replace: "edit",
-      spawn_subagent: "task",
-      todo_write: "todowrite",
-      ask_user_question: "question",
-      web_fetch: "webfetch",
-    } as Record<string, string>
-  )[name] ?? name
+    (
+      {
+        run_terminal_command: "bash",
+        run_terminal_cmd: "bash",
+        read_file: "read",
+        list_dir: "list",
+        search_replace: "edit",
+        spawn_subagent: "task",
+        enter_plan_mode: "plan_enter",
+        exit_plan_mode: "plan_exit",
+        todo_write: "todowrite",
+        ask_user_question: "question",
+        web_fetch: "webfetch",
+      } as Record<string, string>
+    )[name] ?? name
+  )
 }
 
 function displayInput(name: string, input: ToolDict): ToolDict {
-  if (name === "run_terminal_command") {
+  if (name === "run_terminal_command" || name === "run_terminal_cmd") {
     return {
       ...input,
       command: input.command,

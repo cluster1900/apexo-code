@@ -28,6 +28,16 @@ const context = {
 } satisfies Tool.Context
 
 describe("grok-build tool profile", () => {
+  test("recognizes canonical names and legacy aliases", () => {
+    expect(GrokBuildTools.canonicalToolName("run_terminal_cmd")).toBe("run_terminal_cmd")
+    expect(GrokBuildTools.canonicalToolName("run_terminal_command")).toBe("run_terminal_cmd")
+    expect(GrokBuildTools.canonicalToolName("spawn_subagent")).toBe("task")
+    expect(GrokBuildTools.isProfileTool("enter_plan_mode")).toBe(true)
+    expect(GrokBuildTools.isProfileTool("exit_plan_mode")).toBe(true)
+    expect(GrokBuildTools.isProfileTool("run_terminal_command")).toBe(true)
+    expect(GrokBuildTools.isProfileTool("task")).toBe(true)
+  })
+
   test("exposes Grok Build names and preserves non-profile tools", () => {
     const tools = GrokBuildTools.adaptTools([
       fakeTool("bash", () => {}),
@@ -38,7 +48,7 @@ describe("grok-build tool profile", () => {
     ])
 
     expect(tools.map((tool) => tool.id)).toEqual([
-      "run_terminal_command",
+      "run_terminal_cmd",
       "read_file",
       "list_dir",
       "search_replace",
@@ -58,7 +68,7 @@ describe("grok-build tool profile", () => {
 
     const read = tools.find((tool) => tool.id === "read_file")
     const edit = tools.find((tool) => tool.id === "search_replace")
-    const shell = tools.find((tool) => tool.id === "run_terminal_command")
+    const shell = tools.find((tool) => tool.id === "run_terminal_cmd")
     const write = tools.find((tool) => tool.id === "write")
     if (!read || !edit || !shell || !write) throw new Error("expected profile tools")
 
@@ -79,8 +89,8 @@ describe("grok-build tool profile", () => {
 
   test("derives the Grok Build schemas instead of retaining Apexo camelCase schemas", () => {
     const tools = GrokBuildTools.adaptTools([fakeTool("bash", () => {})])
-    const shell = tools.find((tool) => tool.id === "run_terminal_command")
-    if (!shell) throw new Error("expected run_terminal_command")
+    const shell = tools.find((tool) => tool.id === "run_terminal_cmd")
+    if (!shell) throw new Error("expected run_terminal_cmd")
 
     const schema = ToolJsonSchema.fromTool(shell)
     expect(schema.properties).toEqual(
@@ -100,10 +110,80 @@ describe("grok-build tool profile", () => {
       fakeTool("bash", () => {
         invoked = true
       }),
-    ]).find((tool) => tool.id === "run_terminal_command")
-    if (!shell) throw new Error("expected run_terminal_command")
+    ]).find((tool) => tool.id === "run_terminal_cmd")
+    if (!shell) throw new Error("expected run_terminal_cmd")
 
     await expect(Effect.runPromise(shell.execute({ command: "pwd" }, context))).rejects.toThrow()
     expect(invoked).toBe(false)
+  })
+
+  test("exposes background task output and cancellation tools", async () => {
+    const job = {
+      id: "job_grok_build_test",
+      type: "shell",
+      status: "running" as const,
+      started_at: Date.now(),
+      metadata: { ownerSessionId: context.sessionID },
+    }
+    let cancelled = false
+    const background = {
+      get: () => Effect.succeed(job),
+      wait: () => Effect.succeed({ info: job, timedOut: true }),
+      cancel: () => {
+        cancelled = true
+        return Effect.succeed({ ...job, status: "cancelled" as const })
+      },
+    } as never
+    const tools = GrokBuildTools.adaptTools([], { background })
+    const output = tools.find((tool) => tool.id === "get_task_output")
+    const kill = tools.find((tool) => tool.id === "kill_task")
+    if (!output || !kill) throw new Error("expected background task tools")
+
+    const snapshot = await Effect.runPromise(output.execute({ task_id: job.id }, context))
+    expect(snapshot.metadata).toEqual({ task_id: job.id, status: "running", timed_out: true })
+    expect(snapshot.output).toContain(`<task id="${job.id}" status="running">`)
+
+    const result = await Effect.runPromise(kill.execute({ task_id: job.id }, context))
+    expect(cancelled).toBe(true)
+    expect(result.output).toContain(`Cancelled task ${job.id}.`)
+  })
+
+  test("maps follow-up messages to the canonical subagent tool", async () => {
+    const captured: Record<string, unknown> = {}
+    const tools = GrokBuildTools.adaptTools([fakeTool("task", (value) => Object.assign(captured, value as object))])
+    const message = tools.find((tool) => tool.id === "send_subagent_message")
+    if (!message) throw new Error("expected send_subagent_message")
+
+    await Effect.runPromise(message.execute({ task_id: "ses_child", prompt: "continue" }, context))
+    expect(captured).toEqual({
+      description: "Follow-up message",
+      prompt: "continue",
+      subagent_type: "build",
+      task_id: "ses_child",
+      background: true,
+    })
+  })
+
+  test("maps plan mode tools to the canonical names", () => {
+    const tools = GrokBuildTools.adaptTools([fakeTool("plan_enter", () => {}), fakeTool("plan_exit", () => {})])
+
+    expect(tools.map((tool) => tool.id)).toEqual(["enter_plan_mode", "exit_plan_mode"])
+  })
+
+  test("maps the Grok Build LSP schema to Apexo's LSP input", async () => {
+    const captured: Record<string, unknown> = {}
+    const lsp = GrokBuildTools.adaptTools([fakeTool("lsp", (value) => Object.assign(captured, value as object))]).find(
+      (tool) => tool.id === "lsp",
+    )
+    if (!lsp) throw new Error("expected lsp")
+
+    await Effect.runPromise(lsp.execute({ operation: "hover", file_path: "src/a.ts", line: 0, character: 3 }, context))
+    expect(captured).toEqual({
+      operation: "hover",
+      filePath: "src/a.ts",
+      line: 1,
+      character: 4,
+      query: undefined,
+    })
   })
 })

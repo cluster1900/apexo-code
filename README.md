@@ -32,11 +32,11 @@ What you get today:
   classic themes are still available.
 
 > [!NOTE]
-> **Status of the Grok Build integration.** Apexo does not drive the Grok Build CLI yet. Today
-> it runs its own agent loop against the xAI API, using your Grok login or API key. Running Grok
-> Build itself behind Apexo's UI is the goal: Grok Build exposes an Agent Client Protocol (ACP)
-> server through `grok agent stdio`, and Apexo already ships an ACP SDK. Until that lands,
-> treat Apexo as a Grok-first UI and agent, not as a Grok Build frontend.
+> **Status of the Grok Build integration.** Apexo's default Grok profile runs its own agent loop
+> against the xAI API and exposes a canonical Grok Build tool contract. For clients that need the
+> official runtime, `apexo acp --backend grok-build` transparently connects to `grok agent stdio`;
+> the existing Apexo ACP backend remains the default. Desktop/App backend selection and full
+> Session/event mapping are still being expanded.
 
 <p align="center">
   <img src="docs/assets/apexo-tui.png" alt="Apexo terminal UI" width="820">

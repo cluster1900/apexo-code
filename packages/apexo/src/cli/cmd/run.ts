@@ -684,11 +684,12 @@ export const RunCommand = effectCmd({
         }
 
         const toolKind = (name: string) => {
-          if (["run_terminal_command", "bash", "shell"].includes(name)) return "execute"
+          if (["run_terminal_cmd", "run_terminal_command", "bash", "shell"].includes(name)) return "execute"
           if (["read_file", "read", "list_dir"].includes(name)) return "read"
           if (["search_replace", "write", "edit", "apply_patch", "patch"].includes(name)) return "edit"
           if (["grep", "glob", "web_search"].includes(name)) return "search"
           if (["spawn_subagent", "task"].includes(name)) return "think"
+          if (["enter_plan_mode", "exit_plan_mode", "plan_enter", "plan_exit"].includes(name)) return "think"
           if (name === "web_fetch") return "fetch"
           return "other"
         }
@@ -715,9 +716,7 @@ export const RunCommand = effectCmd({
           return value ? [{ path: value }] : []
         }
 
-        const toolContent = (output: string) => [
-          { type: "content", content: { type: "text", text: output } },
-        ]
+        const toolContent = (output: string) => [{ type: "content", content: { type: "text", text: output } }]
 
         const seenToolCalls = new Set<string>()
         const emitStreamingTool = (part: ToolPart) => {
@@ -925,7 +924,12 @@ export const RunCommand = effectCmd({
           const commands = await client.command.list({ directory: cwd })
           if (commands.data) {
             emit("available_commands", {
-              tools: flags.runtimeProfile === "grok-build" ? [...GrokBuildTools.toolNames] : [],
+              tools:
+                flags.runtimeProfile === "grok-build"
+                  ? GrokBuildTools.toolNames.filter(
+                      (name) => name !== "web_search" || flags.enableExa || flags.enableParallel,
+                    )
+                  : [],
               commands: commands.data.map((item) => item.name),
             })
           }

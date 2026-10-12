@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import { NonNegativeInt } from "@apexo/core/schema"
+import { BackgroundJob } from "@/background/job"
 import { Parameters as QuestionParameters } from "./question"
 import { Parameters as TodoParameters } from "./todo"
 import { Tool } from "./tool"
@@ -46,8 +47,30 @@ const SpawnSubagentParameters = Schema.Struct({
   background: Schema.optional(Schema.Boolean),
 })
 
+const SendSubagentMessageParameters = Schema.Struct({
+  task_id: Schema.String.annotate({ description: "The running subagent ID" }),
+  prompt: Schema.String.annotate({ description: "The message to send to the subagent" }),
+})
+
+const PlanModeParameters = Schema.Struct({})
+
 const WebSearchBuildParameters = Schema.Struct({
   query: Schema.String.annotate({ description: "The web search query" }),
+})
+
+const LspParameters = Schema.Struct({
+  operation: Schema.Literals([
+    "goToDefinition",
+    "findReferences",
+    "hover",
+    "goToImplementation",
+    "documentSymbol",
+    "workspaceSymbol",
+  ]).annotate({ description: "The LSP operation to perform" }),
+  file_path: Schema.optional(Schema.String).annotate({ description: "Absolute path to the file" }),
+  line: Schema.optional(NonNegativeInt).annotate({ description: "0-indexed line number" }),
+  character: Schema.optional(NonNegativeInt).annotate({ description: "0-indexed column number" }),
+  query: Schema.optional(Schema.String).annotate({ description: "Symbol name or partial name" }),
 })
 
 type Adapter = {
@@ -68,7 +91,7 @@ function adapter(
 
 const adapters: Record<string, readonly Adapter[]> = {
   bash: [
-    adapter("run_terminal_command", "Run a bash command and return its output.", RunTerminalParameters, (args) => {
+    adapter("run_terminal_cmd", "Run a bash command and return its output.", RunTerminalParameters, (args) => {
       const value = args as Schema.Schema.Type<typeof RunTerminalParameters>
       return { command: value.command, timeout: value.block_until_ms === 0 ? undefined : value.block_until_ms }
     }),
@@ -100,7 +123,7 @@ const adapters: Record<string, readonly Adapter[]> = {
     }),
   ],
   task: [
-    adapter("spawn_subagent", "Start a subagent to work on a task.", SpawnSubagentParameters, (args) => {
+    adapter("task", "Start a subagent to work on a task.", SpawnSubagentParameters, (args) => {
       const value = args as Schema.Schema.Type<typeof SpawnSubagentParameters>
       return {
         description: value.description,
@@ -108,6 +131,39 @@ const adapters: Record<string, readonly Adapter[]> = {
         subagent_type: value.subagent_type ?? "build",
         task_id: value.task_id,
         background: value.background,
+      }
+    }),
+    adapter(
+      "send_subagent_message",
+      "Send a follow-up message to a running subagent.",
+      SendSubagentMessageParameters,
+      (args) => {
+        const value = args as Schema.Schema.Type<typeof SendSubagentMessageParameters>
+        return {
+          description: "Follow-up message",
+          prompt: value.prompt,
+          subagent_type: "build",
+          task_id: value.task_id,
+          background: true,
+        }
+      },
+    ),
+  ],
+  plan_enter: [
+    adapter("enter_plan_mode", "Switch to plan mode before making changes.", PlanModeParameters, (args) => args),
+  ],
+  plan_exit: [
+    adapter("exit_plan_mode", "Leave plan mode and switch to implementation.", PlanModeParameters, (args) => args),
+  ],
+  lsp: [
+    adapter("lsp", "Use language servers for code intelligence.", LspParameters, (args) => {
+      const value = args as Schema.Schema.Type<typeof LspParameters>
+      return {
+        operation: value.operation,
+        filePath: value.file_path ?? ".",
+        line: (value.line ?? 0) + 1,
+        character: (value.character ?? 0) + 1,
+        query: value.query,
       }
     }),
   ],
@@ -121,24 +177,46 @@ const adapters: Record<string, readonly Adapter[]> = {
   ],
 }
 
-const unsupportedBuiltins = new Set(["invalid", "glob", "apply_patch", "lsp", "execute", "skill"])
+const unsupportedBuiltins = new Set(["invalid", "glob", "apply_patch", "execute", "skill"])
 
-/** Names advertised in the headless available_commands event. */
-export const toolNames = [
-  "run_terminal_command",
+/** Canonical Grok Build names advertised to model-facing clients. */
+export const canonicalToolNames = [
+  "run_terminal_cmd",
+  "get_task_output",
+  "kill_task",
   "read_file",
   "list_dir",
   "grep",
   "search_replace",
   "write",
-  "spawn_subagent",
+  "task",
+  "send_subagent_message",
+  "lsp",
+  "enter_plan_mode",
+  "exit_plan_mode",
   "todo_write",
   "ask_user_question",
   "web_search",
   "web_fetch",
 ] as const
 
-function adapt(tool: Tool.Def, item: Adapter): Tool.Def {
+/** Compatibility names accepted by older Apexo clients. */
+export const legacyToolAliases = {
+  run_terminal_command: "run_terminal_cmd",
+  spawn_subagent: "task",
+} as const
+
+export const toolNames = canonicalToolNames
+
+export function canonicalToolName(id: string) {
+  return legacyToolAliases[id as keyof typeof legacyToolAliases] ?? id
+}
+
+type AdaptOptions = {
+  background?: BackgroundJob.Interface
+}
+
+function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interface): Tool.Def {
   return {
     ...tool,
     id: item.id,
@@ -148,23 +226,151 @@ function adapt(tool: Tool.Def, item: Adapter): Tool.Def {
     // ToolJsonSchema derives the Grok snake_case contract above.
     jsonSchema: undefined,
     execute: (args, ctx) =>
-      Effect.flatMap(Schema.decodeUnknownEffect(item.parameters)(args), (decoded) =>
-        tool.execute(item.map(decoded), ctx),
-      ).pipe(Effect.orDie),
+      Effect.flatMap(Schema.decodeUnknownEffect(item.parameters)(args), (decoded) => {
+        if (item.id !== "run_terminal_cmd" || !background || !isImmediateBackground(decoded)) {
+          return tool.execute(item.map(decoded), ctx)
+        }
+
+        const input = decoded as Schema.Schema.Type<typeof RunTerminalParameters>
+        return Effect.gen(function* () {
+          const job = yield* background.start({
+            type: "shell",
+            title: input.description,
+            metadata: {
+              ownerSessionId: ctx.sessionID,
+              command: input.command,
+            },
+            run: tool
+              .execute(item.map(decoded), {
+                ...ctx,
+                abort: new AbortController().signal,
+                metadata: () => Effect.void,
+              })
+              .pipe(Effect.map((result) => result.output)),
+          })
+          return {
+            title: input.description,
+            metadata: { task_id: job.id, status: job.status, command: input.command },
+            output: `<task id="${job.id}" status="running">\nBackground command started.\n</task>`,
+          }
+        })
+      }).pipe(Effect.orDie),
   }
 }
 
-export function adaptTools(tools: readonly Tool.Def[]) {
-  return tools.filter((tool) => !unsupportedBuiltins.has(tool.id)).flatMap((tool) => {
-    const items = adapters[tool.id]
-    return items ? items.map((item) => adapt(tool, item)) : [tool]
+function isImmediateBackground(value: unknown): value is Schema.Schema.Type<typeof RunTerminalParameters> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "block_until_ms" in value &&
+    (value as { block_until_ms?: number }).block_until_ms === 0
+  )
+}
+
+export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {}) {
+  const adapted = tools
+    .filter((tool) => !unsupportedBuiltins.has(tool.id))
+    .flatMap((tool) => {
+      const items = adapters[tool.id]
+      return items ? items.map((item) => adapt(tool, item, options.background)) : [tool]
+    })
+  if (!options.background) return adapted
+  return [...adapted, taskOutput(options.background), killTask(options.background)]
+}
+
+function taskOutput(background: BackgroundJob.Interface): Tool.Def {
+  const parameters = Schema.Struct({
+    task_id: Schema.String.annotate({ description: "The background task or subagent ID" }),
+    timeout_ms: Schema.optional(NonNegativeInt).annotate({
+      description: "How long to wait for completion in milliseconds; omitted returns a snapshot",
+    }),
   })
+  return {
+    id: "get_task_output",
+    description: "Get the current status and output of a background task or subagent.",
+    parameters,
+    execute: (args, ctx) =>
+      Effect.gen(function* () {
+        const input = yield* Schema.decodeUnknownEffect(parameters)(args)
+        const job = yield* background.get(input.task_id)
+        if (!job || !owns(job, ctx.sessionID)) {
+          return {
+            title: input.task_id,
+            metadata: { task_id: input.task_id, status: "not_found" },
+            output: `Task or subagent ${input.task_id} not found.`,
+          }
+        }
+        const result = yield* background.wait({ id: input.task_id, timeout: input.timeout_ms ?? 0 })
+        const info = result.info ?? job
+        return {
+          title: input.task_id,
+          metadata: {
+            task_id: input.task_id,
+            status: info.status,
+            ...(result.timedOut ? { timed_out: true } : {}),
+          },
+          output: formatTaskOutput(info),
+        }
+      }).pipe(Effect.orDie),
+  }
+}
+
+function killTask(background: BackgroundJob.Interface): Tool.Def {
+  const parameters = Schema.Struct({
+    task_id: Schema.String.annotate({ description: "The background task or subagent ID to terminate" }),
+  })
+  return {
+    id: "kill_task",
+    description: "Terminate a running background task or subagent.",
+    parameters,
+    execute: (args, ctx) =>
+      Effect.gen(function* () {
+        const input = yield* Schema.decodeUnknownEffect(parameters)(args)
+        const job = yield* background.get(input.task_id)
+        if (!job || !owns(job, ctx.sessionID)) {
+          return {
+            title: input.task_id,
+            metadata: { task_id: input.task_id, status: "not_found" },
+            output: `Task or subagent ${input.task_id} not found.`,
+          }
+        }
+        const result = yield* background.cancel(input.task_id)
+        return {
+          title: input.task_id,
+          metadata: { task_id: input.task_id, status: result?.status ?? "not_found" },
+          output: result?.status === "cancelled" ? `Cancelled task ${input.task_id}.` : formatTaskOutput(result ?? job),
+        }
+      }).pipe(Effect.orDie),
+  }
+}
+
+function owns(job: BackgroundJob.Info, sessionID: string) {
+  return (
+    job.metadata?.parentSessionId === sessionID ||
+    job.metadata?.sessionID === sessionID ||
+    job.metadata?.ownerSessionId === sessionID
+  )
+}
+
+function formatTaskOutput(job: BackgroundJob.Info) {
+  const lines = [`<task id="${job.id}" status="${job.status}">`]
+  if (job.output) lines.push(job.output)
+  if (job.error) lines.push(`<error>${job.error}</error>`)
+  lines.push("</task>")
+  return lines.join("\n")
 }
 
 export function isProfileTool(id: string) {
-  return toolNames.includes(id as (typeof toolNames)[number])
+  return canonicalToolNames.includes(canonicalToolName(id) as (typeof canonicalToolNames)[number])
 }
 
-export const GrokBuild = { adaptTools, isProfileTool, toolNames }
+export const GrokBuild = {
+  adaptTools,
+  canonicalToolName,
+  canonicalToolNames,
+  isProfileTool,
+  legacyToolAliases,
+  toolNames,
+}
 
 export * as GrokBuildTools from "./grok-build"

@@ -2,6 +2,7 @@ import { LayerNode } from "@apexo/core/effect/layer-node"
 import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { Ripgrep } from "@apexo/core/ripgrep"
 import { PlanExitTool } from "./plan"
+import { PlanEnterTool } from "./plan-enter"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
@@ -92,6 +93,7 @@ const layer = Layer.effect(
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
     const mcp = yield* MCP.Service
+    const background = yield* BackgroundJob.Service
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
@@ -99,6 +101,7 @@ const layer = Layer.effect(
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
+    const planEnter = yield* PlanEnterTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
@@ -217,6 +220,7 @@ const layer = Layer.effect(
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
+          planEnter: Tool.init(planEnter),
           plan: Tool.init(plan),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
@@ -240,7 +244,9 @@ const layer = Layer.effect(
             tool.patch,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+            ...(flags.experimentalPlanMode && (flags.client === "cli" || flags.runtimeProfile === "grok-build")
+              ? [tool.planEnter, tool.plan]
+              : []),
           ],
           task: tool.task,
           read: tool.read,
@@ -333,7 +339,7 @@ const layer = Layer.effect(
         { concurrency: "unbounded" },
       )
 
-      return flags.runtimeProfile === "grok-build" ? GrokBuildTools.adaptTools(result) : result
+      return flags.runtimeProfile === "grok-build" ? GrokBuildTools.adaptTools(result, { background }) : result
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {

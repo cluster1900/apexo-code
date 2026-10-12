@@ -525,9 +525,22 @@ export function getToolInfo(
         subtitle: input.description,
       }
     }
+    case "enter_plan_mode":
+    case "plan_enter":
+      return {
+        icon: "task",
+        title: "Entering plan mode",
+      }
+    case "exit_plan_mode":
+    case "plan_exit":
+      return {
+        icon: "task",
+        title: "Switching to build agent",
+      }
     case "bash":
     case "shell":
     case "run_terminal_command":
+    case "run_terminal_cmd":
       return {
         icon: "console",
         title: i18n.t("ui.tool.shell"),
@@ -1508,7 +1521,7 @@ export function getTool(name: string) {
   const canonical =
     name === "apply_patch"
       ? "patch"
-      : name === "bash" || name === "run_terminal_command"
+      : name === "bash" || name === "run_terminal_command" || name === "run_terminal_cmd"
         ? "shell"
         : name === "read_file" || name === "list_dir"
           ? "read"
@@ -1518,6 +1531,10 @@ export function getTool(name: string) {
               ? "webfetch"
               : name === "spawn_subagent"
                 ? "task"
+                : name === "enter_plan_mode"
+                  ? "plan_enter"
+                  : name === "exit_plan_mode"
+                    ? "plan_exit"
                 : name === "todo_write"
                   ? "todowrite"
                   : name === "ask_user_question"

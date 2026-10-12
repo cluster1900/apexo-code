@@ -5,18 +5,31 @@ import { ServerAuth } from "@/server/auth"
 import { createApexoClient } from "@apexo/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { ACPProfile } from "@/acp/profile"
+import { Process } from "@/util/process"
 
 export const AcpCommand = effectCmd({
   command: "acp",
-  describe: "start ACP (Agent Client Protocol) server",
+  describe: "start an ACP server",
   builder: (yargs) => {
-    return withNetworkOptions(yargs).option("cwd", {
-      describe: "working directory",
-      type: "string",
-      default: process.cwd(),
-    })
+    return withNetworkOptions(yargs)
+      .option("backend", {
+        describe: "ACP backend",
+        type: "string",
+        choices: ["apexo", "grok-build"] as const,
+        default: "apexo" as const,
+      })
+      .option("cwd", {
+        describe: "working directory",
+        type: "string",
+        default: process.cwd(),
+      })
   },
   handler: Effect.fn("Cli.acp")(function* (args) {
+    if (args.backend === "grok-build") {
+      yield* Effect.promise(() => runGrokBuildAgent(args.cwd))
+      return
+    }
+
     const { Server } = yield* Effect.promise(() => import("@/server/server"))
     const { ACP } = yield* Effect.promise(() => import("@/acp/agent"))
     ACPProfile.mark("cli.acp.handler")
@@ -71,3 +84,20 @@ export const AcpCommand = effectCmd({
     )
   }),
 })
+
+/**
+ * The official Grok Build agent already speaks ACP over stdio. Keep this
+ * path as a transparent process boundary so the existing Apexo ACP server
+ * remains the default while clients can opt into the official runtime.
+ */
+async function runGrokBuildAgent(cwd: string) {
+  const command = process.env.APEXO_GROK_BUILD_BIN ?? "grok"
+  const agent = Process.spawn([command, "agent", "stdio"], {
+    cwd,
+    stdin: process.stdin,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  })
+  const code = await agent.exited
+  if (code !== 0) throw new Error(`Grok Build ACP exited with code ${code}`)
+}

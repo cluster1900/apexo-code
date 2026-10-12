@@ -47,6 +47,7 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalLspTool).toBe(true)
       expect(flags.experimentalOxfmt).toBe(true)
       expect(flags.experimentalPlanMode).toBe(true)
+      expect(flags.experimentalLspTool).toBe(true)
       expect(flags.experimentalEventSystem).toBe(true)
       expect(flags.experimentalWorkspaces).toBe(true)
       expect(flags.experimentalIconDiscovery).toBe(true)
@@ -120,6 +121,14 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
 
       expect(flags.experimentalIconDiscovery).toBe(false)
+    }),
+  )
+
+  it.effect("enables background task lifecycle for the Grok Build profile", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ APEXO_RUNTIME_PROFILE: "grok-build" })))
+
+      expect(flags.experimentalBackgroundSubagents).toBe(true)
     }),
   )
 
@@ -364,3 +373,11 @@ describe("RuntimeFlags", () => {
     }),
   )
 })
+
+it.effect("enables plan mode for the Grok Build profile", () =>
+  Effect.gen(function* () {
+    const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ APEXO_RUNTIME_PROFILE: "grok-build" })))
+
+    expect(flags.experimentalPlanMode).toBe(true)
+  }),
+)
