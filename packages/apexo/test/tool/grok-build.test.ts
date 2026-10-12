@@ -264,4 +264,21 @@ describe("grok-build tool profile", () => {
       query: undefined,
     })
   })
+
+  test("allows workspaceSymbol without inventing a file path", async () => {
+    const captured: Record<string, unknown> = {}
+    const lsp = GrokBuildTools.adaptTools([fakeTool("lsp", (value) => Object.assign(captured, value as object))]).find(
+      (tool) => tool.id === "lsp",
+    )
+    if (!lsp) throw new Error("expected lsp")
+
+    await Effect.runPromise(lsp.execute({ operation: "workspaceSymbol", query: "Session" }, context))
+    expect(captured).toEqual({
+      operation: "workspaceSymbol",
+      filePath: "",
+      line: 1,
+      character: 1,
+      query: "Session",
+    })
+  })
 })

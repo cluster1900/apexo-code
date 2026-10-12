@@ -158,7 +158,7 @@ const adapters: Record<string, readonly Adapter[]> = {
       const value = args as Schema.Schema.Type<typeof LspParameters>
       return {
         operation: value.operation,
-        filePath: value.file_path ?? ".",
+        filePath: value.file_path ?? "",
         line: (value.line ?? 0) + 1,
         character: (value.character ?? 0) + 1,
         query: value.query,

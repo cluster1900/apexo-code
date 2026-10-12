@@ -63,6 +63,10 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 
 `get_task_output` 已支持官方 canonical `task_ids` 数组和 `timeout_ms`，一次返回多个 task 的状态与输出；旧的单数 `task_id` 仍保留为兼容输入。多任务查询会逐个校验当前 Session ownership，避免跨 Session 泄露后台输出。
 
+### LSP workspace symbols
+
+`workspaceSymbol` 不再把缺失的 `file_path` 虚构成当前目录下的文件。canonical adapter 会传递空路径，LSP tool 对 workspace-wide 查询跳过文件存在性和文件扩展名检查，直接使用已连接的 language-server clients；位置型操作仍要求真实文件和 1-based cursor。
+
 ## 功能差距矩阵
 
 状态含义：
@@ -85,7 +89,7 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 | Subagent | `task`、`send_subagent_message` | canonical `task` adapter；复用 task 时校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
 | Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
-| LSP | `lsp` | profile 默认启用并将 snake_case schema 映射到 Apexo LSP | ✅ | 结果格式和 LSP server lifecycle 仍需逐项对照 |
+| LSP | `lsp` | profile 默认启用；位置操作和无 `file_path` 的 `workspaceSymbol` 均有 adapter | 🟡 | 结果格式和 LSP server lifecycle 仍需逐项对照 |
 | Web | `web_search`、`web_fetch` | `web_fetch`；`web_search` 条件启用 | 🟡 | manifest 只宣传实际可用工具，统一 provider capability 检查 |
 | 图片/视频 | `image_gen`、`image_to_video`、`reference_to_video` | 没有对应 Grok Build tool contract | ❌ | 增加工具、事件、附件和 Desktop 预览链路 |
 | 监控 | `monitor` | 无 | ❌ | 定义监控对象、事件、停止和权限语义 |
@@ -205,6 +209,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - CLI/Desktop profile HTTP tool list 实测一致。
 - 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 16 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
 - 2026-10-13：`get_task_output` 的 `task_ids` 多任务 schema 已通过 focused tests，并在 CLI/Desktop HTTP registry 中返回相同 schema；Desktop production build 通过。
+- 2026-10-13：`workspaceSymbol` 无 `file_path` 的 canonical schema/执行路径已通过 focused tests，CLI/Desktop registry 一致；官方 ACP initialize smoke 继续通过。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 
