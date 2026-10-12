@@ -69,6 +69,40 @@ function load(dir: string, flags?: Parameters<typeof RuntimeFlags.layer>[0]) {
 }
 
 describe("plugin.loader.shared", () => {
+  for (const kind of ["server", "tui"] as const) {
+    it.live(`honors trust before ${kind} resolution and import`, () =>
+      withTmp(
+        async (dir) => {
+          const file = path.join(dir, "plugin.ts")
+          const mark = path.join(dir, "imported.txt")
+          await Bun.write(file, `await Bun.write(${JSON.stringify(mark)}, "imported"); export default () => ({})`)
+          return { file, mark }
+        },
+        (tmp) =>
+          Effect.gen(function* () {
+            const spec = pathToFileURL(tmp.extra.file).href
+            const denied = yield* Effect.promise(() =>
+              PluginLoader.loadExternal({
+                kind,
+                items: [{ spec: [spec, { trust: "deny" }], source: tmp.path, scope: "local" }],
+                report: { start: () => { throw new Error("denied plugin reached resolver") } },
+              }),
+            )
+            expect(denied).toEqual([])
+            expect(yield* Effect.promise(() => Bun.file(tmp.extra.mark).exists())).toBe(false)
+            const allowed = yield* Effect.promise(() =>
+              PluginLoader.loadExternal({
+                kind,
+                items: [{ spec: [spec, { trust: "allow" }], source: tmp.path, scope: "local" }],
+              }),
+            )
+            expect(allowed).toHaveLength(1)
+            expect(yield* Effect.promise(() => Bun.file(tmp.extra.mark).text())).toBe("imported")
+          }),
+      ),
+    )
+  }
+
   it.live("loads a file:// plugin function export", () =>
     withTmp(
       async (dir) => {

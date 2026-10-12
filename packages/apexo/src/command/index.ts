@@ -131,26 +131,6 @@ const layer = Layer.effect(
         }
       }
 
-      for (const item of yield* skill.all()) {
-        if (commands[item.name]) continue
-        const dir = item.location === "<built-in>" ? undefined : path.dirname(item.location)
-        commands[item.name] = {
-          name: item.name,
-          description: item.description,
-          source: "skill",
-          get template() {
-            if (!dir) return item.content
-            return [
-              item.content,
-              "",
-              `Base directory for this skill: ${dir}`,
-              "Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.",
-            ].join("\n")
-          },
-          hints: [],
-        }
-      }
-
       return {
         commands,
       }
@@ -160,12 +140,16 @@ const layer = Layer.effect(
 
     const get = Effect.fn("Command.get")(function* (name: string) {
       const s = yield* InstanceState.get(state)
-      return s.commands[name]
+      if (s.commands[name]) return s.commands[name]
+      const item = yield* skill.get(name)
+      return item ? skillCommand(item) : undefined
     })
 
     const list = Effect.fn("Command.list")(function* () {
       const s = yield* InstanceState.get(state)
-      return Object.values(s.commands)
+      return Object.values(s.commands).concat(
+        (yield* skill.all()).flatMap((item) => (s.commands[item.name] ? [] : [skillCommand(item)])),
+      )
     })
 
     return Service.of({ get, list })
@@ -175,3 +159,22 @@ const layer = Layer.effect(
 export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
 
 export * as Command from "."
+
+function skillCommand(item: Skill.Info): Info {
+  const dir = item.location === "<built-in>" ? undefined : path.dirname(item.location)
+  return {
+    name: item.name,
+    description: item.description,
+    source: "skill",
+    get template() {
+      if (!dir) return item.content
+      return [
+        item.content,
+        "",
+        `Base directory for this skill: ${dir}`,
+        "Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.",
+      ].join("\n")
+    },
+    hints: [],
+  }
+}

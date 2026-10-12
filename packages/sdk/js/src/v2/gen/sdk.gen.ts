@@ -212,6 +212,8 @@ import type {
   SessionUnrevertResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SkillReloadErrors,
+  SkillReloadResponses,
   SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
@@ -374,6 +376,8 @@ import type {
   V2SessionWaitResponses,
   V2SkillListErrors,
   V2SkillListResponses,
+  V2SkillReloadErrors,
+  V2SkillReloadResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -2033,6 +2037,38 @@ export class Command extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<CommandListResponses, CommandListErrors, ThrowOnError>({
       url: "/command",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Skill extends HeyApiClient {
+  /**
+   * Reload skills
+   *
+   * Reload configured skills before the next safe provider-turn boundary.
+   */
+  public reload<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SkillReloadResponses, SkillReloadErrors, ThrowOnError>({
+      url: "/skill/reload",
       ...options,
       ...params,
     })
@@ -6309,7 +6345,7 @@ export class Command2 extends HeyApiClient {
   }
 }
 
-export class Skill extends HeyApiClient {
+export class Skill2 extends HeyApiClient {
   /**
    * List skills
    *
@@ -6327,6 +6363,28 @@ export class Skill extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2SkillListResponses, V2SkillListErrors, ThrowOnError>({
       url: "/api/skill",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Reload skills
+   *
+   * Rebuild registered skill sources. Skill guidance is read at the next provider-turn boundary.
+   */
+  public reload<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).post<V2SkillReloadResponses, V2SkillReloadErrors, ThrowOnError>({
+      url: "/api/skill/reload",
       ...options,
       ...params,
     })
@@ -6830,9 +6888,9 @@ export class V2 extends HeyApiClient {
     return (this._command ??= new Command2({ client: this.client }))
   }
 
-  private _skill?: Skill
-  get skill(): Skill {
-    return (this._skill ??= new Skill({ client: this.client }))
+  private _skill?: Skill2
+  get skill(): Skill2 {
+    return (this._skill ??= new Skill2({ client: this.client }))
   }
 
   private _event?: Event2
@@ -6937,6 +6995,11 @@ export class ApexoClient extends HeyApiClient {
   private _command?: Command
   get command(): Command {
     return (this._command ??= new Command({ client: this.client }))
+  }
+
+  private _skill?: Skill
+  get skill(): Skill {
+    return (this._skill ??= new Skill({ client: this.client }))
   }
 
   private _lsp?: Lsp

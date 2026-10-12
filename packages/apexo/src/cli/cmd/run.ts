@@ -25,6 +25,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import { GrokBuildTools } from "@/tool/grok-build"
 
 type ModelInput = Parameters<ApexoClient["session"]["prompt"]>[0]["model"]
 
@@ -124,6 +125,9 @@ async function toolError(part: ToolPart) {
 }
 
 export const RunCommand = effectCmd({
+  prepare: (args) => {
+    if (args.profile) process.env.APEXO_RUNTIME_PROFILE = args.profile
+  },
   command: "run [message..]",
   describe: "run apexo with a message",
   // --attach connects to a remote server (no local instance needed); the
@@ -169,9 +173,14 @@ export const RunCommand = effectCmd({
       })
       .option("format", {
         type: "string",
-        choices: ["default", "json"],
+        choices: ["default", "json", "streaming-json"],
         default: "default",
-        describe: "format: default (formatted) or json (raw JSON events)",
+        describe: "format: default (formatted), json (completed events), or streaming-json (Grok Build event stream)",
+      })
+      .option("profile", {
+        type: "string",
+        choices: ["apexo", "grok-build"],
+        describe: "runtime profile for the local server",
       })
       .option("file", {
         alias: ["f"],
@@ -297,8 +306,8 @@ export const RunCommand = effectCmd({
         die("--demo requires --mini")
       }
 
-      if (interactive && args.format === "json") {
-        die("--mini cannot be used with --format json")
+      if (interactive && args.format !== "default") {
+        die("--mini cannot be used with a machine-readable format")
       }
 
       if (args["replay-limit"] !== undefined && !interactive) {
@@ -656,6 +665,10 @@ export const RunCommand = effectCmd({
         const sessionID = sess.id
 
         function emit(type: string, data: Record<string, unknown>) {
+          if (args.format === "streaming-json") {
+            process.stdout.write(JSON.stringify({ type, ...data }) + EOL)
+            return true
+          }
           if (args.format === "json") {
             process.stdout.write(
               JSON.stringify({
@@ -668,6 +681,86 @@ export const RunCommand = effectCmd({
             return true
           }
           return false
+        }
+
+        const toolKind = (name: string) => {
+          if (["run_terminal_command", "bash", "shell"].includes(name)) return "execute"
+          if (["read_file", "read", "list_dir"].includes(name)) return "read"
+          if (["search_replace", "write", "edit", "apply_patch", "patch"].includes(name)) return "edit"
+          if (["grep", "glob", "web_search"].includes(name)) return "search"
+          if (["spawn_subagent", "task"].includes(name)) return "think"
+          if (name === "web_fetch") return "fetch"
+          return "other"
+        }
+
+        const toolTitle = (name: string, input: Record<string, unknown>) => {
+          if (toolKind(name) === "execute" && typeof input.command === "string") return input.command
+          if (typeof input.description === "string") return input.description
+          if (typeof input.target_file === "string") return input.target_file
+          if (typeof input.file_path === "string") return input.file_path
+          return name
+        }
+
+        const toolLocations = (input: Record<string, unknown>) => {
+          const value =
+            typeof input.target_file === "string"
+              ? input.target_file
+              : typeof input.file_path === "string"
+                ? input.file_path
+                : typeof input.target_directory === "string"
+                  ? input.target_directory
+                  : typeof input.workdir === "string"
+                    ? input.workdir
+                    : undefined
+          return value ? [{ path: value }] : []
+        }
+
+        const toolContent = (output: string) => [
+          { type: "content", content: { type: "text", text: output } },
+        ]
+
+        const seenToolCalls = new Set<string>()
+        const emitStreamingTool = (part: ToolPart) => {
+          const input = part.state.input
+          const common = {
+            toolCallId: part.callID,
+            toolName: part.tool,
+            title: toolTitle(part.tool, input),
+            kind: toolKind(part.tool),
+            rawInput: input,
+            locations: toolLocations(input),
+          }
+          if (!seenToolCalls.has(part.callID)) {
+            emit("tool_call", { ...common, status: "pending", content: [] })
+            seenToolCalls.add(part.callID)
+          }
+          if (part.state.status === "running") {
+            emit("tool_call_update", { ...common, status: "in_progress", content: [] })
+            return
+          }
+          if (part.state.status === "completed") {
+            emit("tool_call_update", {
+              toolCallId: part.callID,
+              status: "completed",
+              content: toolContent(part.state.output),
+              rawOutput: {
+                output: part.state.output,
+                ...(part.state.metadata ? { metadata: part.state.metadata } : {}),
+              },
+            })
+            return
+          }
+          if (part.state.status === "error") {
+            emit("tool_call_update", {
+              toolCallId: part.callID,
+              status: "failed",
+              content: toolContent(part.state.error),
+              rawOutput: {
+                error: part.state.error,
+                ...(part.state.metadata ? { metadata: part.state.metadata } : {}),
+              },
+            })
+          }
         }
 
         // Consume one subscribed event stream for the active session and mirror it
@@ -685,10 +778,21 @@ export const RunCommand = effectCmd({
             }
 
             if (
+              event.type === "message.part.delta" &&
+              args.format === "streaming-json" &&
+              event.properties.sessionID === sessionID &&
+              (event.properties.field === "text" || event.properties.field === "reasoning")
+            ) {
+              if (emit(event.properties.field === "reasoning" ? "thought" : "text", { data: event.properties.delta })) {
+                continue
+              }
+            }
+
+            if (
               event.type === "message.updated" &&
               event.properties.sessionID === sessionID &&
               event.properties.info.role === "assistant" &&
-              args.format !== "json" &&
+              args.format === "default" &&
               toggles.get("start") !== true
             ) {
               UI.empty()
@@ -700,6 +804,11 @@ export const RunCommand = effectCmd({
             if (event.type === "message.part.updated") {
               const part = event.properties.part
               if (part.sessionID !== sessionID) continue
+
+              if (args.format === "streaming-json" && part.type === "tool") {
+                emitStreamingTool(part)
+                continue
+              }
 
               if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
                 if (emit("tool_use", { part })) continue
@@ -715,7 +824,7 @@ export const RunCommand = effectCmd({
                 part.type === "tool" &&
                 part.tool === "task" &&
                 part.state.status === "running" &&
-                args.format !== "json"
+                args.format === "default"
               ) {
                 if (toggles.get(part.id) === true) continue
                 await tool(part)
@@ -730,7 +839,7 @@ export const RunCommand = effectCmd({
                 if (emit("step_finish", { part })) continue
               }
 
-              if (part.type === "text" && part.time?.end) {
+              if (part.type === "text" && part.time?.end && args.format !== "streaming-json") {
                 if (emit("text", { part })) continue
                 const text = part.text.trim()
                 if (!text) continue
@@ -743,7 +852,7 @@ export const RunCommand = effectCmd({
                 UI.empty()
               }
 
-              if (part.type === "reasoning" && part.time?.end && thinking) {
+              if (part.type === "reasoning" && part.time?.end && thinking && args.format !== "streaming-json") {
                 if (emit("reasoning", { part })) continue
                 const text = part.text.trim()
                 if (!text) continue
@@ -766,6 +875,10 @@ export const RunCommand = effectCmd({
                 err = String(props.error.data.message)
               }
               error = error ? error + EOL + err : err
+              if (args.format === "streaming-json") {
+                emit("error", { message: err })
+                continue
+              }
               if (emit("error", { error: props.error })) continue
               UI.error(err)
             }
@@ -775,6 +888,9 @@ export const RunCommand = effectCmd({
               event.properties.sessionID === sessionID &&
               event.properties.status.type === "idle"
             ) {
+              if (args.format === "streaming-json") {
+                emit("end", { stopReason: "end_turn", sessionId: sessionID, requestId: sessionID })
+              }
               break
             }
 
@@ -804,6 +920,16 @@ export const RunCommand = effectCmd({
         }
         const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
+
+        if (args.format === "streaming-json") {
+          const commands = await client.command.list({ directory: cwd })
+          if (commands.data) {
+            emit("available_commands", {
+              tools: flags.runtimeProfile === "grok-build" ? [...GrokBuildTools.toolNames] : [],
+              commands: commands.data.map((item) => item.name),
+            })
+          }
+        }
 
         // Validate agent if specified
         const agent = await pickAgent(client)
@@ -969,6 +1095,7 @@ export async function runMini(input: MiniCommandInput) {
     model: input.model,
     agent: input.agent,
     format: "default",
+    profile: undefined,
     file: undefined,
     title: undefined,
     attach: input.attach,

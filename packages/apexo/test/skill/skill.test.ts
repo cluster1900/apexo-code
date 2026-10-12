@@ -122,6 +122,30 @@ Instructions here.
     ),
   )
 
+  it.live("reload rereads changed skills and discovers added and removed files", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const skill = yield* Skill.Service
+          const file = path.join(dir, ".apexo", "skills", "reload", "SKILL.md")
+          yield* Effect.promise(() => Bun.write(file, "---\nname: reload\ndescription: before\n---\nbefore"))
+          expect((yield* skill.get("reload"))?.description).toBe("before")
+          yield* Effect.promise(() => Bun.write(file, "---\nname: reload\ndescription: after\n---\nafter"))
+          yield* Effect.promise(() =>
+            Bun.write(path.join(dir, ".apexo", "skills", "added", "SKILL.md"), "---\nname: added\n---\nadded"),
+          )
+          expect((yield* skill.get("reload"))?.description).toBe("before")
+          yield* skill.reload()
+          expect((yield* skill.get("reload"))?.description).toBe("after")
+          expect((yield* skill.get("added"))?.content.trim()).toBe("added")
+          yield* Effect.promise(() => fs.unlink(file))
+          yield* skill.reload()
+          expect(yield* skill.get("reload")).toBeUndefined()
+        }),
+      { git: true },
+    ),
+  )
+
   it.live("returns skill directories from Skill.dirs", () =>
     provideTmpdirInstance(
       (dir) =>

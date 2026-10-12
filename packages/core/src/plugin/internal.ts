@@ -3,7 +3,7 @@ export * as PluginInternal from "./internal"
 import { makeLocationNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import type { PluginContext } from "@apexo/plugin/v2/effect"
-import { Effect, Layer, Scope } from "effect"
+import { Context, Deferred, Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"
 import { CommandV2 } from "../command"
@@ -60,7 +60,14 @@ export function define<R>(plugin: Plugin<R>) {
   return plugin
 }
 
-const layer = Layer.effectDiscard(
+export interface Interface {
+  readonly ready: Effect.Effect<void>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@apexo/v2/PluginInternal") {}
+
+const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
     const commands = yield* CommandV2.Service
@@ -105,7 +112,8 @@ const layer = Layer.effectDiscard(
       return plugin.add(PluginV2.ID.make(loaded.id), loaded.effect)
     }
 
-    yield* State.batch(
+    const ready = yield* Deferred.make<void>()
+    const boot = State.batch(
       Effect.gen(function* () {
         yield* add(ConfigReferencePlugin.Plugin)
         yield* add(AgentPlugin.Plugin)
@@ -120,7 +128,13 @@ const layer = Layer.effectDiscard(
         yield* add(ConfigProviderPlugin.Plugin)
         yield* add(VariantPlugin.Plugin)
       }),
-    ).pipe(Effect.withSpan("PluginInternal.boot"), Effect.forkScoped({ startImmediately: true }))
+    ).pipe(
+      Effect.withSpan("PluginInternal.boot"),
+      Effect.ensuring(Deferred.succeed(ready, undefined)),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    yield* boot
+    return Service.of({ ready: Deferred.await(ready) })
   }),
 )
 

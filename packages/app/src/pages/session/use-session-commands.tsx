@@ -141,6 +141,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const terminalCommand = withCategory(language.t("command.category.terminal"))
   const mcpCommand = withCategory(language.t("command.category.mcp"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
+  const serverCommand = withCategory(language.t("command.category.server"))
 
   const isAutoAcceptActive = () => {
     const sessionID = params.id
@@ -532,6 +533,25 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
+  const skillCmds = () => [
+    serverCommand({
+      id: "skills.reload",
+      title: language.t("command.skills.reload"),
+      description: language.t("command.skills.reload.description"),
+      onSelect: () => {
+        void sdk()
+          .api.skill.reload()
+          .catch((error: unknown) =>
+            showToast({
+              variant: "error",
+              title: language.t("common.requestFailed"),
+              description: error instanceof Error ? error.message : String(error),
+            }),
+          )
+      },
+    }),
+  ]
+
   command.register("session", () => [
     ...sessionCmds(),
     ...fileCmds(),
@@ -541,5 +561,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     ...messageCmds(),
     ...mcpCmds(),
     ...permissionsCmds(),
+    ...skillCmds(),
   ])
 }

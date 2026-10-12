@@ -10,6 +10,7 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import { PermissionSaved } from "./permission/saved"
+import { PermissionV1 } from "./v1/permission"
 
 export { Effect, Rule, Ruleset } from "@apexo/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
@@ -74,11 +75,16 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Per
 export type Error = BlockedError | CorrectedError
 
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
+  const canonical = PermissionV1.canonicalPermission(action)
   return (
     rulesets
       .flat()
-      .findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource)) ?? {
-      action,
+      .findLast(
+        (rule) =>
+          Wildcard.match(canonical, PermissionV1.canonicalPermission(rule.action)) &&
+          Wildcard.match(resource, rule.resource),
+      ) ?? {
+      action: canonical,
       resource: "*",
       effect: "ask",
     }
@@ -149,13 +155,20 @@ const layer = Layer.effect(
     }
 
     function relevant(input: AssertInput, rules: Permission.Ruleset) {
-      return rules.filter((rule) => Wildcard.match(input.action, rule.action))
+      return rules.filter((rule) =>
+        Wildcard.match(PermissionV1.canonicalPermission(input.action), PermissionV1.canonicalPermission(rule.action)),
+      )
     }
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
       const rules = yield* configured(input.sessionID, input.agent)
+      const sessionRules = ((yield* sessions.permissions(input.sessionID)) ?? []).map((rule) => ({
+        action: PermissionV1.canonicalPermission(rule.permission),
+        resource: rule.pattern,
+        effect: rule.action,
+      }))
       if (denied(input, rules)) return { effect: "deny" as const, rules }
-      const all = [...rules, ...(yield* savedRules())]
+      const all = [...rules, ...sessionRules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
       return { effect, rules: all }
@@ -165,7 +178,7 @@ const layer = Layer.effect(
       return {
         id: input.id ?? ID.create(),
         sessionID: input.sessionID,
-        action: input.action,
+        action: PermissionV1.canonicalPermission(input.action),
         resources: input.resources,
         save: input.save,
         metadata: input.metadata,
@@ -248,6 +261,18 @@ const layer = Layer.effect(
           }
 
           if (input.reply === "always" && existing.request.save?.length) {
+            const current = (yield* sessions.permissions(existing.request.sessionID)) ?? []
+            yield* sessions.setPermissions({
+              sessionID: existing.request.sessionID,
+              permissions: [
+                ...current,
+                ...existing.request.save.map((resource) => ({
+                  permission: existing.request.action,
+                  pattern: resource,
+                  action: "allow" as const,
+                })),
+              ],
+            })
             yield* saved.add({
               projectID: location.project.id,
               action: existing.request.action,
@@ -266,7 +291,12 @@ const layer = Layer.effect(
             )
             if (!rules) continue
             if (denied(input, rules)) continue
-            const effective = [...rules, ...rememberedRules]
+            const sessionRules = ((yield* sessions.permissions(item.request.sessionID)) ?? []).map((rule) => ({
+              action: PermissionV1.canonicalPermission(rule.permission),
+              resource: rule.pattern,
+              effect: rule.action,
+            }))
+            const effective = [...rules, ...sessionRules, ...rememberedRules]
             if (
               !item.request.resources.every(
                 (resource) => evaluate(item.request.action, resource, effective).effect === "allow",

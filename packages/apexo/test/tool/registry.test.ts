@@ -93,6 +93,18 @@ const withEmptyCodeMode = testEffect(
     ],
   ]),
 )
+const withGrokBuildProfile = testEffect(
+  LayerNode.compile(root, [
+    [Config.node, configLayer],
+    [RuntimeFlags.node, RuntimeFlags.layer({ runtimeProfile: "grok-build" })],
+  ]),
+)
+const withGrokBuildDesktopProfile = testEffect(
+  LayerNode.compile(root, [
+    [Config.node, configLayer],
+    [RuntimeFlags.node, RuntimeFlags.layer({ runtimeProfile: "grok-build", client: "desktop" })],
+  ]),
+)
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
 
 afterEach(async () => {
@@ -147,6 +159,60 @@ describe("tool.registry", () => {
       })
 
       expect(tools.map((tool) => tool.id)).not.toContain("execute")
+    }),
+  )
+
+  withGrokBuildProfile.instance("exposes Grok Build core tool names to every client", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("test"),
+        modelID: ModelV2.ID.make("test"),
+        agent: yield* agents.defaultInfo(),
+      })
+
+      expect(tools.map((tool) => tool.id)).toEqual(
+        expect.arrayContaining([
+          "run_terminal_command",
+          "read_file",
+          "list_dir",
+          "grep",
+          "search_replace",
+          "write",
+          "spawn_subagent",
+          "todo_write",
+          "web_fetch",
+        ]),
+      )
+      expect(tools.map((tool) => tool.id)).not.toContain("shell")
+      expect(tools.map((tool) => tool.id)).not.toContain("read")
+      expect(tools.map((tool) => tool.id)).not.toContain("edit")
+    }),
+  )
+
+  withGrokBuildDesktopProfile.instance("keeps the Grok Build tool contract identical for Desktop", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("test"),
+        modelID: ModelV2.ID.make("test"),
+        agent: yield* agents.defaultInfo(),
+      })
+
+      expect(tools.map((tool) => tool.id)).toEqual([
+        "ask_user_question",
+        "run_terminal_command",
+        "read_file",
+        "list_dir",
+        "grep",
+        "search_replace",
+        "write",
+        "spawn_subagent",
+        "web_fetch",
+        "todo_write",
+      ])
     }),
   )
 

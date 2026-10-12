@@ -51,6 +51,7 @@ export const InstancePaths = {
   command: "/command",
   agent: "/agent",
   skill: "/skill",
+  skillReload: "/skill/reload",
   lsp: "/lsp",
   formatter: "/formatter",
 } as const
@@ -164,6 +165,16 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "app.skills",
             summary: "List skills",
             description: "Get a list of all available skills in the Apexo system.",
+          }),
+        ),
+        HttpApiEndpoint.post("skillReload", InstancePaths.skillReload, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Skills reloaded"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "skill.reload",
+            summary: "Reload skills",
+            description: "Reload configured skills before the next safe provider-turn boundary.",
           }),
         ),
         HttpApiEndpoint.get("lsp", InstancePaths.lsp, {

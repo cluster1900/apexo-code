@@ -92,6 +92,8 @@ export const dict = {
   "command.session.fork": "Fork from message",
   "command.session.fork.description": "Create a new session from a previous message",
   "command.session.export": "Export session",
+  "command.skills.reload": "Reload skills",
+  "command.skills.reload.description": "Reload configured skills before the next provider turn",
   "command.session.export.description": "Export the full session transcript as JSON",
 
   "palette.search.placeholder": "Search files, commands, and sessions",

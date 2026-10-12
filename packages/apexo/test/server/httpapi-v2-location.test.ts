@@ -1,12 +1,20 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { EventV2 } from "@apexo/core/event"
 import { Location } from "@apexo/core/location"
 import { Context, Schema } from "effect"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { mkdir } from "node:fs/promises"
 
 const context = Context.empty() as Context.Context<unknown>
+const previousDisableWatcher = process.env.APEXO_EXPERIMENTAL_DISABLE_FILEWATCHER
+process.env.APEXO_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
+
+afterAll(() => {
+  if (previousDisableWatcher === undefined) delete process.env.APEXO_EXPERIMENTAL_DISABLE_FILEWATCHER
+  else process.env.APEXO_EXPERIMENTAL_DISABLE_FILEWATCHER = previousDisableWatcher
+})
 
 function request(route: string, directory: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
@@ -90,7 +98,7 @@ describe("v2 location HttpApi", () => {
   })
 
   test("returns command and skill snapshots with resolved locations", async () => {
-    await using tmp = await tmpdir({ git: true })
+    await using tmp = await tmpdir()
 
     for (const route of ["/api/command", "/api/skill"]) {
       const response = await request(route, tmp.path)
@@ -103,6 +111,20 @@ describe("v2 location HttpApi", () => {
       expect(body.location.directory).toBe(tmp.path)
       expect(body.location.project.id).toBeTruthy()
     }
+  })
+
+  test("waits for V2 plugin boot before listing configured skills", async () => {
+    await using tmp = await tmpdir()
+    await mkdir(`${tmp.path}/.apexo/skills/boot-skill`, { recursive: true })
+    await Bun.write(
+      `${tmp.path}/.apexo/skills/boot-skill/SKILL.md`,
+      "---\nname: boot-skill\ndescription: loaded during boot\n---\n\nboot\n",
+    )
+
+    const response = await request("/api/skill", tmp.path)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: Array<{ name: string }> }
+    expect(body.data).toContainEqual(expect.objectContaining({ name: "boot-skill" }))
   })
 
   test("streams native EventV2 payloads across locations", async () => {

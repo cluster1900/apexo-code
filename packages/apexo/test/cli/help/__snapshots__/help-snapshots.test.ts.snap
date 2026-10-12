@@ -86,8 +86,10 @@ Options:
       --fork         fork the session before continuing (requires --continue or --session) [boolean]
   -m, --model        model to use in the format of provider/model                           [string]
       --agent        agent to use                                                           [string]
-      --format       format: default (formatted) or json (raw JSON events)
-                                          [string] [choices: "default", "json"] [default: "default"]
+      --format       format: default (formatted), json (completed events), or streaming-json (Grok
+                     Build event stream)
+                        [string] [choices: "default", "json", "streaming-json"] [default: "default"]
+      --profile      runtime profile for the local server  [string] [choices: "apexo", "grok-build"]
   -f, --file         file(s) to attach to message                                            [array]
       --title        title for the session (uses truncated prompt if no value provided)     [string]
       --attach       attach to a running apexo server (e.g., http://localhost:4096)         [string]

@@ -53,6 +53,7 @@ import { ModelV2 } from "@apexo/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { GrokBuildTools } from "./grok-build"
 
 export function webSearchEnabled(flags = { exa: false, parallel: false }) {
   return flags.exa || flags.parallel
@@ -301,7 +302,7 @@ const layer = Layer.effect(
         : undefined
       const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
 
-      return yield* Effect.forEach(
+      const result = yield* Effect.forEach(
         visible,
         Effect.fnUntraced(function* (tool: Tool.Def) {
           const output = {
@@ -331,6 +332,8 @@ const layer = Layer.effect(
         }),
         { concurrency: "unbounded" },
       )
+
+      return flags.runtimeProfile === "grok-build" ? GrokBuildTools.adaptTools(result) : result
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {

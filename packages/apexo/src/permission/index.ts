@@ -6,6 +6,9 @@ import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { Database } from "@apexo/core/database/database"
+import { SessionTable } from "@apexo/core/session/sql"
+import { eq } from "drizzle-orm"
 
 export const Event = PermissionV1.Event
 
@@ -22,18 +25,23 @@ interface PendingEntry {
 
 interface State {
   pending: Map<PermissionV1.ID, PendingEntry>
-  approved: PermissionV1.Rule[]
+  approved: Map<string, PermissionV1.Rule[]>
 }
 
 export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
+  const canonical = PermissionV1.canonicalPermission(permission)
   return (
     rulesets
       .flat()
-      .findLast((rule) => Wildcard.match(permission, rule.permission) && Wildcard.match(pattern, rule.pattern)) ?? {
-      action: "ask",
-      permission,
-      pattern: "*",
-    }
+      .findLast(
+        (rule) =>
+          Wildcard.match(canonical, PermissionV1.canonicalPermission(rule.permission)) &&
+          Wildcard.match(pattern, rule.pattern),
+      ) ?? {
+        action: "ask",
+        permission: canonical,
+        pattern: "*",
+      }
   )
 }
 
@@ -43,12 +51,13 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const { db } = yield* Database.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
         const state = {
           pending: new Map<PermissionV1.ID, PendingEntry>(),
-          approved: [],
+          approved: new Map<string, PermissionV1.Rule[]>(),
         }
 
         yield* Effect.addFinalizer(() =>
@@ -67,14 +76,29 @@ const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
+      const sessionKey = String(request.sessionID)
+      const persisted = yield* db
+        .select({ permission: SessionTable.permission })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, request.sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      const sessionRules = persisted?.permission ?? []
+      const sessionApproved = [
+        ...sessionRules.filter((rule) => rule.action === "allow"),
+        ...(approved.get(sessionKey) ?? []),
+      ]
+      const permission = PermissionV1.canonicalPermission(request.permission)
       let needsAsk = false
 
       for (const pattern of request.patterns) {
-        const rule = evaluate(request.permission, pattern, ruleset, approved)
-        yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
+        const rule = evaluate(permission, pattern, ruleset, sessionRules, sessionApproved)
+        yield* Effect.logInfo("evaluated", { permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
-            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+            ruleset: ruleset.filter((rule) =>
+              Wildcard.match(permission, PermissionV1.canonicalPermission(rule.permission)),
+            ),
           })
         }
         if (rule.action === "allow") continue
@@ -87,7 +111,7 @@ const layer = Layer.effect(
       const info: PermissionV1.Request = {
         id,
         sessionID: request.sessionID,
-        permission: request.permission,
+        permission,
         patterns: request.patterns,
         metadata: request.metadata,
         always: request.always,
@@ -142,18 +166,47 @@ const layer = Layer.effect(
       yield* Deferred.succeed(existing.deferred, undefined)
       if (input.reply === "once") return
 
+      const sessionKey = String(existing.info.sessionID)
+      const sessionApproved = approved.get(sessionKey) ?? []
       for (const pattern of existing.info.always) {
-        approved.push({
-          permission: existing.info.permission,
+        sessionApproved.push({
+          permission: PermissionV1.canonicalPermission(existing.info.permission),
           pattern,
           action: "allow",
         })
+      }
+      approved.set(sessionKey, sessionApproved)
+      if (existing.info.always.length > 0) {
+        const persisted = yield* db
+          .select({ permission: SessionTable.permission })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, existing.info.sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (persisted) {
+          yield* db
+            .update(SessionTable)
+            .set({
+              permission: [
+                ...(persisted.permission ?? []),
+                ...existing.info.always.map((pattern) => ({
+                  permission: PermissionV1.canonicalPermission(existing.info.permission),
+                  pattern,
+                  action: "allow" as const,
+                })),
+              ],
+              time_updated: Date.now(),
+            })
+            .where(eq(SessionTable.id, existing.info.sessionID))
+            .run()
+            .pipe(Effect.orDie)
+        }
       }
 
       for (const [id, item] of pending.entries()) {
         if (item.info.sessionID !== existing.info.sessionID) continue
         const ok = item.info.patterns.every(
-          (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
+          (pattern) => evaluate(item.info.permission, pattern, sessionApproved).action === "allow",
         )
         if (!ok) continue
         pending.delete(id)
@@ -187,11 +240,15 @@ export function fromConfig(permission: ConfigPermissionV1.Info) {
   const ruleset: PermissionV1.Rule[] = []
   for (const [key, value] of Object.entries(permission)) {
     if (typeof value === "string") {
-      ruleset.push({ permission: key, action: value, pattern: "*" })
+      ruleset.push({ permission: PermissionV1.canonicalPermission(key), action: value, pattern: "*" })
       continue
     }
     ruleset.push(
-      ...Object.entries(value).map(([pattern, action]) => ({ permission: key, pattern: expand(pattern), action })),
+      ...Object.entries(value).map(([pattern, action]) => ({
+        permission: PermissionV1.canonicalPermission(key),
+        pattern: expand(pattern),
+        action,
+      })),
     )
   }
   return ruleset
@@ -206,8 +263,12 @@ export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<st
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
   return new Set(
     tools.filter((tool) => {
-      const permission = edits.includes(tool) ? "edit" : reads.includes(tool) ? "read" : tool
-      const rule = ruleset.findLast((rule) => Wildcard.match(permission, rule.permission))
+      const permission = PermissionV1.canonicalPermission(
+        edits.includes(tool) ? "edit" : reads.includes(tool) ? "read" : tool,
+      )
+      const rule = ruleset.findLast((rule) =>
+        Wildcard.match(permission, PermissionV1.canonicalPermission(rule.permission)),
+      )
       return rule?.pattern === "*" && rule.action === "deny"
     }),
   )
@@ -218,6 +279,6 @@ export function visibleTools<T>(tools: Record<string, T>, ruleset: PermissionV1.
   return Object.fromEntries(Object.entries(tools).filter(([name]) => !hidden.has(name)))
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node, Database.node] })
 
 export * as Permission from "."

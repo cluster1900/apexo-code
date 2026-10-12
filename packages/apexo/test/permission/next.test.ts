@@ -1,4 +1,5 @@
 import { PermissionV1 } from "@apexo/core/v1/permission"
+import { PermissionV2 } from "@apexo/core/permission"
 import { test, expect } from "bun:test"
 import os from "os"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
@@ -447,6 +448,24 @@ test("evaluate - merges multiple rulesets", () => {
   expect(result.action).toBe("deny")
 })
 
+test("evaluate - treats Grok Build tool names as their Apexo permission", () => {
+  expect(
+    Permission.evaluate("run_terminal_command", "pnpm test", [
+      { permission: "bash", pattern: "pnpm *", action: "allow" },
+    ]).action,
+  ).toBe("allow")
+  expect(
+    Permission.evaluate("search_replace", "src/app.ts", [
+      { permission: "edit", pattern: "src/*", action: "allow" },
+    ]).action,
+  ).toBe("allow")
+  expect(
+    PermissionV2.evaluate("run_terminal_command", "pnpm test", [
+      { action: "bash", resource: "pnpm *", effect: "allow" },
+    ]).effect,
+  ).toBe("allow")
+})
+
 // disabled tests
 
 test("disabled - returns empty set when all tools allowed", () => {
@@ -774,7 +793,7 @@ it.instance(
 )
 
 it.instance(
-  "reply - always persists approval and resolves",
+  "reply - always persists approval for the current session and resolves",
   () =>
     Effect.gen(function* () {
       const fiber = yield* ask({
@@ -792,7 +811,7 @@ it.instance(
       yield* Fiber.join(fiber)
 
       const result = yield* ask({
-        sessionID: SessionID.make("session_test2"),
+        sessionID: SessionID.make("session_test"),
         permission: "bash",
         patterns: ["ls"],
         metadata: {},
@@ -800,6 +819,50 @@ it.instance(
         ruleset: [],
       })
       expect(result).toBeUndefined()
+    }),
+  { git: true },
+)
+
+it.instance(
+  "reply - always shares one session grant across Grok Build and Apexo tool names",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_grok_alias"),
+        sessionID: SessionID.make("session_shared"),
+        permission: "run_terminal_command",
+        patterns: ["pnpm test"],
+        metadata: {},
+        always: ["pnpm *"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_grok_alias"), reply: "always" })
+      yield* Fiber.join(fiber)
+
+      const result = yield* ask({
+        sessionID: SessionID.make("session_shared"),
+        permission: "bash",
+        patterns: ["pnpm test --watch"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      })
+      expect(result).toBeUndefined()
+
+      const otherSession = yield* ask({
+        id: PermissionV1.ID.make("per_grok_alias_other"),
+        sessionID: SessionID.make("session_other"),
+        permission: "bash",
+        patterns: ["pnpm test --watch"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_grok_alias_other"), reply: "reject" })
+      yield* Fiber.await(otherSession)
     }),
   { git: true },
 )

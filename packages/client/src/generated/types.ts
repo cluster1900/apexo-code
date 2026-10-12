@@ -2538,6 +2538,14 @@ export type SkillsListOutput = {
   }>
 }
 
+export type SkillsReloadInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type SkillsReloadOutput = void
+
 export type EventsSubscribeOutput = ApexoEventEncoded
 
 export type PtysListInput = {

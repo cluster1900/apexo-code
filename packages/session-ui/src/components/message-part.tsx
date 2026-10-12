@@ -475,16 +475,18 @@ export function getToolInfo(
   const i18n = useI18n()
   switch (tool) {
     case "read":
+    case "read_file":
       return {
         icon: "glasses",
         title: i18n.t("ui.tool.read"),
-        subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        subtitle: input.filePath || input.target_file ? getFilename(input.filePath ?? input.target_file) : undefined,
       }
     case "list":
+    case "list_dir":
       return {
         icon: "bullet-list",
         title: i18n.t("ui.tool.list"),
-        subtitle: input.path ? getFilename(input.path) : undefined,
+        subtitle: input.path || input.target_directory ? getFilename(input.path ?? input.target_directory) : undefined,
       }
     case "glob":
       return {
@@ -499,6 +501,7 @@ export function getToolInfo(
         subtitle: input.pattern,
       }
     case "webfetch":
+    case "web_fetch":
       return {
         icon: "window-cursor",
         title: i18n.t("ui.tool.webfetch"),
@@ -510,7 +513,8 @@ export function getToolInfo(
         title: webSearchProviderLabel(metadata?.provider, i18n),
         subtitle: input.query,
       }
-    case "task": {
+    case "task":
+    case "spawn_subagent": {
       const type =
         typeof input.subagent_type === "string" && input.subagent_type
           ? input.subagent_type[0]!.toUpperCase() + input.subagent_type.slice(1)
@@ -523,22 +527,24 @@ export function getToolInfo(
     }
     case "bash":
     case "shell":
+    case "run_terminal_command":
       return {
         icon: "console",
         title: i18n.t("ui.tool.shell"),
         subtitle: input.command ?? input.cmd ?? metadata?.command ?? metadata?.cmd,
       }
     case "edit":
+    case "search_replace":
       return {
         icon: "code-lines",
         title: i18n.t("ui.messagePart.title.edit"),
-        subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        subtitle: input.filePath || input.file_path ? getFilename(input.filePath ?? input.file_path) : undefined,
       }
     case "write":
       return {
         icon: "code-lines",
         title: i18n.t("ui.messagePart.title.write"),
-        subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        subtitle: input.filePath || input.file_path ? getFilename(input.filePath ?? input.file_path) : undefined,
       }
     case "patch":
     case "apply_patch":
@@ -550,11 +556,13 @@ export function getToolInfo(
           : undefined,
       }
     case "todowrite":
+    case "todo_write":
       return {
         icon: "checklist",
         title: i18n.t("ui.tool.todos"),
       }
     case "question":
+    case "ask_user_question":
       return {
         icon: "bubble-5",
         title: i18n.t("ui.tool.questions"),
@@ -605,8 +613,8 @@ function taskSession(
     .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
-const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
-const HIDDEN_TOOLS = new Set(["todowrite"])
+const CONTEXT_GROUP_TOOLS = new Set(["read", "read_file", "glob", "grep", "list", "list_dir"])
+const HIDDEN_TOOLS = new Set(["todowrite", "todo_write"])
 
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
@@ -712,7 +720,9 @@ function index<T extends { id: string }>(items: readonly T[]) {
 export function renderable(part: PartType, showReasoningSummaries = true) {
   if (part.type === "tool") {
     if (HIDDEN_TOOLS.has(part.tool)) return false
-    if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
+    if (part.tool === "question" || part.tool === "ask_user_question") {
+      return part.state.status !== "pending" && part.state.status !== "running"
+    }
     return true
   }
   if (part.type === "text") return !!part.text?.trim()
@@ -855,20 +865,26 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
   const limit = typeof input.limit === "number" ? input.limit : undefined
 
   switch (part.tool) {
-    case "read": {
+    case "read":
+    case "read_file": {
       const args: string[] = []
       if (offset !== undefined) args.push("offset=" + offset)
       if (limit !== undefined) args.push("limit=" + limit)
       return {
         title: i18n.t("ui.tool.read"),
-        subtitle: filePath ? getFilename(filePath) : "",
+        subtitle: filePath
+          ? getFilename(filePath)
+          : typeof input.target_file === "string"
+            ? getFilename(input.target_file)
+            : "",
         args,
       }
     }
     case "list":
+    case "list_dir":
       return {
         title: i18n.t("ui.tool.list"),
-        subtitle: getDirectory(path),
+        subtitle: getDirectory(typeof input.target_directory === "string" ? input.target_directory : path),
       }
     case "glob":
       return {
@@ -898,9 +914,9 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
 }
 
 function contextToolSummary(parts: ToolPart[]) {
-  const read = parts.filter((part) => part.tool === "read").length
+  const read = parts.filter((part) => part.tool === "read" || part.tool === "read_file").length
   const search = parts.filter((part) => part.tool === "glob" || part.tool === "grep").length
-  const list = parts.filter((part) => part.tool === "list").length
+  const list = parts.filter((part) => part.tool === "list" || part.tool === "list_dir").length
   return { read, search, list }
 }
 
@@ -1489,7 +1505,25 @@ export function registerTool(input: { name: string; render?: ToolComponent }) {
 }
 
 export function getTool(name: string) {
-  return state[name === "apply_patch" ? "patch" : name === "bash" ? "shell" : name]?.render
+  const canonical =
+    name === "apply_patch"
+      ? "patch"
+      : name === "bash" || name === "run_terminal_command"
+        ? "shell"
+        : name === "read_file" || name === "list_dir"
+          ? "read"
+          : name === "search_replace"
+            ? "edit"
+            : name === "web_fetch"
+              ? "webfetch"
+              : name === "spawn_subagent"
+                ? "task"
+                : name === "todo_write"
+                  ? "todowrite"
+                  : name === "ask_user_question"
+                    ? "question"
+                    : name
+  return state[canonical]?.render
 }
 
 export const ToolRegistry = {
@@ -1537,10 +1571,12 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
   const part = () => props.part as ToolPart
-  if (part().tool === "todowrite") return null
+  if (part().tool === "todowrite" || part().tool === "todo_write") return null
 
   const hideQuestion = createMemo(
-    () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
+    () =>
+      (part().tool === "question" || part().tool === "ask_user_question") &&
+      (part().state.status === "pending" || part().state.status === "running"),
   )
 
   const emptyInput: Record<string, any> = {}
@@ -1550,16 +1586,16 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
   const taskId = createMemo(() => {
-    if (part().tool !== "task") return
+    if (part().tool !== "task" && part().tool !== "spawn_subagent") return
     const value = partMetadata().sessionId
     if (typeof value === "string" && value) return value
   })
   const taskHref = createMemo(() => {
-    if (part().tool !== "task") return
+    if (part().tool !== "task" && part().tool !== "spawn_subagent") return
     return sessionLink(taskId(), data.sessionHref)
   })
   const taskSubtitle = createMemo(() => {
-    if (part().tool !== "task") return undefined
+    if (part().tool !== "task" && part().tool !== "spawn_subagent") return undefined
     const value = input().description
     if (typeof value === "string" && value) return value
     return taskId()

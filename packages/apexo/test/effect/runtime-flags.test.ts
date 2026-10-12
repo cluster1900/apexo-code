@@ -26,6 +26,7 @@ describe("RuntimeFlags", () => {
             APEXO_ENABLE_EXPERIMENTAL_MODELS: "true",
             APEXO_ENABLE_QUESTION_TOOL: "true",
             APEXO_CLIENT: "desktop",
+            APEXO_RUNTIME_PROFILE: "grok-build",
           }),
         ),
       )
@@ -52,6 +53,7 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalNativeLlm).toBe(false)
       expect(flags.experimentalWebSockets).toBe(false)
       expect(flags.client).toBe("desktop")
+      expect(flags.runtimeProfile).toBe("grok-build")
     }),
   )
 
@@ -109,6 +111,7 @@ describe("RuntimeFlags", () => {
       expect(flags.bashDefaultTimeoutMs).toBe(1_000)
       expect(flags.enableExperimentalModels).toBe(false)
       expect(flags.client).toBe("cli")
+      expect(flags.runtimeProfile).toBe("apexo")
     }),
   )
 
