@@ -4,6 +4,7 @@ import { BackgroundJob } from "@/background/job"
 import { Parameters as QuestionParameters } from "./question"
 import { Parameters as TodoParameters } from "./todo"
 import { Tool } from "./tool"
+import { createExtensions } from "./grok-build-extensions"
 
 /** The Grok Build names are a model-facing wire contract over Apexo tools. */
 const ReadFileParameters = Schema.Struct({
@@ -188,6 +189,10 @@ export const canonicalToolNames = [
   "run_terminal_cmd",
   "get_task_output",
   "kill_task",
+  "monitor",
+  "scheduler_create",
+  "scheduler_delete",
+  "scheduler_list",
   "read_file",
   "list_dir",
   "grep",
@@ -201,6 +206,10 @@ export const canonicalToolNames = [
   "exit_plan_mode",
   "todo_write",
   "ask_user_question",
+  "memory",
+  "image_gen",
+  "image_to_video",
+  "reference_to_video",
   "web_search",
   "web_fetch",
 ] as const
@@ -223,6 +232,9 @@ export function canonicalToolName(id: string) {
 
 type AdaptOptions = {
   background?: BackgroundJob.Interface
+  profileExtensions?: boolean
+  shell?: Tool.Def
+  task?: Tool.Def
 }
 
 function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interface): Tool.Def {
@@ -303,8 +315,11 @@ export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {
       const items = adapters[tool.id]
       return items ? items.map((item) => adapt(tool, item, options.background)) : [tool]
     })
-  if (!options.background) return adapted
-  return [...adapted, taskOutput(options.background), waitTasks(options.background), killTask(options.background)]
+  const withBackground = options.background
+    ? [...adapted, taskOutput(options.background), waitTasks(options.background), killTask(options.background)]
+    : adapted
+  if (!options.profileExtensions || !options.background) return withBackground
+  return [...withBackground, ...createExtensions({ background: options.background, shell: options.shell, task: options.task })]
 }
 
 function taskOutput(background: BackgroundJob.Interface): Tool.Def {

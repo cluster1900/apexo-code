@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import { GrokBuildTools } from "@/tool/grok-build"
+import { createExtensions } from "@/tool/grok-build-extensions"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import type * as Tool from "@/tool/tool"
 import { MessageID, SessionID } from "@/session/schema"
@@ -342,5 +343,51 @@ describe("grok-build tool profile", () => {
       character: 1,
       query: "Session",
     })
+  })
+
+  test("adds memory, monitor, scheduler, image, and video extensions to the profile", () => {
+    const background = {} as never
+    const extensions = createExtensions({
+      background,
+      shell: fakeTool("bash", () => {}),
+      task: fakeTool("task", () => {}),
+    })
+    expect(extensions.map((tool) => tool.id)).toEqual([
+      "memory",
+      "image_gen",
+      "image_to_video",
+      "reference_to_video",
+      "monitor",
+      "scheduler_create",
+      "scheduler_delete",
+      "scheduler_list",
+    ])
+    expect(GrokBuildTools.advertisedToolNames()).toEqual(
+      expect.arrayContaining(["memory", "monitor", "scheduler_create", "scheduler_delete", "scheduler_list", "image_gen", "image_to_video", "reference_to_video"]),
+    )
+  })
+
+  test("creates a scheduled task with the official interval and prompt fields", async () => {
+    const job = {
+      id: "job_schedule",
+      type: "scheduler",
+      status: "running" as const,
+      started_at: Date.now(),
+      metadata: { ownerSessionId: context.sessionID, scheduler: true },
+    }
+    const background = {
+      start: () => Effect.succeed(job),
+      get: () => Effect.succeed(undefined),
+      cancel: () => Effect.succeed(undefined),
+    } as never
+    const task = fakeTool("task", () => {})
+    const create = createExtensions({ background, task }).find((tool) => tool.id === "scheduler_create")
+    if (!create) throw new Error("expected scheduler_create")
+
+    const result = await Effect.runPromise(
+      create.execute({ interval: "5m", prompt: "check the deployment", fire_immediately: true }, context),
+    )
+    expect(result.metadata).toEqual({ task_id: job.id, status: "running", interval: "300s", updated: false })
+    expect(result.output).toContain("first run starts now")
   })
 })

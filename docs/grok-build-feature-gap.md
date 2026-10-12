@@ -38,6 +38,14 @@ web_fetch
 get_task_output
 wait_tasks
 kill_task
+monitor
+scheduler_create
+scheduler_delete
+scheduler_list
+memory
+image_gen
+image_to_video
+reference_to_video
 ```
 
 这是 canonical 名称全集；运行时会按 provider/model 和 web capability 过滤。当前未启用 Exa/Parallel 时，`web_search` 不会出现在实际 HTTP tool list 或 CLI streaming `available_commands` 中。
@@ -48,7 +56,7 @@ kill_task
 
 CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` registry 生成，Desktop 与 CLI 继续共用同一个 server registry。没有解析到模型或 registry 请求失败时，CLI 使用同一份 capability-aware canonical fallback；因此 fallback 也不会在 web capability 未启用时宣称 `web_search`。
 
-验收结果：使用 `anthropic/claude-haiku-4-5` 查询时，CLI 和 Desktop 都返回 16 个相同的工具 ID、schema 和 description；CLI streaming 事件中的工具集合与 HTTP list 相同。官方 `grok agent stdio` 初始化成功，并返回官方 ACP capability contract；官方工具清单仍由 Grok runtime 自己管理，没有强行合并进 Apexo manifest。
+验收结果：使用 `anthropic/claude-haiku-4-5` 查询时，CLI 和 Desktop 都返回 25 个相同的工具 ID、schema 和 description；CLI streaming 事件中的工具集合与 HTTP list 相同。官方 `grok agent stdio` 初始化成功，并返回官方 ACP capability contract；官方工具清单仍由 Grok runtime 自己管理，没有强行合并进 Apexo manifest。
 
 ### Bounded shell execution
 
@@ -77,6 +85,16 @@ Grok profile 的 `task` schema 现在使用官方 `run_in_background` 和 `resum
 
 profile 现在同时提供官方兼容的 `wait_tasks`，支持 `task_ids`、共享 `timeout_ms` 预算以及 `wait_all`/`wait_any` 两种模式；它和 `get_task_output` 共用 ownership 校验与 BackgroundJob 状态。
 
+### Memory、Monitor、Scheduler、图片和视频
+
+profile 现在提供一个统一的 `memory` tool，支持 `read`、`remember`、`flush` 和 `dream` 四种操作。内容按 workspace hash 存放在 `~/.grok/memory/<workspace>/MEMORY.md`，不会把个人记忆写进项目仓库；`dream` 会去重现有 Markdown 行，`flush` 支持把当前摘要追加进去。它是可用的文件型第一切片，尚未接入官方的向量索引、自动 dream、跨进程 watcher 和 Memory UI。
+
+`monitor` 复用 BackgroundJob 和 Shell 的权限边界，支持 `command`、`description`、`timeout_ms`、`persistent`，返回可交给 `get_task_output` 或 `kill_task` 的 task ID。它会在进程内运行，当前把 stdout 作为最终任务输出读取，尚未实现官方的逐行通知、速率限制和中途唤醒。
+
+`scheduler_create/delete/list` 支持官方的 interval、prompt、`fire_immediately`、更新和取消语义，调度执行通过已有 Subagent/Session loop 完成，任务默认 7 天后过期。当前 scheduler 是进程内状态；`durable` 字段保留在契约和 metadata 中，但尚未实现重启恢复和 Desktop 管理面板。
+
+`image_gen`、`image_to_video`、`reference_to_video` 已加入三端同一 manifest。配置 `XAI_API_KEY`（或 `GROK_API_KEY`）后，image tool 调用 xAI Imagine API 并写入 `.grok/images`，video tool 轮询 xAI Video API 并写入 `.grok/videos`；缺少凭据时返回明确的 configuration-required 结果。当前还没有官方 session folder、ZDR/S3、image_edit、逐段视频事件和 Desktop 原生预览附件。
+
 ## 功能差距矩阵
 
 状态含义：
@@ -101,11 +119,11 @@ profile 现在同时提供官方兼容的 `wait_tasks`，支持 `task_ids`、共
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
 | LSP | `lsp` | profile 默认启用；位置操作和无 `file_path` 的 `workspaceSymbol` 均有 adapter | 🟡 | 结果格式和 LSP server lifecycle 仍需逐项对照 |
 | Web | `web_search`、`web_fetch` | `web_fetch`；`web_search` 条件启用 | 🟡 | manifest 只宣传实际可用工具，统一 provider capability 检查 |
-| 图片/视频 | `image_gen`、`image_to_video`、`reference_to_video` | 没有对应 Grok Build tool contract | ❌ | 增加工具、事件、附件和 Desktop 预览链路 |
-| 监控 | `monitor` | 无 | ❌ | 定义监控对象、事件、停止和权限语义 |
-| 定时任务 | `scheduler_create/delete/list` | 无 | ❌ | 增加 durable scheduler、通知和 CLI/Desktop 管理入口 |
+| 图片/视频 | `image_gen`、`image_to_video`、`reference_to_video` | 三端共用 API tool；凭据存在时可生成并保存文件 | 🟡 | 补齐 session folder、ZDR/S3、image_edit、事件和 Desktop 预览附件 |
+| 监控 | `monitor` | BackgroundJob + Shell 后台监控，支持 timeout/persistent，结果可查询/取消 | 🟡 | 增加逐行通知、速率限制、中途唤醒和 session 结束清理 |
+| 定时任务 | `scheduler_create/delete/list` | 进程内 recurring scheduler，支持创建、更新、立即触发、列出和取消 | 🟡 | 增加 durable 重启恢复、跨端通知和管理入口 |
 | 会话 | resume、fork、dashboard、sessions、export 等 | Apexo 有 session、fork、compact、undo、export 等部分能力 | 🟡 | 逐项对齐 session id/title、fork、恢复、删除和 dashboard 行为 |
-| Memory | `/memory`、`/flush`、`/dream`、`/remember` | 无完整对应集合 | ❌ | 增加持久化 memory、scope、刷新和 UI 展示 |
+| Memory | `/memory`、`/flush`、`/dream`、`/remember` | `memory` tool 提供 read/remember/flush/dream；workspace-scoped Markdown 持久化 | 🟡 | 对齐 slash 入口、索引/搜索、自动 dream 和 UI 展示 |
 | Plugins/skills/hooks | 官方 plugins、marketplace、skills、workflows、hooks | Apexo 有自己的 plugin、skill、MCP 体系 | 🟡 | 定义兼容边界；不能把两个 manifest/lifecycle 直接混用 |
 | Sandbox | `--sandbox`、permission modes、worktree | Apexo 有 permissions/worktree，但语义不同 | 🟡 | 写出 capability matrix；明确文件、网络、命令隔离差异 |
 | CLI/headless | `grok --single`、JSON、streaming JSON、headless agent | `apexo run --profile grok-build`、JSON、streaming JSON | 🟡 | 对齐事件类型、tool manifest、错误、退出码和 session metadata |
@@ -161,11 +179,11 @@ profile 现在同时提供官方兼容的 `wait_tasks`，支持 `task_ids`、共
 
 ### P2：补齐官方体验面
 
-- Memory：`/memory`、`/flush`、`/dream`、`/remember`。
+- Memory：把已完成的 `memory` tool 接到 `/memory`、`/flush`、`/dream`、`/remember` 入口，并补齐索引和自动 dream。
 - Session dashboard、usage、trace、status line。
 - Plugins、marketplace、hooks、workflows。
-- Image/video tool chain 与 Desktop preview。
-- Scheduler 管理界面和通知。
+- Image/video 的 Desktop preview、ZDR/S3 和 image_edit。
+- Scheduler 的 durable 恢复、管理界面和通知。
 - 官方 CLI flags 和 slash commands 的兼容别名。
 
 这些能力不能只添加命令名；每项都必须有持久化状态、权限边界、CLI 入口、Desktop 入口或明确的 transport-only 标记。
@@ -210,19 +228,20 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 
 ### 当前已完成验证
 
-- Grok profile focused tests：107 pass，0 fail。
+- Grok profile focused tests：当前 16 pass，0 fail；registry contract tests 17 pass，0 fail。
 - 全量 typecheck：21/21 package pass。
-- 全量测试：3408 pass，19 skip，1 todo，0 fail。
+- 全量测试基线：3424 pass，19 skip，1 todo，0 fail；最终重跑时仅 `httpapi-v2-pty` 的退出状态轮询出现一次 20 秒时序抖动（3423 pass，19 skip，1 todo，1 fail），该测试文件单独重跑 4/4 pass。
 - HTTP API exercise：coverage/auth/effect 三种模式均 204/204 pass。
 - App、Desktop typecheck 和 Desktop production build pass。
-- Apexo CLI 和本机 `grok 1.0.50` 都完成只读单轮 smoke。
+- Apexo CLI 和本机 `grok 1.0.52` 都完成只读单轮 smoke。
 - CLI/Desktop profile HTTP tool list 实测一致。
-- 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 16 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
+- 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 25 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
 - 2026-10-13：`get_task_output` 的 `task_ids` 多任务 schema 已通过 focused tests，并在 CLI/Desktop HTTP registry 中返回相同 schema；Desktop production build 通过。
 - 2026-10-13：`workspaceSymbol` 无 `file_path` 的 canonical schema/执行路径已通过 focused tests，CLI/Desktop registry 一致；官方 ACP initialize smoke 继续通过。
 - 2026-10-13：`task` 的 `run_in_background`/`resume_from` schema 与 CLI/Desktop registry 已对齐，省略后台开关的 adapter test 通过；Desktop production build 通过。
 - 2026-10-13：多任务等待改为共享预算并行执行；CLI streaming、CLI/Desktop tool registry diff、官方 ACP initialize 和 Desktop production build 均通过。
 - 2026-10-13：CLI streaming 和 CLI/Desktop registry 已包含 `wait_tasks`；`wait_any` focused test、官方 ACP initialize、Desktop production build 均通过。
+- 2026-10-13：Memory、Monitor、Scheduler、image/video extensions 已加入 Grok profile；CLI/Desktop HTTP registry 均返回 25 个相同工具，CLI streaming 也包含新增工具；extension focused tests、官方 ACP initialize 和 Desktop production build 通过。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 
@@ -232,6 +251,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - 不在 `packages/desktop` 复制 Session、Tool Registry、Permission 或 Provider runtime。
 - 不直接编辑 `src/generated` 或 `src/generated-effect`；公共 Protocol/Server HttpApi 变化必须在源文件修改后从 `packages/client` 运行生成命令。
 - 不一次性实现所有官方 slash command；每个命令必须有真实状态和执行路径。
+- marketplace 本轮明确延期，不纳入本分支验收范围。
 - 不把官方工具名字和 Apexo 内部名字混在同一层长期维护。
 
 ## 相关代码和文档

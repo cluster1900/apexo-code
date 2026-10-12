@@ -234,7 +234,16 @@ describe("tool.registry", () => {
         "enter_plan_mode",
         "exit_plan_mode",
         "get_task_output",
+        "wait_tasks",
         "kill_task",
+        "memory",
+        "image_gen",
+        "image_to_video",
+        "reference_to_video",
+        "monitor",
+        "scheduler_create",
+        "scheduler_delete",
+        "scheduler_list",
       ])
     }),
   )

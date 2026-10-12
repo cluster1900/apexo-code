@@ -339,7 +339,14 @@ const layer = Layer.effect(
         { concurrency: "unbounded" },
       )
 
-      return flags.runtimeProfile === "grok-build" ? GrokBuildTools.adaptTools(result, { background }) : result
+      return flags.runtimeProfile === "grok-build"
+        ? GrokBuildTools.adaptTools(result, {
+            background,
+            profileExtensions: true,
+            shell: result.find((tool) => tool.id === "bash"),
+            task: result.find((tool) => tool.id === "task"),
+          })
+        : result
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
