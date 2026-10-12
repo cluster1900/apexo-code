@@ -302,9 +302,12 @@ export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {
 
 function taskOutput(background: BackgroundJob.Interface): Tool.Def {
   const parameters = Schema.Struct({
-    task_id: Schema.String.annotate({ description: "The background task or subagent ID" }),
+    task_ids: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description: "One or more background task or subagent IDs; use a one-element array for one task",
+    }),
+    task_id: Schema.optional(Schema.String.annotate({ description: "Legacy single background task or subagent ID" })),
     timeout_ms: Schema.optional(NonNegativeInt).annotate({
-      description: "How long to wait for completion in milliseconds; omitted returns a snapshot",
+      description: "How long to wait for all tasks in milliseconds; omitted or 0 returns snapshots",
     }),
   })
   return {
@@ -314,24 +317,47 @@ function taskOutput(background: BackgroundJob.Interface): Tool.Def {
     execute: (args, ctx) =>
       Effect.gen(function* () {
         const input = yield* Schema.decodeUnknownEffect(parameters)(args)
-        const job = yield* background.get(input.task_id)
-        if (!job || !owns(job, ctx.sessionID)) {
+        const ids = input.task_ids ?? (input.task_id ? [input.task_id] : [])
+        if (ids.length === 0) {
           return {
-            title: input.task_id,
-            metadata: { task_id: input.task_id, status: "not_found" },
-            output: `Task or subagent ${input.task_id} not found.`,
+            title: "get_task_output",
+            metadata: { status: "invalid_request" },
+            output: "Provide at least one task ID in task_ids.",
           }
         }
-        const result = yield* background.wait({ id: input.task_id, timeout: input.timeout_ms ?? 0 })
-        const info = result.info ?? job
+        const results = yield* Effect.all(
+          ids.map((id) =>
+            Effect.gen(function* () {
+              const job = yield* background.get(id)
+              if (!job || !owns(job, ctx.sessionID)) {
+                return { id, status: "not_found" as const, output: `Task or subagent ${id} not found.` }
+              }
+              const result = yield* background.wait({ id, timeout: input.timeout_ms ?? 0 })
+              const info = result.info ?? job
+              return {
+                id,
+                status: info.status,
+                timedOut: result.timedOut,
+                output: formatTaskOutput(info),
+              }
+            }),
+          ),
+        )
+        const metadata =
+          results.length === 1
+            ? {
+                task_id: results[0].id,
+                status: results[0].status,
+                ...(results[0].timedOut ? { timed_out: true } : {}),
+              }
+            : {
+                task_ids: results.map((result) => result.id),
+                statuses: results.map((result) => ({ task_id: result.id, status: result.status })),
+              }
         return {
-          title: input.task_id,
-          metadata: {
-            task_id: input.task_id,
-            status: info.status,
-            ...(result.timedOut ? { timed_out: true } : {}),
-          },
-          output: formatTaskOutput(info),
+          title: results.map((result) => result.id).join(", "),
+          metadata,
+          output: results.map((result) => result.output).join("\n\n"),
         }
       }).pipe(Effect.orDie),
   }

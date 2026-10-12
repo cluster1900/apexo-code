@@ -59,6 +59,10 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 
 复用 `task_id` 时，TaskTool 现在要求该 task 的 `parentID` 等于当前 Session，并优先沿用已持久化的 subagent agent。这样 `send_subagent_message` 即使通过兼容 adapter 默认传入 `build`，也不会改变已有 task 的 agent；跨 Session 的 task ID 会在 permission 和执行前拒绝。
 
+### Multi-task output retrieval
+
+`get_task_output` 已支持官方 canonical `task_ids` 数组和 `timeout_ms`，一次返回多个 task 的状态与输出；旧的单数 `task_id` 仍保留为兼容输入。多任务查询会逐个校验当前 Session ownership，避免跨 Session 泄露后台输出。
+
 ## 功能差距矩阵
 
 状态含义：
@@ -77,7 +81,7 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 | 精确编辑 | `search_replace` | `search_replace` | ✅ | 增加与官方边界条件的契约测试 |
 | 文件写入 | 官方完整 tool config 未单列 `write` | `write` | 🟡 | 说明为 Apexo 扩展，或移除并完全使用官方写入语义 |
 | Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | canonical `run_terminal_cmd`；0/正数等待值均可返回后台句柄 | 🟡 | 对齐完成通知、退出码、输出字段和取消行为 |
-| 后台 shell | `get_task_output`、`kill_task` | `BackgroundJob` 查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
+| 后台 shell | `get_task_output`、`kill_task` | `task_ids` 多任务查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
 | Subagent | `task`、`send_subagent_message` | canonical `task` adapter；复用 task 时校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
 | Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
@@ -200,6 +204,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - Apexo CLI 和本机 `grok 1.0.50` 都完成只读单轮 smoke。
 - CLI/Desktop profile HTTP tool list 实测一致。
 - 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 16 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
+- 2026-10-13：`get_task_output` 的 `task_ids` 多任务 schema 已通过 focused tests，并在 CLI/Desktop HTTP registry 中返回相同 schema；Desktop production build 通过。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 

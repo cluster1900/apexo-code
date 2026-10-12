@@ -187,6 +187,45 @@ describe("grok-build tool profile", () => {
     expect(result.output).toContain(`<task id="${job.id}" status="completed">`)
   })
 
+  test("reads multiple background tasks with the canonical task_ids input", async () => {
+    const jobs = [
+      {
+        id: "job_one",
+        type: "shell",
+        status: "completed" as const,
+        started_at: Date.now(),
+        metadata: { ownerSessionId: context.sessionID },
+        output: "one",
+      },
+      {
+        id: "job_two",
+        type: "shell",
+        status: "completed" as const,
+        started_at: Date.now(),
+        metadata: { ownerSessionId: context.sessionID },
+        output: "two",
+      },
+    ]
+    const background = {
+      get: (id: string) => Effect.succeed(jobs.find((job) => job.id === id)),
+      wait: (input: { id: string }) =>
+        Effect.succeed({ info: jobs.find((job) => job.id === input.id), timedOut: false }),
+    } as never
+    const output = GrokBuildTools.adaptTools([], { background }).find((tool) => tool.id === "get_task_output")
+    if (!output) throw new Error("expected get_task_output")
+
+    const result = await Effect.runPromise(output.execute({ task_ids: ["job_one", "job_two"] }, context))
+    expect(result.metadata).toEqual({
+      task_ids: ["job_one", "job_two"],
+      statuses: [
+        { task_id: "job_one", status: "completed" },
+        { task_id: "job_two", status: "completed" },
+      ],
+    })
+    expect(result.output).toContain('<task id="job_one" status="completed">')
+    expect(result.output).toContain('<task id="job_two" status="completed">')
+  })
+
   test("maps follow-up messages to the canonical subagent tool", async () => {
     const captured: Record<string, unknown> = {}
     const tools = GrokBuildTools.adaptTools([fakeTool("task", (value) => Object.assign(captured, value as object))])
