@@ -226,6 +226,31 @@ describe("grok-build tool profile", () => {
     expect(result.output).toContain('<task id="job_two" status="completed">')
   })
 
+  test("supports the wait_tasks compatibility alias", async () => {
+    const job = {
+      id: "job_wait",
+      type: "shell",
+      status: "completed" as const,
+      started_at: Date.now(),
+      metadata: { ownerSessionId: context.sessionID },
+      output: "done",
+    }
+    const background = {
+      get: () => Effect.succeed(job),
+      wait: () => Effect.succeed({ info: job, timedOut: false }),
+    } as never
+    const wait = GrokBuildTools.adaptTools([], { background }).find((tool) => tool.id === "wait_tasks")
+    if (!wait) throw new Error("expected wait_tasks")
+
+    const result = await Effect.runPromise(wait.execute({ task_ids: [job.id], mode: "wait_any" }, context))
+    expect(result.metadata).toEqual({
+      task_ids: [job.id],
+      mode: "wait_any",
+      statuses: [{ task_id: job.id, status: "completed" }],
+    })
+    expect(result.output).toContain(`<task id="${job.id}" status="completed">`)
+  })
+
   test("maps follow-up messages to the canonical subagent tool", async () => {
     const captured: Record<string, unknown> = {}
     const tools = GrokBuildTools.adaptTools([fakeTool("task", (value) => Object.assign(captured, value as object))])

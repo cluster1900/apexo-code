@@ -36,6 +36,7 @@ enter_plan_mode
 exit_plan_mode
 web_fetch
 get_task_output
+wait_tasks
 kill_task
 ```
 
@@ -72,6 +73,10 @@ CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` re
 
 Grok profile 的 `task` schema 现在使用官方 `run_in_background` 和 `resume_from` 字段。省略 `run_in_background` 时按官方默认立即返回后台 task；adapter 再映射到 Apexo 内部的 `background` 和 `task_id`。已有 task resume 仍受父 Session ownership 和持久化 agent 校验保护。
 
+### `wait_tasks` compatibility alias
+
+profile 现在同时提供官方兼容的 `wait_tasks`，支持 `task_ids`、共享 `timeout_ms` 预算以及 `wait_all`/`wait_any` 两种模式；它和 `get_task_output` 共用 ownership 校验与 BackgroundJob 状态。
+
 ## 功能差距矩阵
 
 状态含义：
@@ -90,7 +95,7 @@ Grok profile 的 `task` schema 现在使用官方 `run_in_background` 和 `resum
 | 精确编辑 | `search_replace` | `search_replace` | ✅ | 增加与官方边界条件的契约测试 |
 | 文件写入 | 官方完整 tool config 未单列 `write` | `write` | 🟡 | 说明为 Apexo 扩展，或移除并完全使用官方写入语义 |
 | Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | canonical `run_terminal_cmd`；0/正数等待值均可返回后台句柄 | 🟡 | 对齐完成通知、退出码、输出字段和取消行为 |
-| 后台 shell | `get_task_output`、`kill_task` | `task_ids` 多任务查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
+| 后台 shell | `get_task_output`、`wait_tasks`、`kill_task` | `task_ids` 多任务查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
 | Subagent | `task`、`send_subagent_message` | canonical `task` adapter；`run_in_background`/`resume_from` 已对齐，复用 task 校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
 | Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
 | 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
@@ -217,6 +222,7 @@ APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
 - 2026-10-13：`workspaceSymbol` 无 `file_path` 的 canonical schema/执行路径已通过 focused tests，CLI/Desktop registry 一致；官方 ACP initialize smoke 继续通过。
 - 2026-10-13：`task` 的 `run_in_background`/`resume_from` schema 与 CLI/Desktop registry 已对齐，省略后台开关的 adapter test 通过；Desktop production build 通过。
 - 2026-10-13：多任务等待改为共享预算并行执行；CLI streaming、CLI/Desktop tool registry diff、官方 ACP initialize 和 Desktop production build 均通过。
+- 2026-10-13：CLI streaming 和 CLI/Desktop registry 已包含 `wait_tasks`；`wait_any` focused test、官方 ACP initialize、Desktop production build 均通过。
 
 官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
 

@@ -195,6 +195,7 @@ export const canonicalToolNames = [
   "write",
   "task",
   "send_subagent_message",
+  "wait_tasks",
   "lsp",
   "enter_plan_mode",
   "exit_plan_mode",
@@ -303,7 +304,7 @@ export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {
       return items ? items.map((item) => adapt(tool, item, options.background)) : [tool]
     })
   if (!options.background) return adapted
-  return [...adapted, taskOutput(options.background), killTask(options.background)]
+  return [...adapted, taskOutput(options.background), waitTasks(options.background), killTask(options.background)]
 }
 
 function taskOutput(background: BackgroundJob.Interface): Tool.Def {
@@ -394,6 +395,63 @@ function killTask(background: BackgroundJob.Interface): Tool.Def {
           title: input.task_id,
           metadata: { task_id: input.task_id, status: result?.status ?? "not_found" },
           output: result?.status === "cancelled" ? `Cancelled task ${input.task_id}.` : formatTaskOutput(result ?? job),
+        }
+      }).pipe(Effect.orDie),
+  }
+}
+
+function waitTasks(background: BackgroundJob.Interface): Tool.Def {
+  const parameters = Schema.Struct({
+    task_ids: Schema.Array(Schema.String).annotate({ description: "One or more background task or subagent IDs" }),
+    timeout_ms: Schema.optional(NonNegativeInt).annotate({
+      description: "Maximum wait in milliseconds; defaults to 30 seconds",
+    }),
+    mode: Schema.optional(Schema.Literals(["wait_all", "wait_any"])).annotate({
+      description: "Wait for all tasks or return when any task completes",
+    }),
+  })
+  return {
+    id: "wait_tasks",
+    description: "Wait for multiple background tasks or subagents to complete.",
+    parameters,
+    execute: (args, ctx) =>
+      Effect.gen(function* () {
+        const input = yield* Schema.decodeUnknownEffect(parameters)(args)
+        if (input.task_ids.length === 0) {
+          return {
+            title: "wait_tasks",
+            metadata: { status: "invalid_request" },
+            output: "Provide at least one task ID in task_ids.",
+          }
+        }
+
+        const wait = (id: string) =>
+          Effect.gen(function* () {
+            const job = yield* background.get(id)
+            if (!job || !owns(job, ctx.sessionID)) {
+              return { id, status: "not_found" as const, output: `Task or subagent ${id} not found.` }
+            }
+            const result = yield* background.wait({ id, timeout: input.timeout_ms ?? 30_000 })
+            const info = result.info ?? job
+            return {
+              id,
+              status: info.status,
+              timedOut: result.timedOut,
+              output: formatTaskOutput(info),
+            }
+          })
+        const results =
+          input.mode === "wait_any"
+            ? [yield* Effect.raceAll(input.task_ids.map(wait))]
+            : yield* Effect.all(input.task_ids.map(wait), { concurrency: "unbounded" })
+        return {
+          title: results.map((result) => result.id).join(", "),
+          metadata: {
+            task_ids: results.map((result) => result.id),
+            mode: input.mode ?? "wait_all",
+            statuses: results.map((result) => ({ task_id: result.id, status: result.status })),
+          },
+          output: results.map((result) => result.output).join("\n\n"),
         }
       }).pipe(Effect.orDie),
   }
