@@ -39,8 +39,9 @@ const SelectPrompt = Schema.Struct({
 const Prompt = Schema.Union([TextPrompt, SelectPrompt])
 
 export class Method extends Schema.Class<Method>("ProviderAuthMethod")({
-  type: Schema.Literals(["oauth", "api"]),
+  type: Schema.Literals(["oauth", "api", "external"]),
   label: Schema.String,
+  command: optional(Schema.Array(Schema.String)),
   prompts: optional(Schema.Array(Prompt)),
 }) {}
 
@@ -88,6 +89,7 @@ export type Error = Auth.AuthError | OauthMissing | OauthCodeMissing | OauthCall
 type Hook = NonNullable<Hooks["auth"]>
 
 export interface Interface {
+  readonly external: (input: { providerID: ProviderV2.ID; method: number }) => Effect.Effect<boolean, Error>
   readonly methods: () => Effect.Effect<Methods>
   readonly authorize: (
     input: {
@@ -135,6 +137,7 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
           item.methods.map((method) => ({
             type: method.type,
             label: method.label,
+            ...(method.type === "external" && { command: method.command }),
             ...(method.prompts && {
               prompts: method.prompts.map((prompt) => {
                 if (prompt.type === "select") {
@@ -220,7 +223,24 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
       }
     })
 
-    return Service.of({ methods, authorize, callback })
+    const external = Effect.fn("ProviderAuth.external")(function* (input: {
+      providerID: ProviderV2.ID
+      method: number
+    }) {
+      const method = (yield* InstanceState.get(state)).hooks[input.providerID]?.methods[input.method]
+      if (method?.type !== "external")
+        return yield* new ValidationFailed({ field: "method", message: "Unknown external login method" })
+      const connected = yield* Effect.tryPromise({
+        try: () => method.connect(),
+        catch: () =>
+          new ValidationFailed({ field: "method", message: "Unable to read the native login. Open agy and retry." }),
+      })
+      if (!connected) return false
+      yield* auth.set(input.providerID, { type: "external", method: input.method })
+      return true
+    })
+
+    return Service.of({ methods, authorize, callback, external })
   }),
 )
 

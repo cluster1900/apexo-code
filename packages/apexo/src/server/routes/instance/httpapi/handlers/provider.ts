@@ -54,6 +54,21 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
         connected,
       )
+      if (
+        !providers.antigravity &&
+        !disabled.has("antigravity") &&
+        (!enabled || enabled.has("antigravity")) &&
+        (yield* svc.methods()).antigravity
+      ) {
+        providers.antigravity = {
+          id: ProviderV2.ID.make("antigravity"),
+          name: "Antigravity",
+          env: [],
+          options: {},
+          models: {},
+          source: "custom",
+        }
+      }
       return {
         all: Object.values(providers).map(Provider.toPublicInfo),
         default: Provider.defaultModelIDs(providers),
@@ -110,6 +125,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     return handlers
       .handle("list", list)
       .handle("auth", auth)
+      .handle("external", (ctx) =>
+        mapProviderAuthError(svc.external({ providerID: ctx.params.providerID, method: ctx.payload.method })),
+      )
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
   }),

@@ -162,6 +162,36 @@ export function createDialogProviderOptions() {
             }
             if (index == null) return
             const method = methods[index]
+            if (method.type === "external") {
+              const connect = () => sdk.client.provider.external({ providerID, method: index }, { throwOnError: true })
+              const result = await connect().catch(toast.error)
+              if (!result) return
+              if (!result.data) {
+                const answer = await DialogPrompt.show(dialog, method.label, {
+                  placeholder: "Press Enter after signing in",
+                  description: () => (
+                    <text fg={theme.textMuted}>
+                      Run {method.command?.join(" ") ?? "agy"} in a terminal on the Apexo server, complete sign-in, then
+                      return here.
+                    </text>
+                  ),
+                })
+                if (answer === null) return
+                const retry = await connect().catch(toast.error)
+                if (!retry) return
+                if (!retry.data) {
+                  toast.show({
+                    variant: "error",
+                    message: "Native login is not available. Complete sign-in with agy and reconnect.",
+                  })
+                  return
+                }
+              }
+              await sdk.client.instance.dispose()
+              await sync.bootstrap()
+              dialog.replace(() => <DialogModel providerID={providerID} />)
+              return
+            }
             if (method.type === "oauth") {
               let inputs: Record<string, string> | undefined
               if (method.prompts?.length) {

@@ -32,7 +32,15 @@ export class WellKnown extends Schema.Class<WellKnown>("WellKnownAuth")({
   token: Schema.String,
 }) {}
 
-export const Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminator: "type", identifier: "Auth" })
+export class External extends Schema.Class<External>("ExternalAuth")({
+  type: Schema.Literal("external"),
+  method: Schema.Number,
+}) {}
+
+export const Info = Schema.Union([Oauth, Api, WellKnown, External]).annotate({
+  discriminator: "type",
+  identifier: "Auth",
+})
 export type Info = Schema.Schema.Type<typeof Info>
 
 export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {

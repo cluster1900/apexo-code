@@ -35,7 +35,26 @@ type CompatiblePermissionApi = Omit<ServerApi["permission"], "reply"> & {
     input: Parameters<ServerApi["permission"]["reply"]>[0] & { location?: { directory?: string } },
   ) => ReturnType<ServerApi["permission"]["reply"]>
 }
-export type CompatibleApi = Omit<ServerApi, "session" | "permission" | "skill"> & {
+export type ExternalLoginMethod = { type: "external"; id: string; label: string; command: readonly string[] }
+type ExternalConnectInput = { integrationID: string; methodID: string; location?: { directory?: string } }
+type IntegrationOutput = Awaited<ReturnType<ServerApi["integration"]["get"]>>
+type IntegrationInfo = NonNullable<IntegrationOutput["data"]>
+type CompatibleIntegrationApi = Omit<ServerApi["integration"], "get" | "connect"> & {
+  get: (value: Parameters<ServerApi["integration"]["get"]>[0]) => Promise<
+    Omit<IntegrationOutput, "data"> & {
+      data:
+        | (Omit<IntegrationInfo, "methods"> & {
+            methods: readonly (IntegrationInfo["methods"][number] | ExternalLoginMethod)[]
+          })
+        | null
+    }
+  >
+  connect: ServerApi["integration"]["connect"] & {
+    external: (value: ExternalConnectInput) => Promise<{ data: boolean }>
+  }
+}
+export type CompatibleApi = Omit<ServerApi, "session" | "permission" | "skill" | "integration"> & {
+  readonly integration: CompatibleIntegrationApi
   readonly session: CompatibleSessionApi
   readonly permission: CompatiblePermissionApi
   readonly skill: ServerApi["skill"] & { reload: () => Promise<void> }
@@ -88,6 +107,21 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
   const v1 = createV1Api(input)
   const current = {
     ...input.current,
+    integration: {
+      ...input.current.integration,
+      connect: {
+        ...input.current.integration.connect,
+        async external(value: ExternalConnectInput) {
+          const result = await input
+            .legacy(value.location?.directory ?? input.directory)
+            .v2.integration.connect.external(
+              { ...value, location: value.location ?? { directory: input.directory } },
+              { throwOnError: true },
+            )
+          return { data: result.data?.data ?? false }
+        },
+      },
+    },
     skill: {
       ...input.current.skill,
       async reload() {
@@ -396,9 +430,16 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
       async get(value: Parameters<ServerApi["integration"]["get"]>[0]) {
         const methods = ((await legacy(value.location).provider.auth()).data?.[value.integrationID] ?? []).map(
           (method, index) =>
-            method.type === "api"
-              ? { type: "key" as const, label: method.label }
-              : { type: "oauth" as const, id: String(index), label: method.label, prompts: method.prompts },
+            method.type === "external"
+              ? {
+                  type: "external" as const,
+                  id: String(index),
+                  label: method.label,
+                  command: method.command ?? ["agy"],
+                }
+              : method.type === "api"
+                ? { type: "key" as const, label: method.label }
+                : { type: "oauth" as const, id: String(index), label: method.label, prompts: method.prompts },
         )
         return located(
           {
@@ -412,6 +453,17 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
       },
       connect: {
         ...input.current.integration.connect,
+        async external(value: ExternalConnectInput) {
+          const result = await legacy(value.location).provider.external(
+            { providerID: value.integrationID, method: Number(value.methodID) },
+            { throwOnError: true },
+          )
+          if (result.data) {
+            await legacy(value.location).instance.dispose()
+            await input.legacy().instance.dispose()
+          }
+          return { data: result.data ?? false }
+        },
         key: async (value: Parameters<ServerApi["integration"]["connect"]["key"]>[0]) => {
           await legacy(value.location).auth.set({
             providerID: value.integrationID,

@@ -127,7 +127,12 @@ export type WellKnownAuth = {
   token: string
 }
 
-export type Auth = OAuth | ApiAuth | WellKnownAuth
+export type ExternalAuth = {
+  type: "external"
+  method: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type Auth = OAuth | ApiAuth | WellKnownAuth | ExternalAuth
 
 export type EffectHttpApiErrorBadRequest = {
   _tag: "BadRequest"
@@ -2454,8 +2459,9 @@ export type PermissionNotFoundError = {
 }
 
 export type ProviderAuthMethod = {
-  type: "oauth" | "api"
+  type: "oauth" | "api" | "external"
   label: string
+  command?: Array<string>
   prompts?: Array<
     | {
         type: "text"
@@ -2486,12 +2492,6 @@ export type ProviderAuthMethod = {
   >
 }
 
-export type ProviderAuthAuthorization = {
-  url: string
-  method: "auto" | "code"
-  instructions: string
-}
-
 export type ProviderAuthError1 = {
   name:
     | "BadRequest"
@@ -2505,6 +2505,12 @@ export type ProviderAuthError1 = {
     message?: string
     kind?: string
   }
+}
+
+export type ProviderAuthAuthorization = {
+  url: string
+  method: "auto" | "code"
+  instructions: string
 }
 
 export type NotFoundError = {
@@ -2979,13 +2985,17 @@ export type EventTuiSessionSelect2 = {
   }
 }
 
-export type CredentialValue = CredentialOAuth | CredentialKey
+export type CredentialValue = CredentialOAuth | CredentialKey | CredentialExternal
 
 export type IntegrationInputs = {
   [key: string]: string
 }
 
-export type IntegrationMethod = IntegrationOAuthMethod | IntegrationKeyMethod | IntegrationEnvMethod
+export type IntegrationMethod =
+  | IntegrationOAuthMethod
+  | IntegrationKeyMethod
+  | IntegrationEnvMethod
+  | IntegrationExternalMethod
 
 export type IntegrationRef = {
   id: string
@@ -4879,6 +4889,13 @@ export type IntegrationKeyMethod = {
 export type IntegrationEnvMethod = {
   type: "env"
   names: Array<string>
+}
+
+export type IntegrationExternalMethod = {
+  id: string
+  type: "external"
+  label: string
+  command: Array<string>
 }
 
 export type ConnectionCredentialInfo = {
@@ -6981,6 +6998,11 @@ export type CredentialKey = {
   metadata?: {
     [key: string]: unknown
   }
+}
+
+export type CredentialExternal = {
+  type: "external"
+  methodID: string
 }
 
 export type SkillV2DirectorySource = {
@@ -9168,6 +9190,38 @@ export type ProviderAuthResponses = {
 }
 
 export type ProviderAuthResponse = ProviderAuthResponses[keyof ProviderAuthResponses]
+
+export type ProviderExternalData = {
+  body?: {
+    method: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path: {
+    providerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/{providerID}/external"
+}
+
+export type ProviderExternalErrors = {
+  /**
+   * ProviderAuthError | InvalidRequestError
+   */
+  400: ProviderAuthError1 | InvalidRequestError
+}
+
+export type ProviderExternalError = ProviderExternalErrors[keyof ProviderExternalErrors]
+
+export type ProviderExternalResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type ProviderExternalResponse = ProviderExternalResponses[keyof ProviderExternalResponses]
 
 export type ProviderOauthAuthorizeData = {
   body?: {
@@ -11890,6 +11944,49 @@ export type V2ProviderGetResponses = {
 }
 
 export type V2ProviderGetResponse = V2ProviderGetResponses[keyof V2ProviderGetResponses]
+
+export type V2IntegrationConnectExternalData = {
+  body: {
+    methodID: string
+  }
+  path: {
+    integrationID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/integration/{integrationID}/connect/external"
+}
+
+export type V2IntegrationConnectExternalErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2IntegrationConnectExternalError =
+  V2IntegrationConnectExternalErrors[keyof V2IntegrationConnectExternalErrors]
+
+export type V2IntegrationConnectExternalResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: boolean
+  }
+}
+
+export type V2IntegrationConnectExternalResponse =
+  V2IntegrationConnectExternalResponses[keyof V2IntegrationConnectExternalResponses]
 
 export type V2IntegrationListData = {
   body?: never

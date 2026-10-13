@@ -2051,6 +2051,23 @@ export type ProvidersGetOutput = {
   }
 }
 
+export type IntegrationsConnectExternalInput = {
+  readonly integrationID: { readonly integrationID: string }["integrationID"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly methodID: { readonly methodID: string }["methodID"]
+}
+
+export type IntegrationsConnectExternalOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: boolean
+}
+
 export type IntegrationsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
@@ -2094,6 +2111,12 @@ export type IntegrationsListOutput = {
         }
       | { readonly type: "key"; readonly label?: string }
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
+      | {
+          readonly id: string
+          readonly type: "external"
+          readonly label: string
+          readonly command: ReadonlyArray<string>
+        }
     >
     readonly connections: ReadonlyArray<
       | { readonly type: "credential"; readonly id: string; readonly label: string }
@@ -2146,6 +2169,12 @@ export type IntegrationsGetOutput = {
         }
       | { readonly type: "key"; readonly label?: string }
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
+      | {
+          readonly id: string
+          readonly type: "external"
+          readonly label: string
+          readonly command: ReadonlyArray<string>
+        }
     >
     readonly connections: ReadonlyArray<
       | { readonly type: "credential"; readonly id: string; readonly label: string }

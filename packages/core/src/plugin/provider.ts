@@ -1,4 +1,5 @@
 import { AnthropicPlugin } from "./provider/anthropic"
+import { AntigravityPlugin } from "./provider/antigravity"
 import { DynamicProviderPlugin } from "./provider/dynamic"
 import { GooglePlugin } from "./provider/google"
 import { OpenAIPlugin } from "./provider/openai"
@@ -7,9 +8,9 @@ import { XAIPlugin } from "./provider/xai"
 import type { PluginInternal } from "./internal"
 import type { Scope } from "effect"
 
-// Built-in providers are limited to xAI, OpenAI, Anthropic and Google. OpenAICompatiblePlugin and
-// DynamicProviderPlugin stay so custom providers declared in apexo.json keep working.
+// Native login integrations sit alongside API-key providers. Custom providers remain configurable.
 export const ProviderPlugins: PluginInternal.Plugin<PluginInternal.Requirements | Scope.Scope>[] = [
+  AntigravityPlugin,
   AnthropicPlugin,
   GooglePlugin,
   OpenAICompatiblePlugin,

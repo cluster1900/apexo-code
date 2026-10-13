@@ -263,6 +263,14 @@ const scenarios: Scenario[] = [
   http.protected.get("/provider", "provider.list").json(),
   http.protected.get("/provider/auth", "provider.auth").json(),
   http.protected
+    .post("/provider/{providerID}/external", "provider.external")
+    .at((ctx) => ({
+      path: route("/provider/{providerID}/external", { providerID: "httpapi" }),
+      headers: ctx.headers(),
+      body: { method: 0 },
+    }))
+    .status(400),
+  http.protected
     .post("/provider/{providerID}/oauth/authorize", "provider.oauth.authorize")
     .at((ctx) => ({
       path: route("/provider/{providerID}/oauth/authorize", { providerID: "httpapi" }),
@@ -663,6 +671,14 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .json(200, object),
+  http.protected
+    .post("/api/integration/{integrationID}/connect/external", "v2.integration.connect.external")
+    .at((ctx) => ({
+      path: route("/api/integration/{integrationID}/connect/external", { integrationID: "missing" }),
+      headers: ctx.headers(),
+      body: { methodID: "agy" },
+    }))
+    .status(400),
   http.protected
     .post("/api/integration/{integrationID}/connect/key", "v2.integration.connect.key")
     .at((ctx) => ({

@@ -13,6 +13,9 @@ import { OpenAIPlugin } from "./openai/openai"
 import { Session } from "@/session/session"
 import { NamedError } from "@apexo/core/util/error"
 import { XaiAuthPlugin } from "./xai"
+import { AntigravityPlugin } from "./antigravity"
+import { Antigravity } from "@apexo/core/antigravity"
+import { Auth } from "@/auth"
 import { Effect, Layer, Context } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
@@ -111,6 +114,8 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
     const flags = yield* RuntimeFlags.Service
+    const native = yield* Antigravity.Service
+    const auth = yield* Auth.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
@@ -148,6 +153,14 @@ const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
+        if (!flags.disableDefaultPlugins)
+          hooks.push(
+            yield* AntigravityPlugin.pipe(
+              Effect.provideService(Antigravity.Service, native),
+              Effect.provideService(Auth.Service, auth),
+              Effect.orDie,
+            ),
+          )
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),
@@ -293,7 +306,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node],
+  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Antigravity.node, Auth.node],
 })
 
 export * as Plugin from "."

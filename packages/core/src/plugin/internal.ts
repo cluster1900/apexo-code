@@ -5,6 +5,7 @@ import { httpClient } from "../effect/app-node-platform"
 import type { PluginContext } from "@apexo/plugin/v2/effect"
 import { Context, Deferred, Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
+import { Antigravity } from "../antigravity"
 import { Catalog } from "../catalog"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
@@ -35,6 +36,7 @@ import { SkillPlugin } from "./skill"
 import { VariantPlugin } from "./variant"
 
 export type Requirements =
+  | Antigravity.Service
   | AgentV2.Service
   | Catalog.Service
   | CommandV2.Service
@@ -70,6 +72,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
+    const antigravity = yield* Antigravity.Service
     const commands = yield* CommandV2.Service
     const plugin = yield* PluginV2.Service
     const integration = yield* Integration.Service
@@ -93,6 +96,7 @@ const layer = Layer.effect(
             .effect(context)
             .pipe(
               Effect.provideService(Catalog.Service, catalog),
+              Effect.provideService(Antigravity.Service, antigravity),
               Effect.provideService(CommandV2.Service, commands),
               Effect.provideService(Integration.Service, integration),
               Effect.provideService(AgentV2.Service, agents),
@@ -147,6 +151,7 @@ export const node = makeLocationNode({
   name: "plugin-internal",
   layer,
   deps: [
+    Antigravity.node,
     Catalog.node,
     CommandV2.node,
     PluginV2.node,

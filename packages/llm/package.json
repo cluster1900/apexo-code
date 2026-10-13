@@ -21,6 +21,7 @@
     "./providers/openai-compatible-profile": "./src/providers/openai-compatible-profile.ts",
     "./providers/xai": "./src/providers/xai.ts",
     "./protocols": "./src/protocols/index.ts",
+    "./protocols/antigravity": "./src/protocols/antigravity.ts",
     "./protocols/anthropic-messages": "./src/protocols/anthropic-messages.ts",
     "./protocols/gemini": "./src/protocols/gemini.ts",
     "./protocols/openai-chat": "./src/protocols/openai-chat.ts",

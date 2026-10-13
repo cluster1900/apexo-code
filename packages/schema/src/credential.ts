@@ -29,7 +29,14 @@ export const Key = Schema.Struct({
   metadata: optional(Schema.Record(Schema.String, Schema.Unknown)),
 }).annotate({ identifier: "Credential.Key" })
 
-export const Value = Schema.Union([OAuth, Key])
+/** A reference to credentials owned by another application; contains no copied secrets. */
+export const External = Schema.Struct({
+  type: Schema.Literal("external"),
+  methodID: IntegrationMethodID,
+}).annotate({ identifier: "Credential.External" })
+export interface External extends Schema.Schema.Type<typeof External> {}
+
+export const Value = Schema.Union([OAuth, Key, External])
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({ identifier: "Credential.Value" })
 export type Value = Schema.Schema.Type<typeof Value>

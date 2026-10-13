@@ -38,9 +38,12 @@ import { useSettings } from "@/context/settings"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { CustomProviderForm } from "./dialog-custom-provider"
 import { decode64 } from "@/utils/base64"
+import type { ExternalLoginMethod } from "@/utils/server-compat"
+import { SDKProvider } from "@/context/sdk"
+import { Terminal } from "./terminal"
 
 const CUSTOM_ID = "_custom"
-type ConnectMethod = Extract<IntegrationMethod, { type: "key" | "oauth" }>
+type ConnectMethod = Extract<IntegrationMethod, { type: "key" | "oauth" }> | ExternalLoginMethod
 
 export function useProviderConnectController(options: { onBack?: () => void } = {}) {
   const [store, setStore] = createStore({ selected: undefined as string | undefined })
@@ -406,7 +409,8 @@ function ProviderConnection(props: {
   const loading = createMemo(() => integration.loading)
   const methods = createMemo<ConnectMethod[]>(() => {
     const values = integration.latest?.methods.filter(
-      (method): method is ConnectMethod => method.type === "key" || method.type === "oauth",
+      (method): method is ConnectMethod =>
+        method.type === "key" || method.type === "oauth" || method.type === "external",
     )
     return values?.length ? values : fallback()
   })
@@ -774,6 +778,84 @@ function ProviderConnection(props: {
     )
   }
 
+  function ExternalAuthView() {
+    const selected = method()
+    if (selected?.type !== "external") return null
+    const api = serverSDK().api
+    const selectedLocation = location()
+    const state = {
+      cancelled: false,
+      timer: undefined as ReturnType<typeof setTimeout> | undefined,
+      ptyID: undefined as string | undefined,
+    }
+    const [native, setNative] = createStore({
+      pty: undefined as { id: string; cwd: string; title: string } | undefined,
+    })
+    const remove = (ptyID: string) => api.pty.remove({ ptyID, location: selectedLocation }).catch(() => undefined)
+    onCleanup(() => {
+      state.cancelled = true
+      clearTimeout(state.timer)
+      if (state.ptyID) void remove(state.ptyID)
+    })
+    const deadline = Date.now() + 10 * 60 * 1000
+    const poll = async (): Promise<void> => {
+      const result = await api.integration.connect.external({
+        integrationID: props.provider,
+        methodID: selected.id,
+        location: selectedLocation,
+      })
+      if (state.cancelled) return
+      if (result.data) {
+        await complete()
+        return
+      }
+      if (Date.now() > deadline) throw new Error(language.t("provider.connect.external.timeout"))
+      if (!state.ptyID) {
+        const result = await api.pty.create({
+          command: selected.command[0],
+          args: [...selected.command.slice(1)],
+          title: selected.label,
+          location: selectedLocation,
+        })
+        if (state.cancelled) {
+          await remove(result.data.id)
+          return
+        }
+        state.ptyID = result.data.id
+        setNative("pty", result.data)
+      }
+      state.timer = setTimeout(() => {
+        void poll().catch(fail)
+      }, 2000)
+    }
+    const fail = (error: unknown) => {
+      if (!state.cancelled)
+        dispatch({ type: "auth.error", error: formatError(error, language.t("common.requestFailed")) })
+    }
+    onMount(() => {
+      void poll().catch(fail)
+    })
+    return (
+      <div class="flex flex-col gap-3 px-3">
+        <p class="text-14-regular text-text-base">
+          {language.t("provider.connect.external.description", { provider: provider().name })}
+        </p>
+        <Show when={native.pty} fallback={<Spinner />}>
+          {(pty) => (
+            <SDKProvider directory={pty().cwd}>
+              <Terminal
+                class="h-80 w-full"
+                pty={{ id: pty().id, title: pty().title, titleNumber: 0 }}
+                autoFocus
+                onConnectError={fail}
+              />
+            </SDKProvider>
+          )}
+        </Show>
+      </div>
+    )
+  }
+
   function ApiAuthView() {
     let apiKey: HTMLInputElement | undefined
     const errorID = createUniqueId()
@@ -1113,6 +1195,9 @@ function ProviderConnection(props: {
             </Match>
             <Match when={method()?.type === "key"}>
               <ApiAuthView />
+            </Match>
+            <Match when={method()?.type === "external"}>
+              <ExternalAuthView />
             </Match>
             <Match when={method()?.type === "oauth"}>
               <Switch>
