@@ -273,6 +273,7 @@ export const TuiThreadCommand = cmd({
         await Effect.runPromise(
           run({
             url: transport.url,
+            local: true,
             async onSnapshot() {
               const tui = writeHeapSnapshot("tui.heapsnapshot")
               const server = await client.call("snapshot", undefined)

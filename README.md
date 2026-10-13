@@ -22,14 +22,32 @@ What you get today:
   Grok access) using xAI's OAuth device-code flow. No API key needed. An `XAI_API_KEY` works too.
   All current Grok models from the models.dev catalog are available, for example `grok-4.7`,
   `grok-4.6`, `grok-4.20` and `grok-build-0.1`.
+- **Antigravity via native login.** Reuse the local Antigravity CLI (`agy`) login without
+  authorizing again. If it is not signed in, complete agy's Google sign-in once.
+  See the [Antigravity setup guide](docs/antigravity.md).
 - **Secondary providers via API key:** OpenAI, Anthropic (Claude) and Google (Gemini).
-  No other providers or OAuth logins are included.
 - **No paid subscription, no ads.** There is no hosted model gateway, account console,
   session sharing service, upsell or promotional content. Everything runs locally and talks
   directly to the provider you configure.
 - **Terminal UI, web UI and desktop app** share one local server and one session history.
 - **Grove theme**: a warm-dark/green default theme for both the TUI and the app. All of the
   classic themes are still available.
+
+### OAuth scope and why
+
+This project's OAuth integration is limited to **Antigravity and Grok**, and to **local use**.
+Authentication is handled on your own machine; there is no hosted OAuth relay or account service.
+Model requests still go directly to the respective provider. This scope concerns OAuth and login
+session integration; the API-key connections listed below remain available.
+
+**A note from the maintainer:** I choose Antigravity and Grok because I see them as welcoming
+Chinese users rather than excluding people simply for being Chinese. That matters to me.
+I oppose nationality-based exclusion and consider Claude's restrictions on Chinese users
+discriminatory, so I do not plan to integrate Claude OAuth.
+
+OpenAI OAuth is outside the scope for a different reason: I think OpenAI's own tools are already
+so good that I do not believe I can surpass their experience. I would rather focus this project
+on Antigravity and Grok.
 
 > [!NOTE]
 > **Status of the Grok Build integration.** Enable the Grok Build profile with
@@ -100,6 +118,7 @@ themes, and `ctrl+p` opens the command palette. Start a prompt with `!` to run a
 | Provider               | How to connect                                                                            | Environment variable           |
 | ---------------------- | ----------------------------------------------------------------------------------------- | ------------------------------ |
 | **xAI Grok** (primary) | `apexo auth login`, then xAI -> SuperGrok Subscription (device-code OAuth), or an API key | `XAI_API_KEY`                  |
+| **Antigravity**        | Select Antigravity; reuse the local `agy` login, or complete agy's Google sign-in once    | —                              |
 | OpenAI                 | API key                                                                                   | `OPENAI_API_KEY`               |
 | Anthropic (Claude)     | API key                                                                                   | `ANTHROPIC_API_KEY`            |
 | Google (Gemini)        | API key                                                                                   | `GOOGLE_GENERATIVE_AI_API_KEY` |

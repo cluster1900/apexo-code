@@ -76,6 +76,34 @@ export function catalogModels(value: typeof Models.Type) {
   })
 }
 
+type NativeModel = typeof Model.Type & { id: string; name: string }
+
+/** Keep native IDs as compatibility aliases, but expose one selectable model per family. */
+export function modelGroups(models: readonly NativeModel[]) {
+  const groups = new Map<string, NativeModel[]>()
+  models.forEach((model) => {
+    const id = model.id.replace(/-(low|medium|high|tiered)$/, "")
+    groups.set(id, [...(groups.get(id) ?? []), model])
+  })
+  return [...groups].flatMap(([id, members]) => {
+    const primary = members.find((model) => model.id === id) ?? members[0]
+    const tiered = members.find((model) => model.id === `${id}-tiered` && model.supportsThinking)
+    const variants = ["low", "medium", "high"].flatMap((effort) => {
+      const fixed = members.find((model) => model.id === `${id}-${effort}`)
+      return fixed || tiered
+        ? [{ id: effort, modelID: (fixed ?? tiered)!.id, thinkingLevel: fixed ? undefined : effort }]
+        : []
+    })
+    const name = primary.name === primary.id ? id : primary.name.replace(/\s*\((low|medium|high|tiered)\)$/i, "")
+    return [
+      { ...primary, id, name, nativeID: primary.id, variants, status: "active" as const },
+      ...members
+        .filter((model) => model.id !== id)
+        .map((model) => ({ ...model, name, nativeID: model.id, variants, status: "deprecated" as const })),
+    ]
+  })
+}
+
 export const make = (input: {
   process: AppProcess.Interface
   fs: FSUtil.Interface

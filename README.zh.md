@@ -21,12 +21,26 @@ Apexo 是 **Grok** 的 UI 外壳。它的核心目标是支持 SpaceXAI 官方�
   权限为准），采用 xAI 的 OAuth 设备码流程，无需 API key；也可以使用 `XAI_API_KEY`。
   可用 models.dev 目录中的全部 Grok 模型，例如 `grok-4.7`、`grok-4.6`、`grok-4.20`
   和 `grok-build-0.1`。
+- **Antigravity 原生登录。**直接复用本机 Antigravity CLI（`agy`）已有的登录态，无需重复授权；
+  尚未登录时，通过 agy 完成一次 Google 授权即可。详见 [Antigravity 接入说明](docs/antigravity.md)。
 - **次要提供商（API key 方式）：**OpenAI、Anthropic（Claude）、Google（Gemini）。
-  不包含其他提供商或其他 OAuth 登录方式。
 - **没有付费订阅，没有广告。**不再有托管模型网关、账号控制台、会话分享服务、升级推销或任何推广内容。
   一切在本地运行，直接连接你配置的提供商。
 - **终端、Web、桌面三端**共用同一个本地服务和同一份会话历史。
 - **Grove 主题：**TUI 和应用的默认主题，暖黑底配绿色强调色。原有主题全部保留。
+
+### OAuth 适配范围与选择理由
+
+本项目的 OAuth 适配只面向 **Antigravity 和 Grok**，也只做**本地适配**。
+登录与授权在用户自己的机器上处理，不提供托管的 OAuth 中转或账号服务；模型请求仍直接发送给相应提供商。
+这一范围针对 OAuth 和登录态集成，下方列出的 API key 接入方式仍然保留。
+
+**作者立场：**我选择 Antigravity 和 Grok，是因为在我看来，它们对中国用户更友好，
+不会仅仅因为用户是中国人就将其拒之门外，这是我很看重的一点。
+我反对基于国籍的排斥，也认为 Claude 对中国用户的限制带有歧视性，因此不计划适配 Claude 的 OAuth。
+
+不适配 OpenAI OAuth 则是另一个原因：我觉得 OpenAI 自己的产品已经做得太好了，
+我没有把握做出超越它们的体验，因此更愿意把这个项目的精力放在 Antigravity 和 Grok 上。
 
 > [!NOTE]
 > **与 Grok Build 的集成现状：**Apexo 目前还不能驱动 Grok Build CLI。它现在用自带的智能体循环，
@@ -93,6 +107,7 @@ apexo acp                 # 作为 ACP 智能体运行，供 Zed 等编辑器接
 | 提供商               | 连接方式                                                                        | 环境变量                       |
 | -------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
 | **xAI Grok**（主要） | `apexo auth login` -> xAI -> SuperGrok Subscription（设备码 OAuth），或 API key | `XAI_API_KEY`                  |
+| **Antigravity**      | 选择 Antigravity，复用本机 `agy` 登录态；未登录时通过 agy 完成一次 Google 授权  | —                              |
 | OpenAI               | API key                                                                         | `OPENAI_API_KEY`               |
 | Anthropic（Claude）  | API key                                                                         | `ANTHROPIC_API_KEY`            |
 | Google（Gemini）     | API key                                                                         | `GOOGLE_GENERATIVE_AI_API_KEY` |

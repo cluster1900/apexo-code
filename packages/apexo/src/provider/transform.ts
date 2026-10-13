@@ -788,6 +788,8 @@ function googleThinkingVariants(model: Provider.Model): Record<string, Record<st
 }
 
 export function variants(model: Provider.Model): Record<string, Record<string, any>> {
+  // Native Antigravity tiers come from its account catalog, not Gemini SDK heuristics.
+  if (model.providerID === "antigravity") return {}
   if (!model.capabilities.reasoning) return {}
 
   const id = model.id.toLowerCase()
@@ -1279,7 +1281,7 @@ export function options(input: {
       result["thinkingConfig"] = {
         includeThoughts: true,
       }
-      if (!isLegacyGemini(input.model.api.id)) {
+      if (input.model.providerID !== "antigravity" && !isLegacyGemini(input.model.api.id)) {
         result["thinkingConfig"]["thinkingLevel"] = "high"
       }
     }

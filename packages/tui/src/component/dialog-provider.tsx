@@ -1,4 +1,5 @@
 import { createMemo, createSignal, onMount, Show } from "solid-js"
+import { useRenderer } from "@opentui/solid"
 import { useSync } from "../context/sync"
 import { map, pipe, sortBy } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -81,6 +82,7 @@ export function normalizeCustomProviderID(value: string) {
 }
 
 export function createDialogProviderOptions() {
+  const renderer = useRenderer()
   const sync = useSync()
   const dialog = useDialog()
   const sdk = useSDK()
@@ -163,10 +165,19 @@ export function createDialogProviderOptions() {
             if (index == null) return
             const method = methods[index]
             if (method.type === "external") {
-              const connect = () => sdk.client.provider.external({ providerID, method: index }, { throwOnError: true })
-              const result = await connect().catch(toast.error)
-              if (!result) return
-              if (!result.data) {
+              const connect = (signal?: AbortSignal) =>
+                sdk.client.provider
+                  .external({ providerID, method: index }, { throwOnError: true, signal })
+                  .then((result) => result.data ?? false)
+              const login = async () => {
+                if (!sdk.local) return connect()
+                const { externalLogin } = await import("../external-login")
+                return externalLogin({ command: method.command ?? [], renderer, cwd: sdk.directory, connect })
+              }
+              const result = await login().catch(toast.error)
+              if (result === undefined) return
+              if (!result && sdk.local) return
+              if (!result) {
                 const answer = await DialogPrompt.show(dialog, method.label, {
                   placeholder: "Press Enter after signing in",
                   description: () => (
@@ -178,8 +189,8 @@ export function createDialogProviderOptions() {
                 })
                 if (answer === null) return
                 const retry = await connect().catch(toast.error)
-                if (!retry) return
-                if (!retry.data) {
+                if (retry === undefined) return
+                if (!retry) {
                   toast.show({
                     variant: "error",
                     message: "Native login is not available. Complete sign-in with agy and reconnect.",

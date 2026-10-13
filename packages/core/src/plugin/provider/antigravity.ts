@@ -53,23 +53,27 @@ export const AntigravityPlugin = define({
           Effect.tapError((error) => Effect.logWarning(error.message)),
           Effect.catch(() => Effect.succeed([])),
         )
-        models.forEach((item) =>
+        Antigravity.modelGroups(models).forEach((item) =>
           draft.model.update(providerID, ModelV2.ID.make(item.id), (model) => {
             model.name = item.name
+            model.status = item.status
             model.limit = { context: item.maxTokens ?? 200_000, output: item.maxOutputTokens ?? 8192 }
             model.capabilities = {
               tools: true,
               input: item.supportsImages ? ["text", "image"] : ["text"],
               output: ["text"],
             }
-            model.request.body = {}
-            if (item.supportsThinking && item.id.endsWith("-tiered")) {
-              model.variants = ["low", "medium", "high"].map((id) => ({
-                id: ModelV2.VariantID.make(id),
-                headers: {},
-                body: { thinkingConfig: { thinkingLevel: id, includeThoughts: true } },
-              }))
-            }
+            model.request.body = { model: item.nativeID }
+            model.variants = item.variants.map((variant) => ({
+              id: ModelV2.VariantID.make(variant.id),
+              headers: {},
+              body: {
+                model: variant.modelID,
+                ...(variant.thinkingLevel
+                  ? { thinkingConfig: { thinkingLevel: variant.thinkingLevel, includeThoughts: true } }
+                  : {}),
+              },
+            }))
           }),
         )
       }),

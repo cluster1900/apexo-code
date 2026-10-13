@@ -6,6 +6,8 @@ const preserveExerciseGlobalRoot = !!process.env.APEXO_HTTPAPI_EXERCISE_GLOBAL
 export const exerciseGlobalRoot =
   process.env.APEXO_HTTPAPI_EXERCISE_GLOBAL ??
   path.join(process.env.TMPDIR ?? "/tmp", `apexo-httpapi-global-${process.pid}`)
+// Native provider discovery must not read the developer's keyring or call their account during tests.
+process.env.APEXO_TEST_HOME = path.join(exerciseGlobalRoot, "home")
 process.env.XDG_DATA_HOME = path.join(exerciseGlobalRoot, "data")
 process.env.XDG_CONFIG_HOME = path.join(exerciseGlobalRoot, "config")
 process.env.XDG_STATE_HOME = path.join(exerciseGlobalRoot, "state")

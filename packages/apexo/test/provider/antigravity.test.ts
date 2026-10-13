@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
-import { Effect, Exit, Layer } from "effect"
+import { DateTime, Effect, Exit, Layer } from "effect"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { mergeDeep } from "remeda"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Antigravity } from "@apexo/core/antigravity"
 import { AppProcess } from "@apexo/core/process"
@@ -13,11 +15,20 @@ import { Integration } from "@apexo/core/integration"
 import { Credential } from "@apexo/core/credential"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
+import { Catalog } from "@apexo/core/catalog"
+import { Location } from "@apexo/core/location"
+import { Project } from "@apexo/core/project"
+import { AbsolutePath } from "@apexo/core/schema"
+import { EventV2 } from "@apexo/core/event"
+import { SessionSchema } from "@apexo/core/session/schema"
+import { SessionRunnerModel } from "@apexo/core/session/runner/model"
+import { AntigravityPlugin } from "@apexo/core/plugin/provider/antigravity"
 import { LLM, Message, ToolDefinition } from "@apexo/llm"
 import { route, protocol } from "@apexo/llm/protocols/antigravity"
 import { Auth, LLMClient, RequestExecutor } from "@apexo/llm/route"
 import { createAntigravityFetch } from "../../src/plugin/antigravity"
 import { Provider } from "../../src/provider/provider"
+import { ProviderTransform } from "../../src/provider/transform"
 import { node, Service } from "../../src/auth"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -25,6 +36,26 @@ import { testEffect } from "../lib/effect"
 const token = (access = "fixture-access", expiry = Date.now() + 3600_000) => ({
   token: { access_token: access, refresh_token: "fixture-refresh", expiry: new Date(expiry).toISOString() },
   auth_method: "consumer",
+})
+const nativeModels = [
+  { id: "fixture-model", name: "Fixture", supportsImages: true, maxTokens: 100_000, maxOutputTokens: 8192 },
+  ...["high", "low", "medium"].map((effort) => ({
+    id: `claude-sonnet-5-5-${effort}`,
+    name: `Claude Sonnet 5.5 (${effort})`,
+    supportsThinking: true,
+  })),
+  { id: "gemini-flash-low", name: "Gemini Flash (Low)", supportsThinking: true },
+  { id: "gemini-flash-high", name: "Gemini Flash (High)", supportsThinking: true },
+  { id: "gemini-flash-tiered", name: "Gemini Flash", supportsThinking: true },
+  { id: "gemini-pro-tiered", name: "gemini-pro-tiered", supportsThinking: true },
+  { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
+]
+const nativeLayer = Layer.succeed(Antigravity.Service, {
+  available: Effect.succeed(true),
+  connect: Effect.succeed(true),
+  command: Effect.succeed("agy"),
+  session: Effect.succeed({ access: "fixture-secret", projectID: "project" }),
+  models: Effect.succeed(nativeModels),
 })
 const it = testEffect(
   AppNodeBuilder.build(
@@ -60,6 +91,39 @@ describe("native agy credentials", () => {
         tieredModelIds: { flash: ["gemini"], pro: ["gemini"] },
       }).map((model) => model.id),
     ).toEqual(["claude", "gemini"])
+  })
+
+  test("groups native tiers, preserves their order for Default, and only advertises available levels", () => {
+    const models = Antigravity.modelGroups(nativeModels)
+    expect(models.find((model) => model.id === "gemini-pro")?.name).toBe("gemini-pro")
+    expect(models.filter((model) => model.status === "active").map((model) => model.id)).toEqual([
+      "fixture-model",
+      "claude-sonnet-5-5",
+      "gemini-flash",
+      "gemini-pro",
+      "gpt-oss-120b",
+    ])
+    expect(models.find((model) => model.id === "claude-sonnet-5-5")).toMatchObject({
+      name: "Claude Sonnet 5.5",
+      nativeID: "claude-sonnet-5-5-high",
+      variants: [
+        { id: "low", modelID: "claude-sonnet-5-5-low" },
+        { id: "medium", modelID: "claude-sonnet-5-5-medium" },
+        { id: "high", modelID: "claude-sonnet-5-5-high" },
+      ],
+    })
+    expect(models.find((model) => model.id === "gpt-oss-120b")?.variants.map((variant) => variant.id)).toEqual([
+      "medium",
+    ])
+    expect(models.find((model) => model.id === "gemini-flash")?.variants).toEqual([
+      { id: "low", modelID: "gemini-flash-low", thinkingLevel: undefined },
+      { id: "medium", modelID: "gemini-flash-tiered", thinkingLevel: "medium" },
+      { id: "high", modelID: "gemini-flash-high", thinkingLevel: undefined },
+    ])
+    expect(models.find((model) => model.id === "claude-sonnet-5-5-low")).toMatchObject({
+      status: "deprecated",
+      nativeID: "claude-sonnet-5-5-low",
+    })
   })
 
   it.live("returns login-required without launching agy and rereads native login/logout", () =>
@@ -261,20 +325,7 @@ integration.live("external connections persist only a reference and resolve the 
 )
 
 const provider = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Provider.node, node]), [
-    [
-      Antigravity.node,
-      Layer.succeed(Antigravity.Service, {
-        available: Effect.succeed(true),
-        connect: Effect.succeed(true),
-        command: Effect.succeed("agy"),
-        session: Effect.succeed({ access: "fixture-secret", projectID: "project" }),
-        models: Effect.succeed([
-          { id: "fixture-model", name: "Fixture", supportsImages: true, maxTokens: 100_000, maxOutputTokens: 8192 },
-        ]),
-      }),
-    ],
-  ]),
+  AppNodeBuilder.build(LayerNode.group([Provider.node, node]), [[Antigravity.node, nativeLayer]]),
 )
 provider.instance("the default V1 provider discovers native models and stores no tokens", () =>
   Effect.gen(function* () {
@@ -291,6 +342,147 @@ provider.instance("the default V1 provider discovers native models and stores no
     expect(yield* auth.get("antigravity")).toEqual({ type: "external", method: 0 })
     expect(antigravity.options.apiKey).toBe("native-agy-session")
     expect(typeof antigravity.options.fetch).toBe("function")
+  }),
+)
+
+provider.instance("V1 model and reasoning selection reach matching native IDs without conflicting overrides", () =>
+  Effect.gen(function* () {
+    const providers = yield* Provider.Service
+    const auth = yield* Service
+    yield* Effect.addFinalizer(() => auth.remove("antigravity").pipe(Effect.orDie))
+    const bodies: unknown[] = []
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          port: 0,
+          fetch: async (request) => {
+            bodies.push(await request.json())
+            return Response.json({
+              response: {
+                candidates: [{ content: { role: "model", parts: [{ text: "OK" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            })
+          },
+        }),
+      ),
+      (server) => Effect.sync(() => server.stop(true)),
+    )
+    const google = createGoogleGenerativeAI({
+      apiKey: "dummy",
+      fetch: Object.assign(
+        createAntigravityFetch(
+          async () => ({ access: "fixture-secret", projectID: "project" }),
+          Object.assign((_url: RequestInfo | URL, init?: RequestInit) => fetch(server.url, init), {
+            preconnect: fetch.preconnect,
+          }),
+          Antigravity.modelGroups(nativeModels),
+        ),
+        { preconnect: fetch.preconnect },
+      ),
+    })
+    const catalog = (yield* providers.list())[ProviderV2.ID.make("antigravity")]
+    expect(Provider.sort(Object.values(catalog.models)).map((model) => model.id)).not.toContain(
+      "claude-sonnet-5-5-high",
+    )
+    for (const id of [
+      "claude-sonnet-5-5",
+      "claude-sonnet-5-5-low",
+      "gemini-flash",
+      "gemini-pro",
+      "gpt-oss-120b",
+      "fixture-model",
+    ]) {
+      const model = yield* providers.getModel(ProviderV2.ID.make("antigravity"), ModelV2.ID.make(id))
+      const group = Antigravity.modelGroups(nativeModels).find((item) => item.id === id)!
+      expect(Object.keys(model.variants ?? {})).toEqual(group.variants.map((variant) => variant.id))
+      expect(ProviderTransform.variants(model)).toEqual({})
+      for (const effort of [undefined, ...Object.keys(model.variants ?? {})]) {
+        const options = mergeDeep(
+          ProviderTransform.options({ model, sessionID: "fixture", providerOptions: {} }),
+          effort ? model.variants![effort] : {},
+        )
+        yield* Effect.promise(() =>
+          google(model.api.id).doGenerate({
+            prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
+            providerOptions: ProviderTransform.providerOptions(model, options),
+          }),
+        )
+        const selected = group.variants.find((variant) => variant.id === effort)
+        expect(bodies.at(-1)).toMatchObject({
+          model: selected?.modelID ?? group.nativeID,
+          request: { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
+        })
+        const body = bodies.at(-1) as {
+          request: { generationConfig: { thinkingConfig?: { thinkingLevel?: string; thinkingBudget?: number } } }
+        }
+        expect(body.request.generationConfig.thinkingConfig?.thinkingLevel).toBe(selected?.thinkingLevel)
+        expect(body.request.generationConfig.thinkingConfig?.thinkingBudget).toBeUndefined()
+      }
+    }
+    yield* Effect.promise(async () => {
+      await expect(
+        google("gpt-oss-120b").doGenerate({
+          prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
+          providerOptions: { google: { thinkingConfig: { thinkingLevel: "high" } } },
+        }),
+      ).rejects.toThrow("Unsupported Antigravity reasoning level")
+    })
+  }),
+)
+
+const v2 = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Catalog.node, Antigravity.node, Integration.node, EventV2.node]), [
+    [Antigravity.node, nativeLayer],
+    [
+      Location.node,
+      Layer.succeed(Location.Service, {
+        directory: AbsolutePath.make("/antigravity-fixture"),
+        project: { id: Project.ID.make("fixture"), directory: AbsolutePath.make("/antigravity-fixture") },
+      }),
+    ],
+  ]).pipe(
+    Layer.merge(LLMClient.layer.pipe(Layer.provide(RequestExecutor.layer.pipe(Layer.provide(FetchHttpClient.layer))))),
+  ),
+)
+
+v2.live("V2 resolves the same grouped models, native defaults and reasoning variants", () =>
+  Effect.gen(function* () {
+    // This built-in uses Effect services directly, not the public plugin context.
+    yield* AntigravityPlugin.effect({} as Parameters<typeof AntigravityPlugin.effect>[0])
+    const catalog = yield* Catalog.Service
+    const client = yield* LLMClient.Service
+    const providerID = ProviderV2.ID.make("antigravity")
+    const credential = { type: "key" as const, key: "fixture-secret", metadata: { projectID: "project" } }
+    for (const group of Antigravity.modelGroups(nativeModels)) {
+      const model = (yield* catalog.model.get(providerID, ModelV2.ID.make(group.id)))!
+      expect(model.status).toBe(group.status)
+      expect(model.name).toBe(group.name)
+      expect(model.variants.map((variant) => String(variant.id))).toEqual(group.variants.map((variant) => variant.id))
+      for (const effort of [undefined, ...group.variants.map((variant) => variant.id)]) {
+        const resolved = yield* SessionRunnerModel.resolve(
+          {
+            id: SessionSchema.ID.make("ses_fixture"),
+            projectID: Project.ID.make("fixture"),
+            model: { providerID, id: model.id, variant: effort ? ModelV2.VariantID.make(effort) : undefined },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
+            title: "Fixture",
+            location: { directory: AbsolutePath.make("/antigravity-fixture") },
+          },
+          model,
+          credential,
+        )
+        const prepared = yield* client.prepare<{
+          model: string
+          request: { generationConfig?: { thinkingConfig?: { thinkingLevel?: string } } }
+        }>(LLM.request({ model: resolved, prompt: "Hello" }))
+        const selected = group.variants.find((variant) => variant.id === effort)
+        expect(prepared.body.model).toBe(selected?.modelID ?? group.nativeID)
+        expect(prepared.body.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe(selected?.thinkingLevel)
+      }
+    }
   }),
 )
 

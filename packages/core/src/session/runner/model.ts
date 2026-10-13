@@ -146,6 +146,8 @@ export const fromCatalogModel = (
   if (model.providerID === "antigravity" && credential?.type === "key") {
     const configured = produce(model, (draft) => {
       delete draft.request.body.thinkingConfig
+      // Native tier variants select the route's model ID, not a protocol-owned HTTP body overlay.
+      delete draft.request.body.model
     })
     return Effect.succeed(
       withDefaults(configured, Antigravity.route)
@@ -156,7 +158,7 @@ export const fromCatalogModel = (
             gemini: { thinkingConfig: model.request.body.thinkingConfig },
           },
         })
-        .model({ id: model.api.id }),
+        .model({ id: typeof model.request.body.model === "string" ? model.request.body.model : model.api.id }),
     )
   }
   const resolved =

@@ -845,7 +845,8 @@ const layer = Layer.effect(
             )
               delete provider.models[modelID]
             if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
-            if (model.status === "deprecated") delete provider.models[modelID]
+            // Native tier aliases remain callable by saved sessions, but are hidden in model pickers.
+            if (model.status === "deprecated" && providerID !== "antigravity") delete provider.models[modelID]
             if (
               (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) ||
               (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
@@ -1127,9 +1128,9 @@ const layer = Layer.effect(
 
 const priority = ["gpt-5", "claude-sonnet-4", "grok-4", "gemini-3-pro"]
 const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
-export function sort<T extends { id: string }>(models: T[]) {
+export function sort<T extends { id: string; status?: string }>(models: T[]) {
   return sortBy(
-    models,
+    models.filter((model) => model.status !== "deprecated"),
     [(model) => priority.findIndex((filter) => model.id.includes(filter)), "desc"],
     [(model) => (model.id.includes("latest") ? 0 : 1), "asc"],
     [(model) => model.id, "desc"],

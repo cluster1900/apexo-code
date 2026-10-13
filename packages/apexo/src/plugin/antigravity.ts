@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { Antigravity } from "@apexo/core/antigravity"
 import { Auth } from "@/auth"
 import { EffectBridge } from "@/effect/bridge"
+import { isRecord } from "@/util/record"
 
 const Body = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
 const Frame = Schema.fromJsonString(Schema.Struct({ response: Schema.Record(Schema.String, Schema.Unknown) }))
@@ -11,11 +12,27 @@ const Frame = Schema.fromJsonString(Schema.Struct({ response: Schema.Record(Sche
 export function createAntigravityFetch(
   session: () => Promise<{ access: string; projectID: string }>,
   transport: typeof fetch = fetch,
+  models: ReturnType<typeof Antigravity.modelGroups> = [],
 ): (url: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   return async (url, init) => {
     const request = new Request(url, init)
     const model = /\/models\/([^/:]+):(streamGenerateContent|generateContent)/.exec(request.url)
     if (!model) throw new Error("Unsupported Antigravity operation")
+    const id = decodeURIComponent(model[1])
+    const configured = models.find((item) => item.id === id)
+    const body = Schema.decodeUnknownSync(Body)(await request.text())
+    const generation = isRecord(body.generationConfig) ? body.generationConfig : undefined
+    const thinking = generation && isRecord(generation.thinkingConfig) ? generation.thinkingConfig : undefined
+    const effort = thinking?.thinkingLevel
+    const variant = configured?.variants.find((item) => item.id === effort)
+    if (configured && effort !== undefined && !variant)
+      throw new Error(`Unsupported Antigravity reasoning level: ${effort}`)
+    if (configured && thinking) {
+      // Fixed-tier native IDs own their reasoning settings; do not send a conflicting Gemini override.
+      delete thinking.thinkingLevel
+      delete thinking.thinkingBudget
+      if (variant?.thinkingLevel) thinking.thinkingLevel = variant.thinkingLevel
+    }
     const current = await session()
     const headers = new Headers({ "content-type": "application/json", "user-agent": "apexo-antigravity" })
     headers.set("authorization", `Bearer ${current.access}`)
@@ -27,11 +44,11 @@ export function createAntigravityFetch(
         signal: request.signal,
         body: JSON.stringify({
           project: current.projectID,
-          model: decodeURIComponent(model[1]),
+          model: variant?.modelID ?? configured?.nativeID ?? id,
           userAgent: "antigravity",
           requestType: "agent",
           requestId: crypto.randomUUID(),
-          request: Schema.decodeUnknownSync(Body)(await request.text()),
+          request: body,
         }),
       },
     )
@@ -104,6 +121,7 @@ export const AntigravityPlugin = Effect.gen(function* () {
         Effect.catch(() => Effect.succeed([])),
       )
     : []
+  const grouped = Antigravity.modelGroups(models)
   const hooks: Hooks = {
     config: async (config) => {
       if (models.length === 0) return
@@ -115,10 +133,17 @@ export const AntigravityPlugin = Effect.gen(function* () {
         ...config.provider.antigravity,
         models: {
           ...Object.fromEntries(
-            models.map((model) => [
+            grouped.map((model) => [
               model.id,
               {
                 name: model.name,
+                status: model.status,
+                variants: Object.fromEntries(
+                  model.variants.map((variant) => [
+                    variant.id,
+                    { thinkingConfig: { includeThoughts: true, thinkingLevel: variant.id } },
+                  ]),
+                ),
                 tool_call: true,
                 reasoning: model.supportsThinking,
                 attachment: model.supportsImages,
@@ -143,7 +168,7 @@ export const AntigravityPlugin = Effect.gen(function* () {
       ],
       loader: async () => ({
         apiKey: "native-agy-session",
-        fetch: createAntigravityFetch(() => bridge.promise(native.session)),
+        fetch: createAntigravityFetch(() => bridge.promise(native.session), fetch, grouped),
       }),
     },
   }
