@@ -1,3 +1,4 @@
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import path from "path"
 import { InstanceState } from "@/effect/instance-state"
@@ -58,6 +59,7 @@ export class Service extends Context.Service<Service, Interface>()("@apexo/Comma
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const flags = yield* RuntimeFlags.Service
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const skill = yield* Skill.Service
@@ -85,6 +87,29 @@ const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+
+      if (flags.runtimeProfile === "grok-build") {
+        for (const [name, operation] of Object.entries({
+          memory: "read",
+          remember: "remember",
+          flush: "flush",
+          dream: "dream",
+        })) {
+          const template =
+            operation === "read"
+              ? "Use the memory tool with operation=read and show this workspace's saved notes. Optional search: $ARGUMENTS"
+              : operation === "dream"
+                ? "Use the memory tool with operation=dream to consolidate this workspace's notes. Report the result."
+                : `Use the memory tool with operation=${operation}. ${operation === "flush" ? "Summarize durable facts and decisions from this conversation into content; omit secrets and temporary progress." : "Save the following user-provided note as content:"} $ARGUMENTS`
+          commands[name] = {
+            name,
+            description: `Workspace memory: ${operation}`,
+            source: "command",
+            template,
+            hints: hints(template),
+          }
+        }
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
@@ -156,7 +181,11 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Config.node, MCP.node, Skill.node, RuntimeFlags.node],
+})
 
 export * as Command from "."
 

@@ -21,6 +21,14 @@ const env = AppNodeBuilder.build(
 )
 const it = testEffect(env)
 
+test("Grok plan and subagent aliases preserve denied tool visibility", () => {
+  const names = ["enter_plan_mode", "exit_plan_mode", "send_subagent_message"]
+  const rules = Permission.fromConfig({ plan_enter: "deny", plan_exit: "deny", task: "deny" })
+  expect(Permission.disabled(names, rules)).toEqual(new Set(names))
+  expect(Permission.evaluate("enter_plan_mode", "*", rules).action).toBe("deny")
+  expect(Permission.evaluate("send_subagent_message", "*", rules).action).toBe("deny")
+})
+
 const rejectAll = (message?: string) =>
   Effect.gen(function* () {
     const permission = yield* Permission.Service
@@ -455,9 +463,8 @@ test("evaluate - treats Grok Build tool names as their Apexo permission", () => 
     ]).action,
   ).toBe("allow")
   expect(
-    Permission.evaluate("search_replace", "src/app.ts", [
-      { permission: "edit", pattern: "src/*", action: "allow" },
-    ]).action,
+    Permission.evaluate("search_replace", "src/app.ts", [{ permission: "edit", pattern: "src/*", action: "allow" }])
+      .action,
   ).toBe("allow")
   expect(
     PermissionV2.evaluate("run_terminal_command", "pnpm test", [

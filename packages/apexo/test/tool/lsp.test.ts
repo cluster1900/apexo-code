@@ -3,6 +3,7 @@ import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import path from "path"
+import { symlink } from "node:fs/promises"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@apexo/core/cross-spawn-spawner"
 import { FSUtil } from "@apexo/core/fs-util"
@@ -95,6 +96,21 @@ const asks = () => {
 }
 
 describe("tool.lsp", () => {
+  it.instance(
+    "normalizes symlink paths before looking up the language server",
+    () =>
+      Effect.gen(function* () {
+        const directory = (yield* TestInstance).directory
+        const file = path.join(directory, "target.ts")
+        const alias = path.join(directory, "alias.ts")
+        yield* put(file)
+        yield* Effect.promise(() => symlink(file, alias))
+        const requests = asks()
+        yield* run({ operation: "hover", filePath: alias, line: 1, character: 1 }, requests.next)
+        expect(requests.items.find((request) => request.permission === "lsp")?.metadata.filePath).toBe(file)
+      }),
+    { git: true },
+  )
   describe("permission metadata", () => {
     it.instance(
       "keeps cursor details for position-based operations",

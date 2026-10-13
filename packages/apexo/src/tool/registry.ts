@@ -1,3 +1,4 @@
+import { Auth } from "@/auth"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { Ripgrep } from "@apexo/core/ripgrep"
@@ -92,6 +93,8 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const auth = yield* Auth.Service
+    const provider = yield* Provider.Service
     const mcp = yield* MCP.Service
     const background = yield* BackgroundJob.Service
 
@@ -341,8 +344,29 @@ const layer = Layer.effect(
 
       return flags.runtimeProfile === "grok-build"
         ? GrokBuildTools.adaptTools(result, {
+            directory: yield* InstanceState.directory,
             background,
             profileExtensions: true,
+            media: {
+              transport: Effect.gen(function* () {
+                const env = process.env.XAI_API_KEY ?? process.env.GROK_API_KEY
+                if (env) return { key: env }
+                const xai = yield* provider.getProvider(ProviderV2.ID.make("xai"))
+                const value = yield* auth.get("xai").pipe(Effect.orDie)
+                const key =
+                  value?.type === "api"
+                    ? value.key
+                    : typeof xai?.options.apiKey === "string"
+                      ? xai.options.apiKey
+                      : xai?.key
+                if (!key) return undefined
+                return {
+                  key,
+                  ...(typeof xai?.options.fetch === "function" ? { fetch: xai.options.fetch as typeof fetch } : {}),
+                  ...(typeof xai?.options.baseURL === "string" ? { baseURL: xai.options.baseURL } : {}),
+                }
+              }),
+            },
             shell: result.find((tool) => tool.id === "bash"),
             task: result.find((tool) => tool.id === "task"),
           })
@@ -438,6 +462,7 @@ export const node = LayerNode.make({
   service: Service,
   layer,
   deps: [
+    Auth.node,
     Config.node,
     Plugin.node,
     Question.node,

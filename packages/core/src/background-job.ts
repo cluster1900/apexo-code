@@ -70,6 +70,8 @@ export type StartInput = {
   run: Effect.Effect<string, unknown>
 }
 
+export type ReportInput = { id: string; output?: string; metadata?: Record<string, unknown> }
+
 export type ExtendInput = {
   id: string
   run: Effect.Effect<string, unknown>
@@ -89,6 +91,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
   readonly start: (input: StartInput) => Effect.Effect<Info>
+  readonly report: (input: ReportInput) => Effect.Effect<void>
   readonly extend: (input: ExtendInput) => Effect.Effect<boolean>
   readonly wait: (input: WaitInput) => Effect.Effect<WaitResult>
   readonly waitForPromotion: (id: string) => Effect.Effect<Info>
@@ -253,6 +256,20 @@ export const make = Effect.gen(function* () {
     )
   })
 
+  const report: Interface["report"] = (input) =>
+    SynchronizedRef.update(state.jobs, (jobs) => {
+      const job = jobs.get(input.id)
+      if (!job || job.info.status !== "running") return jobs
+      return new Map(jobs).set(input.id, {
+        ...job,
+        info: {
+          ...job.info,
+          ...(input.output === undefined ? {} : { output: input.output.slice(-64 * 1024) }),
+          metadata: { ...job.info.metadata, ...input.metadata },
+        },
+      })
+    })
+
   const extend: Interface["extend"] = Effect.fn("BackgroundJob.extend")(function* (input) {
     return yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
@@ -297,7 +314,7 @@ export const make = Effect.gen(function* () {
     if (input.timeout <= 0) return { info: snapshot(job), timedOut: true }
     const info = yield* Deferred.await(job.done).pipe(Effect.timeoutOption(input.timeout))
     if (info._tag === "Some") return { info: info.value, timedOut: false }
-    return { info: snapshot(job), timedOut: true }
+    return { info: yield* get(input.id), timedOut: true }
   })
 
   const waitForPromotion: Interface["waitForPromotion"] = Effect.fn("BackgroundJob.waitForPromotion")(function* (id) {
@@ -357,7 +374,7 @@ export const make = Effect.gen(function* () {
     return result.info
   })
 
-  return Service.of({ list, get, start, extend, wait, waitForPromotion, promote, cancel })
+  return Service.of({ list, get, start, report, extend, wait, waitForPromotion, promote, cancel })
 })
 
 const layer = Layer.effect(Service, make)

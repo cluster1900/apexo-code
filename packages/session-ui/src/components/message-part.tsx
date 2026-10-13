@@ -66,6 +66,7 @@ import { animate } from "motion"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+import { ToolAttachments } from "./tool-attachments"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -1535,11 +1536,11 @@ export function getTool(name: string) {
                   ? "plan_enter"
                   : name === "exit_plan_mode"
                     ? "plan_exit"
-                : name === "todo_write"
-                  ? "todowrite"
-                  : name === "ask_user_question"
-                    ? "question"
-                    : name
+                    : name === "todo_write"
+                      ? "todowrite"
+                      : name === "ask_user_question"
+                        ? "question"
+                        : name
   return state[canonical]?.render
 }
 
@@ -1619,6 +1620,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   })
 
   const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
+  const attachments = createMemo(() => {
+    const state = part().state
+    return state.status === "completed" ? (state.attachments ?? []) : []
+  })
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
@@ -1682,6 +1687,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
             />
           </Match>
         </Switch>
+        <Show when={attachments().length}>
+          <ToolAttachments files={attachments()} />
+        </Show>
       </div>
     </Show>
   )

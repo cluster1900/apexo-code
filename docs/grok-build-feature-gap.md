@@ -1,264 +1,123 @@
-# Grok Build Feature Gap
+# Grok Build 功能完成情况与差距
 
-状态：P0 核心切片持续补齐，剩余能力按下表继续排期
-日期：2026-10-13
-对比基线：Apexo `grok-agent-roadmap` / `28952af`，官方 [xai-org/grok-build](https://github.com/xai-org/grok-build/tree/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8) / `2bdd1d6`
+更新：2026-10-13；工作分支：`grok-agent-roadmap`。
 
-## 结论
+对照两条基线：官方源码 [2bdd1d6](https://github.com/xai-org/grok-build/tree/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8)，以及本机实际运行的 Grok CLI 1.0.52。后者部分工具仍使用旧名称，不能直接按字符串比较新版源码的清单。
 
-Apexo 当前已经有一个可运行的 Grok-first agent，以及一个把部分 Apexo 工具映射成 Grok Build 风格名称的 profile。它还不是官方 Grok Build 的前端，也没有运行官方 Grok Build 的执行循环。
+## 本轮范围
 
-CLI 和 Desktop 在 Apexo server 层使用同一套 Session、Tool Registry、Permission、Provider 和 HTTP API。开启 `APEXO_RUNTIME_PROFILE=grok-build` 后，两者当前暴露的工具契约一致；但这只是 Apexo 内部一致，不代表和官方 Grok Build 一致。
+本轮补齐工具清单、后台任务/Subagent、Plan/LSP、文件型 Memory、进程内 Scheduler/Monitor、图片视频生成，并执行 CLI、Desktop、官方 Grok 的回归。Marketplace 按要求不做。
 
-本 feature 的目标是把差距变成可验收的能力清单，并明确哪些能力需要真正接入 `grok agent stdio`，哪些能力可以继续由 Apexo adapter 实现。
+Apexo CLI 和 Desktop 共用 Apexo 的会话、权限和工具执行层。`grok-build` profile 提供官方风格工具契约；`apexo acp --backend grok-build` 则运行官方 `grok agent stdio`。这两种执行循环仍然独立，Desktop 默认没有切换为官方 Rust runtime。
 
-## 当前实现边界
+这些工具在 `grok-build` profile 下启用：CLI 使用 `apexo run --profile grok-build`；Desktop 启动环境设置 `APEXO_RUNTIME_PROFILE=grok-build`。默认 `apexo` profile 保持原有工具集合，Desktop 暂无可视化 profile 切换入口。
 
-README 已明确说明当前实现运行 Apexo 自己的 agent loop，目标才是把 Grok Build 放到 Apexo UI 后面。[README.md](/Users/hawk_wu/Desktop/apexo-grok/README.md:35)
+## 已实现和验证的能力
 
-当前 profile 默认仍在 Apexo 的 Session/AI SDK loop 中运行，并在 Tool Registry 返回结果时进行适配。[registry.ts](/Users/hawk_wu/Desktop/apexo-grok/packages/apexo/src/tool/registry.ts:342) 另外，`apexo acp --backend grok-build` 会透明启动官方 `grok agent stdio`，作为可选的官方 ACP 路径；它不改变默认 Apexo backend。
+| 功能              | 当前行为                                                                                | 验证方式                                                                |
+| ----------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 工具清单          | 共用 canonical registry；CLI streaming 清单按模型能力和会话权限过滤                     | CLI 连续场景核对清单与实际模型请求；Desktop 打包后端执行同一场景        |
+| 文件操作          | read/list/grep/write/search_replace 复用真实文件实现与权限                              | 两端实际写入、读取、替换；官方 ACP 执行对应操作                         |
+| 后台 Shell        | `block_until_ms=0` 立即返回；正数限制等待时间，任务继续执行                             | 两端启动、等待完成并读取 `SHELL_OK`                                     |
+| 输出与取消        | `get_task_output`、`wait_tasks`、`kill_task`；多任务共享等待预算；运行中可读取最新输出  | ownership、超时、取消测试；两端读取运行中的 Monitor 输出后取消          |
+| Subagent          | 同步/后台任务、续聊、父 Session ownership、保留原 agent、等待结果                       | 两端创建真实子 Session 并续聊；官方创建子 agent、等待并读回结果         |
+| Plan              | 进入计划模式；拒绝退出保留 Plan；批准后写入 Build 切换消息                              | 真实 Session、Question、投影服务回归；canonical 权限别名测试            |
+| LSP               | 位置操作、无文件参数的 workspaceSymbol；真实路径归一                                    | 真实 TypeScript server 返回 hover、定义位置和工作区符号；符号链接回归   |
+| Memory            | read/remember/flush/dream；工作区隔离、原子写入、并发锁、重复笔记合并；新提示自动加载   | 并发写入与重载测试；两端保存、读取、整理                                |
+| Memory 入口       | `/memory`、`/remember`、`/flush`、`/dream` 来自共享命令表                               | 命令注册测试；CLI streaming 命令列表检查                                |
+| Monitor           | 后台 Shell、实时输出快照、独立取消、保留 Shell 权限；删除 Session 时取消所属任务        | 两端运行、查询、取消；权限测试                                          |
+| Scheduler         | 创建、列出、更新、取消、立即执行、单次/重复执行、7 天过期                               | TestClock 驱动实际 BackgroundJob；拒绝/无效更新保留旧任务；两端管理操作 |
+| 图片              | `image_gen`，xAI API key 或现有 OAuth 登录；按 Session 保存并返回附件                   | 本地协议测试；真实 OAuth 生成 JPEG                                      |
+| 视频              | `image_to_video`、`reference_to_video`；正确引用结构、轮询、下载、取消和超时            | 本地协议/取消测试；真实 OAuth 各生成一个 6 秒 MP4                       |
+| Desktop 媒体展示  | 图片预览、视频/音频播放器、附件下载                                                     | 生产组件浏览器检查，验证图片、视频 controls、下载链接                   |
+| PTY               | POSIX 使用 Bun 原生 terminal；保留退出码、快速退出输出、延迟订阅；Windows 保留原 ConPTY | 固定 Bun 1.3.14 下 PTY HTTP/WebSocket 与 30 次快速退出验证              |
+| 官方 ACP 生命周期 | 转发协议；代理中断时终止官方子进程                                                      | 真实官方 prompt、工具调用和 end_turn；代理退出测试                      |
 
-当前模型侧工具定义如下：
+## 三端的一致性边界
 
-```text
-ask_user_question
-run_terminal_cmd
-read_file
-list_dir
-grep
-search_replace
-write
-task
-send_subagent_message
-todo_write
-lsp
-enter_plan_mode
-exit_plan_mode
-web_fetch
-get_task_output
-wait_tasks
-kill_task
-monitor
-scheduler_create
-scheduler_delete
-scheduler_list
-memory
-image_gen
-image_to_video
-reference_to_video
-```
+- Apexo registry 的基础集合为 25 项；`web_search` 仅在配置相应能力时出现。
+- 无交互的 `apexo run` 禁用提问和 Plan 切换，因此不会向模型或 streaming 清单宣传 `ask_user_question`、`enter_plan_mode`、`exit_plan_mode`。交互式 CLI 和 Desktop 保留这些入口。用户权限还可能进一步减少工具集合。
+- 官方 1.0.52 的实际事件使用 `run_terminal_command`、`spawn_subagent`、`get_command_or_subagent_output` 等旧名称；Apexo 的 canonical 名称分别是 `run_terminal_cmd`、`task`、`get_task_output`。名称兼容映射不代表底层 runtime 相同。
+- CLI 和 Desktop 共用同一权限规则，包括自定义默认 agent 的权限；跨父 Session 的子任务操作会拒绝。媒体读本地参考文件需要 read 权限，工作区外还需 external_directory，保存结果需要 edit 权限。
+- 媒体 API 复用 xAI provider 的 OAuth 刷新逻辑。下载 CDN 媒体不携带 xAI Authorization。
 
-这是 canonical 名称全集；运行时会按 provider/model 和 web capability 过滤。当前未启用 Exa/Parallel 时，`web_search` 不会出现在实际 HTTP tool list 或 CLI streaming `available_commands` 中。
+## 本轮修复的具体问题
 
-## 2026-10-13 已完成的切片
+1. 后台 Shell/Monitor 只在结束后能看到输出；现在运行中更新快照，等待超时也返回最新快照。
+2. Monitor/定时子任务曾替换掉原来的权限询问；现在保留实际执行工具的权限检查。
+3. 定时任务接受 `durable=true` 却没有恢复能力；现在明确拒绝，不生成虚假的持久任务。
+4. 修改定时任务前先取消旧任务，导致无效参数或拒绝授权也丢失任务；现在先完成校验和授权。
+5. Memory 未自动进入后续提示，也没有 slash 入口；现在补齐，并避免并发写入覆盖、重复时间戳笔记无法合并。
+6. 视频请求与响应字段不符合 xAI API；修正参考图/语音/关键帧结构及 `video.url` 解析。
+7. 媒体仅支持环境变量 API key；现在复用 provider API key/OAuth，三种工具均完成真实生成。
+8. 媒体保存在通用目录且没有可展示附件；现在绑定会话工作区和 Session 目录，返回附件并渲染预览。
+9. 计划/子任务别名遗漏权限映射，CLI 清单也没有反映 Session 的禁用规则；现在共用权限过滤。
+10. LSP 遇到工作区的符号链接路径时可能找不到已存在的 server；现在先解析真实路径。
+11. ACP 代理退出后可能遗留官方进程；现在转发 SIGINT/SIGTERM 和 Effect 取消。
+12. 旧 PTY 回调注册存在快速退出丢事件的窗口；POSIX 改由 Bun 统一管理进程退出与终端 I/O。
+13. 自定义默认 agent 时，CLI 清单仍按 `build` 权限过滤；现在跟随实际默认 agent，并使用 Session 已选模型。已复现修复前多报被禁用 `grep` 的问题，并验证修复后两端一致。
+14. Scheduler 的最大合法间隔 `7d` 恰好碰到过期时间，首次执行被跳过；现在依据计划触发时间判断，允许期限内的最后一次触发，并有测试时钟回归覆盖。
 
-### Runtime capability manifest
+## 仍未实现、不能宣称官方完整 parity 的部分
 
-CLI streaming JSON 的 `available_commands` 已从实际 `/experimental/tool` registry 生成，Desktop 与 CLI 继续共用同一个 server registry。没有解析到模型或 registry 请求失败时，CLI 使用同一份 capability-aware canonical fallback；因此 fallback 也不会在 web capability 未启用时宣称 `web_search`。
+| 能力                      | 边界 / 后续条件                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 官方 runtime 驱动 Desktop | 尚无完整 backend 选择、Session 映射与事件适配；当前官方入口是 ACP 代理                                  |
+| Desktop profile 入口      | 当前通过启动环境启用 Grok profile；尚无设置页中的 profile/backend 选择器                                |
+| 后台任务跨进程恢复        | BackgroundJob/Monitor/Scheduler 仍为进程内状态；进程退出后不会自动恢复或重试模型任务                    |
+| Scheduler durable         | 明确不支持 `durable=true`；如确有跨重启需求，需要单独设计持久调度与恢复策略                             |
+| Monitor 自动唤醒          | 支持实时查询输出；尚无官方逐行通知、速率限制和主动中途唤醒语义                                          |
+| Memory 高级能力           | 文件型笔记及文本查询；`dream` 是确定性去重，不是向量检索、LLM 自动整理或后台 watcher；没有专用管理面板  |
+| 媒体高级能力              | 本轮覆盖生成、引用、取消、保存和展示；未实现 image_edit、S3/ZDR、逐段视频事件                           |
+| Marketplace               | 按要求暂缓；不混用官方和 Apexo plugin 生命周期                                                          |
+| 其他官方体验              | 会话 dashboard、全部 slash 命令、sandbox 隔离、hooks、usage/trace 未做逐项等价验收；保留 Apexo 现有实现 |
+| V2 runtime                | 本轮 Grok profile 运行在默认 Apexo兼容会话路径；不宣称已把全部工具迁移进独立 V2 SessionRunner           |
+| 跨平台                    | 本次在 macOS arm64 验证 Bun 和 Electron；尚未在 Windows/Linux 执行，需要相应 CI 验证                    |
 
-验收结果：使用 `anthropic/claude-haiku-4-5` 查询时，CLI 和 Desktop 都返回 25 个相同的工具 ID、schema 和 description；CLI streaming 事件中的工具集合与 HTTP list 相同。官方 `grok agent stdio` 初始化成功，并返回官方 ACP capability contract；官方工具清单仍由 Grok runtime 自己管理，没有强行合并进 Apexo manifest。
+以上为明确的产品/架构边界；它们不应在发布说明中被描述为“与官方所有功能完全一致”。
 
-### Bounded shell execution
+## 可重复执行的回归
 
-`run_terminal_cmd.block_until_ms` 现在按官方语义处理：省略值时同步执行，`0` 立即返回后台 task，正数最多等待指定时间，超时返回可由 `get_task_output` 查询的 task handle。后台执行会移除 shell 的同步 timeout，因此超时只结束本次等待，不会把命令本身杀掉。
-
-这一切片仍是进程内 `BackgroundJob`，不包含进程重启恢复、跨实例查询或增量输出；这些仍属于未完成的后台任务生命周期工作。
-
-### Subagent task ownership
-
-复用 `task_id` 时，TaskTool 现在要求该 task 的 `parentID` 等于当前 Session，并优先沿用已持久化的 subagent agent。这样 `send_subagent_message` 即使通过兼容 adapter 默认传入 `build`，也不会改变已有 task 的 agent；跨 Session 的 task ID 会在 permission 和执行前拒绝。
-
-### Multi-task output retrieval
-
-`get_task_output` 已支持官方 canonical `task_ids` 数组和 `timeout_ms`，一次返回多个 task 的状态与输出；旧的单数 `task_id` 仍保留为兼容输入。多任务查询会逐个校验当前 Session ownership，避免跨 Session 泄露后台输出。
-多个 ID 使用共享超时预算并行等待，避免按任务数量线性放大等待时间。
-
-### LSP workspace symbols
-
-`workspaceSymbol` 不再把缺失的 `file_path` 虚构成当前目录下的文件。canonical adapter 会传递空路径，LSP tool 对 workspace-wide 查询跳过文件存在性和文件扩展名检查，直接使用已连接的 language-server clients；位置型操作仍要求真实文件和 1-based cursor。
-
-### Canonical subagent background contract
-
-Grok profile 的 `task` schema 现在使用官方 `run_in_background` 和 `resume_from` 字段。省略 `run_in_background` 时按官方默认立即返回后台 task；adapter 再映射到 Apexo 内部的 `background` 和 `task_id`。已有 task resume 仍受父 Session ownership 和持久化 agent 校验保护。
-
-### `wait_tasks` compatibility alias
-
-profile 现在同时提供官方兼容的 `wait_tasks`，支持 `task_ids`、共享 `timeout_ms` 预算以及 `wait_all`/`wait_any` 两种模式；它和 `get_task_output` 共用 ownership 校验与 BackgroundJob 状态。
-
-### Memory、Monitor、Scheduler、图片和视频
-
-profile 现在提供一个统一的 `memory` tool，支持 `read`、`remember`、`flush` 和 `dream` 四种操作。内容按 workspace hash 存放在 `~/.grok/memory/<workspace>/MEMORY.md`，不会把个人记忆写进项目仓库；`dream` 会去重现有 Markdown 行，`flush` 支持把当前摘要追加进去。它是可用的文件型第一切片，尚未接入官方的向量索引、自动 dream、跨进程 watcher 和 Memory UI。
-
-`monitor` 复用 BackgroundJob 和 Shell 的权限边界，支持 `command`、`description`、`timeout_ms`、`persistent`，返回可交给 `get_task_output` 或 `kill_task` 的 task ID。它会在进程内运行，当前把 stdout 作为最终任务输出读取，尚未实现官方的逐行通知、速率限制和中途唤醒。
-
-`scheduler_create/delete/list` 支持官方的 interval、prompt、`fire_immediately`、更新和取消语义，调度执行通过已有 Subagent/Session loop 完成，任务默认 7 天后过期。当前 scheduler 是进程内状态；`durable` 字段保留在契约和 metadata 中，但尚未实现重启恢复和 Desktop 管理面板。
-
-`image_gen`、`image_to_video`、`reference_to_video` 已加入三端同一 manifest。配置 `XAI_API_KEY`（或 `GROK_API_KEY`）后，image tool 调用 xAI Imagine API 并写入 `.grok/images`，video tool 轮询 xAI Video API 并写入 `.grok/videos`；缺少凭据时返回明确的 configuration-required 结果。当前还没有官方 session folder、ZDR/S3、image_edit、逐段视频事件和 Desktop 原生预览附件。
-
-## 功能差距矩阵
-
-状态含义：
-
-- ✅ 已有：当前可以使用，并且已有测试或运行验证。
-- 🟡 部分：有相邻能力或 adapter，但契约、行为或入口不完整。
-- ❌ 缺失：当前没有对应能力。
-- ⬜ 目标：本 feature 需要补齐的验收结果。
-
-| 能力 | 官方 Grok Build | Apexo 当前 | 状态 | 目标 |
-| --- | --- | --- | --- | --- |
-| 执行循环 | Rust Grok runtime；CLI、headless、ACP 共用 | 默认 Apexo AI SDK `streamText` loop；可选官方 ACP backend | 🟡 | Desktop/App 的官方 backend 选择、Session 映射和事件边界仍需补齐 |
-| ACP | `grok agent stdio` | `apexo acp --backend grok-build` 透明代理；默认仍是 Apexo ACP | 🟡 | 补充 Desktop/App 选择入口和 permission/session 状态映射 |
-| 文件读取 | `read_file` | `read_file` | ✅ | 保持 schema、offset、limit 和错误行为一致 |
-| 目录读取 | `list_dir` | `list_dir` | ✅ | 保持 schema 和结果格式一致 |
-| 精确编辑 | `search_replace` | `search_replace` | ✅ | 增加与官方边界条件的契约测试 |
-| 文件写入 | 官方完整 tool config 未单列 `write` | `write` | 🟡 | 说明为 Apexo 扩展，或移除并完全使用官方写入语义 |
-| Shell | `run_terminal_cmd`，支持 `block_until_ms` 和后台任务 | canonical `run_terminal_cmd`；0/正数等待值均可返回后台句柄 | 🟡 | 对齐完成通知、退出码、输出字段和取消行为 |
-| 后台 shell | `get_task_output`、`wait_tasks`、`kill_task` | `task_ids` 多任务查询、等待、取消；CLI/Desktop 共用 | 🟡 | 增加重启/断线恢复、增量输出和跨实例 ownership 后再宣称完整 parity |
-| Subagent | `task`、`send_subagent_message` | canonical `task` adapter；`run_in_background`/`resume_from` 已对齐，复用 task 校验父 Session 并保持原 agent | 🟡 | 补充跨进程恢复、更细状态事件和官方 agent profile 映射 |
-| Todo | `todo_write` | `todo_write` | ✅ | 对齐字段和 UI 状态 |
-| 计划模式 | `enter_plan_mode`、`exit_plan_mode` | canonical adapter，复用 Apexo plan agent | ✅ | 继续收敛 plan state、权限和 provider-turn 边界 |
-| LSP | `lsp` | profile 默认启用；位置操作和无 `file_path` 的 `workspaceSymbol` 均有 adapter | 🟡 | 结果格式和 LSP server lifecycle 仍需逐项对照 |
-| Web | `web_search`、`web_fetch` | `web_fetch`；`web_search` 条件启用 | 🟡 | manifest 只宣传实际可用工具，统一 provider capability 检查 |
-| 图片/视频 | `image_gen`、`image_to_video`、`reference_to_video` | 三端共用 API tool；凭据存在时可生成并保存文件 | 🟡 | 补齐 session folder、ZDR/S3、image_edit、事件和 Desktop 预览附件 |
-| 监控 | `monitor` | BackgroundJob + Shell 后台监控，支持 timeout/persistent，结果可查询/取消 | 🟡 | 增加逐行通知、速率限制、中途唤醒和 session 结束清理 |
-| 定时任务 | `scheduler_create/delete/list` | 进程内 recurring scheduler，支持创建、更新、立即触发、列出和取消 | 🟡 | 增加 durable 重启恢复、跨端通知和管理入口 |
-| 会话 | resume、fork、dashboard、sessions、export 等 | Apexo 有 session、fork、compact、undo、export 等部分能力 | 🟡 | 逐项对齐 session id/title、fork、恢复、删除和 dashboard 行为 |
-| Memory | `/memory`、`/flush`、`/dream`、`/remember` | `memory` tool 提供 read/remember/flush/dream；workspace-scoped Markdown 持久化 | 🟡 | 对齐 slash 入口、索引/搜索、自动 dream 和 UI 展示 |
-| Plugins/skills/hooks | 官方 plugins、marketplace、skills、workflows、hooks | Apexo 有自己的 plugin、skill、MCP 体系 | 🟡 | 定义兼容边界；不能把两个 manifest/lifecycle 直接混用 |
-| Sandbox | `--sandbox`、permission modes、worktree | Apexo 有 permissions/worktree，但语义不同 | 🟡 | 写出 capability matrix；明确文件、网络、命令隔离差异 |
-| CLI/headless | `grok --single`、JSON、streaming JSON、headless agent | `apexo run --profile grok-build`、JSON、streaming JSON | 🟡 | 对齐事件类型、tool manifest、错误、退出码和 session metadata |
-| 配置/auth | Grok login、OAuth、models、usage、trace 等 | Apexo 有 xAI auth/provider/config | 🟡 | 保持 provider 兼容，同时明确哪些配置由 Grok runtime 管理 |
-
-## CLI、Desktop、官方 Grok Build 的一致性要求
-
-| 检查项 | 当前结果 | Feature 验收要求 |
-| --- | --- | --- |
-| CLI 与 Desktop 的 Tool Registry | 已实测实际 tool list、schema、description 相同 | 继续从 server registry/canonical manifest 生成，不允许客户端各自维护一份列表 |
-| CLI profile 选择 | `apexo run --profile grok-build` 可选择 | Desktop 需要明确 profile 选择或配置入口；不能只依赖隐藏环境变量 |
-| Session/Permission | 共用 Apexo server 和 durable Session record | 官方 bridge 连接时也必须保留 Session、permission 和 audit 边界 |
-| Streaming events | CLI 有 Apexo streaming JSON adapter；Desktop 走 HTTP/App events | 定义一份 event mapping，覆盖 text、thinking、tool call、tool result、permission、background task、error、finish |
-| ACP | CLI 已有 Apexo backend，并可选择官方 `grok agent stdio` backend | Desktop/App 仍需 backend 选择和状态展示 |
-| UI commands | CLI/TUI、App/Desktop 的 slash/command palette 各有差异 | 共享能力必须有 capability 到入口的映射；纯 transport 能力要明确标为 CLI-only |
-| Provider model | CLI、Desktop 都走 Apexo provider | 官方 Grok Build 模式下，model/auth/usage 的 owner 必须明确 |
-
-## 优先级和实现切片
-
-### P0：先解决“是不是 Grok Build”的问题
-
-1. **Runtime strategy decision**
-   - 选择 A：Apexo UI 连接官方 `grok agent stdio`，Apexo 负责 UI、Session 映射和权限边界。
-   - 选择 B：继续使用 Apexo loop，但把它命名为 Grok-compatible profile，不宣称官方 Grok Build parity。
-   - 验收：README、CLI help、Desktop 设置和 feature manifest 使用同一术语。
-
-2. **Canonical capability manifest** ✅ 第一切片
-   - 以官方名称为 canonical ID：`run_terminal_cmd`、`task` 等。
-   - adapter alias 只用于兼容旧客户端，不再把 `run_terminal_command`、`spawn_subagent` 当作官方名称。
-   - CLI、Desktop、HTTP tool list、streaming `available_commands` 都从同一份 manifest 生成。
-   - 验收：开启同一 profile 时，声明的工具集合等于实际可执行工具集合。CLI streaming JSON、Desktop HTTP 和 `/experimental/tool` 已完成这一切片。
-
-3. **Background task lifecycle** 🟡 第一切片
-   - 实现 task ID、输出读取、取消、完成通知、重启/断线行为和权限审计。
-   - shell 和 subagent 使用一致的 task state model。
-   - 验收：可启动后台命令，查询输出，取消命令，并在 CLI/Desktop 看到同一状态；当前尚未完成增量输出和重启恢复。
-
-4. **Official ACP smoke path**
-   - 最小切片只接通一个只读 prompt/tool flow。
-   - 验证 `grok agent stdio` 的初始化、prompt、tool event、permission 和结束事件。
-   - 验收：CLI 和 Desktop 至少有一条连接官方 ACP 的 smoke path，且不影响默认 Apexo path。
-
-### P1：补齐核心工具和运行语义
-
-- `task`、`send_subagent_message`、`enter_plan_mode`、`exit_plan_mode`。
-- `lsp` 的 schema、结果和权限。
-- `web_search` 的 capability-aware advertisement。
-- shell、subagent、scheduler 共用 task lifecycle。
-- plan、permission mode、sandbox、worktree 的行为矩阵。
-- 事件和错误的 streaming JSON 对齐。
-
-验收重点：同一个 prompt 在 CLI、Desktop 和 headless 模式下产生相同的工具 ID、参数校验、权限请求和完成事件。
-
-### P2：补齐官方体验面
-
-- Memory：把已完成的 `memory` tool 接到 `/memory`、`/flush`、`/dream`、`/remember` 入口，并补齐索引和自动 dream。
-- Session dashboard、usage、trace、status line。
-- Plugins、marketplace、hooks、workflows。
-- Image/video 的 Desktop preview、ZDR/S3 和 image_edit。
-- Scheduler 的 durable 恢复、管理界面和通知。
-- 官方 CLI flags 和 slash commands 的兼容别名。
-
-这些能力不能只添加命令名；每项都必须有持久化状态、权限边界、CLI 入口、Desktop 入口或明确的 transport-only 标记。
-
-## 验收测试矩阵
-
-### 静态和类型检查
+从 `packages/apexo` 执行：
 
 ```sh
-bun turbo typecheck --concurrency=2
-GITHUB_ACTIONS=false bun turbo test --concurrency=2
-(cd packages/client && bun run check:generated)
-(cd packages/apexo && bun run test:httpapi)
+bun script/grok-parity.mjs cli
+bun script/grok-parity.mjs cli restricted
 ```
 
-### Profile 契约
+从 `packages/desktop` 构建，再用 Electron 自带的 Node 运行打包后端：
 
 ```sh
-APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=cli \
-  bun run packages/apexo/src/index.ts serve --port 41724
-
-APEXO_RUNTIME_PROFILE=grok-build APEXO_CLIENT=desktop \
-  bun run packages/apexo/src/index.ts serve --port 41725
+bun run build
+ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ../apexo/script/grok-parity.mjs desktop
+ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ../apexo/script/grok-parity.mjs desktop restricted
 ```
 
-对两个端口请求同一个 `/experimental/tool`，要求：
+脚本使用隔离工作区和本地 provider/media fixture，执行 22 步真实工具链：文件写读改、后台命令及读取、Monitor 查询与取消、Scheduler 创建列出取消及实际触发子 agent、Memory 保存读取整理、三种媒体生成、Subagent 执行续聊与等待。断言文件内容、输出标记、工作区路径和 CLI manifest；日志保存在脚本打印的临时目录。
 
-- 工具 ID 集合相同；
-- schema 相同；
-- description 相同；
-- capability 未启用时不得出现在 manifest；
-- alias 只出现在兼容层，不出现在 canonical manifest。
+`restricted` 场景设置自定义默认 agent 并禁用 `grep`，检查模型请求及 CLI 清单都移除该工具。两端的普通与受限场景均通过。
 
-### 三端 smoke
+这个脚本验证真实 CLI/打包后端与工具实现；媒体上游在脚本中是 fixture。真实 xAI 媒体调用另行使用当前 OAuth 完成，不能将两类验证混为一谈。
 
-| 路径 | 最小场景 | 必须验证 |
-| --- | --- | --- |
-| Apexo CLI | 单轮只读 prompt | text、tool list、退出码、错误 |
-| Apexo Desktop | sidecar + App session | 同一 prompt 的事件、permission、session 状态 |
-| 官方 Grok Build | `grok --single` 与 `grok agent stdio` | 官方 tool/event/permission contract |
-| 官方 ACP bridge | Apexo UI 连接 `grok agent stdio` | 初始化、prompt、tool、permission、finish |
+本次额外验证：
 
-### 当前已完成验证
+- 官方 `apexo acp --backend grok-build` 完成实际读写、替换、后台 Shell、Subagent，返回 `end_turn` 与 `OFFICIAL_PARITY_OK`。
+- 真实 TypeScript LSP 返回 `greet` 的 hover 类型、定义位置、workspaceSymbol。
+- 生产工具组件 100 行挂载：修改前中位数 9.8 ms / P95 15.2 ms；修改后 10.1 ms / P95 16.6 ms。这是局部组件基准，不是完整 Desktop 启动性能。
+- 生产组件加载真实生成的 JPEG 和 MP4：图片正常解码，视频 544×544、6.04 秒，播放时间正常推进，下载入口存在；检查了实际样式截图。
+- Bun 1.3.14：PTY 与扩展专项 22 通过；另验 256 KiB 输出完整排空及 30 次快速退出。Plan/权限/LSP/registry/扩展集中回归 114 通过；固定版本 LSP 专项 5 通过。
+- 全仓 typecheck：21/21 通过；client `check:generated` 通过。
+- HTTP API coverage/auth/effect：每组 204 通过，0 失败、0 跳过、0 缺项。
+- 前端现有单元测试：2 通过。仓库中没有脚本所引用的完整浏览器 E2E 目录，因此另行运行了生产组件浏览器检查。
+- CI 同款全量后端套件：3441 通过、0 失败、19 跳过、1 TODO，46 个快照；耗时 8 分 23 秒。跳过项包括平台限制、未配置的录制凭据和既有禁用场景，不能记作全部已覆盖。
+- 全量之后补充 Scheduler `7d` 边界修复：受影响的扩展/adapter 套件 25 通过；重新执行全仓 typecheck、Desktop 生产构建及 CLI/Electron 的 22 步受限场景，均通过。
 
-- Grok profile focused tests：当前 16 pass，0 fail；registry contract tests 17 pass，0 fail。
-- 全量 typecheck：21/21 package pass。
-- 全量测试基线：3424 pass，19 skip，1 todo，0 fail；最终重跑时仅 `httpapi-v2-pty` 的退出状态轮询出现一次 20 秒时序抖动（3423 pass，19 skip，1 todo，1 fail），该测试文件单独重跑 4/4 pass。
-- HTTP API exercise：coverage/auth/effect 三种模式均 204/204 pass。
-- App、Desktop typecheck 和 Desktop production build pass。
-- Apexo CLI 和本机 `grok 1.0.52` 都完成只读单轮 smoke。
-- CLI/Desktop profile HTTP tool list 实测一致。
-- 2026-10-13：CLI streaming `available_commands` 与 `/experimental/tool` 实测一致；CLI/Desktop 的 25 个工具定义 `diff` 为空；`run_terminal_cmd` 的 `block_until_ms=0/正数` focused tests 通过；官方 `grok agent stdio` initialize 返回成功的 ACP capability 响应。
-- 2026-10-13：`get_task_output` 的 `task_ids` 多任务 schema 已通过 focused tests，并在 CLI/Desktop HTTP registry 中返回相同 schema；Desktop production build 通过。
-- 2026-10-13：`workspaceSymbol` 无 `file_path` 的 canonical schema/执行路径已通过 focused tests，CLI/Desktop registry 一致；官方 ACP initialize smoke 继续通过。
-- 2026-10-13：`task` 的 `run_in_background`/`resume_from` schema 与 CLI/Desktop registry 已对齐，省略后台开关的 adapter test 通过；Desktop production build 通过。
-- 2026-10-13：多任务等待改为共享预算并行执行；CLI streaming、CLI/Desktop tool registry diff、官方 ACP initialize 和 Desktop production build 均通过。
-- 2026-10-13：CLI streaming 和 CLI/Desktop registry 已包含 `wait_tasks`；`wait_any` focused test、官方 ACP initialize、Desktop production build 均通过。
-- 2026-10-13：Memory、Monitor、Scheduler、image/video extensions 已加入 Grok profile；CLI/Desktop HTTP registry 均返回 25 个相同工具，CLI streaming 也包含新增工具；extension focused tests、官方 ACP initialize 和 Desktop production build 通过。
+## 相关实现
 
-官方 Rust workspace 的 `cargo check` 尚未完成，因为固定 Rust toolchain 下载在本机 rustup 阶段卡住；这不应被记录为官方代码已通过构建。
-
-## 非目标
-
-- 不把 Apexo 的自有 agent loop 直接改名成官方 Grok Build。
-- 不在 `packages/desktop` 复制 Session、Tool Registry、Permission 或 Provider runtime。
-- 不直接编辑 `src/generated` 或 `src/generated-effect`；公共 Protocol/Server HttpApi 变化必须在源文件修改后从 `packages/client` 运行生成命令。
-- 不一次性实现所有官方 slash command；每个命令必须有真实状态和执行路径。
-- marketplace 本轮明确延期，不纳入本分支验收范围。
-- 不把官方工具名字和 Apexo 内部名字混在同一层长期维护。
-
-## 相关代码和文档
-
-- [README.md](/Users/hawk_wu/Desktop/apexo-grok/README.md:35)：当前 Grok Build integration status。
-- [grok-build.ts](/Users/hawk_wu/Desktop/apexo-grok/packages/apexo/src/tool/grok-build.ts:7)：当前 Grok profile adapter。
-- [registry.ts](/Users/hawk_wu/Desktop/apexo-grok/packages/apexo/src/tool/registry.ts:336)：profile adapter 的接入点。
-- [run.ts](/Users/hawk_wu/Desktop/apexo-grok/packages/apexo/src/cli/cmd/run.ts:180)：CLI profile 和 streaming JSON 入口。
-- [server.ts](/Users/hawk_wu/Desktop/apexo-grok/packages/desktop/src/main/server.ts:44)：Desktop 设置 `APEXO_CLIENT=desktop` 的入口。
-- [grok-agent-expansion.md](/Users/hawk_wu/Desktop/apexo-grok/docs/grok-agent-expansion.md)：Apexo 自身 Grok-first agent 扩展路线。
+- `packages/apexo/src/tool/grok-build.ts`：canonical adapter 与后台任务契约。
+- `packages/apexo/src/tool/grok-build-extensions.ts`：Memory、Monitor、Scheduler。
+- `packages/apexo/src/tool/grok-build-media.ts`：媒体协议、权限、保存与附件。
+- `packages/core/src/workspace-memory.ts`：持久笔记。
+- `packages/core/src/background-job.ts`：后台状态与实时快照。
+- `packages/session-ui/src/components/tool-attachments.tsx`：共享媒体展示。
+- `packages/apexo/script/grok-parity.mjs`：CLI/Desktop 可重复回归。

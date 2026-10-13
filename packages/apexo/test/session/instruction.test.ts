@@ -20,6 +20,7 @@ import { LayerNodePlatform } from "@apexo/core/effect/app-node-platform"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { Config } from "@/config/config"
+import { WorkspaceMemory } from "@apexo/core/workspace-memory"
 
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([CrossSpawnSpawner.node, LayerNodePlatform.filesystem, InstanceStore.node]), [
@@ -249,6 +250,28 @@ describe("Instruction.system", () => {
 })
 
 describe("Instruction.systemPaths global config", () => {
+  it.live("reloads saved workspace memory on each Grok prompt", () =>
+    Effect.gen(function* () {
+      const home = yield* tmpdirScoped()
+      const project = yield* tmpdirScoped()
+      yield* Effect.gen(function* () {
+        const instruction = yield* Instruction.Service
+        expect(yield* instruction.system()).toEqual([])
+        yield* Effect.promise(() =>
+          WorkspaceMemory.update(project, { operation: "remember", content: "Use Bun for tests" }, home),
+        )
+        expect((yield* instruction.system()).join("\n")).toContain("Use Bun for tests")
+        yield* Effect.promise(() =>
+          WorkspaceMemory.update(project, { operation: "remember", content: "Use main for diffs" }, home),
+        )
+        expect((yield* instruction.system()).join("\n")).toContain("Use main for diffs")
+      }).pipe(provideInstance(project), provideInstruction({ home, config: home }, { runtimeProfile: "grok-build" }))
+      yield* Effect.gen(function* () {
+        const instruction = yield* Instruction.Service
+        expect(yield* instruction.system()).toEqual([])
+      }).pipe(provideInstance(project), provideInstruction({ home, config: home }))
+    }),
+  )
   it.live("uses Global.Service config AGENTS.md", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })

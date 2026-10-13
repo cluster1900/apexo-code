@@ -26,7 +26,7 @@ export const AcpCommand = effectCmd({
   },
   handler: Effect.fn("Cli.acp")(function* (args) {
     if (args.backend === "grok-build") {
-      yield* Effect.promise(() => runGrokBuildAgent(args.cwd))
+      yield* Effect.promise((signal) => runGrokBuildAgent(args.cwd, signal))
       return
     }
 
@@ -90,14 +90,23 @@ export const AcpCommand = effectCmd({
  * path as a transparent process boundary so the existing Apexo ACP server
  * remains the default while clients can opt into the official runtime.
  */
-async function runGrokBuildAgent(cwd: string) {
+async function runGrokBuildAgent(cwd: string, signal: AbortSignal) {
   const command = process.env.APEXO_GROK_BUILD_BIN ?? "grok"
+  const stop = new AbortController()
+  const interrupt = () => stop.abort()
+  process.once("SIGINT", interrupt)
+  process.once("SIGTERM", interrupt)
+  const abort = AbortSignal.any([signal, stop.signal])
   const agent = Process.spawn([command, "agent", "stdio"], {
     cwd,
     stdin: process.stdin,
     stdout: process.stdout,
     stderr: process.stderr,
+    abort,
   })
-  const code = await agent.exited
-  if (code !== 0) throw new Error(`Grok Build ACP exited with code ${code}`)
+  const code = await agent.exited.finally(() => {
+    process.removeListener("SIGINT", interrupt)
+    process.removeListener("SIGTERM", interrupt)
+  })
+  if (code !== 0 && !abort.aborted) throw new Error(`Grok Build ACP exited with code ${code}`)
 }

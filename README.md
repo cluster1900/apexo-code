@@ -32,8 +32,10 @@ What you get today:
   classic themes are still available.
 
 > [!NOTE]
-> **Status of the Grok Build integration.** Apexo's default Grok profile runs its own agent loop
-> against the xAI API and exposes a canonical Grok Build tool contract. For clients that need the
+> **Status of the Grok Build integration.** Enable the Grok Build profile with
+> `apexo run --profile grok-build`, or set `APEXO_RUNTIME_PROFILE=grok-build` when launching Desktop.
+> It runs Apexo's own agent loop against the xAI API and exposes a canonical Grok Build tool contract.
+> See the [feature and regression report](docs/grok-build-feature-gap.md) for verified capabilities and remaining gaps. For clients that need the
 > official runtime, `apexo acp --backend grok-build` transparently connects to `grok agent stdio`;
 > the existing Apexo ACP backend remains the default. Desktop/App backend selection and full
 > Session/event mapping are still being expanded.

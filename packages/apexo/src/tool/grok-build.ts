@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+import { GrokBuildMedia } from "./grok-build-media"
 import { Effect, Schema } from "effect"
 import { NonNegativeInt } from "@apexo/core/schema"
 import { BackgroundJob } from "@/background/job"
@@ -231,10 +233,12 @@ export function canonicalToolName(id: string) {
 }
 
 type AdaptOptions = {
+  directory?: string
   background?: BackgroundJob.Interface
   profileExtensions?: boolean
   shell?: Tool.Def
   task?: Tool.Def
+  media?: GrokBuildMedia.Options
 }
 
 function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interface): Tool.Def {
@@ -254,7 +258,9 @@ function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interfa
 
         const input = decoded as Schema.Schema.Type<typeof RunTerminalParameters>
         return Effect.gen(function* () {
+          const id = `job_${randomUUID()}`
           const job = yield* background.start({
+            id,
             type: "shell",
             title: input.description,
             metadata: {
@@ -267,7 +273,12 @@ function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interfa
                 {
                   ...ctx,
                   abort: new AbortController().signal,
-                  metadata: () => Effect.void,
+                  metadata: (value) =>
+                    background.report({
+                      id,
+                      output: typeof value.metadata?.output === "string" ? value.metadata.output : undefined,
+                      metadata: value.metadata,
+                    }),
                 },
               )
               .pipe(Effect.map((result) => result.output)),
@@ -319,7 +330,16 @@ export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {
     ? [...adapted, taskOutput(options.background), waitTasks(options.background), killTask(options.background)]
     : adapted
   if (!options.profileExtensions || !options.background) return withBackground
-  return [...withBackground, ...createExtensions({ background: options.background, shell: options.shell, task: options.task })]
+  return [
+    ...withBackground,
+    ...createExtensions({
+      directory: options.directory,
+      background: options.background,
+      shell: options.shell,
+      task: options.task,
+      media: options.media,
+    }),
+  ]
 }
 
 function taskOutput(background: BackgroundJob.Interface): Tool.Def {

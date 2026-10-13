@@ -26,6 +26,7 @@ import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
 import { GrokBuildTools } from "@/tool/grok-build"
+import { Permission } from "@/permission"
 
 type ModelInput = Parameters<ApexoClient["session"]["prompt"]>[0]["model"]
 
@@ -44,22 +45,38 @@ async function grokBuildToolNames(
   requestedModel: string | undefined,
   directory: string,
   webSearch: boolean,
+  sessionID: string,
+  permission: PermissionV1.Ruleset,
 ) {
-  const fallback = () => GrokBuildTools.advertisedToolNames({ webSearch })
+  const [agents, session] = await Promise.all([
+    client.app
+      .agents({ directory })
+      .then((result) => result.data ?? [])
+      .catch(() => []),
+    client.session
+      .get({ sessionID, directory })
+      .then((result) => result.data)
+      .catch(() => undefined),
+  ])
+  // The agent endpoint orders the configured default first.
+  const selected = agent
+    ? agents.find((item) => item.name === agent)
+    : agents.find((item) => item.mode !== "subagent" && item.hidden !== true)
+  const allowed = (names: string[]) => {
+    const disabled = Permission.disabled(
+      names,
+      Permission.merge(selected?.permission ?? [], session?.permission ?? permission),
+    )
+    return names.filter((name) => !disabled.has(name))
+  }
+  const fallback = () => allowed(GrokBuildTools.advertisedToolNames({ webSearch }))
   const model = pick(requestedModel)
   const resolved =
     model ??
-    (await client.app
-      .agents({ directory })
-      .then((result) => {
-        const agents = result.data ?? []
-        return (
-          agents.find((item) => item.name === agent)?.model ??
-          agents.find((item) => item.name === "build")?.model ??
-          agents.find((item) => item.mode === "primary" && item.hidden !== true)?.model
-        )
-      })
-      .catch(() => undefined))
+    selected?.model ??
+    (session?.model ? { providerID: session.model.providerID, modelID: session.model.id } : undefined) ??
+    agents.find((item) => item.name === "build")?.model ??
+    agents.find((item) => item.mode === "primary" && item.hidden !== true)?.model
   if (!resolved) return fallback()
 
   const tools = await client.tool
@@ -76,7 +93,7 @@ async function grokBuildToolNames(
       .map((item) => GrokBuildTools.canonicalToolName(item.id))
       .filter((id) => GrokBuildTools.isProfileTool(id)),
   )
-  return GrokBuildTools.advertisedToolNames({ webSearch }).filter((name) => actual.has(name))
+  return allowed(GrokBuildTools.advertisedToolNames({ webSearch }).filter((name) => actual.has(name)))
 }
 
 function resolveRunInput(value?: string, piped?: string): string | undefined {
@@ -969,7 +986,15 @@ export const RunCommand = effectCmd({
           if (commands.data) {
             const available =
               flags.runtimeProfile === "grok-build"
-                ? await grokBuildToolNames(client, agent, args.model, cwd, flags.enableExa || flags.enableParallel)
+                ? await grokBuildToolNames(
+                    client,
+                    agent,
+                    args.model,
+                    cwd,
+                    flags.enableExa || flags.enableParallel,
+                    sess.id,
+                    rules,
+                  )
                 : []
             emit("available_commands", {
               tools: available,
