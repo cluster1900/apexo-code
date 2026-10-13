@@ -1141,7 +1141,7 @@ it.instance("subtask child inherits parent session external_directory allow", ()
   }),
 )
 
-noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>
+noLLMServer.instance("prompt tools merge with remembered session permission rules", () =>
   Effect.gen(function* () {
     // A provider must be available to resolve the default model (no keyless hosted provider exists anymore).
     yield* Env.use.set("ANTHROPIC_API_KEY", "test-key")
@@ -1165,8 +1165,11 @@ noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>
     })
 
     const reloaded = yield* sessions.get(session.id)
-    expect(reloaded.permission).toEqual([{ permission: "read", pattern: "*", action: "allow" }])
-    expect(Permission.evaluate("bash", "anything", reloaded.permission ?? []).action).toBe("ask")
+    expect(reloaded.permission).toEqual([
+      { permission: "bash", pattern: "*", action: "deny" },
+      { permission: "read", pattern: "*", action: "allow" },
+    ])
+    expect(Permission.evaluate("bash", "anything", reloaded.permission ?? []).action).toBe("deny")
   }),
 )
 

@@ -932,7 +932,7 @@ async function installPluginBySpec(
     if (manifest.code === "manifest_no_targets") {
       return {
         ok: false,
-        message: `"${spec}" does not expose plugin entrypoints or oc-themes in package.json`,
+        message: `"${spec}" does not expose plugin entrypoints, skills, or oc-themes in package.json`,
       }
     }
 

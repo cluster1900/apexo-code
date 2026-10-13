@@ -93,6 +93,29 @@ const withEmptyCodeMode = testEffect(
     ],
   ]),
 )
+const withGrokBuildProfile = testEffect(
+  LayerNode.compile(root, [
+    [Config.node, configLayer],
+    [
+      RuntimeFlags.node,
+      RuntimeFlags.layer({ runtimeProfile: "grok-build", experimentalPlanMode: true, experimentalLspTool: true }),
+    ],
+  ]),
+)
+const withGrokBuildDesktopProfile = testEffect(
+  LayerNode.compile(root, [
+    [Config.node, configLayer],
+    [
+      RuntimeFlags.node,
+      RuntimeFlags.layer({
+        runtimeProfile: "grok-build",
+        client: "desktop",
+        experimentalPlanMode: true,
+        experimentalLspTool: true,
+      }),
+    ],
+  ]),
+)
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
 
 afterEach(async () => {
@@ -147,6 +170,81 @@ describe("tool.registry", () => {
       })
 
       expect(tools.map((tool) => tool.id)).not.toContain("execute")
+    }),
+  )
+
+  withGrokBuildProfile.instance("exposes Grok Build core tool names to every client", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("test"),
+        modelID: ModelV2.ID.make("test"),
+        agent: yield* agents.defaultInfo(),
+      })
+
+      expect(tools.map((tool) => tool.id)).toEqual(
+        expect.arrayContaining([
+          "run_terminal_cmd",
+          "get_task_output",
+          "kill_task",
+          "read_file",
+          "list_dir",
+          "grep",
+          "search_replace",
+          "write",
+          "task",
+          "send_subagent_message",
+          "lsp",
+          "enter_plan_mode",
+          "exit_plan_mode",
+          "todo_write",
+          "web_fetch",
+        ]),
+      )
+      expect(tools.map((tool) => tool.id)).not.toContain("shell")
+      expect(tools.map((tool) => tool.id)).not.toContain("read")
+      expect(tools.map((tool) => tool.id)).not.toContain("edit")
+    }),
+  )
+
+  withGrokBuildDesktopProfile.instance("keeps the Grok Build tool contract identical for Desktop", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("test"),
+        modelID: ModelV2.ID.make("test"),
+        agent: yield* agents.defaultInfo(),
+      })
+
+      expect(tools.map((tool) => tool.id)).toEqual([
+        "ask_user_question",
+        "run_terminal_cmd",
+        "read_file",
+        "list_dir",
+        "grep",
+        "search_replace",
+        "write",
+        "task",
+        "send_subagent_message",
+        "web_fetch",
+        "todo_write",
+        "lsp",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "get_task_output",
+        "wait_tasks",
+        "kill_task",
+        "memory",
+        "image_gen",
+        "image_to_video",
+        "reference_to_video",
+        "monitor",
+        "scheduler_create",
+        "scheduler_delete",
+        "scheduler_list",
+      ])
     }),
   )
 

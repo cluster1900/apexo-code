@@ -25,6 +25,7 @@ import type { GrepTool } from "@/tool/grep"
 import type { InvalidTool } from "@/tool/invalid"
 import type { LspTool } from "@/tool/lsp"
 import type { PlanExitTool } from "@/tool/plan"
+import type { PlanEnterTool } from "@/tool/plan-enter"
 import type { QuestionTool } from "@/tool/question"
 import type { ReadTool } from "@/tool/read"
 import type { SkillTool } from "@/tool/skill"
@@ -110,6 +111,7 @@ type ToolDefs = {
   websearch: typeof WebSearchTool
   skill: typeof SkillTool
   plan_exit: typeof PlanExitTool
+  plan_enter: typeof PlanEnterTool
 }
 
 type ToolName = keyof ToolDefs
@@ -478,6 +480,15 @@ function runPlanExit(p: ToolProps<typeof PlanExitTool>): ToolInline {
   return {
     icon: "→",
     title: text(p.frame.state.title) || "Switching to build agent",
+    mode: "block",
+    body: p.frame.status === "completed" ? text(p.frame.state.output) : undefined,
+  }
+}
+
+function runPlanEnter(p: ToolProps<typeof PlanEnterTool>): ToolInline {
+  return {
+    icon: "→",
+    title: text(p.frame.state.title) || "Entering plan mode",
     mode: "block",
     body: p.frame.status === "completed" ? text(p.frame.state.output) : undefined,
   }
@@ -1233,10 +1244,20 @@ const TOOL_RULES = {
       start: () => "",
     },
   },
+  plan_enter: {
+    view: {
+      output: true,
+      final: false,
+    },
+    run: runPlanEnter,
+    scroll: {
+      start: () => "",
+    },
+  },
 } as const satisfies ToolRegistry
 
 function key(name: string): name is ToolName {
-  return Object.prototype.hasOwnProperty.call(TOOL_RULES, name)
+  return Object.prototype.hasOwnProperty.call(TOOL_RULES, canonicalToolName(name))
 }
 
 function rule(name?: string): AnyToolRule | undefined {
@@ -1244,7 +1265,49 @@ function rule(name?: string): AnyToolRule | undefined {
     return undefined
   }
 
-  return TOOL_RULES[name]
+  return TOOL_RULES[canonicalToolName(name) as ToolName]
+}
+
+function canonicalToolName(name: string): string {
+  return (
+    (
+      {
+        run_terminal_command: "bash",
+        run_terminal_cmd: "bash",
+        read_file: "read",
+        list_dir: "list",
+        search_replace: "edit",
+        spawn_subagent: "task",
+        enter_plan_mode: "plan_enter",
+        exit_plan_mode: "plan_exit",
+        todo_write: "todowrite",
+        ask_user_question: "question",
+        web_fetch: "webfetch",
+      } as Record<string, string>
+    )[name] ?? name
+  )
+}
+
+function displayInput(name: string, input: ToolDict): ToolDict {
+  if (name === "run_terminal_command" || name === "run_terminal_cmd") {
+    return {
+      ...input,
+      command: input.command,
+      timeout: input.block_until_ms,
+    }
+  }
+  if (name === "read_file") return { ...input, filePath: input.target_file }
+  if (name === "list_dir") return { ...input, path: input.target_directory }
+  if (name === "search_replace") {
+    return {
+      ...input,
+      filePath: input.file_path,
+      oldString: input.old_string,
+      newString: input.new_string,
+      replaceAll: input.replace_all,
+    }
+  }
+  return input
 }
 
 function frame(part: ToolPart): ToolFrame {
@@ -1252,7 +1315,7 @@ function frame(part: ToolPart): ToolFrame {
   return {
     raw: "",
     name: part.tool,
-    input: dict(state.input),
+    input: displayInput(part.tool, dict(state.input)),
     meta: "metadata" in part.state ? dict(part.state.metadata) : {},
     state,
     status: text(state.status),
@@ -1265,7 +1328,7 @@ export function toolFrame(commit: StreamCommit, raw: string): ToolFrame {
   return {
     raw,
     name: commit.tool || commit.part?.tool || "tool",
-    input: dict(state.input),
+    input: displayInput(commit.tool || commit.part?.tool || "tool", dict(state.input)),
     meta: commit.part?.state && "metadata" in commit.part.state ? dict(commit.part.state.metadata) : {},
     state,
     status: commit.toolState ?? text(state.status),
@@ -1354,7 +1417,7 @@ export function toolPermissionInfo(
   }
 
   try {
-    return draw(permission({ input, meta, patterns }))
+    return draw(permission({ input: displayInput(name, input), meta, patterns }))
   } catch {
     return undefined
   }

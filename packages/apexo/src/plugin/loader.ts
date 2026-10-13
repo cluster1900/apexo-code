@@ -206,7 +206,10 @@ export namespace PluginLoader {
   // once after the caller finishes preparing dependencies. Once dynamic import runs, failures are
   // treated as permanent for this process because Bun caches failed module resolution.
   export async function loadExternal<R = Loaded>(input: Input<R>): Promise<R[]> {
-    const candidates = input.items.map((origin) => ({ origin, plan: plan(origin.spec) }))
+    // Gate before resolution as well as import, including TUI add/retry paths.
+    const candidates = input.items
+      .filter((origin) => ConfigPlugin.pluginTrust(origin.spec) !== "deny")
+      .map((origin) => ({ origin, plan: plan(origin.spec) }))
     const list: Array<Promise<AttemptResult<R>>> = []
     for (const candidate of candidates) {
       list.push(attempt(candidate, input.kind, false, input.finish, input.missing, input.report))

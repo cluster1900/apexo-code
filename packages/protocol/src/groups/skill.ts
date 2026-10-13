@@ -1,7 +1,7 @@
 import { Skill } from "@apexo/schema/skill"
 import { Location } from "@apexo/schema/location"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const SkillGroup = HttpApiGroup.make("server.skill")
@@ -16,6 +16,20 @@ export const SkillGroup = HttpApiGroup.make("server.skill")
           identifier: "v2.skill.list",
           summary: "List skills",
           description: "Retrieve currently registered skills.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("skill.reload", "/api/skill/reload", {
+      query: LocationQuery,
+      success: HttpApiSchema.NoContent,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.skill.reload",
+          summary: "Reload skills",
+          description: "Rebuild registered skill sources. Skill guidance is read at the next provider-turn boundary.",
         }),
       ),
   )

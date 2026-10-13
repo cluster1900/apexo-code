@@ -13,14 +13,21 @@ import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@apexo/core/util/flock"
 import { isRecord } from "@/util/record"
 
-import { parsePluginSpecifier, readPackageThemes, readPluginPackage, resolvePluginTarget } from "./shared"
+import {
+  parsePluginSpecifier,
+  readPackageThemes,
+  readPluginPackage,
+  resolvePluginTarget,
+  type PluginPackage,
+} from "./shared"
 
 type Mode = "noop" | "add" | "replace"
-type Kind = "server" | "tui"
+type Kind = "server" | "tui" | "skill"
 
 export type Target = {
   kind: Kind
   opts?: Record<string, unknown>
+  paths?: string[]
 }
 
 export type InstallDeps = {
@@ -162,7 +169,42 @@ function packageTargets(pkg: { json: Record<string, unknown>; dir: string; pkg: 
     targets.push({ kind: "tui" })
   }
 
+  const skills = readPackageSkills(spec, pkg)
+  if (skills.length) targets.push({ kind: "skill", paths: skills })
+
   return targets
+}
+
+function readPackageSkills(spec: string, pkg: PluginPackage) {
+  const apexo = pkg.json.apexo
+  if (apexo === undefined) return []
+  if (!isRecord(apexo)) throw new TypeError(`Plugin ${spec} has invalid apexo field`)
+  const skills = apexo.skills
+  if (skills === undefined) return []
+  if (!Array.isArray(skills)) throw new TypeError(`Plugin ${spec} has invalid apexo.skills field`)
+
+  return Array.from(
+    new Set(
+      skills.map((item) => {
+        if (typeof item !== "string") throw new TypeError(`Plugin ${spec} has invalid apexo.skills entry`)
+        const raw = item.trim()
+        if (
+          !raw ||
+          raw.startsWith("file://") ||
+          path.isAbsolute(raw) ||
+          /^[A-Za-z]:[\\/]/.test(raw) ||
+          /[*?{}[\]]/.test(raw)
+        ) {
+          throw new TypeError(`Plugin ${spec} apexo.skills entries must be relative directories: ${item}`)
+        }
+        const directory = Filesystem.resolve(path.resolve(pkg.dir, raw))
+        if (!Filesystem.contains(Filesystem.resolve(pkg.dir), directory)) {
+          throw new TypeError(`Plugin ${spec} apexo.skills entry is outside plugin directory: ${item}`)
+        }
+        return directory
+      }),
+    ),
+  )
 }
 
 function patch(text: string, path: Array<string | number>, value: unknown, insert = false) {
@@ -337,12 +379,86 @@ function patchDir(input: PatchInput) {
   return path.join(root, ".apexo")
 }
 
-function patchName(kind: Kind): "apexo" | "tui" {
+function patchName(kind: Exclude<Kind, "skill">): "apexo" | "tui" {
   if (kind === "server") return "apexo"
   return "tui"
 }
 
+async function patchSkillOne(dir: string, target: Target, dep: PatchDeps): Promise<PatchOne> {
+  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.join(dir, "apexo"))}`)
+  const cfg = dep.files(dir, "apexo")[0] ?? path.join(dir, "apexo.jsonc")
+  const src = await dep.readText(cfg).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return "{}"
+    return err
+  })
+  if (src instanceof Error) {
+    return {
+      ok: false,
+      code: "patch_failed",
+      kind: target.kind,
+      error: src,
+    }
+  }
+  const text = src.trim() ? src : "{}"
+  const errs: JsoncParseError[] = []
+  const data = parseJsonc(text, errs, { allowTrailingComma: true })
+  if (errs.length) {
+    const err = errs[0]
+    const lines = text.substring(0, err.offset).split("\n")
+    return {
+      ok: false,
+      code: "invalid_json",
+      kind: target.kind,
+      file: cfg,
+      line: lines.length,
+      col: lines[lines.length - 1].length + 1,
+      parse: printParseErrorCode(err.error),
+    }
+  }
+
+  const paths = target.paths ?? []
+  const existing = Array.isArray(data.skills)
+    ? data.skills.filter((item: unknown): item is string => typeof item === "string")
+    : isRecord(data.skills) && Array.isArray(data.skills.paths)
+      ? data.skills.paths.filter((item: unknown): item is string => typeof item === "string")
+      : []
+  const next = Array.from(new Set([...existing, ...paths]))
+  if (next.length === existing.length) {
+    return {
+      ok: true,
+      item: {
+        kind: target.kind,
+        mode: "noop",
+        file: cfg,
+      },
+    }
+  }
+
+  const skillPath = Array.isArray(data.skills) ? ["skills"] : ["skills", "paths"]
+  const out = patch(text, skillPath, next)
+  const write = await dep.write(cfg, out).catch((error: unknown) => error)
+  if (write instanceof Error) {
+    return {
+      ok: false,
+      code: "patch_failed",
+      kind: target.kind,
+      error: write,
+    }
+  }
+
+  return {
+    ok: true,
+    item: {
+      kind: target.kind,
+      mode: "add",
+      file: cfg,
+    },
+  }
+}
+
 async function patchOne(dir: string, target: Target, spec: string, force: boolean, dep: PatchDeps): Promise<PatchOne> {
+  if (target.kind === "skill") return patchSkillOne(dir, target, dep)
+
   const name = patchName(target.kind)
   await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.join(dir, name))}`)
 

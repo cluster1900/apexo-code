@@ -1580,3 +1580,27 @@ body:not([data-new-layout]) {
     color: var(--text-weak);
   }
 }
+[data-component="tool-attachments"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+
+  figure {
+    margin: 0;
+    max-width: 100%;
+  }
+  img,
+  video {
+    display: block;
+    max-width: 100%;
+    max-height: 480px;
+    border-radius: 8px;
+  }
+  figcaption {
+    padding-top: 4px;
+    overflow-wrap: anywhere;
+    color: var(--text-weak);
+    font-size: 12px;
+  }
+}

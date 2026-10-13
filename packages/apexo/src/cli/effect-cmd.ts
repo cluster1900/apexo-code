@@ -22,6 +22,8 @@ interface EffectCmdOpts<Args, A> {
   aliases?: string | readonly string[]
   describe: string | false
   builder?: (yargs: Argv) => Argv<Args>
+  /** Apply invocation-specific environment before the shared runtime is constructed. */
+  prepare?: (args: WithDoubleDash<Args>) => void
   /**
    * Whether the command needs a project InstanceContext. Defaults to true.
    *
@@ -73,9 +75,10 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
     describe: opts.describe,
     builder: opts.builder as never,
     async handler(rawArgs) {
-      const { AppRuntime } = await import("@/effect/app-runtime")
       // yargs typing wraps Args in ArgumentsCamelCase<WithDoubleDash<...>>; cast at the boundary.
       const args = rawArgs as unknown as WithDoubleDash<Args>
+      opts.prepare?.(args)
+      const { AppRuntime } = await import("@/effect/app-runtime")
       const useInstance = typeof opts.instance === "function" ? opts.instance(args) : opts.instance !== false
       if (!useInstance) {
         await AppRuntime.runPromise(opts.handler(args))

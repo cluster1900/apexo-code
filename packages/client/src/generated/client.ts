@@ -85,6 +85,8 @@ import type {
   CommandsListOutput,
   SkillsListInput,
   SkillsListOutput,
+  SkillsReloadInput,
+  SkillsReloadOutput,
   EventsSubscribeOutput,
   PtysListInput,
   PtysListOutput,
@@ -804,6 +806,18 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [401, 400],
             empty: false,
+          },
+          requestOptions,
+        ),
+      reload: (input?: SkillsReloadInput, requestOptions?: RequestOptions) =>
+        request<SkillsReloadOutput>(
+          {
+            method: "POST",
+            path: `/api/skill/reload`,
+            query: { location: input?.["location"] },
+            successStatus: 204,
+            declaredStatuses: [401, 400],
+            empty: true,
           },
           requestOptions,
         ),

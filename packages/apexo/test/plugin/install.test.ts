@@ -63,6 +63,7 @@ async function plugin(
     tui?: Record<string, unknown>
   },
   themes?: string[],
+  skills?: string[],
 ) {
   const p = path.join(dir, "plugin")
   const server = kinds?.includes("server") ?? false
@@ -94,6 +95,7 @@ async function plugin(
         ...(server ? { main: "./server.js" } : {}),
         ...(Object.keys(exports).length ? { exports } : {}),
         ...(themes?.length ? { "oc-themes": themes } : {}),
+        ...(skills?.length ? { apexo: { skills } } : {}),
       },
       null,
       2,
@@ -459,6 +461,29 @@ describe("plugin.install.task", () => {
 
     const tui = await read(path.join(tmp.path, ".apexo", "tui.jsonc"))
     expect(tui.plugin).toEqual(["acme@1.2.3"])
+  })
+
+  test("writes skill directories to server config", async () => {
+    await using tmp = await tmpdir()
+    const target = await plugin(tmp.path, undefined, undefined, undefined, ["skills"])
+    await fs.mkdir(path.join(target, "skills", "reload-skill"), { recursive: true })
+    await Bun.write(
+      path.join(target, "skills", "reload-skill", "SKILL.md"),
+      "---\nname: reload-skill\ndescription: package skill\n---\n\nPackage skill\n",
+    )
+    const run = createPlugTask(
+      {
+        mod: "acme@1.2.3",
+      },
+      deps(path.join(tmp.path, "global"), target),
+    )
+
+    const ok = await run(ctx(tmp.path))
+    expect(ok).toBe(true)
+    const server = await Filesystem.readJson<{ skills?: { paths?: string[] } }>(
+      path.join(tmp.path, ".apexo", "apexo.jsonc"),
+    )
+    expect(server.skills?.paths).toEqual([path.join(target, "skills")])
   })
 
   test("returns false for oc-themes outside plugin directory", async () => {

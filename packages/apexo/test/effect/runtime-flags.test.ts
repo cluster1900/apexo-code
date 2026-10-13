@@ -26,6 +26,7 @@ describe("RuntimeFlags", () => {
             APEXO_ENABLE_EXPERIMENTAL_MODELS: "true",
             APEXO_ENABLE_QUESTION_TOOL: "true",
             APEXO_CLIENT: "desktop",
+            APEXO_RUNTIME_PROFILE: "grok-build",
           }),
         ),
       )
@@ -46,12 +47,14 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalLspTool).toBe(true)
       expect(flags.experimentalOxfmt).toBe(true)
       expect(flags.experimentalPlanMode).toBe(true)
+      expect(flags.experimentalLspTool).toBe(true)
       expect(flags.experimentalEventSystem).toBe(true)
       expect(flags.experimentalWorkspaces).toBe(true)
       expect(flags.experimentalIconDiscovery).toBe(true)
       expect(flags.experimentalNativeLlm).toBe(false)
       expect(flags.experimentalWebSockets).toBe(false)
       expect(flags.client).toBe("desktop")
+      expect(flags.runtimeProfile).toBe("grok-build")
     }),
   )
 
@@ -109,6 +112,7 @@ describe("RuntimeFlags", () => {
       expect(flags.bashDefaultTimeoutMs).toBe(1_000)
       expect(flags.enableExperimentalModels).toBe(false)
       expect(flags.client).toBe("cli")
+      expect(flags.runtimeProfile).toBe("apexo")
     }),
   )
 
@@ -117,6 +121,14 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
 
       expect(flags.experimentalIconDiscovery).toBe(false)
+    }),
+  )
+
+  it.effect("enables background task lifecycle for the Grok Build profile", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ APEXO_RUNTIME_PROFILE: "grok-build" })))
+
+      expect(flags.experimentalBackgroundSubagents).toBe(true)
     }),
   )
 
@@ -361,3 +373,11 @@ describe("RuntimeFlags", () => {
     }),
   )
 })
+
+it.effect("enables plan mode for the Grok Build profile", () =>
+  Effect.gen(function* () {
+    const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ APEXO_RUNTIME_PROFILE: "grok-build" })))
+
+    expect(flags.experimentalPlanMode).toBe(true)
+  }),
+)

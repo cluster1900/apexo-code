@@ -95,7 +95,7 @@ export type SpawnOpts = { readonly timeoutMs?: number; readonly env?: Record<str
 export type RunOpts = SpawnOpts & {
   readonly model?: string
   readonly agent?: string
-  readonly format?: "default" | "json"
+  readonly format?: "default" | "json" | "streaming-json"
   readonly command?: string
   readonly printLogs?: boolean
   readonly permission?: Record<string, "ask" | "allow" | "deny">

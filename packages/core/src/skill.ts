@@ -104,16 +104,10 @@ const layer = Layer.effect(
       return skills
     })
 
-    // QUESTION(Dax): Should local skill sources invalidate on filesystem watch
-    // events, following the reload policy chosen for other context sources?
-    const cache = new Map<string, Info[]>()
     const list = Effect.fn("SkillV2.list")(function* () {
       const skills = new Map<string, Info>()
       for (const source of state.get().sources) {
-        const key = Source.key(source)
-        const loaded = cache.get(key) ?? (yield* load(source))
-        cache.set(key, loaded)
-        for (const skill of loaded) skills.set(skill.name, skill)
+        for (const skill of yield* load(source)) skills.set(skill.name, skill)
       }
       return Array.from(skills.values())
     })

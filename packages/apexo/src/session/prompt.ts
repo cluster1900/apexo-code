@@ -1062,8 +1062,8 @@ const layer = Layer.effect(
         permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
       }
       if (permissions.length > 0) {
-        session.permission = permissions
-        yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
+        session.permission = Permission.merge(session.permission ?? [], permissions)
+        yield* sessions.setPermission({ sessionID: session.id, permission: session.permission })
       }
 
       if (input.noReply === true) return message

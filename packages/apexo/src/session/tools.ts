@@ -29,6 +29,7 @@ const MCP_RESOURCE_TOOLS = {
   listTemplates: "list_mcp_resource_templates",
   read: "read_mcp_resource",
 } as const
+const MCP_TOOL_SEARCH = "tool_search"
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -61,7 +62,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
     callID: options.toolCallId,
-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
+    extra: {
+      model: input.model,
+      bypassAgentCheck: input.bypassAgentCheck,
+      promptOps: input.promptOps,
+      directory: input.session.directory,
+    },
     agent: input.agent.name,
     messages: input.messages,
     metadata: (val) =>
@@ -387,7 +393,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   if (flags.experimentalCodeMode) return tools
 
-  for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+  const mcpTools = Permission.visibleTools(
+    yield* mcp.tools(),
+    Permission.merge(input.agent.permission, input.session.permission ?? []),
+  )
+  const deferred: Record<string, AITool> = {}
+  for (const [key, entry] of Object.entries(mcpTools)) {
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
     if (!execute) continue
@@ -486,9 +497,58 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return output
         }),
       )
-    tools[key] = item
+    if (flags.experimentalToolSearch) deferred[key] = item
+    else tools[key] = item
   }
 
+  if (Object.keys(deferred).length) {
+    tools[MCP_TOOL_SEARCH] = tool({
+      description:
+        "Discover MCP tools by name or description. Search first to inspect their input schemas, then call again with an exact tool name and arguments to execute it.",
+      inputSchema: jsonSchema(
+        ProviderTransform.schema(input.model, {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Text to match against MCP tool names and descriptions." },
+            tool: { type: "string", description: "Exact tool name from a catalog result to execute." },
+            arguments: { type: "object", additionalProperties: true },
+          },
+          additionalProperties: false,
+        }),
+      ),
+      async execute(args, opts) {
+        const parsed = parseToolSearchArgs(args)
+        if (parsed.tool) {
+          const execute = deferred[parsed.tool]?.execute
+          if (!execute) throw new Error(`Unknown or denied MCP tool "${parsed.tool}"`)
+          // Use the same permission, hooks, attachments and truncation as eager MCP tools.
+          return execute(parsed.arguments, opts)
+        }
+        const matches = Object.entries(mcpTools)
+          .filter(([name, entry]) =>
+            `${name}\n${entry.def.description ?? ""}`.toLowerCase().includes(parsed.query?.toLowerCase() ?? ""),
+          )
+          .toSorted(([a], [b]) => a.localeCompare(b))
+        const catalog = matches.slice(0, 20).map(([name, entry]) => ({
+          name,
+          description: entry.def.description ?? "",
+          inputSchema: entry.def.inputSchema,
+          permission: name,
+        }))
+        const truncated = await run.promise(truncate.output(JSON.stringify(catalog), {}, input.agent))
+        return {
+          title: "MCP tool catalog",
+          metadata: {
+            count: matches.length,
+            shown: catalog.length,
+            truncated: truncated.truncated,
+            ...(truncated.truncated && { outputPath: truncated.outputPath }),
+          },
+          output: truncated.content,
+        }
+      },
+    })
+  }
   return tools
 })
 
@@ -500,6 +560,15 @@ function toRecord(value: unknown) {
 function parseListMcpResourcesArgs(value: unknown) {
   const args = toRecord(value)
   return { server: optionalString(args, "server") }
+}
+
+function parseToolSearchArgs(value: unknown) {
+  const args = toRecord(value)
+  const query = optionalString(args, "query")
+  const tool = optionalString(args, "tool")
+  const rawArguments = args.arguments
+  if (rawArguments !== undefined && !isRecord(rawArguments)) throw new Error("arguments must be an object")
+  return { query, tool, arguments: rawArguments ?? {} }
 }
 
 function parseReadMcpResourceArgs(value: unknown) {

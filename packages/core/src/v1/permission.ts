@@ -4,6 +4,26 @@ import { Schema } from "effect"
 export * from "@apexo/schema/permission-v1"
 import { ID } from "@apexo/schema/permission-v1"
 
+const GrokBuildPermissionAliases = {
+  run_terminal_command: "bash",
+  run_terminal_cmd: "bash",
+  read_file: "read",
+  list_dir: "list",
+  search_replace: "edit",
+  spawn_subagent: "task",
+  send_subagent_message: "task",
+  enter_plan_mode: "plan_enter",
+  exit_plan_mode: "plan_exit",
+  todo_write: "todowrite",
+  ask_user_question: "question",
+  web_fetch: "webfetch",
+  web_search: "websearch",
+} as const
+
+export function canonicalPermission(permission: string): string {
+  return GrokBuildPermissionAliases[permission as keyof typeof GrokBuildPermissionAliases] ?? permission
+}
+
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("PermissionRejectedError", {}) {
   override get message() {
     return "The user rejected permission to use this specific tool call."

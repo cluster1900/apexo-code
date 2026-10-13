@@ -1,3 +1,4 @@
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import path from "path"
 import { InstanceState } from "@/effect/instance-state"
@@ -58,6 +59,7 @@ export class Service extends Context.Service<Service, Interface>()("@apexo/Comma
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const flags = yield* RuntimeFlags.Service
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const skill = yield* Skill.Service
@@ -85,6 +87,29 @@ const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+
+      if (flags.runtimeProfile === "grok-build") {
+        for (const [name, operation] of Object.entries({
+          memory: "read",
+          remember: "remember",
+          flush: "flush",
+          dream: "dream",
+        })) {
+          const template =
+            operation === "read"
+              ? "Use the memory tool with operation=read and show this workspace's saved notes. Optional search: $ARGUMENTS"
+              : operation === "dream"
+                ? "Use the memory tool with operation=dream to consolidate this workspace's notes. Report the result."
+                : `Use the memory tool with operation=${operation}. ${operation === "flush" ? "Summarize durable facts and decisions from this conversation into content; omit secrets and temporary progress." : "Save the following user-provided note as content:"} $ARGUMENTS`
+          commands[name] = {
+            name,
+            description: `Workspace memory: ${operation}`,
+            source: "command",
+            template,
+            hints: hints(template),
+          }
+        }
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
@@ -131,26 +156,6 @@ const layer = Layer.effect(
         }
       }
 
-      for (const item of yield* skill.all()) {
-        if (commands[item.name]) continue
-        const dir = item.location === "<built-in>" ? undefined : path.dirname(item.location)
-        commands[item.name] = {
-          name: item.name,
-          description: item.description,
-          source: "skill",
-          get template() {
-            if (!dir) return item.content
-            return [
-              item.content,
-              "",
-              `Base directory for this skill: ${dir}`,
-              "Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.",
-            ].join("\n")
-          },
-          hints: [],
-        }
-      }
-
       return {
         commands,
       }
@@ -160,18 +165,45 @@ const layer = Layer.effect(
 
     const get = Effect.fn("Command.get")(function* (name: string) {
       const s = yield* InstanceState.get(state)
-      return s.commands[name]
+      if (s.commands[name]) return s.commands[name]
+      const item = yield* skill.get(name)
+      return item ? skillCommand(item) : undefined
     })
 
     const list = Effect.fn("Command.list")(function* () {
       const s = yield* InstanceState.get(state)
-      return Object.values(s.commands)
+      return Object.values(s.commands).concat(
+        (yield* skill.all()).flatMap((item) => (s.commands[item.name] ? [] : [skillCommand(item)])),
+      )
     })
 
     return Service.of({ get, list })
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Config.node, MCP.node, Skill.node, RuntimeFlags.node],
+})
 
 export * as Command from "."
+
+function skillCommand(item: Skill.Info): Info {
+  const dir = item.location === "<built-in>" ? undefined : path.dirname(item.location)
+  return {
+    name: item.name,
+    description: item.description,
+    source: "skill",
+    get template() {
+      if (!dir) return item.content
+      return [
+        item.content,
+        "",
+        `Base directory for this skill: ${dir}`,
+        "Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.",
+      ].join("\n")
+    },
+    hints: [],
+  }
+}

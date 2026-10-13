@@ -8151,6 +8151,34 @@ export type AppSkillsResponses = {
 
 export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
 
+export type SkillReloadData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/skill/reload"
+}
+
+export type SkillReloadErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SkillReloadError = SkillReloadErrors[keyof SkillReloadErrors]
+
+export type SkillReloadResponses = {
+  /**
+   * Skills reloaded
+   */
+  200: boolean
+}
+
+export type SkillReloadResponse = SkillReloadResponses[keyof SkillReloadResponses]
+
 export type LspStatusData = {
   body?: never
   path?: never
@@ -12667,6 +12695,40 @@ export type V2SkillListResponses = {
 }
 
 export type V2SkillListResponse = V2SkillListResponses[keyof V2SkillListResponses]
+
+export type V2SkillReloadData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/skill/reload"
+}
+
+export type V2SkillReloadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillReloadError = V2SkillReloadErrors[keyof V2SkillReloadErrors]
+
+export type V2SkillReloadResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SkillReloadResponse = V2SkillReloadResponses[keyof V2SkillReloadResponses]
 
 export type V2EventSubscribeData = {
   body?: never

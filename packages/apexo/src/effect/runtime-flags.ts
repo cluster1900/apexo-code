@@ -13,7 +13,27 @@ const enabledByExperimental = (name: string) =>
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
   )
 
+export type RuntimeProfile = "apexo" | "grok-build"
+
+const runtimeProfile = Config.string("APEXO_RUNTIME_PROFILE").pipe(
+  Config.withDefault("apexo"),
+  Config.map((value): RuntimeProfile => (value === "grok-build" ? "grok-build" : "apexo")),
+)
+const backgroundSubagents = Config.all({
+  profile: runtimeProfile,
+  enabled: enabledByExperimental("APEXO_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
+}).pipe(Config.map((flags) => flags.profile === "grok-build" || flags.enabled))
+const planMode = Config.all({
+  profile: runtimeProfile,
+  enabled: enabledByExperimental("APEXO_EXPERIMENTAL_PLAN_MODE"),
+}).pipe(Config.map((flags) => flags.profile === "grok-build" || flags.enabled))
+const lspTool = Config.all({
+  profile: runtimeProfile,
+  enabled: enabledByExperimental("APEXO_EXPERIMENTAL_LSP_TOOL"),
+}).pipe(Config.map((flags) => flags.profile === "grok-build" || flags.enabled))
+
 export class Service extends ConfigService.Service<Service>()("@apexo/RuntimeFlags", {
+  runtimeProfile,
   pure: bool("APEXO_PURE"),
   disableDefaultPlugins: bool("APEXO_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("APEXO_DISABLE_EMBEDDED_WEB_UI"),
@@ -39,12 +59,13 @@ export class Service extends ConfigService.Service<Service>()("@apexo/RuntimeFla
   enableExperimentalModels: bool("APEXO_ENABLE_EXPERIMENTAL_MODELS"),
   enableQuestionTool: bool("APEXO_ENABLE_QUESTION_TOOL"),
   experimentalReferences: enabledByExperimental("APEXO_EXPERIMENTAL_REFERENCES"),
-  experimentalBackgroundSubagents: enabledByExperimental("APEXO_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
+  experimentalBackgroundSubagents: backgroundSubagents,
   experimentalLspTy: bool("APEXO_EXPERIMENTAL_LSP_TY"),
-  experimentalLspTool: enabledByExperimental("APEXO_EXPERIMENTAL_LSP_TOOL"),
+  experimentalLspTool: lspTool,
   experimentalOxfmt: enabledByExperimental("APEXO_EXPERIMENTAL_OXFMT"),
-  experimentalPlanMode: enabledByExperimental("APEXO_EXPERIMENTAL_PLAN_MODE"),
+  experimentalPlanMode: planMode,
   experimentalCodeMode: enabledByExperimental("APEXO_EXPERIMENTAL_CODE_MODE"),
+  experimentalToolSearch: bool("APEXO_EXPERIMENTAL_TOOL_SEARCH"),
   experimentalEventSystem: enabledByExperimental("APEXO_EXPERIMENTAL_EVENT_SYSTEM"),
   experimentalWorkspaces: enabledByExperimental("APEXO_EXPERIMENTAL_WORKSPACES"),
   experimentalIconDiscovery: enabledByExperimental("APEXO_EXPERIMENTAL_ICON_DISCOVERY"),

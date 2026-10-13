@@ -37,6 +37,11 @@ export function pluginOptions(plugin: ConfigPluginV1.Spec): ConfigPluginV1.Optio
   return Array.isArray(plugin) ? plugin[1] : undefined
 }
 
+export function pluginTrust(plugin: ConfigPluginV1.Spec): "allow" | "deny" | undefined {
+  const trust = pluginOptions(plugin)?.trust
+  return trust === "allow" || trust === "deny" ? trust : undefined
+}
+
 // Path-like specs are resolved relative to the config file that declared them so merges later on do not
 // accidentally reinterpret `./plugin.ts` relative to some other directory.
 export async function resolvePluginSpec(

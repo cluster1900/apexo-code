@@ -35,9 +35,10 @@ type CompatiblePermissionApi = Omit<ServerApi["permission"], "reply"> & {
     input: Parameters<ServerApi["permission"]["reply"]>[0] & { location?: { directory?: string } },
   ) => ReturnType<ServerApi["permission"]["reply"]>
 }
-export type CompatibleApi = Omit<ServerApi, "session" | "permission"> & {
+export type CompatibleApi = Omit<ServerApi, "session" | "permission" | "skill"> & {
   readonly session: CompatibleSessionApi
   readonly permission: CompatiblePermissionApi
+  readonly skill: ServerApi["skill"] & { reload: () => Promise<void> }
 }
 type LegacyPrompt = {
   agent?: string
@@ -85,9 +86,18 @@ function sessionInfo(session: Session): SessionInfo {
 
 export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
   const v1 = createV1Api(input)
+  const current = {
+    ...input.current,
+    skill: {
+      ...input.current.skill,
+      async reload() {
+        await input.legacy(input.directory).v2.skill.reload({ location: { directory: input.directory } })
+      },
+    },
+  }
   return lazyApi(
-    input.protocol.then((protocol) => (protocol === "v1" ? v1 : input.current)),
-    input.current,
+    input.protocol.then((protocol) => (protocol === "v1" ? v1 : current)),
+    current,
   )
 }
 
@@ -135,6 +145,12 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
 
   return {
     ...input.current,
+    skill: {
+      ...input.current.skill,
+      async reload() {
+        await legacy().skill.reload({ directory: directory() })
+      },
+    },
     session: {
       ...input.current.session,
       async list(

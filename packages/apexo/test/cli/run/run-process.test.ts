@@ -166,6 +166,33 @@ describe("apexo run (non-interactive subprocess)", () => {
   )
 
   cliIt.concurrent(
+    "--format streaming-json emits the Grok Build headless event shapes",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.text("streamed output")
+        const result = yield* apexo.run("say hi", { format: "streaming-json" })
+        apexo.expectExit(result, 0)
+
+        const events = apexo.parseJsonEvents(result.stdout)
+        expect(events.some((event) => event.type === "available_commands")).toBe(true)
+        expect(events.some((event) => event.type === "step_start")).toBe(true)
+        expect(events.some((event) => event.type === "text" && event.data === "streamed output")).toBe(true)
+        expect(events.some((event) => event.type === "step_finish")).toBe(true)
+        expect(events.at(-1)).toMatchObject({
+          type: "end",
+          stopReason: "end_turn",
+          sessionId: expect.any(String),
+          requestId: expect.any(String),
+        })
+        for (const event of events) {
+          expect(event.timestamp).toBeUndefined()
+          expect(event.sessionID).toBeUndefined()
+        }
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
     "--format json preserves reasoning, tool, and continuation ordering",
     ({ llm, apexo }) =>
       Effect.gen(function* () {

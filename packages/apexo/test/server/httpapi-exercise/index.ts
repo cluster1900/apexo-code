@@ -140,6 +140,7 @@ const scenarios: Scenario[] = [
   http.protected.get("/command", "command.list").json(200, array, "status"),
   http.protected.get("/agent", "app.agents").json(200, array, "status"),
   http.protected.get("/skill", "app.skills").json(200, array, "status"),
+  http.protected.post("/skill/reload", "skill.reload").json(200, boolean, "status"),
   http.protected.get("/lsp", "lsp.status").json(200, array),
   http.protected.get("/formatter", "formatter.status").json(200, array),
   http.protected.get("/config", "config.get").json(200, undefined, "status"),
@@ -717,6 +718,7 @@ const scenarios: Scenario[] = [
     .status(204, undefined, "status"),
   http.protected.get("/api/command", "v2.command.list").json(200, locationData(array)),
   http.protected.get("/api/skill", "v2.skill.list").json(200, locationData(array)),
+  http.protected.post("/api/skill/reload", "v2.skill.reload").status(204, undefined, "status"),
   http.protected
     .get("/api/event", "v2.event.subscribe")
     .stream()

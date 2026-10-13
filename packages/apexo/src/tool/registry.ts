@@ -1,7 +1,9 @@
+import { Auth } from "@/auth"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { Ripgrep } from "@apexo/core/ripgrep"
 import { PlanExitTool } from "./plan"
+import { PlanEnterTool } from "./plan-enter"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
@@ -53,6 +55,7 @@ import { ModelV2 } from "@apexo/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { GrokBuildTools } from "./grok-build"
 
 export function webSearchEnabled(flags = { exa: false, parallel: false }) {
   return flags.exa || flags.parallel
@@ -90,7 +93,10 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const auth = yield* Auth.Service
+    const provider = yield* Provider.Service
     const mcp = yield* MCP.Service
+    const background = yield* BackgroundJob.Service
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
@@ -98,6 +104,7 @@ const layer = Layer.effect(
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
+    const planEnter = yield* PlanEnterTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
@@ -216,6 +223,7 @@ const layer = Layer.effect(
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
+          planEnter: Tool.init(planEnter),
           plan: Tool.init(plan),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
@@ -239,7 +247,9 @@ const layer = Layer.effect(
             tool.patch,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+            ...(flags.experimentalPlanMode && (flags.client === "cli" || flags.runtimeProfile === "grok-build")
+              ? [tool.planEnter, tool.plan]
+              : []),
           ],
           task: tool.task,
           read: tool.read,
@@ -301,7 +311,7 @@ const layer = Layer.effect(
         : undefined
       const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
 
-      return yield* Effect.forEach(
+      const result = yield* Effect.forEach(
         visible,
         Effect.fnUntraced(function* (tool: Tool.Def) {
           const output = {
@@ -331,6 +341,36 @@ const layer = Layer.effect(
         }),
         { concurrency: "unbounded" },
       )
+
+      return flags.runtimeProfile === "grok-build"
+        ? GrokBuildTools.adaptTools(result, {
+            directory: yield* InstanceState.directory,
+            background,
+            profileExtensions: true,
+            media: {
+              transport: Effect.gen(function* () {
+                const env = process.env.XAI_API_KEY ?? process.env.GROK_API_KEY
+                if (env) return { key: env }
+                const xai = yield* provider.getProvider(ProviderV2.ID.make("xai"))
+                const value = yield* auth.get("xai").pipe(Effect.orDie)
+                const key =
+                  value?.type === "api"
+                    ? value.key
+                    : typeof xai?.options.apiKey === "string"
+                      ? xai.options.apiKey
+                      : xai?.key
+                if (!key) return undefined
+                return {
+                  key,
+                  ...(typeof xai?.options.fetch === "function" ? { fetch: xai.options.fetch as typeof fetch } : {}),
+                  ...(typeof xai?.options.baseURL === "string" ? { baseURL: xai.options.baseURL } : {}),
+                }
+              }),
+            },
+            shell: result.find((tool) => tool.id === "bash"),
+            task: result.find((tool) => tool.id === "task"),
+          })
+        : result
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
@@ -422,6 +462,7 @@ export const node = LayerNode.make({
   service: Service,
   layer,
   deps: [
+    Auth.node,
     Config.node,
     Plugin.node,
     Question.node,
