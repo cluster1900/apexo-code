@@ -32,7 +32,7 @@ export function DialogModel(props: { providerID?: string }) {
         const provider = sync.data.provider.find((provider) => provider.id === item.providerID)
         if (!provider) return []
         const model = provider.models[item.modelID]
-        if (!model) return []
+        if (!model || model.status === "deprecated") return []
         return [
           {
             key: item,

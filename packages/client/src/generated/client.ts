@@ -45,6 +45,8 @@ import type {
   ProvidersListOutput,
   ProvidersGetInput,
   ProvidersGetOutput,
+  IntegrationsConnectExternalInput,
+  IntegrationsConnectExternalOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -550,6 +552,19 @@ export function make(options: ClientOptions) {
         ),
     },
     integrations: {
+      connectExternal: (input: IntegrationsConnectExternalInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsConnectExternalOutput>(
+          {
+            method: "POST",
+            path: `/api/integration/${encodeURIComponent(input.integrationID)}/connect/external`,
+            query: { location: input["location"] },
+            body: { methodID: input["methodID"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
       list: (input?: IntegrationsListInput, requestOptions?: RequestOptions) =>
         request<IntegrationsListOutput>(
           {

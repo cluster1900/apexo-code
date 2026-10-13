@@ -20,6 +20,20 @@ export const IntegrationHandler = HttpApiBuilder.group(Api, "server.integration"
   Effect.gen(function* () {
     return handlers
       .handle(
+        "integration.connect.external",
+        Effect.fn(function* (ctx) {
+          const service = yield* Integration.Service
+          return yield* response(
+            authorize(
+              service.connection.external({
+                integrationID: ctx.params.integrationID,
+                methodID: ctx.payload.methodID,
+              }),
+            ),
+          )
+        }),
+      )
+      .handle(
         "integration.list",
         Effect.fn(function* () {
           const service = yield* Integration.Service

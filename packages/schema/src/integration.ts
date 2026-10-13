@@ -68,7 +68,15 @@ export const EnvMethod = Schema.Struct({
   names: Schema.Array(Schema.String),
 }).annotate({ identifier: "Integration.EnvMethod" })
 
-export const Method = Schema.Union([OAuthMethod, KeyMethod, EnvMethod])
+export const ExternalMethod = Schema.Struct({
+  id: MethodID,
+  type: Schema.Literal("external"),
+  label: Schema.String,
+  command: Schema.Array(Schema.String),
+}).annotate({ identifier: "Integration.ExternalMethod" })
+export interface ExternalMethod extends Schema.Schema.Type<typeof ExternalMethod> {}
+
+export const Method = Schema.Union([OAuthMethod, KeyMethod, EnvMethod, ExternalMethod])
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({ identifier: "Integration.Method" })
 export type Method = typeof Method.Type

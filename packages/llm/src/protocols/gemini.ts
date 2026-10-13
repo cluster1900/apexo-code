@@ -44,6 +44,7 @@ const GeminiInlineDataPart = Schema.Struct({
 
 const GeminiFunctionCallPart = Schema.Struct({
   functionCall: Schema.Struct({
+    id: Schema.optional(Schema.String),
     name: Schema.String,
     args: Schema.Unknown,
   }),
@@ -52,6 +53,7 @@ const GeminiFunctionCallPart = Schema.Struct({
 
 const GeminiFunctionResponsePart = Schema.Struct({
   functionResponse: Schema.Struct({
+    id: Schema.optional(Schema.String),
     name: Schema.String,
     response: Schema.Unknown,
   }),
@@ -92,6 +94,7 @@ const GeminiToolConfig = Schema.Struct({
 })
 
 const GeminiThinkingConfig = Schema.Struct({
+  thinkingLevel: Schema.optional(Schema.String),
   thinkingBudget: Schema.optional(Schema.Number),
   includeThoughts: Schema.optional(Schema.Boolean),
 })
@@ -112,7 +115,7 @@ const GeminiBodyFields = {
   toolConfig: Schema.optional(GeminiToolConfig),
   generationConfig: Schema.optional(GeminiGenerationConfig),
 }
-const GeminiBody = Schema.Struct(GeminiBodyFields)
+export const GeminiBody = Schema.Struct(GeminiBodyFields)
 export type GeminiBody = Schema.Schema.Type<typeof GeminiBody>
 
 const GeminiUsage = Schema.Struct({
@@ -129,7 +132,7 @@ const GeminiCandidate = Schema.Struct({
   finishReason: Schema.optional(Schema.String),
 })
 
-const GeminiEvent = Schema.Struct({
+export const GeminiEvent = Schema.Struct({
   candidates: optionalArray(GeminiCandidate),
   usageMetadata: Schema.optional(GeminiUsage),
 })
@@ -197,8 +200,8 @@ const thoughtSignature = (providerMetadata: ProviderMetadata | undefined) => {
     : undefined
 }
 
-const lowerToolCall = (part: ToolCallPart) => ({
-  functionCall: { name: part.name, args: part.input },
+const lowerToolCall = (part: ToolCallPart, nativeIDs: boolean) => ({
+  functionCall: { ...(nativeIDs ? { id: part.id } : {}), name: part.name, args: part.input },
   thoughtSignature: thoughtSignature(part.providerMetadata),
 })
 
@@ -240,7 +243,7 @@ const lowerMessages = Effect.fn("Gemini.lowerMessages")(function* (request: LLMR
           continue
         }
         if (part.type === "tool-call") {
-          parts.push(lowerToolCall(part))
+          parts.push(lowerToolCall(part, request.model.provider === "antigravity"))
           continue
         }
       }
@@ -255,6 +258,7 @@ const lowerMessages = Effect.fn("Gemini.lowerMessages")(function* (request: LLMR
       if (part.result.type !== "content") {
         parts.push({
           functionResponse: {
+            ...(request.model.provider === "antigravity" ? { id: part.id } : {}),
             name: part.name,
             response: {
               name: part.name,
@@ -268,6 +272,7 @@ const lowerMessages = Effect.fn("Gemini.lowerMessages")(function* (request: LLMR
       const text = content.filter((item) => item.type === "text").map((item) => item.text)
       parts.push({
         functionResponse: {
+          ...(request.model.provider === "antigravity" ? { id: part.id } : {}),
           name: part.name,
           response: {
             name: part.name,
@@ -293,6 +298,7 @@ const thinkingConfig = (request: LLMRequest) => {
   const value = geminiOptions(request)?.thinkingConfig
   if (!ProviderShared.isRecord(value)) return undefined
   const result = {
+    thinkingLevel: typeof value.thinkingLevel === "string" ? value.thinkingLevel : undefined,
     thinkingBudget: typeof value.thinkingBudget === "number" ? value.thinkingBudget : undefined,
     includeThoughts: typeof value.includeThoughts === "boolean" ? value.includeThoughts : undefined,
   }
@@ -440,7 +446,7 @@ const step = (state: ParserState, event: GeminiEvent) => {
 
     if ("functionCall" in part) {
       const input = part.functionCall.args
-      const id = `tool_${nextToolCallId++}`
+      const id = part.functionCall.id ?? `tool_${nextToolCallId++}`
       lifecycle = Lifecycle.reasoningEnd(
         lifecycle,
         events,

@@ -242,6 +242,8 @@ export const dict = {
   "provider.connect.method.headless": "无头模式",
   "provider.connect.status.inProgress": "正在授权...",
   "provider.connect.status.waiting": "等待授权...",
+  "provider.connect.external.description": "请在下方终端中完成登录。Apexo 会复用你现有的 {{provider}} 登录状态。",
+  "provider.connect.external.timeout": "登录超时，请重新连接后再试。",
   "provider.connect.status.failed": "授权失败：{{error}}",
   "provider.connect.apiKey.description":
     "输入你的 {{provider}} API 密钥以连接账户，并在 Apexo 中使用 {{provider}} 模型。",

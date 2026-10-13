@@ -2,9 +2,7 @@ import { makeDefaultApi } from "@apexo/protocol/api"
 import { InvalidRequestError, SessionNotFoundError } from "@apexo/protocol/errors"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 
-class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware>()(
-  "@apexo/client/LocationMiddleware",
-) {}
+class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware>()("@apexo/client/LocationMiddleware") {}
 
 class SessionLocationMiddleware extends HttpApiMiddleware.Service<SessionLocationMiddleware>()(
   "@apexo/client/SessionLocationMiddleware",
@@ -40,6 +38,7 @@ export const groupNames = {
 export const endpointNames = {
   "session.messages": "list",
   "integration.connect.key": "connectKey",
+  "integration.connect.external": "connectExternal",
   "integration.connect.oauth": "connectOauth",
   "integration.attempt.status": "attemptStatus",
   "integration.attempt.complete": "attemptComplete",

@@ -2,6 +2,7 @@ export * as SessionRunnerModel from "./model"
 
 import { makeLocationNode } from "../../effect/app-node"
 import { type Model } from "@apexo/llm"
+import { Antigravity } from "@apexo/llm/protocols/antigravity"
 import * as AnthropicMessages from "@apexo/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@apexo/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@apexo/llm/protocols/openai-responses"
@@ -140,7 +141,26 @@ const apiName = (model: ModelV2.Info) =>
 export const fromCatalogModel = (
   model: ModelV2.Info,
   credential?: Credential.Value,
+  sessionID?: string,
 ): Effect.Effect<Model, UnsupportedApiError> => {
+  if (model.providerID === "antigravity" && credential?.type === "key") {
+    const configured = produce(model, (draft) => {
+      delete draft.request.body.thinkingConfig
+      // Native tier variants select the route's model ID, not a protocol-owned HTTP body overlay.
+      delete draft.request.body.model
+    })
+    return Effect.succeed(
+      withDefaults(configured, Antigravity.route)
+        .with({
+          auth: Auth.bearer(credential.key),
+          providerOptions: {
+            antigravity: { projectID: credential.metadata?.projectID, sessionID },
+            gemini: { thinkingConfig: model.request.body.thinkingConfig },
+          },
+        })
+        .model({ id: typeof model.request.body.model === "string" ? model.request.body.model : model.api.id }),
+    )
+  }
   const resolved =
     credential?.type !== "key" || credential.metadata === undefined
       ? model
@@ -155,10 +175,7 @@ export const fromCatalogModel = (
         .model({ id: resolved.api.id }),
     )
   }
-  if (
-    resolved.api.type === "aisdk" &&
-    (resolved.api.package === "@ai-sdk/xai" || resolved.providerID === "xai")
-  ) {
+  if (resolved.api.type === "aisdk" && (resolved.api.package === "@ai-sdk/xai" || resolved.providerID === "xai")) {
     const baseURL = resolved.api.url ?? "https://api.x.ai/v1"
     return Effect.succeed(
       withDefaults(resolved, OpenAIResponses.route)
@@ -197,14 +214,17 @@ export const fromCatalogModel = (
 }
 
 export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, credential?: Credential.Value) =>
-  withVariant(model, session.model?.variant).pipe(Effect.flatMap((model) => fromCatalogModel(model, credential)))
+  withVariant(model, session.model?.variant).pipe(
+    Effect.flatMap((model) => fromCatalogModel(model, credential, session.id)),
+  )
 
 export const supported = (model: ModelV2.Info) =>
-  model.api.type === "aisdk" &&
-  (model.api.package === "@ai-sdk/openai" ||
-    model.api.package === "@ai-sdk/xai" ||
-    model.api.package === "@ai-sdk/anthropic" ||
-    (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined))
+  model.providerID === "antigravity" ||
+  (model.api.type === "aisdk" &&
+    (model.api.package === "@ai-sdk/openai" ||
+      model.api.package === "@ai-sdk/xai" ||
+      model.api.package === "@ai-sdk/anthropic" ||
+      (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined)))
 
 /** Resolves models from the catalog belonging to the current Location runtime. */
 export const locationLayer = Layer.effect(

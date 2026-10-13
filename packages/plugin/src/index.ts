@@ -90,6 +90,13 @@ export type AuthHook = {
   loader?: (auth: () => Promise<Auth>, provider: Provider) => Promise<Record<string, any>>
   methods: (
     | {
+        type: "external"
+        label: string
+        command: string[]
+        prompts?: never
+        connect(): Promise<boolean>
+      }
+    | {
         type: "oauth"
         label: string
         prompts?: Array<

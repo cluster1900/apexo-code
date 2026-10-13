@@ -133,6 +133,9 @@ export const dict = {
   "provider.connect.method.headless": "Headless",
   "provider.connect.status.inProgress": "Authorization in progress...",
   "provider.connect.status.waiting": "Waiting for authorization...",
+  "provider.connect.external.description":
+    "Complete sign-in in the terminal below. Apexo reuses your existing {{provider}} login.",
+  "provider.connect.external.timeout": "Sign-in timed out. Reconnect to try again.",
   "provider.connect.status.failed": "Authorization failed: {{error}}",
   "provider.connect.apiKey.description":
     "Enter your {{provider}} API key to connect your account and use {{provider}} models in Apexo.",

@@ -113,6 +113,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     }
 
     const visible = (model: ModelKey) => {
+      if (find(model)?.status === "deprecated") return false
       const key = modelKey(model)
       const state = visibility().get(key)
       if (state === "hide") return false
@@ -156,7 +157,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     )
     return {
       ready,
-      list,
+      list: () => list().filter((model) => model.status !== "deprecated"),
       find,
       visible,
       setVisibility,

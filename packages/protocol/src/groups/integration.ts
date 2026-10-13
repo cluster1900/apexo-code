@@ -9,6 +9,24 @@ const Inputs = Schema.Record(Schema.String, Schema.String)
 
 export const IntegrationGroup = HttpApiGroup.make("server.integration")
   .add(
+    HttpApiEndpoint.post("integration.connect.external", "/api/integration/:integrationID/connect/external", {
+      params: { integrationID: Integration.ID },
+      query: LocationQuery,
+      payload: Schema.Struct({ methodID: Integration.MethodID }),
+      success: Location.response(Schema.Boolean),
+      error: InvalidRequestError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.integration.connect.external",
+          summary: "Reuse an external login",
+          description:
+            "Connect to an existing native login without copying its credentials. Returns false when login is required.",
+        }),
+      ),
+  )
+  .add(
     HttpApiEndpoint.get("integration.list", "/api/integration", {
       query: LocationQuery,
       success: Location.response(Schema.Array(Integration.Info)),

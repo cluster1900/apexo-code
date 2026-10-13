@@ -139,6 +139,8 @@ const appBindingCommands = [
 
 export type TuiInput = {
   url: string
+  /** Only a TUI that owns its backend may launch native login commands on this machine. */
+  local?: boolean
   args: Args
   config: TuiConfig.Resolved
   onSnapshot?: () => Promise<string[]>
@@ -278,6 +280,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                       <PluginRuntimeProvider value={pluginRuntime}>
                                         <SDKProvider
                                           url={input.url}
+                                          local={input.local}
                                           directory={input.directory}
                                           fetch={input.fetch}
                                           headers={input.headers}

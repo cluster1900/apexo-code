@@ -126,8 +126,6 @@ function timeoutFetch(options: Record<string, any>) {
   }
 }
 
-
-
 type BundledSDK = {
   languageModel(modelId: string): LanguageModelV3
   chat?: (modelId: string) => LanguageModelV3
@@ -159,8 +157,6 @@ type CustomDep = {
   env: () => Effect.Effect<Record<string, string | undefined>>
   get: (key: string) => Effect.Effect<string | undefined>
 }
-
-
 
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
@@ -323,7 +319,12 @@ export function toPublicInfo(provider: Info): Info {
 }
 
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
-  return mapValues(providers, (item) => sort(Object.values(item.models))[0].id)
+  return Object.fromEntries(
+    Object.entries(providers).flatMap(([id, item]) => {
+      const model = sort(Object.values(item.models))[0]
+      return model ? [[id, model.id]] : []
+    }),
+  )
 }
 
 export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundError>()("ProviderModelNotFoundError", {
@@ -439,7 +440,6 @@ function cost(c: ModelsDev.Model["cost"]): Model["cost"] {
   return result
 }
 
-
 function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
   const base: Model = {
     id: ModelV2.ID.make(model.id),
@@ -449,10 +449,7 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     api: {
       id: model.id,
       url: model.provider?.api ?? provider.api ?? "",
-      npm:
-        model.provider?.npm ??
-        provider.npm ??
-        "@ai-sdk/openai-compatible",
+      npm: model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible",
     },
     status: model.status ?? "active",
     headers: {},
@@ -828,7 +825,6 @@ const layer = Layer.effect(
           mergeProvider(providerID, partial)
         }
 
-
         for (const [id, provider] of Object.entries(providers)) {
           const providerID = ProviderV2.ID.make(id)
           if (!isProviderAllowed(providerID)) {
@@ -849,7 +845,8 @@ const layer = Layer.effect(
             )
               delete provider.models[modelID]
             if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
-            if (model.status === "deprecated") delete provider.models[modelID]
+            // Native tier aliases remain callable by saved sessions, but are hidden in model pickers.
+            if (model.status === "deprecated" && providerID !== "antigravity") delete provider.models[modelID]
             if (
               (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) ||
               (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
@@ -893,7 +890,6 @@ const layer = Layer.effect(
       try {
         const provider = s.providers[model.providerID]
         const options = { ...provider.options }
-
 
         if (model.api.npm.includes("@ai-sdk/openai-compatible") && options["includeUsage"] !== false) {
           options["includeUsage"] = true
@@ -1132,9 +1128,9 @@ const layer = Layer.effect(
 
 const priority = ["gpt-5", "claude-sonnet-4", "grok-4", "gemini-3-pro"]
 const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
-export function sort<T extends { id: string }>(models: T[]) {
+export function sort<T extends { id: string; status?: string }>(models: T[]) {
   return sortBy(
-    models,
+    models.filter((model) => model.status !== "deprecated"),
     [(model) => priority.findIndex((filter) => model.id.includes(filter)), "desc"],
     [(model) => (model.id.includes("latest") ? 0 : 1), "asc"],
     [(model) => model.id, "desc"],

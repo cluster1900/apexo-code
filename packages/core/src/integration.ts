@@ -51,6 +51,9 @@ export type KeyMethod = Integration.KeyMethod
 export const EnvMethod = Integration.EnvMethod
 export type EnvMethod = Integration.EnvMethod
 
+export const ExternalMethod = Integration.ExternalMethod
+export type ExternalMethod = Integration.ExternalMethod
+
 export const Method = Integration.Method
 export type Method = Integration.Method
 
@@ -92,7 +95,14 @@ export interface EnvImplementation {
   readonly method: EnvMethod
 }
 
-export type Implementation = OAuthImplementation | KeyImplementation | EnvImplementation
+export interface ExternalImplementation {
+  readonly integrationID: ID
+  readonly method: ExternalMethod
+  readonly available: Effect.Effect<boolean, unknown>
+  readonly resolve: Effect.Effect<Credential.Key | Credential.OAuth, unknown>
+}
+
+export type Implementation = OAuthImplementation | KeyImplementation | EnvImplementation | ExternalImplementation
 
 export const Attempt = Integration.Attempt
 export type Attempt = Integration.Attempt
@@ -118,7 +128,7 @@ export type Ref = Integration.Ref
 type Entry = {
   ref: Types.DeepMutable<Ref>
   methods: Types.DeepMutable<Method>[]
-  implementations: Map<MethodID, Types.DeepMutable<OAuthImplementation>>
+  implementations: Map<MethodID, Types.DeepMutable<OAuthImplementation | ExternalImplementation>>
 }
 
 type Data = {
@@ -144,12 +154,17 @@ export interface Interface extends State.Transformable<Draft> {
   /** Returns all integrations with their methods and current connections. */
   readonly list: () => Effect.Effect<Info[]>
   readonly connection: {
+    /** Connects to an existing native login, saving only a reference to its owner. */
+    readonly external: (input: {
+      readonly integrationID: ID
+      readonly methodID: MethodID
+    }) => Effect.Effect<boolean, AuthorizationError>
     /** Returns the active connection for one integration. */
     readonly active: (id: ID) => Effect.Effect<IntegrationConnection.Info | undefined>
     /** Resolves a connection into usable credential material. */
     readonly resolve: (
       connection: IntegrationConnection.Info,
-    ) => Effect.Effect<Credential.Value | undefined, AuthorizationError>
+    ) => Effect.Effect<Credential.Key | Credential.OAuth | undefined, AuthorizationError>
     /** Runs a key method and stores the resulting credential. */
     readonly key: (input: {
       /** Integration receiving the credential. */
@@ -250,22 +265,22 @@ export const locationLayer = Layer.effect(
                 name: implementation.integrationID,
               },
               methods: [],
-              implementations: new Map<MethodID, Types.DeepMutable<OAuthImplementation>>(),
+              implementations: new Map<MethodID, Types.DeepMutable<OAuthImplementation | ExternalImplementation>>(),
             }
             if (!draft.integrations.has(implementation.integrationID)) {
               draft.integrations.set(implementation.integrationID, current)
             }
             const index = current.methods.findIndex((method) => {
               if (method.type !== implementation.method.type) return false
-              if (method.type !== "oauth" || implementation.method.type !== "oauth") return true
+              if (!("id" in method) || !("id" in implementation.method)) return true
               return method.id === implementation.method.id
             })
             if (index === -1) current.methods.push(implementation.method as Types.DeepMutable<Method>)
             else current.methods[index] = implementation.method as Types.DeepMutable<Method>
-            if (implementation.method.type === "oauth") {
+            if (implementation.method.type === "oauth" || implementation.method.type === "external") {
               current.implementations.set(
                 implementation.method.id,
-                implementation as Types.DeepMutable<OAuthImplementation>,
+                implementation as Types.DeepMutable<OAuthImplementation | ExternalImplementation>,
               )
             }
           },
@@ -274,11 +289,11 @@ export const locationLayer = Layer.effect(
             if (!current) return
             const index = current.methods.findIndex((candidate) => {
               if (candidate.type !== method.type) return false
-              if (candidate.type !== "oauth" || method.type !== "oauth") return true
+              if (!("id" in candidate) || !("id" in method)) return true
               return candidate.id === method.id
             })
             if (index !== -1) current.methods.splice(index, 1)
-            if (method.type === "oauth") current.implementations.delete(method.id)
+            if ("id" in method) current.implementations.delete(method.id)
           },
         },
       }),
@@ -334,7 +349,9 @@ export const locationLayer = Layer.effect(
         const implementation = state.get().integrations.get(result.integrationID)?.implementations.get(result.methodID)
         yield* credentials.create({
           integrationID: result.integrationID,
-          label: result.label ?? implementation?.label?.(exit.value),
+          label:
+            result.label ??
+            (implementation && "label" in implementation ? implementation.label?.(exit.value) : undefined),
           value: exit.value,
         })
         yield* events.publish(Event.ConnectionUpdated, { integrationID: result.integrationID })
@@ -378,6 +395,24 @@ export const locationLayer = Layer.effect(
         ).toSorted((a, b) => a.name.localeCompare(b.name))
       }),
       connection: {
+        external: Effect.fn("Integration.connection.external")(function* (input) {
+          const method = state.get().integrations.get(input.integrationID)?.implementations.get(input.methodID)
+          if (!method || !("available" in method))
+            return yield* new AuthorizationError({ cause: new Error("External authentication method is unavailable") })
+          if (!(yield* authorize(method.available))) return false
+          const saved = yield* credentials.list(input.integrationID)
+          if (!saved.some((item) => item.value.type === "external" && item.value.methodID === input.methodID)) {
+            yield* credentials.create({
+              integrationID: input.integrationID,
+              label: method.method.label,
+              value: { type: "external", methodID: input.methodID },
+            })
+          }
+          // Reconnecting an existing reference may follow a native account change or login.
+          yield* events.publish(Event.ConnectionUpdated, { integrationID: input.integrationID })
+          yield* events.publish(Event.Updated, {})
+          return true
+        }),
         active: Effect.fn("Integration.connection.active")(function* (id) {
           const entry = state.get().integrations.get(id)
           return resolveConnections(entry, yield* credentials.list(id))[0]
@@ -394,7 +429,14 @@ export const locationLayer = Layer.effect(
             .get()
             .integrations.get(credential.integrationID)
             ?.implementations.get(credential.value.methodID)
-          if (!implementation?.refresh) return credential.value
+          if (credential.value.type === "external") {
+            if (!implementation || !("resolve" in implementation))
+              return yield* new AuthorizationError({
+                cause: new Error("External authentication method is unavailable"),
+              })
+            return yield* authorize(implementation.resolve)
+          }
+          if (!implementation || !("refresh" in implementation) || !implementation.refresh) return credential.value
           const now = yield* Clock.currentTimeMillis
           if (credential.value.expires > now + Duration.toMillis(Duration.minutes(5))) return credential.value
           const value = yield* authorize(implementation.refresh(credential.value))
@@ -417,7 +459,7 @@ export const locationLayer = Layer.effect(
         }),
         oauth: Effect.fn("Integration.connection.oauth")(function* (input) {
           const method = state.get().integrations.get(input.integrationID)?.implementations.get(input.methodID)
-          if (!method) {
+          if (!method || !("authorize" in method)) {
             return yield* Effect.die(`OAuth method not found: ${input.integrationID}/${input.methodID}`)
           }
           const attemptScope = yield* Scope.fork(scope)

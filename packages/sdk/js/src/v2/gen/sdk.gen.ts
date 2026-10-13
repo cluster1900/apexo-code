@@ -138,6 +138,8 @@ import type {
   PromptInput,
   ProviderAuthErrors,
   ProviderAuthResponses,
+  ProviderExternalErrors,
+  ProviderExternalResponses,
   ProviderListErrors,
   ProviderListResponses,
   ProviderOauthAuthorizeErrors,
@@ -278,6 +280,8 @@ import type {
   V2IntegrationAttemptCompleteResponses,
   V2IntegrationAttemptStatusErrors,
   V2IntegrationAttemptStatusResponses,
+  V2IntegrationConnectExternalErrors,
+  V2IntegrationConnectExternalResponses,
   V2IntegrationConnectKeyErrors,
   V2IntegrationConnectKeyResponses,
   V2IntegrationConnectOauthErrors,
@@ -3240,6 +3244,43 @@ export class Provider extends HeyApiClient {
     })
   }
 
+  /**
+   * Reuse a native login
+   */
+  public external<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      directory?: string
+      workspace?: string
+      method?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "method" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ProviderExternalResponses, ProviderExternalErrors, ThrowOnError>({
+      url: "/provider/{providerID}/external",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
   private _oauth?: Oauth
   get oauth(): Oauth {
     return (this._oauth ??= new Oauth({ client: this.client }))
@@ -5778,6 +5819,50 @@ export class Provider2 extends HeyApiClient {
 }
 
 export class Connect extends HeyApiClient {
+  /**
+   * Reuse an external login
+   *
+   * Connect to an existing native login without copying its credentials. Returns false when login is required.
+   */
+  public external<ThrowOnError extends boolean = false>(
+    parameters: {
+      integrationID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      methodID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "integrationID" },
+            { in: "query", key: "location" },
+            { in: "body", key: "methodID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2IntegrationConnectExternalResponses,
+      V2IntegrationConnectExternalErrors,
+      ThrowOnError
+    >({
+      url: "/api/integration/{integrationID}/connect/external",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
   /**
    * Connect with key
    *

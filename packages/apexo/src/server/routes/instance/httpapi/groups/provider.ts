@@ -55,6 +55,13 @@ export const ProviderApi = HttpApi.make("provider")
             description: "Retrieve available authentication methods for all AI providers.",
           }),
         ),
+        HttpApiEndpoint.post("external", `${root}/:providerID/external`, {
+          params: { providerID: ProviderV2.ID },
+          query: WorkspaceRoutingQuery,
+          payload: Schema.Struct({ method: Schema.Number }),
+          success: Schema.Boolean,
+          error: ProviderAuthApiError,
+        }).annotateMerge(OpenApi.annotations({ identifier: "provider.external", summary: "Reuse a native login" })),
         HttpApiEndpoint.post("authorize", `${root}/:providerID/oauth/authorize`, {
           params: { providerID: ProviderV2.ID },
           query: WorkspaceRoutingQuery,
