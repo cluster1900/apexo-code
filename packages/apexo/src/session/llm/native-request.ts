@@ -18,6 +18,7 @@ export type RequestInput = {
   readonly messages: readonly ModelMessage[]
   readonly tools?: Record<string, ToolInput>
   readonly toolChoice?: "auto" | "required" | "none"
+  readonly outputSchema?: Record<string, unknown>
   readonly temperature?: number
   readonly topP?: number
   readonly topK?: number
@@ -177,6 +178,7 @@ export const request = (input: RequestInput) => {
     messages: converted.messages,
     tools: tools(input.tools),
     toolChoice: input.toolChoice,
+    responseFormat: input.outputSchema ? { type: "json", schema: input.outputSchema } : undefined,
     generation: generation(input),
     providerOptions: input.providerOptions,
   })

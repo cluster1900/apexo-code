@@ -3,6 +3,7 @@ export * as ToolRegistry from "./registry"
 import { ToolOutput, type ToolCall, type ToolDefinition, type ToolResultValue } from "@apexo/llm"
 import { Context, Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
+import { HookObserver } from "../hook-observer"
 import { PermissionV2 } from "../permission"
 import { SessionMessage } from "../session/message"
 import { SessionSchema } from "../session/schema"
@@ -21,6 +22,7 @@ export type ExecuteInput = {
 }
 
 export interface Interface {
+  readonly prepare: Tools.Interface["prepare"]
   readonly materialize: (permissions?: PermissionV2.Ruleset) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
@@ -65,14 +67,25 @@ const registryLayer = Layer.effect(
         assistantMessageID: input.assistantMessageID,
         toolCallID: input.call.id,
       }).pipe(
+        Effect.provideService(HookObserver.CurrentTool, {
+          sessionID: input.sessionID,
+          callID: input.call.id,
+          toolName: input.call.name,
+          toolInput: input.call.input,
+        }),
         Effect.map((output) => ({ output })),
         Effect.catchTag("LLM.ToolFailure", (failure) =>
           Effect.succeed({ result: { type: "error" as const, value: failure.message } }),
         ),
       )
       if ("result" in pending) return pending
-      const output = pending.output
-      const bounded = yield* resources.bound({ sessionID: input.sessionID, toolCallID: input.call.id, output })
+      const output = { structured: pending.output.structured, content: pending.output.content }
+      const bounded = yield* resources.bound({
+        sessionID: input.sessionID,
+        toolCallID: input.call.id,
+        output,
+        policy: pending.output.policy,
+      })
       const result = ToolOutput.toResultValue(bounded.output)
       if (result.type === "error")
         return bounded.outputPaths.length > 0 ? { result, outputPaths: bounded.outputPaths } : { result }
@@ -81,28 +94,39 @@ const registryLayer = Layer.effect(
         : { result, output: bounded.output }
     })
 
+    const prepare: Tools.Interface["prepare"] = Effect.fn("ToolRegistry.prepare")(function* (tools) {
+      const entries = Object.entries(tools)
+      yield* Effect.forEach(entries, ([name]) => validateName(name), { discard: true })
+      return yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const token = {}
+          const ownership = { open: true, committed: false }
+          const prepared = entries.map(
+            ([name, tool]) => [name, { token, registration: { identity: {}, tool } }] as const,
+          )
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              ownership.open = false
+              if (!ownership.committed) return
+              for (const [name] of entries) {
+                const registrations = local.get(name)?.filter((registration) => registration.token !== token) ?? []
+                if (registrations.length > 0) local.set(name, registrations)
+                else local.delete(name)
+              }
+            }),
+          )
+          return () => {
+            if (!ownership.open) throw new Error("Prepared tool registration scope is closed")
+            if (ownership.committed) return
+            ownership.committed = true
+            for (const [name, registration] of prepared) local.set(name, [...(local.get(name) ?? []), registration])
+          }
+        }),
+      )
+    })
     return Service.of({
-      register: Effect.fn("ToolRegistry.register")(function* (tools) {
-        const entries = Object.entries(tools)
-        if (entries.length === 0) return
-        yield* Effect.forEach(entries, ([name]) => validateName(name), { discard: true })
-        yield* Effect.uninterruptible(
-          Effect.gen(function* () {
-            const token = {}
-            for (const [name, tool] of entries)
-              local.set(name, [...(local.get(name) ?? []), { token, registration: { identity: {}, tool } }])
-            yield* Effect.addFinalizer(() =>
-              Effect.sync(() => {
-                for (const [name] of entries) {
-                  const registrations = local.get(name)?.filter((registration) => registration.token !== token) ?? []
-                  if (registrations.length > 0) local.set(name, registrations)
-                  else local.delete(name)
-                }
-              }),
-            )
-          }),
-        )
-      }),
+      prepare,
+      register: (tools) => prepare(tools).pipe(Effect.flatMap((commit) => Effect.sync(commit))),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
         const registrations = new Map(applications.entries())
         for (const [name, entries] of local) {
@@ -126,7 +150,9 @@ const registryLayer = Layer.effect(
 
 const layer = Layer.effect(
   Tools.Service,
-  Service.use((registry) => Effect.succeed(Tools.Service.of({ register: registry.register }))),
+  Service.use((registry) =>
+    Effect.succeed(Tools.Service.of({ register: registry.register, prepare: registry.prepare })),
+  ),
 ).pipe(Layer.provideMerge(registryLayer))
 
 function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {

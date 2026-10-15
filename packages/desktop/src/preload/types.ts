@@ -1,3 +1,5 @@
+export type RuntimeProfile = "apexo" | "grok-build"
+export type RuntimeProfileState = { active: RuntimeProfile | null; preferred: RuntimeProfile; supported: boolean }
 import type { DesktopMenuAction } from "@apexo/app/desktop-menu"
 import type { WslServersPlatform } from "@apexo/app/wsl/types"
 import type { DesktopNativeBundle } from "@apexo/app/i18n/desktop-native"
@@ -37,6 +39,8 @@ export type FatalRendererError = {
 }
 
 export type ElectronAPI = {
+  getRuntimeProfile: () => Promise<RuntimeProfileState>
+  setRuntimeProfile: (profile: RuntimeProfile) => Promise<RuntimeProfileState>
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>

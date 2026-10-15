@@ -1,3 +1,4 @@
+import { SessionPrompt } from "@/session/prompt"
 // Regression coverage for issue #26526's claim that promptAsync's
 // Effect.forkIn loses the request's InstanceRef/WorkspaceRef. It does not —
 // forkIn preserves Context.Reference values via standard fiber inheritance.
@@ -52,7 +53,7 @@ const workspaceLayer = workspaceLayerWithRuntimeFlags({ experimentalWorkspaces: 
 const it = testEffect(Layer.mergeAll(testStateLayer, NodeHttpServer.layerTest, NodeServices.layer, workspaceLayer))
 
 const instanceContextTestLayer = Layer.mergeAll(
-  instanceContextLayer,
+  instanceContextLayer.pipe(Layer.provide(Layer.mock(SessionPrompt.Service, { init: () => Effect.void }))),
   workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal)),
 )
 

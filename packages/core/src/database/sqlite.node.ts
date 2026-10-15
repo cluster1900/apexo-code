@@ -150,7 +150,8 @@ const nativeLayer = (config: Config) =>
     Effect.gen(function* () {
       const native = new DatabaseSync(config.filename, {
         readOnly: config.readonly,
-        timeout: config.timeout,
+        // Cover WAL initialization as well as later queries when another process is recovering.
+        timeout: config.timeout ?? 5000,
         allowExtension: config.allowExtension,
         enableForeignKeyConstraints: true,
         open: true,

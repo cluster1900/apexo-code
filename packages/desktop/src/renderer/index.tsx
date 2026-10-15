@@ -271,6 +271,8 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
     wslServers: wslServersApi,
 
+    getRuntimeProfile: () => window.api.getRuntimeProfile(),
+    setRuntimeProfile: (profile) => window.api.setRuntimeProfile(profile),
     getDisplayBackend: async () => {
       return window.api.getDisplayBackend().catch(() => null)
     },

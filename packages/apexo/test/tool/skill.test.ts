@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { CrossSpawnSpawner } from "@apexo/core/cross-spawn-spawner"
 import { LayerNode } from "@apexo/core/effect/layer-node"
@@ -27,7 +28,9 @@ afterEach(async () => {
   await disposeAllInstances()
 })
 
-const it = testEffect(LayerNode.compile(LayerNode.group([ToolRegistry.node, CrossSpawnSpawner.node, Ripgrep.node])))
+const it = testEffect(
+  AppNodeBuilderV1.build(LayerNode.group([ToolRegistry.node, CrossSpawnSpawner.node, Ripgrep.node])),
+)
 
 describe("tool.skill", () => {
   it.instance("execute returns skill content block with files", () =>

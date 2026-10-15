@@ -13,6 +13,7 @@ function missingRequest(id: PermissionV2.ID) {
 
 export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", (handlers) =>
   Effect.gen(function* () {
+    const saved = yield* PermissionSaved.Service
     return handlers
       .handle(
         "permission.request.list",
@@ -81,7 +82,7 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         Effect.fn(function* (ctx) {
           const location = yield* Location.Service
           return {
-            data: yield* (yield* PermissionSaved.Service).list({
+            data: yield* saved.list({
               projectID: ctx.query.projectID ?? location.project.id,
             }),
           }
@@ -90,7 +91,7 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "permission.saved.remove",
         Effect.fn(function* (ctx) {
-          yield* (yield* PermissionSaved.Service).remove(ctx.params.id)
+          yield* saved.remove(ctx.params.id)
           return HttpApiSchema.NoContent.make()
         }),
       )

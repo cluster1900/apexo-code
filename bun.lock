@@ -118,6 +118,7 @@
         "@types/turndown": "5.0.5",
         "@types/yargs": "17.0.33",
         "@typescript/native-preview": "catalog:",
+        "@xterm/headless": "5.5.0",
         "drizzle-orm": "catalog:",
         "prettier": "3.6.2",
         "typescript": "catalog:",
@@ -275,6 +276,7 @@
         "@effect/sql-sqlite-bun": "catalog:",
         "@ff-labs/fff-bun": "0.9.4",
         "@lydell/node-pty": "catalog:",
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@npmcli/arborist": "9.4.0",
         "@npmcli/config": "10.8.1",
         "@opentelemetry/api": "1.9.0",
@@ -283,6 +285,7 @@
         "@opentelemetry/sdk-trace-base": "2.6.1",
         "@parcel/watcher": "2.5.1",
         "@silvia-odwyer/photon-node": "0.3.4",
+        "ajv": "8.20.0",
         "bun-pty": "0.4.8",
         "cross-spawn": "catalog:",
         "diff": "catalog:",
@@ -300,7 +303,10 @@
         "npm-package-arg": "13.0.2",
         "open": "11.0.4",
         "semver": "^7.6.3",
+        "toml": "4.1.1",
         "turndown": "7.2.0",
+        "uri-template": "2.0.0",
+        "vscode-jsonrpc": "8.2.1",
         "which": "6.0.1",
         "xdg-basedir": "5.1.0",
         "zod": "catalog:",
@@ -629,6 +635,7 @@
       "dependencies": {
         "@apexo/core": "workspace:*",
         "@apexo/plugin": "workspace:*",
+        "@apexo/schema": "workspace:*",
         "@apexo/sdk": "workspace:*",
         "@apexo/ui": "workspace:*",
         "@opentui/core": "catalog:",
@@ -699,6 +706,10 @@
         "@solidjs/meta": "^0.29.0",
         "solid-js": "^1.9.0",
       },
+    },
+    "packages/workflow-script": {
+      "name": "@apexo/workflow-script",
+      "version": "0.1.0",
     },
   },
   "trustedDependencies": [
@@ -854,6 +865,8 @@
     "@apexo/tui": ["@apexo/tui@workspace:packages/tui"],
 
     "@apexo/ui": ["@apexo/ui@workspace:packages/ui"],
+
+    "@apexo/workflow-script": ["@apexo/workflow-script@workspace:packages/workflow-script"],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
@@ -1817,6 +1830,8 @@
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.13", "", {}, "sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw=="],
 
+    "@xterm/headless": ["@xterm/headless@5.5.0", "", {}, "sha512-5xXB7kdQlFBP82ViMJTwwEc3gKCLGKR/eoxQm4zge7GPBl86tCdI0IdPJjoKd8mUSFXz5V7i/25sfsEkP4j46g=="],
+
     "@zip.js/zip.js": ["@zip.js/zip.js@2.7.62", "", {}, "sha512-OaLvZ8j4gCkLn048ypkZu29KX30r8/OfFF2w4Jo5WXFr+J04J+lzJ5TKZBVgFXhlvSkqNFQdfnY1Q8TMTCyBVA=="],
 
     "abbrev": ["abbrev@4.0.0", "", {}, "sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA=="],
@@ -2695,6 +2710,8 @@
 
     "pathval": ["pathval@2.0.1", "", {}, "sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ=="],
 
+    "pct-encode": ["pct-encode@1.0.3", "", {}, "sha512-+ojEvSHApoLWF2YYxwnOM4N9DPn5e5fG+j0YJ9drKNaYtrZYOq5M9ESOaBYqOHCXOAALODJJ4wkqHAXEuLpwMw=="],
+
     "pe-library": ["pe-library@0.4.1", "", {}, "sha512-eRWB5LBz7PpDu4PUlwT0PhnQfTQJlDDdPa35urV4Osrm0t0AqQFGn+UIkU3klZvwJ8KPO3VbBFsXquA6p6kqZw=="],
 
     "pend": ["pend@1.2.0", "", {}, "sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg=="],
@@ -3078,6 +3095,8 @@
     "update-browserslist-db": ["update-browserslist-db@1.2.3", "", { "dependencies": { "escalade": "^3.2.0", "picocolors": "^1.1.1" }, "peerDependencies": { "browserslist": ">= 4.21.0" }, "bin": { "update-browserslist-db": "cli.js" } }, "sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w=="],
 
     "uri-js": ["uri-js@4.4.1", "", { "dependencies": { "punycode": "^2.1.0" } }, "sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg=="],
+
+    "uri-template": ["uri-template@2.0.0", "", { "dependencies": { "pct-encode": "~1.0.0" } }, "sha512-r/i44nPoo0ktEZDjx+hxp9PSjQuBBfsd6RgCRuuMqCP0FZEp+YE0SpihThI4UGc5ePqQEFsdyZc7UVlowp+LLw=="],
 
     "use-sync-external-store": ["use-sync-external-store@1.6.0", "", { "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w=="],
 

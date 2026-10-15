@@ -63,7 +63,10 @@ const decodeMessageRow = (row: typeof SessionMessageTable.$inferSelect) =>
     ),
   )
 
-export const load = Effect.fn("SessionHistory.load")(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
+export const loadEntries = Effect.fn("SessionHistory.loadEntries")(function* (
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+) {
   const [epoch, compaction] = yield* Effect.all(
     [
       db
@@ -76,8 +79,13 @@ export const load = Effect.fn("SessionHistory.load")(function* (db: DatabaseServ
     ],
     { concurrency: "unbounded" },
   )
-  return yield* Effect.forEach(yield* messageRows(db, sessionID, compaction, epoch?.baselineSeq), decodeMessageRow)
+  return yield* Effect.forEach(yield* messageRows(db, sessionID, compaction, epoch?.baselineSeq), (row) =>
+    decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
+  )
 })
+
+export const load = (db: DatabaseService, sessionID: SessionSchema.ID) =>
+  loadEntries(db, sessionID).pipe(Effect.map((entries) => entries.map((entry) => entry.message)))
 
 export const loadForRunner = Effect.fn("SessionHistory.loadForRunner")(function* (
   db: DatabaseService,

@@ -24,6 +24,7 @@ import { Location } from "../location"
 import { ModelsDev } from "../models-dev"
 import { Npm } from "../npm"
 import { PluginV2 } from "../plugin"
+import { PluginBundleState } from "../plugin-bundle-state"
 import { Reference } from "../reference"
 import { SkillV2 } from "../skill"
 import { State } from "../state"
@@ -52,6 +53,7 @@ export type Requirements =
   | Npm.Service
   | Reference.Service
   | SkillV2.Service
+  | PluginBundleState.Service
 
 export interface Plugin<R = never> {
   readonly id: string
@@ -88,6 +90,7 @@ const layer = Layer.effect(
     const http = yield* HttpClient.HttpClient
     const skill = yield* SkillV2.Service
     const reference = yield* Reference.Service
+    const bundles = yield* PluginBundleState.Service
     const add = <R>(input: Plugin<R>) => {
       const loaded = {
         id: input.id,
@@ -111,6 +114,7 @@ const layer = Layer.effect(
               Effect.provideService(HttpClient.HttpClient, http),
               Effect.provideService(SkillV2.Service, skill),
               Effect.provideService(Reference.Service, reference),
+              Effect.provideService(PluginBundleState.Service, bundles),
             ),
       }
       return plugin.add(PluginV2.ID.make(loaded.id), loaded.effect)
@@ -145,6 +149,7 @@ const layer = Layer.effect(
 export const locationLayer = layer.pipe(
   Layer.provideMerge(Config.locationLayer),
   Layer.provideMerge(FetchHttpClient.layer),
+  Layer.provide(PluginBundleState.layer),
 )
 
 export const node = makeLocationNode({
@@ -168,5 +173,6 @@ export const node = makeLocationNode({
     httpClient,
     SkillV2.node,
     Reference.node,
+    PluginBundleState.node,
   ],
 })

@@ -1,3 +1,10 @@
+import { DialogWorkflow } from "../../component/dialog-workflow"
+import { DialogSideQuestion } from "../../component/dialog-side-question"
+import { DialogHooks } from "../../component/dialog-hooks"
+import { DialogFeedback } from "../../component/dialog-feedback"
+import { DialogGoal } from "../../component/dialog-goal"
+import { DialogPlugins } from "../../component/dialog-plugins"
+import { DialogMemory } from "../../component/dialog-memory"
 import {
   batch,
   createContext,
@@ -26,15 +33,7 @@ import { Spinner } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
-import type {
-  AssistantMessage,
-  Part,
-  Provider,
-  ToolPart,
-  UserMessage,
-  TextPart,
-  ReasoningPart,
-} from "@apexo/sdk/v2"
+import type { AssistantMessage, Part, Provider, ToolPart, UserMessage, TextPart, ReasoningPart } from "@apexo/sdk/v2"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
 import { webSearchProviderLabel } from "../../util/tool-display"
@@ -51,6 +50,8 @@ import { DialogConfirm } from "../../ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
+import { DialogTasks, TaskStatus } from "../../component/dialog-tasks"
+import { MemoryCaptureNotifications } from "../../component/memory-capture-notifications"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
@@ -257,7 +258,7 @@ export function Session() {
     const sessionID = route.sessionID
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
-      const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
+      const result = { data: await sdk.sessionInfo(sessionID) }
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
@@ -293,6 +294,16 @@ export function Session() {
     })
   })
 
+  createEffect(() => {
+    if (!sync.data.native) return
+    const selected = session()
+    if (!selected) return
+    untrack(() => {
+      if (selected.agent) local.agent.set(selected.agent)
+      if (selected.model) local.model.set({ providerID: selected.model.providerID, modelID: selected.model.id })
+    })
+  })
+
   let lastSwitch: string | undefined = undefined
   event.on("message.part.updated", (evt) => {
     const part = evt.properties.part
@@ -323,7 +334,6 @@ export function Session() {
   const keymap = useApexoKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
-
 
   // Helper: Find next visible message boundary in direction
   const findNextVisibleMessage = (direction: "next" | "prev"): string | null => {
@@ -415,6 +425,89 @@ export function Session() {
 
   const sessionCommandList = createMemo(() => [
     {
+      title: "Workflows",
+      value: "session.workflow",
+      category: "Session",
+      slash: { name: "workflow" },
+      run: () => dialog.replace(() => <DialogWorkflow sessionID={route.sessionID} />),
+    },
+    {
+      title: "Deep research",
+      value: "session.deep-research",
+      category: "Session",
+      slash: { name: "deep-research" },
+      run: () => dialog.replace(() => <DialogWorkflow sessionID={route.sessionID} command="/deep-research" />),
+    },
+    {
+      title: "Side question",
+      value: "session.btw",
+      category: "Session",
+      slash: { name: "btw" },
+      run: () => dialog.replace(() => <DialogSideQuestion sessionID={route.sessionID} />),
+    },
+    {
+      title: "Feedback drafts",
+      value: "session.feedback",
+      category: "Session",
+      slash: { name: "feedback" },
+      run: () => dialog.replace(() => <DialogFeedback sessionID={route.sessionID} />),
+    },
+    {
+      title: "Session hooks",
+      value: "session.hooks",
+      category: "Session",
+      slash: { name: "hooks" },
+      run: () => dialog.replace(() => <DialogHooks sessionID={route.sessionID} />),
+    },
+    {
+      title: "Manage goal",
+      value: "session.goal",
+      category: "Session",
+      slash: { name: "goal" },
+      run: () => dialog.replace(() => <DialogGoal sessionID={route.sessionID} />),
+    },
+    ...(sync.data.native || sync.data.capabilities.memoryManagement
+      ? [
+          {
+            title: "Browse memory",
+            value: "session.memory",
+            category: "Session",
+            slash: { name: "memory" },
+            run: () => dialog.replace(() => <DialogMemory sessionID={route.sessionID} />),
+          },
+        ]
+      : []),
+    ...(sync.data.native
+      ? ["remember", "flush", "dream"].map((name) => ({
+          title: name === "remember" ? "Memory: remember (unavailable)" : `Memory operations: ${name}`,
+          value: `session.memory.${name}`,
+          category: "Session",
+          slash: { name },
+          run: () =>
+            name === "remember"
+              ? toast.show({
+                  message:
+                    "Manual note rewriting is not available in native Memory. Use /memory to review supported operations.",
+                  variant: "info",
+                })
+              : dialog.replace(() => <DialogMemory sessionID={route.sessionID} operations />),
+        }))
+      : []),
+    {
+      title: "Plugins",
+      value: "session.plugins",
+      category: "Session",
+      slash: { name: "plugins" },
+      run: () => dialog.replace(() => <DialogPlugins />),
+    },
+    {
+      title: "Manage tasks",
+      value: "session.tasks",
+      category: "Session",
+      slash: { name: "tasks" },
+      run: () => dialog.replace(() => <DialogTasks sessionID={route.sessionID} />),
+    },
+    {
       title: "Rename session",
       value: "session.rename",
       category: "Session",
@@ -504,7 +597,7 @@ export function Session() {
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
-        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
+        if (status?.type !== "idle") await sdk.interrupt(route.sessionID).catch(() => {})
         const message = messagesBeforeRevert().findLast((item) => item.role === "user")
         if (!message) return
         void sdk.client.session
@@ -1182,6 +1275,8 @@ export function Session() {
                 </For>
               </scrollbox>
               <box flexShrink={0}>
+                <TaskStatus sessionID={() => route.sessionID} />
+                <MemoryCaptureNotifications sessionID={() => route.sessionID} />
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt
                     request={permissions()[0]}

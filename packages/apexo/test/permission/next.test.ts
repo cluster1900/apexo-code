@@ -1242,3 +1242,43 @@ it.instance(
     }),
   { git: true },
 )
+
+it.instance(
+  "hook ask forces a fresh permission decision after an always approval and retains denial",
+  () =>
+    Effect.gen(function* () {
+      const request = {
+        sessionID: SessionID.make("session_hook"),
+        permission: "read",
+        patterns: ["reviewed.txt"],
+        metadata: {},
+        always: ["*"],
+        ruleset: [{ permission: "read", pattern: "*", action: "ask" as const }],
+      }
+      const first = yield* ask(request).pipe(Effect.forkScoped)
+      const pending = yield* waitForPending(1)
+      yield* reply({ requestID: pending[0]!.id, reply: "always" })
+      yield* Fiber.join(first)
+      const forced = yield* ask({
+        ...request,
+        force: true,
+        ruleset: [{ permission: "read", pattern: "*", action: "allow" }],
+      }).pipe(Effect.forkScoped)
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      const sibling = yield* ask({ ...request, force: true }).pipe(Effect.forkScoped)
+      const both = yield* waitForPending(2)
+      yield* reply({ requestID: both[1]!.id, reply: "always" })
+      yield* Fiber.join(sibling)
+      expect(yield* list()).toHaveLength(1)
+      yield* rejectAll()
+      yield* Fiber.await(forced)
+      const denied = yield* ask({
+        ...request,
+        force: true,
+        ruleset: [{ permission: "read", pattern: "*", action: "deny" }],
+      }).pipe(Effect.exit)
+      expect(Exit.isFailure(denied)).toBe(true)
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)

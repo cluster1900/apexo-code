@@ -1,6 +1,6 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@apexo/core/v1/session"
-import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import { HttpClientResponse } from "effect/unstable/http"
 import { Session as SessionNs } from "@/session/session"
@@ -13,7 +13,7 @@ import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(SessionNs.node), httpApiLayer))
+const it = testEffect(Layer.mergeAll(AppNodeBuilderV1.build(SessionNs.node), httpApiLayer))
 
 const model = {
   providerID: ProviderV2.ID.make("test"),

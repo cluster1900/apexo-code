@@ -1,3 +1,6 @@
+import { SessionSchedule } from "@apexo/schema/session-schedule"
+import { Sandbox } from "@apexo/schema/sandbox"
+import { optional } from "@apexo/schema/schema"
 import { SessionMessage } from "@apexo/schema/session-message"
 import { SessionInput } from "@apexo/schema/session-input"
 import { PromptInput } from "@apexo/schema/prompt-input"
@@ -132,8 +135,10 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
+          commandSandbox: optional(Sandbox.Profile),
         }),
         success: Schema.Struct({ data: Session.Info }),
+        error: [ConflictError, InvalidRequestError, ServiceUnavailableError, SessionNotFoundError],
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.session.create",
@@ -141,6 +146,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           description: "Create a session at the requested location.",
         }),
       ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.sandbox", "/api/session/:sessionID/sandbox", {
+        params: { sessionID: Session.ID },
+        success: Sandbox.Status,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.sandbox",
+            summary: "Inspect native command sandbox",
+            description:
+              "Read stored command policy, backend availability and latest confirmed execution. Does not launch a process or change policy.",
+          }),
+        ),
     )
     .add(
       HttpApiEndpoint.get("session.active", "/api/session/active", {
@@ -168,6 +189,20 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             description: "Retrieve a session by ID.",
           }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.delete("session.remove", "/api/session/:sessionID", {
+        params: { sessionID: Session.ID },
+        success: HttpApiSchema.NoContent,
+        error: ServiceUnavailableError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.session.remove",
+          summary: "Delete session",
+          description:
+            "Stop and join owned execution, then delete the persisted session and its owned descendants. Missing sessions succeed. Failed teardown remains retryable and does not admit new work.",
+        }),
+      ),
     )
     .add(
       HttpApiEndpoint.post("session.switchAgent", "/api/session/:sessionID/agent", {
@@ -208,6 +243,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           id: SessionMessage.ID.pipe(Schema.optional),
           prompt: PromptInput.Prompt,
           delivery: SessionInput.Delivery.pipe(Schema.optional),
+          executionPolicy: SessionInput.ExecutionPolicy.pipe(Schema.optional),
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: SessionInput.Admitted }),
@@ -220,6 +256,42 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Send message",
             description: "Durably admit one session input and schedule agent-loop execution unless resume is false.",
           }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.input.execution", "/api/session/:sessionID/input/:inputID/execution", {
+        params: { sessionID: Session.ID, inputID: SessionMessage.ID },
+        success: Schema.Struct({ data: SessionInput.Execution }),
+        error: [ConflictError, SessionNotFoundError, MessageNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.input.execution", summary: "Read input execution" }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.input.wait", "/api/session/:sessionID/input/:inputID/execution/wait", {
+        params: { sessionID: Session.ID, inputID: SessionMessage.ID },
+        payload: Schema.Struct({
+          timeoutMs: NonNegativeInt.check(Schema.isLessThanOrEqualTo(30_000)).pipe(Schema.optional),
+        }),
+        success: Schema.Struct({ data: SessionInput.ExecutionWait }),
+        error: [ConflictError, SessionNotFoundError, MessageNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.input.wait", summary: "Passively wait for input execution" }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.input.interrupt", "/api/session/:sessionID/input/:inputID/execution/interrupt", {
+        params: { sessionID: Session.ID, inputID: SessionMessage.ID },
+        success: Schema.Struct({ data: SessionInput.Execution }),
+        error: [ConflictError, SessionNotFoundError, MessageNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({ identifier: "v2.session.input.interrupt", summary: "Interrupt only the owned input" }),
         ),
     )
     .add(
@@ -236,6 +308,20 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             description: "Compact a session conversation.",
           }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.restore", "/api/session/:sessionID/restore", {
+        params: { sessionID: Session.ID },
+        success: SessionSchedule.Restoration,
+        error: [SessionNotFoundError, ConflictError, InvalidRequestError, ServiceUnavailableError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.session.restore",
+          summary: "Restore future Session schedules",
+          description:
+            "Explicitly adopt eligible future schedule intent without draining inputs or replaying provider work. Reads and headless admission never call this operation.",
+        }),
+      ),
     )
     .add(
       HttpApiEndpoint.post("session.wait", "/api/session/:sessionID/wait", {

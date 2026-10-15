@@ -41,6 +41,18 @@ grok.instance("Grok memory commands share the persisted tool operations", () =>
   }),
 )
 
+grok.instance("Grok loop command uses the shared scheduler and asks for missing arguments", () =>
+  Effect.gen(function* () {
+    const commands = yield* Command.Service
+    const command = yield* commands.get("loop")
+    expect(command?.source).toBe("command")
+    expect(command?.template).toContain("scheduler_create")
+    expect(command?.template).toContain("fire_immediately=true")
+    expect(command?.template).toContain("ask the user")
+    expect(command?.hints).toContain("$ARGUMENTS")
+  }),
+)
+
 it.instance(
   "skill commands reflect content changes after Skill.reload",
   Effect.gen(function* () {

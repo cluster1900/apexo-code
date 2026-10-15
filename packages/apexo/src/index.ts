@@ -28,6 +28,10 @@ import { JsonlCommand } from "./cli/cmd/jsonl"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
+import { PluginsCommand } from "./cli/cmd/plugins"
+import { MemoryCommand } from "./cli/cmd/memory"
+import { GoalCommand } from "./cli/cmd/goal"
+import { UsageCommand } from "./cli/cmd/usage"
 
 const args = hideBin(process.argv)
 
@@ -63,7 +67,12 @@ const cli = yargs(args)
     describe: "run without external plugins",
     type: "boolean",
   })
+  .option("memory", {
+    describe: "enable memory; --no-memory force-disables it for this process",
+    type: "boolean",
+  })
   .middleware(async (opts) => {
+    if (opts.memory !== undefined) process.env.GROK_MEMORY = opts.memory ? "1" : "0"
     if (opts.printLogs) process.env.APEXO_PRINT_LOGS = "1"
     if (opts.logLevel) process.env.APEXO_LOG_LEVEL = opts.logLevel
     if (opts.pure) {
@@ -93,6 +102,7 @@ const cli = yargs(args)
   .command(WebCommand)
   .command(ModelsCommand)
   .command(StatsCommand)
+  .command(UsageCommand)
   .command(ExportCommand)
   .command(ImportCommand)
   .command(PrCommand)
@@ -100,6 +110,9 @@ const cli = yargs(args)
   .command(PluginCommand)
   .command(DbCommand)
   .command(JsonlCommand)
+  .command(MemoryCommand)
+  .command(GoalCommand)
+  .command(PluginsCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

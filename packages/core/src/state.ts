@@ -52,6 +52,8 @@ export interface Options<State, DraftApi> {
 
 export interface Interface<State, DraftApi> extends Transformable<DraftApi> {
   readonly get: () => State
+  /** Holds this state's writer permit until the caller's Scope closes. */
+  readonly prepareReload: Effect.Effect<() => void, never, Scope.Scope>
   /**
    * Registers and applies a scoped transform. Closing the owning Scope removes
    * the transform and reloads the materialized state.
@@ -84,8 +86,27 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
 
   const reload = () => semaphore.withPermit(materialize())
 
+  const prepareReload = Effect.gen(function* () {
+    yield* Effect.acquireRelease(Semaphore.take(semaphore, 1), () => Semaphore.release(semaphore, 1))
+    const next = options.initial()
+    const api = options.draft(next)
+    for (const transform of transforms) yield* apply(transform.run, api)
+    if (options.finalize) yield* options.finalize(api)
+    const ownership = { open: true }
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        ownership.open = false
+      }),
+    )
+    return () => {
+      if (!ownership.open) throw new Error("Prepared state scope is closed")
+      state = next
+    }
+  })
+
   const result: Interface<State, DraftApi> = {
     get: () => state,
+    prepareReload,
     transform: Effect.fn("State.transform")(function* (update) {
       const scope = yield* Scope.Scope
       return yield* Effect.uninterruptible(

@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -507,8 +507,11 @@ export const ShellTool = Tool.define(
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
 
-          yield* Effect.forkScoped(
-            Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
+          // Each pipe can split UTF-8 independently; decode before merging for Monitor and transcript delivery.
+          const output = Stream.merge(Stream.decodeText(handle.stdout), Stream.decodeText(handle.stderr))
+          const observed = ctx.onOutput ? output.pipe(Stream.tap(ctx.onOutput)) : output
+          const drain = yield* Effect.forkScoped(
+            Stream.runForEach(observed, (chunk) => {
               const size = Buffer.byteLength(chunk, "utf-8")
               list.push({ text: chunk, size })
               used += size
@@ -546,11 +549,7 @@ export const ShellTool = Tool.define(
                 }
               }
 
-              return ctx.metadata({
-                metadata: {
-                  output: last,
-                },
-              })
+              return ctx.metadata({ metadata: { output: last } })
             }),
           )
 
@@ -561,7 +560,9 @@ export const ShellTool = Tool.define(
             return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
           })
 
-          const timeout = Effect.sleep(`${input.timeout + 100} millis`)
+          // Persistent monitors are owned and cancelled by their session scope.
+          const timeout =
+            ctx.extra?.persistentMonitor === true ? Effect.never : Effect.sleep(`${input.timeout + 100} millis`)
 
           const exit = yield* Effect.raceAll([
             handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
@@ -577,6 +578,9 @@ export const ShellTool = Tool.define(
             expired = true
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
           }
+
+          // Process close can precede delivery of the last merged output chunks.
+          if (exit.kind === "exit") yield* Fiber.join(drain)
 
           return exit.kind === "exit" ? exit.code : null
         }),

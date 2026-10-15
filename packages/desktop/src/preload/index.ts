@@ -28,6 +28,8 @@ const api: ElectronAPI = {
     startServer: (id) => ipcRenderer.invoke("wsl-servers-start", id),
   },
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
+  getRuntimeProfile: () => ipcRenderer.invoke("get-runtime-profile"),
+  setRuntimeProfile: (profile) => ipcRenderer.invoke("set-runtime-profile", profile),
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   isFirstLaunchOnboardingPending: () => ipcRenderer.invoke("is-first-launch-onboarding-pending"),

@@ -240,6 +240,9 @@ export function createChildStoreManager(input: {
             get mcp_ready() {
               return !mcpQuery.isLoading
             },
+            get mcp_error() {
+              return mcpQuery.isError
+            },
             get mcp() {
               return mcpQuery.isLoading ? {} : (mcpQuery.data ?? {})
             },

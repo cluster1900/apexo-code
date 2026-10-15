@@ -84,6 +84,77 @@ const desktop = [
 ]
 
 export const dict = {
+  "hooks.repository.title": "Povjerenje u hookove repozitorija",
+  "hooks.repository.hint":
+    "Dopustite pokretanje hookova iz korijenske mape repozitorija u sesijama unutar ovog repozitorija. Nakon odobravanja ponovno učitajte hookove. Opoziv povjerenja sprječava nove pozive hookova.",
+  "hooks.repository.grant": "Dopusti hookove repozitorija",
+  "hooks.repository.revoke": "Opozovi povjerenje u hookove repozitorija",
+
+  "plugins.title": "Priključci",
+  "plugins.description":
+    "Otkrijte nove vještine i alate. Instalirajte što vam treba i upravljajte svime na jednom mjestu.",
+  "plugins.discover": "Otkrijte",
+  "plugins.installed": "Instalirani",
+  "plugins.sources": "Izvori",
+  "plugins.recommended": "Preporučeni priključci",
+  "plugins.add": "Instalirajte vlastiti",
+  "plugins.addSource": "Dodaj izvor",
+  "plugins.removeSource": "Ukloni izvor",
+  "plugins.allSources": "Svi izvori",
+  "plugins.search": "Pretraži priključke",
+  "plugins.download": "Preuzmi",
+  "plugins.enable": "Omogući",
+  "plugins.disable": "Onemogući",
+  "plugins.update": "Ažuriraj",
+  "memory.operations.batchOutcome":
+    "Odgođene bilješke: {{deferred}} · Arhivirane neuklopljene bilješke: {{unplaceable}}",
+  "plugins.uninstall": "Deinstaliraj",
+  "plugins.keepData": "Zadrži podatke dodatka",
+  "plugins.cleanupDeferred":
+    "Podaci dodatka zadržavaju se dok su u upotrebi ili kada nije moguće potvrditi vlasništvo.",
+  "plugins.version": "Verzija",
+  "plugins.files": "Preuzete datoteke",
+  "plugins.contents": "Uključene mogućnosti",
+  "plugins.readme": "O ovom priključku",
+  "plugins.empty": "Nema pronađenih priključaka. Promijenite pretraživanje ili dodajte izvor.",
+  "plugins.error": "Radnju nije moguće dovršiti. Provjerite izvor i vezu pa pokušajte ponovno.",
+  "plugins.sourceError": "Izvor nije moguće osvježiti. Prethodno preuzeti rezultati ostaju dostupni.",
+  "plugins.changed":
+    "Promjene se primjenjuju nakon ponovnog učitavanja projekta. Aktivne sesije zadržavaju trenutne priključke.",
+  "plugins.confirm": "Pregledaj promjene priključaka",
+  "plugins.trust":
+    "Instalirajte priključke samo iz pouzdanih izvora. Mogu izvršavati naredbe, povezivati se s uslugama i pristupati datotekama na računalu.",
+  "plugins.removeNotice":
+    "Ukloniti ovu stavku? Uklanjanjem izvora zadržavaju se instalirani priključci. Deinstalirani priključci neće se učitavati u budućim sesijama.",
+  "plugins.sourceInput": "Git repozitorij ili lokalna mapa",
+  "plugins.sourcePlaceholder": "owner/repo, https://… ili /path/to/plugin",
+  "plugins.hooksWarning":
+    "Neke kuke životnog ciklusa ovog priključka još nisu podržane. Podržane kuke i druge mogućnosti ostaju dostupne.",
+  "plugins.status.available": "Dostupan",
+  "plugins.status.downloaded": "Preuzet",
+  "plugins.status.enabled": "Omogućen",
+  "plugins.status.disabled": "Onemogućen",
+  "plugins.component.skills": "Vještine",
+  "plugins.component.commands": "Naredbe",
+  "plugins.component.agents": "Agenti",
+  "plugins.component.mcpServers": "MCP poslužitelji",
+  "plugins.component.lspServers": "Jezični poslužitelji",
+  "plugins.component.hooks": "Kuke",
+  "plugins.reload": "Primijeni na ovaj projekt",
+  "plugins.activation.title": "Aktivacija u ovom projektu",
+  "plugins.activation.hint":
+    "Omogućeni priključci postaju aktivni nakon što ih primijenite na ovaj projekt. Zadaci u tijeku zadržavaju svoju trenutačnu snimku stanja.",
+  "plugins.activation.projectRequired": "Otvorite projekt za pregled i primjenu priključaka.",
+  "plugins.activation.generation": "Verzija snimke stanja: {{generation}}",
+  "plugins.activation.active": "Aktivan u ovom projektu",
+  "plugins.activation.inactive": "Nije aktivan u ovom projektu",
+  "plugins.activation.unavailable": "Nije moguće pročitati stanje aktivacije priključaka.",
+  "plugins.activation.failure.busy": "Pričekajte da zadaci u tijeku završe prije primjene priključaka.",
+  "plugins.activation.failure.invalid":
+    "Konfiguracija priključaka nije valjana. Prethodna snimka stanja ostaje aktivna.",
+  "plugins.activation.failure.load": "Nije moguće učitati priključke. Prethodna snimka stanja ostaje aktivna.",
+  "plugins.activation.failure.unsupported":
+    "Ovaj poslužitelj ne podržava neke mogućnosti priključaka. Prethodna snimka stanja ostaje aktivna.",
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",

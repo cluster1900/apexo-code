@@ -90,21 +90,47 @@ const layer = Layer.effect(
       }
 
       if (flags.runtimeProfile === "grok-build") {
+        for (const [name, template] of Object.entries({
+          imagine:
+            "Generate an image with image_gen for this description: $ARGUMENTS. If the description is empty, show usage: /imagine <description>. For an edit to an existing image, use image_edit instead. Return the saved image and preview.",
+          "imagine-video":
+            "Generate a video for this description: $ARGUMENTS. If the description is empty, show usage: /imagine-video <description>. Use reference_to_video when references or pinned frames are supplied. Otherwise generate a starting image with image_gen, then animate it with image_to_video. Return the saved video and preview.",
+        })) {
+          commands[name] = {
+            name,
+            description:
+              name === "imagine" ? "Generate an image from a description" : "Generate a video from a description",
+            source: "command",
+            template,
+            hints: hints(template),
+          }
+        }
+        const loop =
+          "Create a recurring schedule with scheduler_create for: $ARGUMENTS. Parse the interval and the self-contained prompt; accept forms such as 5m, 1 hour, or every 2 days. Clamp intervals below 60 seconds to 60 seconds. If the interval or prompt is missing, ask the user before creating a schedule. Set fire_immediately=true. Explain that each fire runs in a detached subagent, repeats for up to 7 days, and can be stopped with scheduler_delete. Do not run a shell polling loop."
+        commands.loop = {
+          name: "loop",
+          description: "Run a prompt on a recurring interval",
+          source: "command",
+          template: loop,
+          hints: hints(loop),
+        }
+
         for (const [name, operation] of Object.entries({
           memory: "read",
           remember: "remember",
           flush: "flush",
           dream: "dream",
         })) {
+          if (flags.grokMemory === false) continue
           const template =
             operation === "read"
-              ? "Use the memory tool with operation=read and show this workspace's saved notes. Optional search: $ARGUMENTS"
+              ? "Use the memory tool with operation=read for both scope=global and scope=workspace and show the saved notes grouped by scope. Optional search: $ARGUMENTS"
               : operation === "dream"
                 ? "Use the memory tool with operation=dream to consolidate this workspace's notes. Report the result."
-                : `Use the memory tool with operation=${operation}. ${operation === "flush" ? "Summarize durable facts and decisions from this conversation into content; omit secrets and temporary progress." : "Save the following user-provided note as content:"} $ARGUMENTS`
+                : `Use the memory tool with operation=${operation}. Choose scope=global for cross-project preferences or scope=workspace for repository knowledge. ${operation === "flush" ? "Summarize durable facts and decisions from this conversation into content; omit secrets and temporary progress." : "Save the following user-provided note as content:"} $ARGUMENTS`
           commands[name] = {
             name,
-            description: `Workspace memory: ${operation}`,
+            description: `Global and repository memory: ${operation}`,
             source: "command",
             template,
             hints: hints(template),

@@ -5,35 +5,46 @@ import type {
   PermissionV2Request,
   ProviderListOutput,
 } from "@apexo/client/promise"
-import type { Agent, PermissionRequest, Project, Provider, ProviderListResponse } from "@apexo/sdk/v2/client"
+import type {
+  ModelV2Info,
+  ProviderV2Info,
+  AgentV2Info,
+  Agent,
+  PermissionRequest,
+  Project,
+  Provider,
+  ProviderListResponse,
+} from "@apexo/sdk/v2/client"
 import type { Project as CurrentProject } from "@apexo/client/promise"
 import { NormalizedProviderListResponse } from "@apexo/session-ui/context"
 export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/path-key"
 
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
-export function normalizeAgentList(input: AgentListOutput["data"] | Agent[]): Agent[] {
+export function normalizeAgentList(input: AgentListOutput["data"] | AgentV2Info[] | Agent[]): Agent[] {
   if (input.every((agent) => !("request" in agent))) return input as Agent[]
-  return (input as AgentListOutput["data"]).map((agent) => ({
-    name: agent.id,
-    description: agent.description,
-    mode: agent.mode,
-    hidden: agent.hidden,
-    temperature:
-      typeof agent.request.settings.temperature === "number" ? agent.request.settings.temperature : undefined,
-    topP: typeof agent.request.settings.topP === "number" ? agent.request.settings.topP : undefined,
-    color: agent.color,
-    permission: agent.permissions.map((rule) => ({
-      permission: rule.action,
-      pattern: rule.resource,
-      action: rule.effect,
-    })),
-    model: agent.model && { providerID: agent.model.providerID, modelID: agent.model.id },
-    variant: agent.model?.variant,
-    prompt: agent.system,
-    options: agent.request.settings,
-    steps: agent.steps,
-  }))
+  return (input as (AgentListOutput["data"][number] | AgentV2Info)[]).map((agent) => {
+    const settings = "settings" in agent.request ? agent.request.settings : agent.request.body
+    return {
+      name: agent.id,
+      description: agent.description,
+      mode: agent.mode,
+      hidden: agent.hidden,
+      temperature: typeof settings.temperature === "number" ? settings.temperature : undefined,
+      topP: typeof settings.topP === "number" ? settings.topP : undefined,
+      color: agent.color,
+      permission: agent.permissions.map((rule) => ({
+        permission: rule.action,
+        pattern: rule.resource,
+        action: rule.effect,
+      })),
+      model: agent.model && { providerID: agent.model.providerID, modelID: agent.model.id },
+      variant: agent.model?.variant,
+      prompt: agent.system,
+      options: settings,
+      steps: agent.steps,
+    }
+  })
 }
 
 export function normalizePermissionRequest(input: PermissionV2Request | PermissionRequest): PermissionRequest {
@@ -51,8 +62,8 @@ export function normalizePermissionRequest(input: PermissionV2Request | Permissi
 }
 
 export function normalizeProviderList(
-  providers: ProviderListOutput["data"] | ProviderListResponse,
-  models?: ModelListOutput["data"],
+  providers: ProviderListOutput["data"] | ProviderV2Info[] | ProviderListResponse,
+  models?: ModelListOutput["data"] | ModelV2Info[],
   defaultModel?: ModelDefaultOutput["data"],
 ): NormalizedProviderListResponse {
   if (!Array.isArray(providers)) {
@@ -79,7 +90,7 @@ export function normalizeProviderList(
       name: provider.name,
       source: "custom",
       env: [],
-      options: provider.settings ?? {},
+      options: "request" in provider ? provider.request.body : (provider.settings ?? {}),
       models: {},
     })
   }
@@ -92,9 +103,10 @@ export function normalizeProviderList(
       id: model.id,
       providerID: model.providerID,
       api: {
-        id: model.modelID,
-        url: "",
-        npm: model.package ?? provider.id,
+        id: "api" in model ? model.api.id : model.modelID,
+        url: "api" in model && "url" in model.api ? (model.api.url ?? "") : "",
+        npm:
+          "api" in model ? ("package" in model.api ? model.api.package : provider.id) : (model.package ?? provider.id),
       },
       name: model.name,
       family: model.family,
@@ -129,10 +141,15 @@ export function normalizeProviderList(
       },
       limit: model.limit,
       status: model.status,
-      options: model.settings ?? {},
-      headers: model.headers ?? {},
+      options: "request" in model ? model.request.body : (model.settings ?? {}),
+      headers: "request" in model ? model.request.headers : (model.headers ?? {}),
       release_date: new Date(model.time.released).toISOString().slice(0, 10),
-      variants: Object.fromEntries(model.variants.map((variant) => [variant.id, variant.settings ?? {}])),
+      variants: Object.fromEntries(
+        model.variants.map((variant) => [
+          variant.id,
+          "body" in variant ? (variant.body ?? {}) : (variant.settings ?? {}),
+        ]),
+      ),
     }
   }
 

@@ -74,6 +74,16 @@ export type LifecycleInput = {
   onVariantSelect?: (variant: string | undefined) => CycleResult | void | Promise<CycleResult | void>
   onInterrupt?: () => void
   onBackground?: () => void
+  taskActions?: import("./types").RunTaskActions
+  goalActions?: import("@apexo/tui/component/session-goal").GoalActions
+  pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
+  mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
+  workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
+  commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
+  hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
+  feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
+  memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
   onSubagentSelect?: (sessionID: string | undefined) => void
 }
 
@@ -254,6 +264,16 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       onVariantSelect: input.onVariantSelect,
       onInterrupt: input.onInterrupt,
       onBackground: input.onBackground,
+      taskActions: input.taskActions,
+      goalActions: input.goalActions,
+      pluginsActions: input.pluginsActions,
+      mcpActions: input.mcpActions,
+      memoryActions: input.memoryActions,
+      workflowActions: input.workflowActions,
+      sideQuestionActions: input.sideQuestionActions,
+      feedbackActions: input.feedbackActions,
+      hooksActions: input.hooksActions,
+      commandSandboxActions: input.commandSandboxActions,
       onEditorOpen: async ({ value }) => {
         if (closed || renderer.isDestroyed) {
           return

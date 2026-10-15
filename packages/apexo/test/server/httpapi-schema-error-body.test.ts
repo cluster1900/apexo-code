@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Effect, Layer } from "effect"
@@ -17,7 +18,9 @@ import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(LayerNode.group([Session.node, Database.node])), httpApiLayer))
+const it = testEffect(
+  Layer.mergeAll(AppNodeBuilderV1.build(LayerNode.group([Session.node, Database.node])), httpApiLayer),
+)
 
 const text = (response: HttpClientResponse.HttpClientResponse) => response.text
 

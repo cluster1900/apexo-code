@@ -1,0 +1,9 @@
+# BUG-20261015-129: Plan review text collapsed lines and clipped long content
+
+- **Scope:** New native Plan purpose in the existing App QuestionDock.
+- **Observed:** Inspected actual browser screenshots in en/zh/zht showed the long canonical plan path clipped at the right edge and multiline artifact content collapsed into a single line. DOM textContent still matched the exact server request; that assertion alone did not prove users could review the full text.
+- **Expected:** The approval view preserves visible line breaks and lets keyboard users reach the complete reviewed artifact before submitting a canonical answer.
+- **Cause:** The generic Question text style used normal whitespace with no long-token wrapping or bounded scrolling region suitable for a document review.
+- **Fix:** Only for the presentation-only Plan purpose, preserve whitespace with pre-wrap, wrap long tokens anywhere, bound the height and expose a focusable scrolling text area. Keep the actual text bytes, path, canonical options and ordinary Question rendering unchanged.
+- **Verification:** App typechecking and production build passed. The extended real-native browser fixture compares exact text, verifies newline/wrap styles, requires keyboard access to the final line and no horizontal overflow, then submits the actual approval. The production browser passed 6 checks/6 provider calls in en/zh/zht; final-line screenshots were inspected. The 80-line plan and 400-character token retained exact text, wrapped without horizontal overflow, and reached the last marker by keyboard. Native-window verification remains a coordinated integration gate.
+- **Occurrences:** One confirmed rendering defect. Immediate fixture scroll/focus reads sampled before animation/frame settlement; that fixture-only correction does not add a second product occurrence.

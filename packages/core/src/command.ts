@@ -1,7 +1,7 @@
 export * as CommandV2 from "./command"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Context, Effect, Layer, Types } from "effect"
+import { Context, Effect, Layer, Scope, Types } from "effect"
 import { Command } from "@apexo/schema/command"
 import { State } from "./state"
 
@@ -20,6 +20,7 @@ export type Draft = {
 }
 
 export interface Interface extends State.Transformable<Draft> {
+  readonly prepareReload: Effect.Effect<() => void, never, Scope.Scope>
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<Info[]>
 }
@@ -48,6 +49,7 @@ const layer = Layer.effect(
 
     return Service.of({
       reload: state.reload,
+      prepareReload: state.prepareReload,
       transform: state.transform,
       get: Effect.fn("CommandV2.get")(function* (name) {
         return state.get().commands.get(name)

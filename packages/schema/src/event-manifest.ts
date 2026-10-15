@@ -9,6 +9,7 @@ import { Integration } from "./integration"
 import { LegacyEvent } from "./legacy-event"
 import { LspEvent } from "./lsp-event"
 import { McpEvent } from "./mcp-event"
+import { MemoryCaptureEvent } from "./memory-capture-event"
 import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
 import { PermissionV1 } from "./permission-v1"
@@ -57,6 +58,9 @@ export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
+  // Native project managers consume the same canonical status invalidation events.
+  ...McpEvent.CurrentDefinitions,
+  LspEvent.Updated,
 )
 
 export const Definitions = Event.inventory(
@@ -68,9 +72,11 @@ export const Definitions = Event.inventory(
   ...PermissionV1.Event.Definitions,
   ...TuiEvent.Definitions,
   ...McpEvent.Definitions,
+  ...McpEvent.CurrentDefinitions,
   ...LegacyEvent.Definitions,
   ...Project.Event.Definitions,
   ...SessionStatusEvent.Definitions,
+  ...MemoryCaptureEvent.Definitions,
   ...QuestionV1.Event.Definitions,
   ...SessionCompactionEvent.Definitions,
   ...VcsEvent.Definitions,

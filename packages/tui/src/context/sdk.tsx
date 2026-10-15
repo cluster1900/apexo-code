@@ -1,5 +1,7 @@
-import { createApexoClient } from "@apexo/sdk/v2"
+import { createApexoClient } from "@apexo/sdk/v2/client"
 import type { GlobalEvent } from "@apexo/sdk/v2"
+import { sessionTransport } from "../transport/session"
+import { restorationNotice } from "../transport/native-session"
 import { Flag } from "@apexo/core/flag/flag"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -13,6 +15,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
   init: (props: {
     url: string
     local?: boolean
+    sessionProtocol?: "auto" | "native" | "compatibility"
     directory?: string
     fetch?: typeof fetch
     headers?: RequestInit["headers"]
@@ -32,6 +35,17 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
 
     let sdk = createSDK()
+    const selectTransport = sessionTransport(sdk, props.directory, props.sessionProtocol, abort.signal)
+    const transport = () => selectTransport(abort.signal)
+    const nativeHandlers = new Set<(event: unknown) => void>()
+    const nativeEvent = {
+      on(handler: (event: unknown) => void) {
+        nativeHandlers.add(handler)
+        return () => {
+          nativeHandlers.delete(handler)
+        }
+      },
+    }
 
     const handlers = new Set<(event: GlobalEvent) => void>()
     const emitter = {
@@ -89,6 +103,19 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         while (true) {
           if (abort.signal.aborted || ctrl.signal.aborted) break
 
+          const selected = await transport()
+          if (selected.kind === "native") {
+            const events = await selected.subscribe(ctrl.signal)
+            for await (const event of events.stream) {
+              if (ctrl.signal.aborted) break
+              batch(() => {
+                for (const handler of nativeHandlers) handler(event)
+              })
+            }
+            if (abort.signal.aborted || ctrl.signal.aborted) break
+            await new Promise((resolve) => setTimeout(resolve, retryDelay))
+            continue
+          }
           const events = await sdk.global.event({
             signal: ctrl.signal,
             sseMaxRetryAttempts: 0,
@@ -137,6 +164,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       sse?.abort()
       if (timer) clearTimeout(timer)
       handlers.clear()
+      nativeHandlers.clear()
     })
 
     return {
@@ -144,6 +172,60 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         return sdk
       },
       directory: props.directory,
+      transport,
+      nativeEvent,
+      async sessionInfo(sessionID: string) {
+        const selected = await transport()
+        if (selected.kind === "compatibility")
+          return (await sdk.session.get({ sessionID }, { throwOnError: true })).data
+        const { terminalSession } = await import("../transport/native-catalog")
+        return terminalSession(await selected.get(sessionID))
+      },
+      async restoreSession(sessionID: string) {
+        const selected = await transport()
+        if (selected.kind !== "native") return
+        return restorationNotice(await selected.restore(sessionID))
+      },
+      async forkSession(sessionID: string) {
+        const selected = await transport()
+        if (selected.kind === "native") throw new Error("Forking native Sessions is not available in the terminal")
+        return sdk.session.fork({ sessionID }, { throwOnError: true })
+      },
+      async interrupt(sessionID: string) {
+        const selected = await transport()
+        return selected.kind === "native"
+          ? selected.interrupt(sessionID)
+          : sdk.session.abort({ sessionID }, { throwOnError: true })
+      },
+      async replyQuestion(input: { sessionID: string; requestID: string; answers: string[][]; directory?: string }) {
+        const selected = await transport()
+        return selected.kind === "native"
+          ? selected.replyQuestion({
+              sessionID: input.sessionID,
+              requestID: input.requestID,
+              questionV2Reply: { answers: input.answers },
+            })
+          : sdk.question.reply(input, { throwOnError: true })
+      },
+      async rejectQuestion(input: { sessionID: string; requestID: string; directory?: string }) {
+        const selected = await transport()
+        return selected.kind === "native"
+          ? selected.rejectQuestion(input)
+          : sdk.question.reject(input, { throwOnError: true })
+      },
+      async replyPermission(input: {
+        sessionID: string
+        requestID: string
+        reply: "once" | "always" | "reject"
+        message?: string
+        directory?: string
+        workspace?: string
+      }) {
+        const selected = await transport()
+        return selected.kind === "native"
+          ? selected.replyPermission(input)
+          : sdk.permission.reply(input, { throwOnError: true })
+      },
       event: emitter,
       fetch: props.fetch ?? fetch,
       url: props.url,

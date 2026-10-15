@@ -3,6 +3,81 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "hooks.repository.title": "Vertrauen in Repository-Hooks",
+  "hooks.repository.hint":
+    "Erlaube Hooks aus dem Stammverzeichnis des Repositorys, in Sitzungen innerhalb dieses Repositorys ausgeführt zu werden. Lade die Hooks nach der Freigabe neu. Ein Widerruf verhindert neue Hook-Aufrufe.",
+  "hooks.repository.grant": "Repository-Hooks erlauben",
+  "hooks.repository.revoke": "Vertrauen in Repository-Hooks widerrufen",
+
+  "plugins.title": "Plugins",
+  "plugins.description":
+    "Entdecke neue Skills und Werkzeuge. Installiere, was du brauchst, und verwalte alles an einem Ort.",
+  "plugins.discover": "Entdecken",
+  "plugins.installed": "Installiert",
+  "plugins.sources": "Quellen",
+  "plugins.recommended": "Empfohlene Plugins",
+  "plugins.add": "Eigenes Plugin installieren",
+  "plugins.addSource": "Quelle hinzufügen",
+  "plugins.removeSource": "Quelle entfernen",
+  "plugins.allSources": "Alle Quellen",
+  "plugins.search": "Plugins suchen",
+  "plugins.download": "Herunterladen",
+  "plugins.enable": "Aktivieren",
+  "plugins.disable": "Deaktivieren",
+  "plugins.update": "Aktualisieren",
+  "memory.operations.batchOutcome":
+    "Zurückgestellte Notizen: {{deferred}} · Nicht eingeordnete, archivierte Notizen: {{unplaceable}}",
+  "plugins.uninstall": "Deinstallieren",
+  "plugins.keepData": "Plugin-Daten behalten",
+  "plugins.cleanupDeferred":
+    "Plugin-Daten bleiben erhalten, solange sie verwendet werden oder ihre Eigentümerschaft nicht überprüft werden kann.",
+  "plugins.version": "Version",
+  "plugins.files": "Heruntergeladene Dateien",
+  "plugins.contents": "Enthaltene Funktionen",
+  "plugins.readme": "Über dieses Plugin",
+  "plugins.empty": "Keine Plugins gefunden. Ändere die Suche oder füge eine Quelle hinzu.",
+  "plugins.error":
+    "Der Vorgang konnte nicht abgeschlossen werden. Prüfe die Quelle und deine Verbindung und versuche es erneut.",
+  "plugins.sourceError":
+    "Diese Quelle konnte nicht aktualisiert werden. Bereits heruntergeladene Ergebnisse bleiben verfügbar.",
+  "plugins.changed":
+    "Änderungen gelten nach dem Neuladen des Projekts. Laufende Sitzungen behalten ihre aktuellen Plugins.",
+  "plugins.confirm": "Plugin-Änderungen prüfen",
+  "plugins.trust":
+    "Installiere nur Plugins aus vertrauenswürdigen Quellen. Plugins können Befehle ausführen, Verbindungen zu Diensten herstellen und auf Dateien auf deinem Computer zugreifen.",
+  "plugins.removeNotice":
+    "Diesen Eintrag entfernen? Beim Entfernen einer Quelle bleiben installierte Plugins erhalten. Deinstallierte Plugins werden in künftigen Sitzungen nicht mehr geladen.",
+  "plugins.sourceInput": "Git-Repository oder lokaler Ordner",
+  "plugins.sourcePlaceholder": "owner/repo, https://… oder /path/to/plugin",
+  "plugins.hooksWarning":
+    "Einige Lebenszyklus-Hooks dieses Plugins werden noch nicht unterstützt. Unterstützte Hooks und andere Funktionen bleiben verfügbar.",
+  "plugins.status.available": "Verfügbar",
+  "plugins.status.downloaded": "Heruntergeladen",
+  "plugins.status.enabled": "Aktiviert",
+  "plugins.status.disabled": "Deaktiviert",
+  "plugins.component.skills": "Skills",
+  "plugins.component.commands": "Befehle",
+  "plugins.component.agents": "Agenten",
+  "plugins.component.mcpServers": "MCP-Server",
+  "plugins.component.lspServers": "Sprachserver",
+  "plugins.component.hooks": "Hooks",
+  "plugins.reload": "Auf dieses Projekt anwenden",
+  "plugins.activation.title": "Aktivierung in diesem Projekt",
+  "plugins.activation.hint":
+    "Aktivierte Plugins werden wirksam, nachdem du sie auf dieses Projekt angewendet hast. Laufende Arbeiten behalten ihre aktuelle Momentaufnahme.",
+  "plugins.activation.projectRequired": "Öffne ein Projekt, um Plugins zu prüfen und anzuwenden.",
+  "plugins.activation.generation": "Version der Momentaufnahme: {{generation}}",
+  "plugins.activation.active": "In diesem Projekt aktiv",
+  "plugins.activation.inactive": "In diesem Projekt nicht aktiv",
+  "plugins.activation.unavailable": "Der Aktivierungsstatus der Plugins konnte nicht gelesen werden.",
+  "plugins.activation.failure.busy":
+    "Warte, bis die laufenden Arbeiten abgeschlossen sind, bevor du Plugins anwendest.",
+  "plugins.activation.failure.invalid":
+    "Die Plugin-Konfiguration ist ungültig. Die vorherige Momentaufnahme bleibt aktiv.",
+  "plugins.activation.failure.load":
+    "Die Plugins konnten nicht geladen werden. Die vorherige Momentaufnahme bleibt aktiv.",
+  "plugins.activation.failure.unsupported":
+    "Dieser Server unterstützt einige Plugin-Funktionen nicht. Die vorherige Momentaufnahme bleibt aktiv.",
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
   "command.category.project": "Projekt",

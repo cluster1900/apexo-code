@@ -9,6 +9,37 @@ const waitForState = <A, E>(runner: Runner.Runner<A, E>, tag: Runner.State<A, E>
   }).pipe(Effect.timeout("1 second"))
 
 describe("Runner", () => {
+  it.live(
+    "exclusive execution rejects concurrent admission and fences stale cancellation",
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope
+      const runner = Runner.make<string>(scope, { onInterrupt: Effect.succeed("cancelled") })
+      const first = {}
+      const second = {}
+      const running = yield* runner.startExclusive(Effect.never, first).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      const rejected = yield* runner.startExclusive(Effect.succeed("must not run"), second).pipe(Effect.result)
+      expect(rejected._tag).toBe("Failure")
+      if (rejected._tag === "Failure") expect(rejected.failure).toBeInstanceOf(Runner.Busy)
+      yield* runner.cancelOwned(second)
+      expect(runner.busy).toBe(true)
+      yield* runner.cancelOwned(first)
+      expect(yield* Fiber.join(running)).toBe("cancelled")
+      const gate = yield* Deferred.make<string>()
+      const next = yield* runner.startExclusive(Deferred.await(gate), second).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      yield* runner.cancelOwned(first)
+      expect(runner.busy).toBe(true)
+      yield* Deferred.succeed(gate, "new goal finished")
+      expect(yield* Fiber.join(next)).toBe("new goal finished")
+      const ordinary = yield* runner.ensureRunning(Effect.never).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      yield* runner.cancelOwned(second)
+      expect(runner.busy).toBe(true)
+      yield* runner.cancel
+      expect(yield* Fiber.join(ordinary)).toBe("cancelled")
+    }),
+  )
   // --- ensureRunning semantics ---
 
   it.live(
@@ -512,3 +543,81 @@ describe("Runner", () => {
     }),
   )
 })
+
+it.live("idle controls run without model execution or busy status", () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.Scope
+    const runner = Runner.make<string>(scope, { onBusy: Effect.die("control marked busy") })
+    expect(yield* runner.control(Effect.succeed(42))).toBe(42)
+    expect(runner.busy).toBe(false)
+  }),
+)
+
+it.live("running controls wait for a provider boundary and isolate failure", () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.Scope
+    const runner = Runner.make<string>(scope)
+    const gate = yield* Deferred.make<void>()
+    const finish = yield* Deferred.make<void>()
+    const order: string[] = []
+    const running = yield* runner
+      .ensureRunning(
+        Effect.gen(function* () {
+          yield* Deferred.await(gate)
+          yield* runner.controls
+          order.push("provider")
+          yield* Deferred.await(finish)
+          return "done"
+        }),
+      )
+      .pipe(Effect.forkChild)
+    yield* waitForState(runner, "Running")
+    const control = yield* runner.control(Effect.sync(() => order.push("reload"))).pipe(Effect.forkChild)
+    yield* Effect.yieldNow
+    expect(order).toEqual([])
+    yield* Deferred.succeed(gate, undefined)
+    yield* Fiber.join(control)
+    expect(order).toEqual(["reload", "provider"])
+    const failed = yield* runner.control(Effect.fail("load")).pipe(Effect.result, Effect.forkChild)
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(finish, undefined)
+    const outcome = yield* Fiber.join(failed)
+    expect(outcome._tag).toBe("Failure")
+    if (outcome._tag === "Failure") expect(outcome.failure).toBe("load")
+    expect(yield* Fiber.join(running)).toBe("done")
+  }),
+)
+
+it.live("interrupt cancels unclaimed controls and settles an executing control", () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.Scope
+    const runner = Runner.make<string>(scope, { onInterrupt: Effect.succeed("cancelled") })
+    const running = yield* runner.ensureRunning(Effect.never).pipe(Effect.forkChild)
+    yield* waitForState(runner, "Running")
+    const queued = yield* runner.control(Effect.die("cancelled control executed")).pipe(Effect.result, Effect.forkChild)
+    yield* Effect.yieldNow
+    yield* runner.cancel
+    const outcome = yield* Fiber.join(queued)
+    expect(outcome._tag).toBe("Failure")
+    expect(yield* Fiber.join(running)).toBe("cancelled")
+
+    const entered = yield* Deferred.make<void>()
+    const gate = yield* Deferred.make<void>()
+    const next = yield* runner.ensureRunning(Deferred.await(gate).pipe(Effect.as("done"))).pipe(Effect.forkChild)
+    yield* waitForState(runner, "Running")
+    const claimed = yield* runner
+      .control(Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
+      .pipe(Effect.exit, Effect.forkChild)
+    yield* Effect.yieldNow
+    const following = yield* runner
+      .control(Effect.die("remaining control executed after interruption"))
+      .pipe(Effect.result, Effect.forkChild)
+    yield* Effect.yieldNow
+    yield* Deferred.succeed(gate, undefined)
+    yield* Deferred.await(entered)
+    yield* Fiber.interrupt(next)
+    yield* runner.cancel
+    expect(Exit.isFailure(yield* Fiber.join(claimed))).toBe(true)
+    expect((yield* Fiber.join(following))._tag).toBe("Failure")
+  }),
+)

@@ -1,0 +1,118 @@
+[
+  {
+    "path": "packages/schema/src/host-hooks.ts",
+    "baseline": "f6206e9135f90ee60349087316548280ffd5c1ffe8db3636b14c24e6e6aee54c",
+    "final": "67a2bbcc4b78aab8362d6d6f9cb93660726342af5fd1a7ce006366f92ca83768"
+  },
+  {
+    "path": "packages/protocol/src/groups/hooks.ts",
+    "baseline": "e01283458201d3adc52423fa02df109971056605fbeff9c58beda3d1eef47989",
+    "final": "9d917de669785e751b57ecc88421387ac8acde643f269bf22f289be1977eccce"
+  },
+  {
+    "path": "packages/server/src/handlers/hooks.ts",
+    "baseline": "f41f4ae60ad65055ce3bb72022e466be4c19be5dea79b1ef033ed5208eb792aa",
+    "final": "198b057ff9634814790237711b49b82850cc23668644b9534bd70408bba27bb9"
+  },
+  {
+    "path": "packages/apexo/script/grok-hook-repository-trust.mjs",
+    "baseline": null,
+    "final": "f2df6fce6ef2122d15b945274a78542ea5fc3856a669a78b7f593b18377111ba"
+  },
+  {
+    "path": "packages/apexo/src/plugin/bundle-hooks.ts",
+    "baseline": "04506b69205db1e6219cf4af3dba7861bc8ccf5e2d46c48b776bdaa8049004ac",
+    "final": "cd196d2a5b4f648071f9d81e9dda32ac59029961c1b54de41874af93dc07cc46"
+  },
+  {
+    "path": "packages/apexo/src/plugin/hook-snapshot-location.ts",
+    "baseline": "c7efe1e3838fc37342857ee0c2ca6904a7e25d1a4d04909619804a1a09a4b17f",
+    "final": "12fbc6b68290c618e53e588abc2788577f7577f900c5ac210c26df84c7b5b0fc"
+  },
+  {
+    "path": "packages/apexo/src/cli/cmd/run/runtime.ts",
+    "baseline": "45bfe35876946f6628cde178ecd2bf90599fca9f000c904c420e4de5800c3e08",
+    "final": "ef272ab05e5b60f3ef81339400ddd36bd3556f8672b7fabe41ce47d0e0a80b1e"
+  },
+  {
+    "path": "packages/apexo/src/server/routes/instance/httpapi/groups/hooks.ts",
+    "baseline": "f87cf3b572b16c08a62da48de197b052a6ee535d824ec16135c8a8c9d6a45ddf",
+    "final": "27031f261b7751e991a87e2e1914a644e85fe5e4ed80dbc29e5a1ef946ff6462"
+  },
+  {
+    "path": "packages/apexo/src/server/routes/instance/httpapi/handlers/hooks.ts",
+    "baseline": "d925a38deabbb574bef17b95f682be6fcb98b570a34c172b0355ad8297741a2f",
+    "final": "86a7472fd8fa10c0f1e171eef67e3a3754685a5b00b5aece796be4bec1f6232f"
+  },
+  {
+    "path": "packages/apexo/test/plugin/hook-repository-trust.test.ts",
+    "baseline": null,
+    "final": "133c69c96061c0367944021c644b45fd0de8c355b1c9a8b6b4f6f1be7082c38c"
+  },
+  {
+    "path": "packages/apexo/test/server/httpapi-exercise/index.ts",
+    "baseline": "d282bbc11f1181ecf78b1b5d37fa9ebb714294c1bf9db7823d25c88c57005261",
+    "final": "57e9e3963def15b81bdedfb52b1322c87e7d080f4ea5cc18a5175cab0545d9cc"
+  },
+  {
+    "path": "packages/tui/src/component/hooks-browser.tsx",
+    "baseline": "7c752a28d4932388cab0d778797456ebdaa31fc1d218e91d06c6e308d2ebc792",
+    "final": "45e4a4f0aabcf9e06fc38672142a20b7ef8638c8d136a8aafbdf0cfae7550f9c"
+  },
+  {
+    "path": "packages/app/src/components/hooks-dialog.tsx",
+    "baseline": "9104f7711787c6f6469b4bf81a907dd8a33abac2699146ec9502efbadb33bd3a",
+    "final": "0e816c3dc4b8038411f4094c5e7d22b93ed7aa1a11056a889055704f3aa498cb"
+  },
+  {
+    "path": "packages/core/src/hook-observer.ts",
+    "baseline": "322715b16b192a956c25a28d2a92b7be803367207a793618e9b93aa1b6388936",
+    "final": "c0951b6ef3a41597e0016c6fc4772d21ca9f84ece10a9a2020f610f6603bc47e"
+  },
+  {
+    "path": "packages/core/src/hook-dispatch.ts",
+    "baseline": "3267b3bbb6f9f499bb6521546bf291391ec20440fc597b9438be39adfd4bdf8e",
+    "final": "f7fe29317903eca8a20472a4ec8203c5ab4d06fabcd617dfbb63426c8b9ec6ce"
+  },
+  {
+    "path": "packages/core/src/hook-network.ts",
+    "baseline": "6e692e0cf5f3a7dd662298dcfc6c4bc4e009b2862a0b99e31d2789acb177914d",
+    "final": "9c7a97d86e699b55e5e849f5332574a37485ebdc382f8725f03ad98c706ec3ec"
+  },
+  {
+    "path": "packages/core/src/hook-snapshot-location.ts",
+    "baseline": "060bbea8d8e9735cf97772a9d909054447961369e206214bb17e04e3c6dfa8a1",
+    "final": "9c1cf87f2f001a43dc32d92d3dd88b7ee4736ded4a0498d7801e18f8e617e2aa"
+  },
+  {
+    "path": "packages/core/src/hook-project-trust.ts",
+    "baseline": null,
+    "final": "30c02f1b7618f01d582cd7f6e6d5bae6cc432de75ea2f1c8c0cd32c8656821fe"
+  },
+  {
+    "path": "packages/core/src/hooks.ts",
+    "baseline": "9fc057bf24dee1c73c2ff14aca7e1319a88e08e18d02e1fdf69d2129bfdc0983",
+    "final": "fadfbcd152cdcd1ff7a3d9a192db078efeb3347896bf815513f50b528977fc70"
+  },
+  {
+    "path": "packages/core/src/session/hook-stop.ts",
+    "baseline": "8707546ad66816345937d868c7997c6ab7566799fc850764135ca506b6bfe455",
+    "final": "57ca0f4342eb756e5af7f9e4c1500f8d638fb7cb488cac949e0d6a75383d48fa"
+  },
+  {
+    "path": "docs/repository-hook-trust.md",
+    "baseline": null,
+    "final": "19691d994f99e274c375ce6a4b577ac62c980a7f550b033e1da37c903e8a2c8c"
+  },
+  {
+    "path": "docs/testing/permissions/native-repository-hook-trust.md",
+    "baseline": null,
+    "final": "1a4d95de7ab2a59e21217a5a9c5619d75b3af6d84f5f09e45b5b1211ded79747"
+  },
+  {
+    "path": "packages/apexo/script/grok-hook-repository-trust-ui.mjs",
+    "baseline": null,
+    "final": "a614eadc0ffc6089839e23a086bd14b5d8b59e18197b557ad6c8cb50013247d5",
+    "status": "Unverified draft UI probe, authored after review-v2"
+  }
+]

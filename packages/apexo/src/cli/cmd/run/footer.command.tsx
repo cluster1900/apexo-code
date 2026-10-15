@@ -18,6 +18,11 @@ type CommandEntry =
   | (PanelEntry & { action: "skill" })
   | (PanelEntry & { action: "queued" })
   | (PanelEntry & { action: "subagent" })
+  | (PanelEntry & { action: "tasks" })
+  | (PanelEntry & { action: "goal" })
+  | (PanelEntry & { action: "memory" })
+  | (PanelEntry & { action: "plugins" })
+  | (PanelEntry & { action: "mcp" })
   | (PanelEntry & { action: "variant.cycle" })
   | (PanelEntry & { action: "variant.list" })
   | (PanelEntry & { action: "slash"; name: string })
@@ -343,6 +348,11 @@ export function RunCommandMenuBody(props: {
   onEditor: () => void
   onSkill: () => void
   onSubagent: () => void
+  onTasks?: () => void
+  onGoal?: () => void
+  onMemory?: () => void
+  onPlugins?: () => void
+  onMcp?: () => void
   onQueued: () => void
   onVariant: () => void
   onVariantCycle: () => void
@@ -355,8 +365,66 @@ export function RunCommandMenuBody(props: {
   const skills = createMemo(() => (props.commands() ?? []).filter((item) => item.source === "skill"))
   const activeSubagentCount = createMemo(() => props.subagents().filter((item) => item.status === "running").length)
   const entries = createMemo<CommandEntry[]>(() => {
-    const builtins = ["editor", "new"]
+    const builtins = [
+      "editor",
+      "new",
+      ...(props.onGoal ? ["goal"] : []),
+      ...(props.onPlugins ? ["plugins"] : []),
+      ...(props.onMcp ? ["mcps"] : []),
+      ...(props.onMemory ? ["memory"] : []),
+    ]
     const session: CommandEntry[] = [
+      ...(props.onGoal
+        ? [
+            {
+              action: "goal" as const,
+              category: "Session",
+              display: "Manage goal",
+              footer: "/goal",
+              keywords: "goal objective budget pause resume",
+            },
+          ]
+        : []),
+      ...(props.onMcp
+        ? [
+            {
+              action: "mcp" as const,
+              category: "Session",
+              display: "MCP connections",
+              footer: "/mcps",
+              keywords: "mcp connect disconnect retry",
+            },
+          ]
+        : []),
+      ...(props.onPlugins
+        ? [
+            {
+              action: "plugins" as const,
+              category: "Session",
+              display: "Plugins",
+              footer: "/plugins",
+              keywords: "plugins install catalog",
+            },
+          ]
+        : []),
+      ...(props.onMemory
+        ? [
+            {
+              action: "memory" as const,
+              category: "Session",
+              display: "Browse memory",
+              footer: "/memory",
+              keywords: "memory notes preview delete",
+            },
+          ]
+        : []),
+      {
+        action: "tasks",
+        category: "Session",
+        display: "Manage tasks",
+        footer: "/tasks",
+        keywords: "background shell monitor scheduler subagent tasks stop output",
+      },
       {
         action: "editor",
         category: "Session",
@@ -469,6 +537,26 @@ export function RunCommandMenuBody(props: {
   const items = createMemo<CommandEntry[]>(() => match(query(), entries()))
   const menu = createFooterMenuState({ count: () => items().length, limit: PANEL_LIST_ROWS })
   const pick = (item: CommandEntry) => {
+    if (item.action === "goal") {
+      props.onGoal?.()
+      return
+    }
+    if (item.action === "mcp") {
+      props.onMcp?.()
+      return
+    }
+    if (item.action === "plugins") {
+      props.onPlugins?.()
+      return
+    }
+    if (item.action === "memory") {
+      props.onMemory?.()
+      return
+    }
+    if (item.action === "tasks") {
+      props.onTasks?.()
+      return
+    }
     if (item.action === "model") {
       props.onModel()
       return

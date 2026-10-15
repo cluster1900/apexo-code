@@ -1,7 +1,10 @@
+import { SessionExecutionPolicy } from "./session/execution-policy"
+import { PermissionAuthority } from "./permission/authority"
+import { SessionHookSnapshot } from "./session/hook-snapshot"
 export * as PermissionV2 from "./permission"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Context, Deferred, Effect as EffectRuntime, Layer, Schema } from "effect"
+import { Context, Deferred, Effect as EffectRuntime, Layer, Schema, Scope } from "effect"
 import { Permission } from "@apexo/schema/permission"
 import { EventV2 } from "./event"
 import { Location } from "./location"
@@ -10,6 +13,7 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import { PermissionSaved } from "./permission/saved"
+import { HookObserver } from "./hook-observer"
 import { PermissionV1 } from "./v1/permission"
 
 export { Effect, Rule, Ruleset } from "@apexo/schema/permission"
@@ -95,7 +99,29 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
+/** Serializable frozen policy; only first-party owned launch records may restore it. */
+export const Authority = PermissionAuthority.Snapshot
+export type Authority = typeof Authority.Type
+export const Inherited = Context.Reference<ReadonlyMap<SessionV2.ID, readonly Authority[]>>(
+  "@apexo/Permission/Inherited",
+  {
+    defaultValue: () => new Map(),
+  },
+)
+
 export interface Interface {
+  readonly capture: (
+    sessionID: SessionV2.ID,
+    agent?: AgentV2.ID,
+  ) => EffectRuntime.Effect<readonly Authority[], SessionV2.NotFoundError>
+  /** Read-only authority snapshot. Does not emit a request or ask for approval. */
+  readonly inspect: (
+    sessionID: SessionV2.ID,
+    agent?: AgentV2.ID,
+  ) => EffectRuntime.Effect<
+    (action: string, resources: readonly string[]) => Permission.Effect,
+    SessionV2.NotFoundError
+  >
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
   readonly reply: (input: ReplyInput) => EffectRuntime.Effect<void, NotFoundError>
@@ -107,6 +133,8 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/Permission") {}
 
 interface Pending {
+  readonly inherited: readonly Authority[]
+  readonly hook?: HookObserver.Invocation
   readonly request: Request
   readonly agent?: AgentV2.ID
   readonly deferred: Deferred.Deferred<void, DeclinedError | CorrectedError>
@@ -115,12 +143,14 @@ interface Pending {
 const layer = Layer.effect(
   Service,
   EffectRuntime.gen(function* () {
+    const hookSnapshots = yield* SessionHookSnapshot.Service
     const events = yield* EventV2.Service
     const location = yield* Location.Service
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
     const pending = new Map<ID, Pending>()
+    const scope = yield* Scope.Scope
 
     yield* EffectRuntime.addFinalizer(() =>
       EffectRuntime.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new DeclinedError()), {
@@ -136,7 +166,11 @@ const layer = Layer.effect(
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
-        (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: "allow" }),
+        (item): Permission.Rule => ({
+          action: item.action,
+          resource: item.resource,
+          effect: "allow",
+        }),
       )
     })
 
@@ -150,7 +184,7 @@ const layer = Layer.effect(
       return agent?.permissions ?? missingAgentPermissions
     })
 
-    function denied(input: AssertInput, rules: Permission.Ruleset) {
+    function denied(input: Pick<AssertInput, "action" | "resources">, rules: Permission.Ruleset) {
       return input.resources.some((resource) => evaluate(input.action, resource, rules).effect === "deny")
     }
 
@@ -160,18 +194,62 @@ const layer = Layer.effect(
       )
     }
 
-    const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
-      const rules = yield* configured(input.sessionID, input.agent)
-      const sessionRules = ((yield* sessions.permissions(input.sessionID)) ?? []).map((rule) => ({
+    const authority = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID, agent?: AgentV2.ID) {
+      const rules = yield* configured(sessionID, agent)
+      const sessionRules = ((yield* sessions.permissions(sessionID)) ?? []).map((rule) => ({
         action: PermissionV1.canonicalPermission(rule.permission),
         resource: rule.pattern,
         effect: rule.action,
       }))
-      if (denied(input, rules)) return { effect: "deny" as const, rules }
-      const all = [...rules, ...sessionRules, ...(yield* savedRules())]
-      const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
+      return {
+        rules,
+        all: [...rules, ...sessionRules, ...(yield* savedRules())],
+        consent: sessionRules,
+        inherited: (yield* Inherited).get(sessionID) ?? [],
+      }
+    })
+
+    function assess(
+      input: Pick<AssertInput, "action" | "resources">,
+      snapshot: EffectRuntime.Success<ReturnType<typeof authority>>,
+    ) {
+      if (denied(input, snapshot.rules)) return { effect: "deny" as const, rules: snapshot.rules }
+      const effects = input.resources.flatMap((resource) => {
+        const child = evaluate(input.action, resource, snapshot.all).effect
+        const inherited = snapshot.inherited.map((parent) =>
+          denied({ action: input.action, resources: [resource] }, parent.rules)
+            ? ("deny" as const)
+            : evaluate(input.action, resource, parent.all).effect,
+        )
+        if (inherited.includes("deny")) return ["deny" as const]
+        // A scoped child approval can satisfy a captured ask, but can never lift a deny.
+        if (inherited.includes("ask") && evaluate(input.action, resource, snapshot.consent).effect !== "allow")
+          return [child, "ask" as const]
+        return [child]
+      })
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
-      return { effect, rules: all }
+      return { effect, rules: [...snapshot.all, ...snapshot.inherited.flatMap((parent) => parent.all)] }
+    }
+
+    const capture = EffectRuntime.fn("PermissionV2.capture")(function* (sessionID: SessionV2.ID, agent?: AgentV2.ID) {
+      const snapshot = yield* authority(sessionID, agent)
+      return structuredClone([{ rules: snapshot.rules, all: snapshot.all }, ...snapshot.inherited])
+    })
+
+    const inspect = EffectRuntime.fn("PermissionV2.inspect")(function* (sessionID: SessionV2.ID, agent?: AgentV2.ID) {
+      const snapshot = yield* authority(sessionID, agent)
+      return (action: string, resources: readonly string[]) => assess({ action, resources }, snapshot).effect
+    })
+
+    const evaluateInput = EffectRuntime.fn("PermissionV2.evaluateInput")(function* (input: AssertInput) {
+      const snapshot = yield* authority(input.sessionID, input.agent)
+      const result = assess(input, snapshot)
+      const policy = yield* SessionExecutionPolicy.forSession(input.sessionID)
+      if (!policy || result.effect === "deny") return result
+      const action = PermissionV1.canonicalPermission(input.action)
+      if (SessionExecutionPolicy.unsupported.has(action)) return { ...result, effect: "deny" as const }
+      if (result.effect !== "ask") return result
+      return { ...result, effect: policy.permissions === "approve_once" ? ("allow" as const) : ("deny" as const) }
     })
 
     function request(input: AssertInput): Request {
@@ -190,20 +268,55 @@ const layer = Layer.effect(
       EffectRuntime.uninterruptible(
         EffectRuntime.gen(function* () {
           const deferred = yield* Deferred.make<void, DeclinedError | CorrectedError>()
-          const item = { request, agent, deferred }
+          const current = yield* HookObserver.CurrentTool
+          const hook =
+            current?.sessionID === request.sessionID && current.callID === request.source?.callID ? current : undefined
+          const item = { request, agent, deferred, hook, inherited: (yield* Inherited).get(request.sessionID) ?? [] }
           if (pending.has(request.id)) return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
           pending.set(request.id, item)
           yield* events
             .publish(Event.Asked, request)
             .pipe(EffectRuntime.onError(() => EffectRuntime.sync(() => pending.delete(request.id))))
+          const snapshot = yield* hookSnapshots.get(request.sessionID)
+          yield* HookObserver.observe({
+            registry: snapshot?.registry,
+            selection: snapshot?.selection,
+            directory: location.directory,
+            sessionID: request.sessionID,
+            event: "Notification",
+            matcher: "permission_prompt",
+            payload: {
+              notificationType: "permission_prompt",
+              notification_type: "permission_prompt",
+              message: `Approval required for ${request.action}`,
+              title: "Permission required",
+              level: "info",
+            },
+          }).pipe(EffectRuntime.forkIn(scope))
           return item
         }),
       )
+
+    const reportDenied = EffectRuntime.fnUntraced(function* (input: AssertInput, captured?: HookObserver.Invocation) {
+      const hook = captured ?? (yield* HookObserver.CurrentTool)
+      if (!hook || hook.sessionID !== input.sessionID || hook.callID !== input.source?.callID) return
+      const snapshot = yield* hookSnapshots.get(input.sessionID)
+      yield* HookObserver.observe({
+        registry: snapshot?.registry,
+        selection: snapshot?.selection,
+        directory: location.directory,
+        sessionID: input.sessionID,
+        event: "PermissionDenied",
+        matcher: hook.toolName,
+        payload: HookObserver.deniedPayload(hook),
+      })
+    })
 
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
       const value = request(input)
       if (result.effect === "ask") yield* create(value, input.agent)
+      if (result.effect === "deny") yield* reportDenied(input)
       return { id: value.id, effect: result.effect }
     })
 
@@ -212,6 +325,7 @@ const layer = Layer.effect(
         EffectRuntime.gen(function* () {
           const result = yield* evaluateInput(input)
           if (result.effect === "deny") {
+            yield* reportDenied(input)
             return yield* new BlockedError({
               rules: relevant(input, result.rules),
             })
@@ -235,6 +349,22 @@ const layer = Layer.effect(
         EffectRuntime.gen(function* () {
           const existing = pending.get(input.requestID)
           if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
+          if (input.reply !== "reject") {
+            const current = yield* authority(existing.request.sessionID, existing.agent).pipe(
+              EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
+            )
+            if (!current || assess(existing.request, { ...current, inherited: existing.inherited }).effect === "deny") {
+              yield* events.publish(Event.Replied, {
+                sessionID: existing.request.sessionID,
+                requestID: existing.request.id,
+                reply: "reject",
+              })
+              yield* reportDenied(existing.request, existing.hook)
+              yield* Deferred.fail(existing.deferred, new DeclinedError())
+              pending.delete(existing.request.id)
+              return
+            }
+          }
           yield* events.publish(Event.Replied, {
             sessionID: existing.request.sessionID,
             requestID: existing.request.id,
@@ -242,6 +372,7 @@ const layer = Layer.effect(
           })
 
           if (input.reply === "reject") {
+            yield* reportDenied(existing.request, existing.hook)
             yield* Deferred.fail(
               existing.deferred,
               input.message ? new CorrectedError({ feedback: input.message }) : new DeclinedError(),
@@ -254,6 +385,7 @@ const layer = Layer.effect(
                 requestID: item.request.id,
                 reply: "reject",
               })
+              yield* reportDenied(item.request, item.hook)
               yield* Deferred.fail(item.deferred, new DeclinedError())
               pending.delete(id)
             }
@@ -273,36 +405,24 @@ const layer = Layer.effect(
                 })),
               ],
             })
-            yield* saved.add({
-              projectID: location.project.id,
-              action: existing.request.action,
-              resources: existing.request.save,
-            })
+            // Inherited Task consent belongs to this child, never unrelated project tasks.
+            if (!existing.inherited.length)
+              yield* saved.add({
+                projectID: location.project.id,
+                action: existing.request.action,
+                resources: existing.request.save,
+              })
           }
           yield* Deferred.succeed(existing.deferred, undefined)
           pending.delete(input.requestID)
           if (input.reply !== "always" || !existing.request.save?.length) return
 
-          const rememberedRules = yield* savedRules()
           for (const [id, item] of pending) {
-            const input = { ...item.request }
-            const rules = yield* configured(item.request.sessionID, item.agent).pipe(
+            if (existing.inherited.length && item.request.sessionID !== existing.request.sessionID) continue
+            const current = yield* authority(item.request.sessionID, item.agent).pipe(
               EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
             )
-            if (!rules) continue
-            if (denied(input, rules)) continue
-            const sessionRules = ((yield* sessions.permissions(item.request.sessionID)) ?? []).map((rule) => ({
-              action: PermissionV1.canonicalPermission(rule.permission),
-              resource: rule.pattern,
-              effect: rule.action,
-            }))
-            const effective = [...rules, ...sessionRules, ...rememberedRules]
-            if (
-              !item.request.resources.every(
-                (resource) => evaluate(item.request.action, resource, effective).effect === "allow",
-              )
-            )
-              continue
+            if (!current || assess(item.request, { ...current, inherited: item.inherited }).effect !== "allow") continue
             yield* events.publish(Event.Replied, {
               sessionID: item.request.sessionID,
               requestID: item.request.id,
@@ -327,7 +447,7 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
     })
 
-    return Service.of({ ask, assert, reply, get, forSession, list })
+    return Service.of({ capture, inspect, ask, assert, reply, get, forSession, list })
   }),
 )
 
@@ -336,5 +456,5 @@ export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
+  deps: [SessionHookSnapshot.node, EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
 })

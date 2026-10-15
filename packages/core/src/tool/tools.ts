@@ -4,6 +4,10 @@ import { Context, Effect, Scope } from "effect"
 import { Tool } from "./tool"
 
 export interface Interface {
+  /** Validate a private scoped registration and publish it synchronously later. */
+  readonly prepare: (
+    tools: Readonly<Record<string, Tool.AnyTool>>,
+  ) => Effect.Effect<() => void, Tool.RegistrationError, Scope.Scope>
   readonly register: (
     tools: Readonly<Record<string, Tool.AnyTool>>,
   ) => Effect.Effect<void, Tool.RegistrationError, Scope.Scope>

@@ -1,3 +1,9 @@
+import { CommandSandboxBrowser } from "@apexo/tui/component/command-sandbox-browser"
+import { WorkflowBrowser } from "@apexo/tui/component/workflow-browser"
+import { SideQuestionBrowser, sideQuestionImages } from "@apexo/tui/component/side-question-browser"
+import { HooksBrowser } from "@apexo/tui/component/hooks-browser"
+import { FeedbackBrowser } from "@apexo/tui/component/feedback-browser"
+import { SessionGoal } from "@apexo/tui/component/session-goal"
 // Footer layout
 //
 // Renders the footer region as a compact vertical stack:
@@ -9,6 +15,9 @@
 // The view itself is stateless except for derived memos.
 /** @jsxImportSource @opentui/solid */
 import { useTerminalDimensions } from "@opentui/solid"
+import { MemoryReview } from "@apexo/tui/component/memory-review"
+import { MemoryOperations } from "@apexo/tui/component/memory-operations"
+import { MemoryWork } from "@apexo/tui/component/memory-work"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { registerApexoSpinner } from "@apexo/tui/component/register-spinner"
 import { createColors, createFrames } from "@apexo/tui/ui/spinner"
@@ -23,6 +32,10 @@ import {
 } from "./footer.command"
 import { FOOTER_MENU_ROWS, RunFooterMenu } from "./footer.menu"
 import { RunFooterSubagentBody } from "./footer.subagent"
+import { RunTasksBody } from "./footer.tasks"
+import { PluginsBrowser } from "@apexo/tui/component/plugins-browser"
+import { McpBrowser } from "@apexo/tui/component/mcp-browser"
+import { MemoryBrowser } from "@apexo/tui/component/memory-browser"
 import { RunPromptBody, createPromptState } from "./footer.prompt"
 import { RunPermissionBody } from "./footer.permission"
 import { RunQuestionBody } from "./footer.question"
@@ -99,6 +112,16 @@ type RunFooterViewProps = {
   onCycle: () => void
   onInterrupt: () => boolean
   onBackground?: () => void
+  taskActions?: import("./types").RunTaskActions
+  goalActions?: import("@apexo/tui/component/session-goal").GoalActions
+  pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
+  mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
+  workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
+  commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
+  hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
+  feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
+  memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
   onEditorOpen: (input: { value: string }) => Promise<string | undefined>
   onInputClear: () => void
   onExitRequest?: () => boolean
@@ -137,6 +160,14 @@ export function RunFooterView(props: RunFooterViewProps) {
   const prompt = createMemo(() => active().type === "prompt" && route().type === "composer")
   const selectingSubagent = createMemo(() => active().type === "prompt" && route().type === "subagent-menu")
   const selectingQueued = createMemo(() => active().type === "prompt" && route().type === "queued-menu")
+  const memoryAvailable = createMemo(
+    () =>
+      !!props.memoryActions &&
+      (props.memoryActions.native || !!props.commands()?.some((command) => command.name === "memory")),
+  )
+  const selectingPlugins = createMemo(() => active().type === "prompt" && route().type === "plugins")
+  const selectingMemory = createMemo(() => active().type === "prompt" && route().type === "memory")
+  const selectingTasks = createMemo(() => active().type === "prompt" && route().type === "tasks")
   const inspecting = createMemo(() => active().type === "prompt" && route().type === "subagent")
   const commanding = createMemo(() => active().type === "prompt" && route().type === "command")
   const skilling = createMemo(() => active().type === "prompt" && route().type === "skill")
@@ -147,6 +178,10 @@ export function RunFooterView(props: RunFooterViewProps) {
       active().type === "permission" ||
       active().type === "question" ||
       selectingQueued() ||
+      route().type === "goal" ||
+      selectingTasks() ||
+      selectingMemory() ||
+      selectingPlugins() ||
       selectingSubagent() ||
       commanding() ||
       skilling() ||
@@ -168,8 +203,10 @@ export function RunFooterView(props: RunFooterViewProps) {
 
     return tabs().findIndex((item) => item.sessionID === sessionID) + 1
   })
-  const foregroundSubagents = createMemo(
-    () => props.backgroundSubagents && activeTabs().some((item) => !item.background),
+  const foregroundTasks = createMemo(
+    () =>
+      (props.state().foregroundShells ?? 0) > 0 ||
+      (props.backgroundSubagents && activeTabs().some((item) => !item.background)),
   )
   const model = createMemo(() => {
     const current = props.currentModel()
@@ -361,7 +398,109 @@ export function RunFooterView(props: RunFooterViewProps) {
     findFiles: props.findFiles,
     agents: props.agents,
     resources: props.resources,
-    commands: props.commands,
+    commands: () => [
+      ...(props.commands() ?? []).filter(
+        (command) =>
+          command.name !== "plugins" &&
+          (command.name !== "mcps" || !props.mcpActions) &&
+          command.name !== "tasks" &&
+          (command.name !== "memory" || !memoryAvailable()),
+      ),
+      ...(props.workflowActions
+        ? ["workflow", "deep-research"].map((name) => ({
+            name,
+            description: "Manage workflows and research",
+            template: "",
+            hints: [],
+            source: "command" as const,
+          }))
+        : []),
+      ...(props.sideQuestionActions
+        ? [
+            {
+              name: "btw",
+              description: "Ask an independent side question",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(props.commandSandboxActions
+        ? [
+            {
+              name: "sandbox",
+              description: "Inspect native command sandbox",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(props.hooksActions
+        ? [
+            {
+              name: "hooks",
+              description: "Inspect and reload session hooks",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(props.feedbackActions
+        ? [
+            {
+              name: "feedback",
+              description: "Review local feedback drafts",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(props.goalActions
+        ? [
+            {
+              name: "goal",
+              description: "Create and manage a goal",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(props.mcpActions
+        ? [{ name: "mcps", description: "Manage MCP connections", template: "", hints: [], source: "command" as const }]
+        : []),
+      ...(props.pluginsActions
+        ? [
+            {
+              name: "plugins",
+              description: "Browse and manage Plugins",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(memoryAvailable()
+        ? [{ name: "memory", description: "Browse saved memory", template: "", hints: [], source: "command" as const }]
+        : []),
+      ...(props.memoryActions?.native
+        ? ["remember", "flush", "dream"].map((name) => ({
+            name,
+            description:
+              name === "remember"
+                ? "Manual note rewriting is unavailable; view Memory"
+                : "Review native Memory operations",
+            template: "",
+            hints: [],
+            source: "command" as const,
+          }))
+        : []),
+      { name: "tasks", description: "Manage session tasks", template: "", hints: [], source: "command" as const },
+    ],
     tuiConfig: props.tuiConfig,
     state: props.state,
     view: promptView,
@@ -369,7 +508,119 @@ export function RunFooterView(props: RunFooterViewProps) {
     width,
     theme,
     history: props.history,
-    onSubmit: props.onSubmit,
+    onSubmit: (input) => {
+      if (
+        props.workflowActions &&
+        input.mode !== "shell" &&
+        /^\/(?:workflow|deep-research)(?:\s|$)/u.test(input.text.trim())
+      ) {
+        if (input.parts.some((part) => part.type === "file")) return false
+        setRoute({ type: "workflow", command: input.text.trim() })
+        return true
+      }
+      if (
+        props.sideQuestionActions &&
+        input.mode !== "shell" &&
+        (/^\/btw(?:\s|$)/u.test(input.text.trim()) || input.command?.name === "btw")
+      ) {
+        setRoute({
+          type: "btw",
+          question: input.text.trim().replace(/^\/btw\s*/u, ""),
+          images: sideQuestionImages(input.parts),
+        })
+        return true
+      }
+      if (
+        props.commandSandboxActions &&
+        input.mode !== "shell" &&
+        (input.text.trim() === "/sandbox" || input.command?.name === "sandbox")
+      ) {
+        setRoute({ type: "command-sandbox" })
+        return true
+      }
+      if (
+        props.hooksActions &&
+        input.mode !== "shell" &&
+        (input.text.trim() === "/hooks" || input.command?.name === "hooks")
+      ) {
+        setRoute({ type: "hooks" })
+        return true
+      }
+      if (
+        props.feedbackActions &&
+        input.mode !== "shell" &&
+        (input.text.trim() === "/feedback" || input.command?.name === "feedback")
+      ) {
+        setRoute({ type: "feedback" })
+        return true
+      }
+      if (
+        props.goalActions &&
+        input.mode !== "shell" &&
+        (/^\/goal(?:\s|$)/u.test(input.text.trim()) || input.command?.name === "goal")
+      ) {
+        setRoute({ type: "goal", objective: input.text.trim().replace(/^\/goal\s*/u, "") })
+        return true
+      }
+      if (
+        props.memoryActions?.native &&
+        input.mode !== "shell" &&
+        /^\/(?:memory|remember|flush|dream)(?:\s|$)/u.test(input.text.trim())
+      ) {
+        setRoute({
+          type:
+            props.memoryActions.operations && ["/flush", "/dream"].includes(input.text.trim())
+              ? "memory-work"
+              : "memory",
+        })
+        return true
+      }
+      if (memoryAvailable() && props.memoryActions?.work && input.mode !== "shell") {
+        const command = input.command?.name ?? input.text.trim().replace(/^\//, "")
+        if (command === "flush" || command === "dream") {
+          setRoute({ type: "memory-work", kind: command })
+          return true
+        }
+      }
+      if (
+        memoryAvailable() &&
+        props.memoryActions?.review &&
+        input.mode !== "shell" &&
+        (/^\/remember(?:\s|$)/u.test(input.text.trim()) || input.command?.name === "remember")
+      ) {
+        setRoute({ type: "remember", content: input.text.trim().replace(/^\/remember\s*/u, "") })
+        return true
+      }
+      if (
+        props.mcpActions &&
+        input.mode !== "shell" &&
+        (input.text.trim() === "/mcps" || input.command?.name === "mcps")
+      ) {
+        setRoute({ type: "mcp" })
+        return true
+      }
+      if (
+        props.pluginsActions &&
+        input.mode !== "shell" &&
+        (input.text.trim() === "/plugins" || input.command?.name === "plugins")
+      ) {
+        setRoute({ type: "plugins" })
+        return true
+      }
+      if (
+        memoryAvailable() &&
+        input.mode !== "shell" &&
+        (input.text.trim() === "/memory" || input.command?.name === "memory")
+      ) {
+        setRoute({ type: "memory" })
+        return true
+      }
+      if (input.mode !== "shell" && (input.text.trim() === "/tasks" || input.command?.name === "tasks")) {
+        setRoute({ type: "tasks" })
+        return true
+      }
+      return props.onSubmit(input)
+    },
     onCycle: props.onCycle,
     onInterrupt: props.onInterrupt,
     onEditorOpen: props.onEditorOpen,
@@ -460,7 +711,17 @@ export function RunFooterView(props: RunFooterViewProps) {
     }
 
     const items: Array<{ kind: string; key: string; label: string }> = []
-    if (foregroundSubagents() && backgroundShortcut()) {
+    const running = props.state().tasks?.filter((task) => task.status === "running").length ?? 0
+    if (running > 0 || props.state().taskError || props.state().taskIssues?.length)
+      items.push({
+        kind: "tasks",
+        key: "/tasks",
+        label:
+          props.state().taskError || props.state().taskIssues?.length
+            ? "unavailable"
+            : `${running} running${props.state().taskNative ? " (recent)" : ""}`,
+      })
+    if (foregroundTasks() && backgroundShortcut()) {
       items.push({ kind: "background", key: backgroundShortcut(), label: "background" })
     }
     if (queuedPrompts().length > 0 && queuedShortcut()) {
@@ -522,12 +783,12 @@ export function RunFooterView(props: RunFooterViewProps) {
 
   useBindings(() => ({
     mode: APEXO_BASE_MODE,
-    enabled: active().type === "prompt" && route().type === "composer" && foregroundSubagents(),
+    enabled: active().type === "prompt" && route().type === "composer" && foregroundTasks(),
     priority: 1,
     commands: [
       {
         name: "session.background",
-        title: "Background subagents",
+        title: "Background running tasks",
         category: "Session",
         run: () => props.onBackground?.(),
       },
@@ -605,6 +866,18 @@ export function RunFooterView(props: RunFooterViewProps) {
       current.type !== "model" &&
       current.type !== "variant" &&
       current.type !== "queued-menu" &&
+      current.type !== "tasks" &&
+      current.type !== "memory" &&
+      current.type !== "remember" &&
+      current.type !== "workflow" &&
+      current.type !== "btw" &&
+      current.type !== "feedback" &&
+      current.type !== "hooks" &&
+      current.type !== "command-sandbox" &&
+      current.type !== "goal" &&
+      current.type !== "memory-work" &&
+      current.type !== "mcp" &&
+      current.type !== "plugins" &&
       current.type !== "subagent-menu"
     ) {
       return
@@ -678,6 +951,142 @@ export function RunFooterView(props: RunFooterViewProps) {
                             bind={composer.bind}
                           />
                         </Match>
+                        <Match when={route().type === "goal" && props.goalActions}>
+                          <SessionGoal
+                            actions={props.goalActions!}
+                            objective={(() => {
+                              const current = route()
+                              return current.type === "goal" ? current.objective : undefined
+                            })()}
+                            theme={theme}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "mcp" && props.mcpActions}>
+                          <McpBrowser
+                            actions={props.mcpActions!}
+                            onAttach={composer.attachMcp}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={selectingPlugins() && props.pluginsActions}>
+                          <PluginsBrowser
+                            actions={props.pluginsActions!}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "workflow" && props.workflowActions}>
+                          <WorkflowBrowser
+                            actions={props.workflowActions!}
+                            command={(() => {
+                              const current = route()
+                              return current.type === "workflow" ? current.command : ""
+                            })()}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "btw" && props.sideQuestionActions}>
+                          <SideQuestionBrowser
+                            actions={props.sideQuestionActions!}
+                            images={(() => {
+                              const current = route()
+                              return current.type === "btw" ? current.images : undefined
+                            })()}
+                            question={(() => {
+                              const current = route()
+                              return current.type === "btw" ? current.question : ""
+                            })()}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "command-sandbox" && props.commandSandboxActions}>
+                          <CommandSandboxBrowser
+                            actions={props.commandSandboxActions!}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "hooks" && props.hooksActions}>
+                          <HooksBrowser
+                            actions={props.hooksActions!}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "feedback" && props.feedbackActions}>
+                          <FeedbackBrowser
+                            actions={props.feedbackActions!}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "remember" && props.memoryActions?.review}>
+                          <MemoryReview
+                            actions={props.memoryActions!.review!}
+                            content={(() => {
+                              const current = route()
+                              return current.type === "remember" ? current.content : ""
+                            })()}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "memory-work" && props.memoryActions?.operations}>
+                          <MemoryOperations
+                            actions={props.memoryActions!.operations!}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "memory" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "memory-work" && props.memoryActions?.work}>
+                          <MemoryWork
+                            actions={props.memoryActions!.work!}
+                            kind={(() => {
+                              const current = route()
+                              return current.type === "memory-work" ? current.kind : undefined
+                            })()}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={selectingMemory() && props.memoryActions}>
+                          <MemoryBrowser
+                            actions={props.memoryActions!}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                            onWork={
+                              props.memoryActions?.work || props.memoryActions?.operations
+                                ? () => setRoute({ type: "memory-work" })
+                                : undefined
+                            }
+                          />
+                        </Match>
+                        <Match when={selectingTasks()}>
+                          <RunTasksBody
+                            theme={theme}
+                            tasks={() => props.state().tasks ?? []}
+                            native={() => props.state().taskNative === true}
+                            issues={() => props.state().taskIssues ?? []}
+                            error={() => props.state().taskError}
+                            actions={props.taskActions}
+                            onClose={closePanel}
+                          />
+                        </Match>
                         <Match when={selectingSubagent()}>
                           <RunSubagentSelectBody
                             theme={theme}
@@ -719,6 +1128,11 @@ export function RunFooterView(props: RunFooterViewProps) {
                             onSkill={openSkillMenu}
                             onSubagent={openSubagentMenu}
                             onQueued={openQueuedMenu}
+                            onTasks={() => setRoute({ type: "tasks" })}
+                            onGoal={props.goalActions ? () => setRoute({ type: "goal" }) : undefined}
+                            onPlugins={props.pluginsActions ? () => setRoute({ type: "plugins" }) : undefined}
+                            onMcp={props.mcpActions ? () => setRoute({ type: "mcp" }) : undefined}
+                            onMemory={memoryAvailable() ? () => setRoute({ type: "memory" }) : undefined}
                             onVariant={openVariant}
                             onVariantCycle={() => {
                               props.onCycle()

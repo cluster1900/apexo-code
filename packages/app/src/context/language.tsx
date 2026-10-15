@@ -20,7 +20,7 @@ import {
 export type Locale = DesktopNativeLocale
 export type Direction = "ltr" | "rtl"
 
-const RTL_LOCALES: ReadonlySet<Locale> = new Set(["ar", "ur", "pa", "fa", "dv"])
+const RTL_LOCALES: ReadonlySet<Locale> = new Set(["ar", "ur", "fa", "dv"])
 
 function localeDirection(locale: Locale): Direction {
   return RTL_LOCALES.has(locale) ? "rtl" : "ltr"

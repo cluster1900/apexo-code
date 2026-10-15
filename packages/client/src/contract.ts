@@ -19,6 +19,7 @@ export const groupNames = {
   "server.location": "location",
   "server.agent": "agents",
   "server.session": "sessions",
+  "server.sessionMcpAttachment": "sessionMcpAttachments",
   "server.message": "messages",
   "server.model": "models",
   "server.provider": "providers",
@@ -37,8 +38,10 @@ export const groupNames = {
 
 export const endpointNames = {
   "session.messages": "list",
+  "session.input.execution": "inputExecution",
+  "session.input.wait": "inputWait",
+  "session.input.interrupt": "inputInterrupt",
   "integration.connect.key": "connectKey",
-  "integration.connect.external": "connectExternal",
   "integration.connect.oauth": "connectOauth",
   "integration.attempt.status": "attemptStatus",
   "integration.attempt.complete": "attemptComplete",

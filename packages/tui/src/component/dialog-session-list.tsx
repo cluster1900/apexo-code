@@ -281,6 +281,17 @@ export function DialogSessionList() {
         setToDelete(undefined)
       }}
       onSelect={(option) => {
+        void sdk
+          .restoreSession(option.value)
+          .then((notice) => {
+            if (notice) toast.show({ message: notice, variant: "warning" })
+          })
+          .catch(() =>
+            toast.show({
+              message: "Could not restore schedules. Check the connection and try again.",
+              variant: "error",
+            }),
+          )
         route.navigate({
           type: "session",
           sessionID: option.value,

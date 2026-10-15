@@ -217,20 +217,23 @@ export function hoist<A, E, T extends Tag, const Items extends Replacements = re
   readonly hoisted: Node<unknown, E>
 } {
   const hoisted = new Map<string, AnyNode>()
-  const replacementMap = replacementMapFrom(replacements)
+  const rewriteCache = new Map<AnyNode, AnyNode>()
+  const replacementMap = replacementMapFrom(replacements, rewriteCache)
+  const rewrittenRoot = rewriteReplacementDependencies(root, replacementMap, rewriteCache, false)
 
   const node = walk<AnyNode>(
-    root,
+    rewrittenRoot,
     (node, context) => {
       if (node.kind === "group") {
         return { ...node, dependencies: node.dependencies.map(context.visit) }
       }
       if (node.tag === tag) {
+        const rewritten = rewriteReplacementDependencies(node, replacementMap, rewriteCache)
         const existing = hoisted.get(node.name)
-        if (existing && existing !== node) {
+        if (existing && existing !== rewritten) {
           throw new Error(`Tag ${tag} has conflicting implementations for ${node.name}`)
         }
-        hoisted.set(node.name, rewriteReplacementDependencies(node, replacementMap))
+        hoisted.set(node.name, rewritten)
         return group([])
       }
       if (node.kind === "unbound") {
@@ -251,7 +254,9 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
   root: Node<A, E, any>,
   replacements?: ValidReplacements<Items>,
 ): Layer.Layer<A, E> {
-  const replacementMap = replacementMapFrom(replacements)
+  const rewriteCache = new Map<AnyNode, AnyNode>()
+  const replacementMap = replacementMapFrom(replacements, rewriteCache)
+  const rewrittenRoot = rewriteReplacementDependencies(root, replacementMap, rewriteCache, false)
   const cache = new Map<AnyNode, RuntimeLayer>()
   const compileNode = (node: AnyNode) =>
     walk<RuntimeLayer>(
@@ -266,31 +271,39 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
       },
       { cache, resolve: (node) => replacementMap.get(node.name) ?? node },
     )
-  const layers = flatten(root).map((node) => compileNode(node))
+  const layers = flatten(rewrittenRoot).map((node) => compileNode(node))
   const layer = layers.reduce<RuntimeLayer>((result, layer) => layer.pipe(Layer.provideMerge(result)), Layer.empty)
   return layer as Layer.Layer<A, E>
 }
 
-function replacementMapFrom(replacements?: Replacements) {
-  return (
-    replacements?.reduce((map, [source, replacement]) => {
-      const normalized = rewriteReplacementDependencies(replacementNode(source, replacement), map)
-      const current = new Map([[source.name, normalized]])
-      for (const [name, node] of map) map.set(name, rewriteReplacementDependencies(node, current))
-      map.set(source.name, normalized)
-      return map
-    }, new Map<string, AnyNode>()) ?? new Map<string, AnyNode>()
-  )
+function replacementMapFrom(replacements?: Replacements, cache = new Map<AnyNode, AnyNode>()) {
+  if (!replacements || replacements.length === 0) return new Map<string, AnyNode>()
+  const raw = new Map<string, AnyNode>()
+  for (const [source, replacement] of replacements) {
+    raw.set(source.name, replacementNode(source, replacement))
+  }
+  const resolved = new Map<string, AnyNode>()
+  for (const [name, node] of raw) {
+    resolved.set(name, rewriteReplacementDependencies(node, raw, cache, true))
+  }
+  for (const [name, node] of resolved) {
+    raw.set(name, node)
+  }
+  return resolved
 }
 
-function rewriteReplacementDependencies(root: AnyNode, replacements: ReadonlyMap<string, AnyNode>) {
+function rewriteReplacementDependencies(
+  root: AnyNode,
+  replacements: ReadonlyMap<string, AnyNode>,
+  cache = new Map<AnyNode, AnyNode>(),
+  skipRootReplacement = true,
+) {
   if (replacements.size === 0) return root
-  const cache = new Map<AnyNode, AnyNode>()
   const visiting = new Set<AnyNode>()
   const stack: AnyNode[] = []
 
   const recur = (node: AnyNode, isRoot = false): AnyNode => {
-    const target = isRoot ? node : (replacements.get(node.name) ?? node)
+    const target = (isRoot && skipRootReplacement) || node.kind === "group" ? node : (replacements.get(node.name) ?? node)
     const cached = cache.get(target)
     if (cached !== undefined || cache.has(target)) return cached!
     if (visiting.has(target)) {
@@ -308,6 +321,7 @@ function rewriteReplacementDependencies(root: AnyNode, replacements: ReadonlyMap
         ? target
         : { ...target, dependencies }
       cache.set(target, result)
+      cache.set(result, result)
       return result
     } finally {
       stack.pop()

@@ -21,6 +21,8 @@ import { testEffect } from "../lib/effect"
 import { Tool } from "@/tool/tool"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
+import { BackgroundJob } from "@apexo/core/background-job"
+import { GrokBuildTools } from "@/tool/grok-build"
 
 const shellLayer = Layer.mergeAll(
   LayerNode.compile(
@@ -1078,6 +1080,33 @@ describe("tool.shell abort", () => {
   )
 
   if (process.platform !== "win32") {
+    ;[0, 25].forEach((block) => {
+      it.live(`Grok background shell outlives the normal shell timeout (block=${block})`, () =>
+        runIn(
+          projectRoot,
+          Effect.gen(function* () {
+            const background = yield* BackgroundJob.make
+            const shell = yield* initShell()
+            const tool = GrokBuildTools.adaptTools([{ ...shell, id: "bash" }], { background })[0]!
+            const result = yield* tool.execute(
+              {
+                command: "sleep 1; printf LONG_SHELL_OK",
+                description: "long background command",
+                block_until_ms: block,
+              },
+              ctx,
+            )
+            expect(result.metadata.background).toBe(true)
+            const finished = yield* background.wait({ id: String(result.metadata.task_id), timeout: 5000 })
+            expect(finished.timedOut).toBe(false)
+            expect(finished.info?.output).toContain("LONG_SHELL_OK")
+            expect(finished.info?.metadata?.exit).toBe(0)
+            expect(finished.info?.output).not.toContain("exceeding timeout")
+          }),
+        ).pipe(Effect.provide(RuntimeFlags.layer({ bashDefaultTimeoutMs: 100 }))),
+      )
+    })
+
     it.live("captures stderr in output", () =>
       runIn(
         projectRoot,
@@ -1090,6 +1119,60 @@ describe("tool.shell abort", () => {
           expect(result.metadata.exit).toBe(0)
         }),
       ),
+    )
+
+    it.live("drains both streams after a fast command exits while output delivery is pending", () =>
+      runIn(
+        projectRoot,
+        Effect.gen(function* () {
+          const delivered: string[] = []
+          const result = yield* run(
+            { command: "printf stdout_msg; printf stderr_msg >&2" },
+            {
+              ...ctx,
+              // Model a slow Monitor event subscriber while the real child exits.
+              onOutput: (chunk) =>
+                Effect.sleep("100 millis").pipe(Effect.andThen(() => Effect.sync(() => delivered.push(chunk)))),
+            },
+          )
+          expect(result.metadata.exit).toBe(0)
+          expect(result.output).toContain("stdout_msg")
+          expect(result.output).toContain("stderr_msg")
+          expect(delivered.join("")).toContain("stdout_msg")
+          expect(delivered.join("")).toContain("stderr_msg")
+        }),
+      ),
+    )
+
+    it.live("decodes split UTF-8 independently when stdout and stderr interleave", () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped()
+        yield* runIn(
+          dir,
+          Effect.gen(function* () {
+            const result = yield* run(
+              {
+                command:
+                  "printf 'prefix\\360\\237'; while [ ! -f stdout-observed ]; do sleep 0.01; done; " +
+                  "printf 'stderr_msg' >&2; while [ ! -f stderr-observed ]; do sleep 0.01; done; printf '\\230\\200'",
+                timeout: 5000,
+              },
+              {
+                ...ctx,
+                onOutput: (chunk) =>
+                  Effect.promise(async () => {
+                    if (chunk.includes("prefix")) await Bun.write(path.join(dir, "stdout-observed"), "ready")
+                    if (chunk.includes("stderr_msg")) await Bun.write(path.join(dir, "stderr-observed"), "ready")
+                  }),
+              },
+            )
+            expect(result.metadata.exit).toBe(0)
+            expect(result.output).toContain("😀")
+            expect(result.output).toContain("stderr_msg")
+            expect(result.output).not.toContain("�")
+          }),
+        )
+      }),
     )
   }
 

@@ -30,6 +30,6 @@ export async function detectServerProtocol(
 
   const current = await probe(server, fetch, "/api/health").catch(() => undefined)
   if (current && "pid" in current && typeof current.pid === "number") return "v2"
-  if (current && "healthy" in current && current.healthy === true) return "v1"
+  if (current && "healthy" in current && current.healthy === true) return "v2"
   return "v2"
 }

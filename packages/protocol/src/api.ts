@@ -4,6 +4,20 @@ import { SchemaErrorMiddleware } from "./middleware/schema-error"
 import { MessageGroup } from "./groups/message"
 import { ModelGroup } from "./groups/model"
 import { ProviderGroup } from "./groups/provider"
+import { ScheduleGroup } from "./groups/schedule"
+import { ProcessGroup } from "./groups/process"
+import { TaskGroup } from "./groups/task"
+import { GoalGroup } from "./groups/goal"
+import { MemoryOperationGroup } from "./groups/memory-operation"
+import { MemoryGroup } from "./groups/memory"
+import { FeedbackGroup } from "./groups/feedback"
+import { HooksGroup } from "./groups/hooks"
+import { makePluginsGroup } from "./groups/plugins"
+import { SessionMcpAttachmentGroup } from "./groups/session-mcp-attachment"
+import { McpGroup } from "./groups/mcp"
+import { LspGroup } from "./groups/lsp"
+import { WorkflowGroup } from "./groups/workflow"
+import { SideQuestionGroup } from "./groups/side-question"
 import { makeSessionGroup } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
 import { FileSystemGroup } from "./groups/fs"
@@ -21,6 +35,7 @@ import { LocationGroup } from "./groups/location"
 import { IntegrationGroup } from "./groups/integration"
 import { CredentialGroup } from "./groups/credential"
 import { ProjectCopyGroup } from "./groups/project-copy"
+import { makeProjectGroup } from "./groups/project"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -36,9 +51,24 @@ const makeApiFromGroup = <
 ) =>
   HttpApi.make("server")
     .add(HealthGroup)
+    .add(makeProjectGroup(locationMiddleware))
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
     .add(makeSessionGroup(sessionLocationMiddleware))
+    .add(GoalGroup.middleware(sessionLocationMiddleware))
+    .add(TaskGroup.middleware(sessionLocationMiddleware))
+    .add(ProcessGroup.middleware(sessionLocationMiddleware))
+    .add(ScheduleGroup.middleware(sessionLocationMiddleware))
+    .add(FeedbackGroup.middleware(sessionLocationMiddleware))
+    .add(MemoryGroup.middleware(sessionLocationMiddleware))
+    .add(MemoryOperationGroup.middleware(sessionLocationMiddleware))
+    .add(HooksGroup.middleware(sessionLocationMiddleware))
+    .add(makePluginsGroup(locationMiddleware))
+    .add(McpGroup.middleware(locationMiddleware))
+    .add(SessionMcpAttachmentGroup.middleware(sessionLocationMiddleware))
+    .add(LspGroup.middleware(locationMiddleware))
+    .add(WorkflowGroup.middleware(sessionLocationMiddleware))
+    .add(SideQuestionGroup.middleware(sessionLocationMiddleware))
     .add(MessageGroup.middleware(sessionLocationMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))

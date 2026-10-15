@@ -250,7 +250,7 @@ describe("Instruction.system", () => {
 })
 
 describe("Instruction.systemPaths global config", () => {
-  it.live("reloads saved workspace memory on each Grok prompt", () =>
+  it.live("does not inject saved memory without the session permission and retrieval context", () =>
     Effect.gen(function* () {
       const home = yield* tmpdirScoped()
       const project = yield* tmpdirScoped()
@@ -260,11 +260,19 @@ describe("Instruction.systemPaths global config", () => {
         yield* Effect.promise(() =>
           WorkspaceMemory.update(project, { operation: "remember", content: "Use Bun for tests" }, home),
         )
-        expect((yield* instruction.system()).join("\n")).toContain("Use Bun for tests")
+        expect(yield* instruction.system()).toEqual([])
         yield* Effect.promise(() =>
           WorkspaceMemory.update(project, { operation: "remember", content: "Use main for diffs" }, home),
         )
-        expect((yield* instruction.system()).join("\n")).toContain("Use main for diffs")
+        expect(yield* instruction.system()).toEqual([])
+        yield* Effect.promise(() =>
+          WorkspaceMemory.update(
+            project,
+            { operation: "remember", scope: "global", content: "Prefer concise replies" },
+            home,
+          ),
+        )
+        expect(yield* instruction.system()).toEqual([])
       }).pipe(provideInstance(project), provideInstruction({ home, config: home }, { runtimeProfile: "grok-build" }))
       yield* Effect.gen(function* () {
         const instruction = yield* Instruction.Service

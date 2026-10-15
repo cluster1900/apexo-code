@@ -1,0 +1,13 @@
+# Apexo workflow script interpreter
+
+This is first-party Apexo code using the generic crates.io Rhai interpreter. It contains no Grok Build source, orchestration engine, or executable dependency. Core owns run records, child Sessions, permissions, budgets, journal replay, cancellation, and resume policy. This process only evaluates a bounded Rhai program and exchanges structured host calls.
+
+Build with `bun run build` or `bun run build --target=<Rust target triple>`. The output is `target/release/apexo-workflow-script` or `target/<triple>/release/apexo-workflow-script`, with `.exe` on Windows. Host configuration may explicitly set APEXO_WORKFLOW_SCRIPT; project configuration cannot select a binary. Missing interpreters fail closed. Cross-platform acceptance remains unverified until those artifacts run.
+
+Protocol version 1 accepts one JSONL start message with version, script, args, and optional validate. It emits call messages containing id, kind, payload. Core replies with the matching id and value or error. A parallel call carries the whole panel so Core can reserve its budget atomically before creating children. Core journals host calls; this adapter has no journal or filesystem authority. Complete, paused, validated, and error messages are terminal. Cancel or closed stdin interrupts evaluation. Validation checks syntax only, without executing host work; it is not a proof of every runtime branch.
+
+Saved Rhai execution and the native Core host are under integration. Interpreter tests alone do not validate the Apexo workflow feature.
+
+CLI build scripts stage the interpreter beside each compiled binary. Desktop prebuild stages it in resources, packages it outside the application archive, and supplies its absolute path to the local backend. Release builds can set `APEXO_WORKFLOW_ARTIFACTS` to a directory containing `<Rust target triple>/apexo-workflow-script` (with `.exe` on Windows). Otherwise each requested target requires an installed Rust target and a compatible linker. Missing target artifacts fail the build; the host executable is never substituted for a different platform.
+
+The release workflow builds and tests eight interpreter targets on matching GitHub-hosted architectures, then downloads those artifacts before creating CLI archives. Runner labels follow the [GitHub-hosted runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). Local macOS arm64 staging, executable launch, and JSONL evaluation have passed. The release matrix has been syntax-checked but has not run in GitHub Actions at this checkpoint; Windows/Linux acceptance remains open.

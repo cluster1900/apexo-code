@@ -1,0 +1,9 @@
+# BUG-20261015-307: Tranche A handoff omitted V1 flush configuration forwarding
+
+- Scope: V1-to-native configuration migration and the private tranche A integration handoff.
+- Observed: private migration forwarded compaction.memory_flush, but the frozen handoff omitted that file. The integrated source therefore discarded the custom flush model, character limit and automatic policy fields in V1 documents.
+- Expected: V1 and native documents preserve the same supported flush configuration through canonical decoding and migration.
+- Reproduction: load a real apexo.json document with provider={} to select V1 and compaction.memory_flush containing flush_model, max_flush_write_chars, enabled, idle_timeout_secs and soft_threshold_tokens; inspect the matching Config.Service document entry.
+- Root cause: the integration list was manually curated and the migration field was incorrectly described as pre-existing. The original 5,722-file checkpoint hash audit proves migrate.ts changed privately but was absent from the frozen 17-file manifest. Earlier file inspection had targeted the wrong config path; it did not establish migration was unchanged.
+- Fix: separately forward info.compaction.memory_flush in the existing compaction mapping, preserve the later shared Task mapping, add the real-document fixture and correct the feature documentation. Future handoff completeness is verified against every checkpoint file and newly added source, not a remembered file list.
+- Verification: the real V1 document fixture passed (one test, two assertions) with custom model fixture/custom-memory, character limit 317 and automatic settings. Removing only the forwarding line reproduced undefined effective memory_flush and failed the same assertion. Restoring it passed. This is one omission episode; no historical recurrence is inferred.

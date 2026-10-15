@@ -1,0 +1,9 @@
+# BUG-20261014-269: JSON-RPC write failure escaped the native LSP request promise
+
+- Scope: Native LSP process startup/closure and generic JSON-RPC transport integration.
+- Observed: A missing server executable caused the handled initialization failure to be followed by an unhandled `ERR_STREAM_WRITE_AFTER_END`. A focused real-process test and a direct minimal client probe both reproduced it.
+- Expected: Process/pipe closure should fail the LSP request and publish sanitized status without an unhandled runtime rejection.
+- Root cause: JSON-RPC 8.2.1 `sendRequest` uses an async Promise executor. Its writer catch rejects the request and then throws, leaving a second rejected promise outside the caller's request promise. A pipe write racing child closure reaches this path. Merely catching the request or exit notification does not contain it.
+- Fix: Wrap the generic message writer. On write failure, mark the connection closed and dispose it, which rejects pending requests, then settle the writer promise rather than feeding the library's extra throw. Keep a stdin error listener through teardown and omit the exit notification on an already closed/nonwritable transport. No process-global rejection handler is installed.
+- Reproduction: Create a native client whose command is a missing executable, catch its creation error, and allow queued stream writes to settle; or run the base-failure case in `bun test test/v2/lsp-native.test.ts` from `packages/apexo`.
+- Verification: The direct probe returned its caught error and exited successfully with no unhandled rejection. `bun test test/v2/lsp-native.test.ts test/v2/plugin-bundle-runtime.test.ts` passed five tests and 57 assertions, including missing startup, actual connection loss, Location event invalidation, candidate retention, and process cleanup.

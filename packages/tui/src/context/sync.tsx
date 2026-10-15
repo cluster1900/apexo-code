@@ -1,3 +1,8 @@
+import { terminalCatalog, terminalSession } from "../transport/native-catalog"
+import { terminalPermission, terminalQuestion, terminalRequestEvent } from "../transport/native-session-events"
+import type { nativeSessionView } from "../transport/native-session-view"
+import { SessionEvent } from "@apexo/core/session/event"
+import { Option, Schema } from "effect"
 import type {
   Message,
   Agent,
@@ -27,7 +32,7 @@ import { useTuiStartup } from "./runtime"
 import { createSimpleContext } from "./helper"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onMount, onCleanup } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
@@ -63,11 +68,13 @@ export const {
     const permission = usePermission()
     const [store, setStore] = createStore<{
       status: "loading" | "partial" | "complete"
+      native: boolean
       provider: Provider[]
       provider_default: Record<string, string>
       provider_next: ProviderListResponse
       capabilities: {
         experimentalBackgroundSubagents: boolean
+        memoryManagement: boolean
       }
       provider_auth: Record<string, ProviderAuthMethod[]>
       agent: Agent[]
@@ -105,6 +112,7 @@ export const {
       formatter: FormatterStatus[]
       vcs: VcsInfo | undefined
     }>({
+      native: false,
       provider_next: {
         all: [],
         default: {},
@@ -112,6 +120,7 @@ export const {
       },
       capabilities: {
         experimentalBackgroundSubagents: false,
+        memoryManagement: false,
       },
       provider_auth: {},
       config: {},
@@ -139,6 +148,144 @@ export const {
     const project = useProject()
     const sdk = useSDK()
 
+    const nativeViews = new Map<string, ReturnType<typeof nativeSessionView>>()
+    const nativeSerial = new Map<string, Promise<void>>()
+    const activityRevision = new Map<string, number>()
+    const nativeActivity = { timer: undefined as ReturnType<typeof setTimeout> | undefined, closed: false }
+    onCleanup(() => {
+      nativeActivity.closed = true
+      clearTimeout(nativeActivity.timer)
+    })
+    const refreshNativeActivity = async () => {
+      try {
+        const selected = await sdk.transport()
+        if (selected.kind !== "native" || nativeActivity.closed) return
+        const revisions = new Map(activityRevision)
+        const active = await selected.active()
+        if (nativeActivity.closed) return
+        batch(() => {
+          for (const session of store.session) {
+            if (revisions.get(session.id) !== activityRevision.get(session.id)) continue
+            setStore("session_status", session.id, active[session.id] ? { type: "busy" } : { type: "idle" })
+          }
+        })
+      } catch (error) {
+        if (!nativeActivity.closed) console.error("Native activity read failed", error)
+      } finally {
+        if (!nativeActivity.closed) nativeActivity.timer = setTimeout(refreshNativeActivity, 500)
+      }
+    }
+    const decodeNative = Schema.decodeUnknownOption(SessionEvent.All)
+    const publishNative = (sessionID: string, view: ReturnType<typeof nativeSessionView>) => {
+      const messages = view.snapshot()
+      batch(() => {
+        setStore("message", sessionID, reconcile(messages.map((message) => message.info)))
+        for (const message of messages) setStore("part", message.info.id, reconcile(message.parts))
+      })
+    }
+    const syncNative = async (sessionID: string) => {
+      const selected = await sdk.transport()
+      if (selected.kind !== "native") return
+      const [session, view, permissions, questions, active] = await Promise.all([
+        selected.get(sessionID),
+        selected.history(sessionID),
+        selected.permissions(sessionID),
+        selected.questions(sessionID),
+        selected.active(),
+      ])
+      if (nativeActivity.closed) return
+      nativeViews.set(sessionID, view)
+      setStore(
+        "session",
+        reconcile(
+          [...store.session.filter((item) => item.id !== sessionID), terminalSession(session)].sort((a, b) =>
+            a.id.localeCompare(b.id),
+          ),
+        ),
+      )
+      publishNative(sessionID, view)
+      setStore("permission", sessionID, reconcile(permissions.map(terminalPermission)))
+      setStore("question", sessionID, reconcile(questions.map(terminalQuestion)))
+      setStore("session_status", sessionID, active[sessionID] ? { type: "busy" } : { type: "idle" })
+    }
+    const connectedEvent = Schema.decodeUnknownOption(Schema.Struct({ type: Schema.Literal("server.connected") }))
+    onCleanup(
+      sdk.nativeEvent.on((value) => {
+        if (Option.isSome(connectedEvent(value))) {
+          for (const id of nativeViews.keys()) {
+            const next = (nativeSerial.get(id) ?? Promise.resolve())
+              .then(() => syncNative(id))
+              .catch((error) => console.error("Native replay failed", error))
+            nativeSerial.set(id, next)
+          }
+          return
+        }
+        const parsed = decodeNative(value)
+        if (Option.isSome(parsed)) {
+          const event = parsed.value
+          const id = event.data.sessionID
+          if (
+            !store.session.some((session) => session.id === id) &&
+            event.location?.directory !== project.instance.directory()
+          )
+            return
+          const previous = nativeSerial.get(id) ?? Promise.resolve()
+          const next = previous
+            .then(async () => {
+              if (!nativeViews.has(id)) await syncNative(id)
+              const current = nativeViews.get(id)
+              if (event.durable && current && event.durable.seq > current.sequence + 1) await syncNative(id)
+              const view = nativeViews.get(id)
+              if (nativeActivity.closed) return
+              if (view?.apply(value)) publishNative(id, view)
+              if (event.type === "session.next.step.started") {
+                activityRevision.set(id, (activityRevision.get(id) ?? 0) + 1)
+                setStore("session_status", id, { type: "busy" })
+              }
+              if (event.type === "session.next.agent.switched" || event.type === "session.next.model.switched") {
+                const selected = await sdk.transport()
+                if (selected.kind === "native") {
+                  const session = terminalSession(await selected.get(id))
+                  setStore(
+                    "session",
+                    reconcile(
+                      [...store.session.filter((row) => row.id !== id), session].sort((a, b) =>
+                        a.id.localeCompare(b.id),
+                      ),
+                    ),
+                  )
+                }
+              }
+            })
+            .catch((error) => {
+              console.error("native terminal projection failed", error)
+            })
+          nativeSerial.set(id, next)
+          return
+        }
+        const event = terminalRequestEvent(value)
+        if (!event) return
+        if (event.type === "question.asked")
+          setStore("question", event.properties.sessionID, (items = []) => [
+            ...items.filter((item) => item.id !== event.properties.id),
+            event.properties,
+          ])
+        if (event.type === "question.replied" || event.type === "question.rejected")
+          setStore("question", event.properties.sessionID, (items = []) =>
+            items.filter((item) => item.id !== event.properties.requestID),
+          )
+        if (event.type === "permission.asked")
+          setStore("permission", event.properties.sessionID, (items = []) => [
+            ...items.filter((item) => item.id !== event.properties.id),
+            event.properties,
+          ])
+        if (event.type === "permission.replied")
+          setStore("permission", event.properties.sessionID, (items = []) =>
+            items.filter((item) => item.id !== event.properties.requestID),
+          )
+      }),
+    )
+
     const fullSyncedSessions = new Set<string>()
     const syncingSessions = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
@@ -159,7 +306,10 @@ export const {
       }
     }
 
-    function listSessions() {
+    async function listSessions() {
+      const selected = await sdk.transport()
+      if (selected.kind === "native")
+        return (await selected.list()).data.map(terminalSession).sort((a, b) => a.id.localeCompare(b.id))
       return sdk.client.session
         .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
@@ -442,6 +592,35 @@ export const {
 
     async function bootstrap(input: { fatal?: boolean } = {}) {
       const fatal = input.fatal ?? true
+      const selected = await sdk.transport().catch((error) => {
+        if (fatal) exit(error)
+        throw error
+      })
+      if (selected.kind === "native") {
+        const [catalog, sessions] = await Promise.all([selected.catalog(), listSessions(), project.sync()]).catch(
+          (error) => {
+            if (fatal) exit(error)
+            throw error
+          },
+        )
+        const display = terminalCatalog(catalog)
+        batch(() => {
+          setStore("native", true)
+          setStore("command", reconcile(display.commands))
+          setStore("provider", reconcile(display.providers))
+          setStore("provider_default", display.defaults)
+          setStore("provider_next", {
+            all: display.providers,
+            default: display.defaults,
+            connected: display.providers.map((provider) => provider.id),
+          })
+          setStore("agent", reconcile(display.agents))
+          setStore("session", reconcile(sessions))
+          setStore("status", "complete")
+        })
+        if (!nativeActivity.timer) void refreshNativeActivity()
+        return
+      }
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
       const sessionListPromise = projectPromise.then(() => listSessions())
@@ -492,6 +671,7 @@ export const {
               setStore("provider_default", reconcile(providers.default))
               setStore("provider_next", reconcile(providerList))
               setStore("capabilities", "experimentalBackgroundSubagents", capabilities?.backgroundSubagents === true)
+              setStore("capabilities", "memoryManagement", capabilities?.memoryManagement === true)
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
               if (sessions !== undefined) setStore("session", reconcile(sessions))
@@ -575,6 +755,13 @@ export const {
           return last.time.completed ? "idle" : "working"
         },
         async sync(sessionID: string) {
+          const selected = await sdk.transport()
+          if (selected.kind === "native") {
+            const next = (nativeSerial.get(sessionID) ?? Promise.resolve()).then(() => syncNative(sessionID))
+            nativeSerial.set(sessionID, next)
+            await next
+            return
+          }
           if (fullSyncedSessions.has(sessionID)) return
           const syncing = syncingSessions.get(sessionID)
           if (syncing) return syncing

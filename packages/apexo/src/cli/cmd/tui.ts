@@ -1,5 +1,6 @@
 import { cmd } from "@/cli/cmd/cmd"
 import { Rpc } from "@/util/rpc"
+import { createTuiWorker } from "../tui-worker"
 import { type rpc } from "../tui/worker"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -88,6 +89,11 @@ export const TuiThreadCommand = cmd({
         describe: "continue the last session",
         type: "boolean",
       })
+      .option("session-protocol", {
+        choices: ["auto", "native", "compatibility"] as const,
+        default: "auto" as const,
+        describe: "Session API transport (native also enables local interactive startup)",
+      })
       .option("session", {
         alias: ["s"],
         type: "string",
@@ -142,6 +148,40 @@ export const TuiThreadCommand = cmd({
         hidden: true,
       }),
   handler: async (args) => {
+    if (args["session-protocol"] === "native") {
+      const { runNativeLocalMini, validateNativeLocal } = await import("../native-local")
+      validateNativeLocal({ ...args, port: undefined })
+      const network = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].find((option) =>
+        process.argv.some((arg) => arg === option || arg.startsWith(option + "=")),
+      )
+      if (network) throw new Error(`${network} is not available for native local interactive startup`)
+      if (args.replay === true) throw new Error("--replay is not supported; replay is enabled by default")
+      if (args.mini)
+        return runNativeLocalMini({
+          ...args,
+          port: undefined,
+          dir: resolveThreadDirectory(args.project),
+          message: args.prompt ? [args.prompt] : [],
+          replay: args.replay === false || args.noReplay === true ? false : undefined,
+        })
+      if (args.replay === false || args.noReplay === true || args.replayLimit !== undefined)
+        throw new Error("Replay options require --mini")
+      const { runNativeLocalFullscreen } = await import("../native-local-fullscreen")
+      return runNativeLocalFullscreen({
+        directory: resolveThreadDirectory(args.project),
+        worker: await target(),
+        prompt: await input(args.prompt),
+        session: args.session,
+        continue: args.continue,
+        agent: args.agent,
+        model: args.model,
+      })
+    }
+    if (args["session-protocol"] !== "auto") {
+      UI.error("--session-protocol requires attach <url>; local terminal bootstrap uses compatibility")
+      process.exitCode = 1
+      return
+    }
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
       process.exitCode = 1
@@ -207,11 +247,7 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
-      const worker = new Worker(file, {
-        env: Object.fromEntries(
-          Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-        ),
-      })
+      const worker = createTuiWorker(file, "compatibility")
       const client = Rpc.client<typeof rpc>(worker)
       const reload = () => {
         client.call("reload", undefined).catch(() => {})

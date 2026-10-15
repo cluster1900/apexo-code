@@ -1,0 +1,12 @@
+# BUG-20261015-201: Reference Dream fixture used object fields for tuple evidence
+
+- **Scope:** Isolated installed-runtime Memory comparison fixture; no Apexo production defect.
+- **Occurrences:** One independently verified authoring episode. The corrected rerun is verification of that episode, not another occurrence.
+- **Observed:** Passive list, empty flush/Dream, completed-turn capture and repeat-flush checks passed. The first manual Dream returned `retry_required` instead of the fixture's expected `completed`.
+- **Expected:** A well-formed local provider plan citing the exact claimed observation should produce a completed Dream. Malformed provider output may correctly return `retry_required`.
+- **Reproduction:** With Grok 1.0.52 (`0920c8169e27`) in isolated HOME/GROK_HOME/XDG paths and a disposable Git workspace, complete one turn, flush one observation, and invoke `_x.ai/memory/dream`. Build the fixture response evidence with `claimed_observations.map(item => item.path)`.
+- **Root cause:** The actual Dream request represents `claimed_observations` as `[path, content]` tuples. Accessing `.path` produces undefined entries, serialized as null in the evidence array. The reference correctly rejected that malformed plan. Apexo's own consolidation input uses a different shape; the fixture must decode the runtime it is testing rather than assume a shared shape.
+- **Fix:** Select the exact path from each observed tuple with `item[0]`. Preserve the original failing script, provider request and returned disposition. No production parser, permission, retry policy or assertion was weakened.
+- **Verification:** The actual corrected JavaScript fixture was formatted and passed `node --check` before execution with Bun 1.3.14. The installed comparison then passed seven checks and made four provider requests: the ordinary request, a separate unclassified tool-free auxiliary request, one capture and one Dream. Repeat flush and repeat Dream added no requests; disabled flush/Dream added none. Owned child/provider processes were joined and reaped. This result does not establish crash recovery, cancellation or automatic capture timing before flush.
+
+The behavioral reference is pinned source revision `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8`; `xai-grok-shell/src/session/acp_session_impl/v2_memory_dream.rs` constructs the Dream request. The fixture fix establishes the successful comparison path, not a change to the reference runtime.

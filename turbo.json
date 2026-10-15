@@ -1,35 +1,29 @@
 {
   "$schema": "https://v2-8-13.turborepo.dev/schema.json",
-  "globalEnv": [
-    "CI"
-  ],
-  "globalPassThroughEnv": [
-    "CI"
-  ],
+  "globalEnv": ["CI"],
+  "globalPassThroughEnv": ["CI"],
   "tasks": {
     "typecheck": {},
     "build": {
       "dependsOn": [],
-      "outputs": [
-        "dist/**"
-      ]
+      "outputs": ["dist/**"]
     },
     "@apexo/plugin#build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
     },
     "apexo#test": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build", "@apexo/workflow-script#build"],
       "outputs": [],
-      "passThroughEnv": [
-        "*"
-      ]
+      "passThroughEnv": ["*"]
+    },
+    "@apexo/workflow-script#build": {
+      "outputs": ["target/release/apexo-workflow-script", "target/release/apexo-workflow-script.exe"],
+      "cache": false
+    },
+    "@apexo/workflow-script#test": {
+      "outputs": [],
+      "cache": false
     }
   }
 }

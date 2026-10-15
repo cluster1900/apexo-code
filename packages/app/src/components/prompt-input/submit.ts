@@ -1,3 +1,5 @@
+import type { SandboxProfile } from "@apexo/sdk/v2/client"
+import type { GoalStart } from "@apexo/sdk/v2/client"
 import type { Message, Session } from "@apexo/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@apexo/core/util/encode"
@@ -214,6 +216,7 @@ type PromptSubmitInput = {
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
+  commandSandbox?: Accessor<SandboxProfile>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -229,6 +232,12 @@ type PromptSubmitInput = {
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
   onSubmit?: () => void
+  onWorkflow?: (command: string) => Promise<boolean>
+  onBtw?: (question: string, images: ImageAttachmentPart[]) => Promise<boolean>
+  onGoal?: (sessionID: string, objective: string, selection: GoalStart) => boolean
+  onMemoryCommand?: (command: string, attachments: boolean) => Promise<boolean>
+  onRemember?: (sessionID: string, content: string) => boolean
+  onMemoryWork?: (sessionID: string, kind: "flush" | "dream") => boolean
   model?: ModelSelection
 }
 
@@ -336,6 +345,36 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
+    if (mode === "normal" && /^\/(?:workflow|deep-research)(?:\s|$)/u.test(text.trim())) {
+      const opened = images.length === 0 && (await input.onWorkflow?.(text.trim()).catch(() => false))
+      if (opened) {
+        submission.clear()
+        input.setPopover(null)
+      }
+      if (!opened) showToast({ title: language.t("workflow.title"), description: language.t("workflow.openError") })
+      return
+    }
+
+    if (mode === "normal" && /^\/btw(?:\s|$)/u.test(text.trim())) {
+      const opened = await input.onBtw?.(text.trim().replace(/^\/btw\s*/u, ""), images).catch(() => false)
+      if (opened) {
+        submission.clear()
+        input.setPopover(null)
+      }
+      if (!opened) showToast({ title: language.t("btw.title"), description: language.t("btw.openError") })
+      return
+    }
+
+    if (
+      mode === "normal" &&
+      /^\/(?:memory|remember|flush|dream)(?:\s|$)/u.test(text.trim()) &&
+      (await input.onMemoryCommand?.(text.trim(), images.length > 0))
+    ) {
+      submission.clear()
+      input.setPopover(null)
+      return
+    }
+
     const modelSelection = input.model ?? local.model
     const currentModel = modelSelection.current()
     const currentAgent = local.agent.current()
@@ -401,12 +440,26 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     let session = input.info()
     if (!session && isNewSession) {
-      const created = await sdk()
-        .api.session.create({
-          agent: currentAgent.name,
-          model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
-          location: { directory: sessionDirectory },
+      const commandSandbox = input.commandSandbox?.() ?? "off"
+      if (commandSandbox !== "off" && (await sdk().protocol) !== "v2") {
+        showToast({
+          title: language.t("commandSandbox.title"),
+          description: language.t("commandSandbox.creationUnavailable"),
         })
+        return
+      }
+      const creation = {
+        agent: currentAgent.name,
+        model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
+        location: { directory: sessionDirectory },
+      }
+      const created = await (
+        commandSandbox === "off"
+          ? sdk().api.session.create(creation)
+          : sdk()
+              .client.v2.session.create({ ...creation, commandSandbox }, { throwOnError: true })
+              .then((result) => result.data.data)
+      )
         .then(normalizeSessionInfo)
         .catch((err) => {
           showToast({
@@ -415,24 +468,23 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           })
           return undefined
         })
-      if (created) {
-        seed(sessionDirectory, created)
-        session = created
-        await startTransition(() => {
-          if (!session) return
-          if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
-          local.session.promote(sessionDirectory, session.id, {
-            agent: currentAgent.name,
-            model: { providerID: currentModel.provider.id, modelID: currentModel.id },
-            variant: variant ?? null,
-          })
-          layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
-          const draftID = search.draftId
-          if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
-          else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
-          submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
+      if (!created) return
+      seed(sessionDirectory, created)
+      session = created
+      await startTransition(() => {
+        if (!session) return
+        if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
+        local.session.promote(sessionDirectory, session.id, {
+          agent: currentAgent.name,
+          model: { providerID: currentModel.provider.id, modelID: currentModel.id },
+          variant: variant ?? null,
         })
-      }
+        layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+        const draftID = search.draftId
+        if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
+        else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
+      })
     }
     if (!session) {
       showToast({
@@ -480,6 +532,36 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
+    if (
+      mode === "normal" &&
+      !images.length &&
+      /^\/goal(?:\s|$)/u.test(text.trim()) &&
+      input.onGoal?.(session.id, text.trim().replace(/^\/goal\s*/u, ""), {
+        agent,
+        model: { id: model.modelID, providerID: model.providerID, variant },
+      })
+    ) {
+      clearInput()
+      return
+    }
+    if (
+      mode === "normal" &&
+      !images.length &&
+      ["/flush", "/dream"].includes(text.trim()) &&
+      input.onMemoryWork?.(session.id, text.trim() === "/flush" ? "flush" : "dream")
+    ) {
+      clearInput()
+      return
+    }
+    if (
+      mode === "normal" &&
+      !images.length &&
+      /^\/remember(?:\s|$)/u.test(text.trim()) &&
+      input.onRemember?.(session.id, text.trim().replace(/^\/remember\s*/u, ""))
+    ) {
+      clearInput()
+      return
+    }
     if (
       input.onQueue &&
       shouldQueueFollowup({

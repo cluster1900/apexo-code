@@ -1,0 +1,13 @@
+# BUG-20261015-188: Stop after admitted Scheduled Task lost cancellation receipt
+
+- **Scope:** Private native Scheduler draft; not yet integrated into production.
+- **Occurrences:** One independent implementation episode.
+- **Observed:** With the real child Created event held after its atomic ownership commit and before Task worker registration, an accepted active parent Stop revoked the schedule epoch. Releasing the event produced a failed occurrence and no completed cancellation receipt. The first corrected-observer run passed the delete case and failed Stop (`expected cancelled, received failed`).
+- **Expected:** Stop joins exactly the admitted child, retains a cancelled Task/occurrence receipt, and performs no child provider work. Delete removes future intent while leaving an already admitted Task controllable.
+- **Cause:** The second admission check rejected the revoked epoch before recognizing the exact occurrence already committed by Created. This prevented registration and settlement of an admitted child rather than preventing new work.
+- **Fix:** Verify the private occurrence, schedule, process owner, parent, child and launch identities first. An already admitted exact occurrence may finish receipt registration; the owned worker still checks the captured epoch before attaching a role or calling the child runner. Unadmitted occurrences retain current epoch, revision, Goal and Plan checks.
+- **Verification:** From `packages/apexo`, `bun test test/v2/schedule-execution.test.ts` passed three tests / 26 assertions in the private workspace: delete during registration, accepted Stop during registration, and explicit Resume crossing Stop's join barrier. The resumed intent is future-only and the stopped child makes zero provider calls. The expanded real DB/owner test delays the actual claim return across Stop and explicit Resume: no child is created, the old occurrence is cancelled, and Resume arms only a future deadline. The two-file lifecycle/store gate passed five tests / 77 assertions. Shared integration and CLI/Desktop acceptance are not claimed here.
+
+## Final private verification
+
+The composed Scheduler and affected Task gate passed 18 tests / 280 assertions across nine files, including held registration Stop, schedule deletion, Session deletion, Stop/Resume crossing async claim and late Goal/Plan changes. The private source CLI active/idle Stop extension passed five checks / nine provider calls. The rebuilt private packaged Desktop backend passed the full six-check / 15-call matrix, including the same Stop behavior and real 60-second recurrence/no-overlap. Shared integration remains pending; no aggregate gate or UI acceptance is claimed here.

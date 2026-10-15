@@ -74,6 +74,7 @@ export type SessionData = {
   announced: boolean
   ids: Set<string>
   tools: Set<string>
+  foregroundShells: Set<string>
   call: Map<string, Dict>
   shell: Map<string, ShellCall>
   permissions: PermissionRequest[]
@@ -112,6 +113,7 @@ export function createSessionData(
     announced: false,
     ids: new Set(),
     tools: new Set(),
+    foregroundShells: new Set(),
     call: new Map(),
     shell: new Map(),
     permissions: [],
@@ -295,6 +297,7 @@ export function bootstrapSessionData(input: {
       }
 
       input.data.call.set(key(part.messageID, part.callID), part.state.input)
+      if (isForegroundShell(part)) input.data.foregroundShells.add(part.id)
     }
   }
 
@@ -309,6 +312,15 @@ export function bootstrapSessionData(input: {
 
 function key(msg: string, call: string): string {
   return `${msg}:${call}`
+}
+
+function isForegroundShell(part: ToolPart) {
+  return (
+    part.tool === "run_terminal_cmd" &&
+    part.state.status === "running" &&
+    part.state.metadata?.foreground === true &&
+    part.state.metadata?.background !== true
+  )
 }
 
 function enrichPermission(data: SessionData, request: PermissionRequest): PermissionRequest {
@@ -742,6 +754,7 @@ function failTool(part: ToolPart, text: string): SessionCommit {
 
 // Emits "interrupted" final entries for all in-flight parts. Called when a turn is aborted.
 export function flushInterrupted(data: SessionData, commits: SessionCommit[]) {
+  data.foregroundShells.clear()
   for (const partID of data.part.keys()) {
     if (data.ids.has(partID)) {
       continue
@@ -922,7 +935,16 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
     }
 
     if (part.type === "tool") {
-      const view = syncPermission(data, part) ?? syncQuestion(data, part)
+      const before = data.foregroundShells.size
+      isForegroundShell(part) ? data.foregroundShells.add(part.id) : data.foregroundShells.delete(part.id)
+      const current = syncPermission(data, part) ?? syncQuestion(data, part)
+      const view =
+        before === data.foregroundShells.size
+          ? current
+          : {
+              ...current,
+              patch: { ...current?.patch, foregroundShells: data.foregroundShells.size },
+            }
       if (part.tool === "bash" && part.callID) {
         if (claimShell(data, part.callID, "tool", bashCommand(part)).source === "shell") {
           return out(data, commits, view)
@@ -939,7 +961,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
           commits.push(startTool(part))
         }
 
-        return out(data, commits, view ?? patch({ status: toolStatus(part) }))
+        return out(data, commits, current ? view : { ...view, patch: { ...view?.patch, status: toolStatus(part) } })
       }
 
       if (part.state.status === "completed") {

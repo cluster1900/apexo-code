@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { Database } from "@apexo/core/database/database"
@@ -35,7 +36,7 @@ const ref = {
 }
 
 const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
-  LayerNode.compile(
+  AppNodeBuilderV1.build(
     LayerNode.group([
       Agent.node,
       BackgroundJob.node,

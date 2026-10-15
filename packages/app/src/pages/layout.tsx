@@ -35,6 +35,7 @@ import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { useProviders } from "@/hooks/use-providers"
 import { dismissToast, setV2Toast, showToast, ToastRegion } from "@/utils/toast"
 import { useServerSDK } from "@/context/server-sdk"
+import { announceSessionRestoration } from "@/utils/session-restore"
 import { normalizeProjectInfo } from "@/context/global-sync/utils"
 import { clearWorkspaceTerminals } from "@/context/terminal"
 import { pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
@@ -925,6 +926,12 @@ export default function LegacyLayout(props: ParentProps) {
         onSelect: () => openServer(),
       },
       {
+        id: "plugins.open",
+        title: language.t("plugins.title"),
+        category: language.t("command.category.settings"),
+        onSelect: () => openPlugins(),
+      },
+      {
         id: "settings.open",
         title: language.t("command.settings.open"),
         category: language.t("command.category.settings"),
@@ -1086,6 +1093,14 @@ export default function LegacyLayout(props: ParentProps) {
     })
   }
 
+  function openPlugins() {
+    const run = ++dialogRun
+    void import("@/components/plugins").then((module) => {
+      if (dialogDead || dialogRun !== run) return
+      dialog.show(() => <module.PluginsDialog />)
+    })
+  }
+
   function openSettings() {
     const run = ++dialogRun
     const module = settings.general.newLayoutDesigns()
@@ -1147,8 +1162,10 @@ export default function LegacyLayout(props: ParentProps) {
     return root
   }
 
-  async function navigateToProject(directory: string | undefined) {
+  async function navigateToProject(directory: string | undefined, restore = false) {
     if (!directory) return
+    const targetServer = serverSDK()
+    const targetSync = serverSync()
     const root = projectRoot(directory)
     server.projects.touch(root)
     const project = layout.projects.list().find((item) => item.worktree === root)
@@ -1162,10 +1179,10 @@ export default function LegacyLayout(props: ParentProps) {
     const refreshDirs = async (target?: string) => {
       if (!target || target === root || canOpen(target)) return canOpen(target)
       const listed = await Promise.resolve(
-        project?.id ?? serverSDK().api.project.current({ location: { directory: root } }),
+        project?.id ?? targetServer.api.project.current({ location: { directory: root } }),
       )
         .then((value) => (typeof value === "string" ? value : value.id))
-        .then((projectID) => serverSDK().api.project.directories({ projectID, location: { directory: root } }))
+        .then((projectID) => targetServer.api.project.directories({ projectID, location: { directory: root } }))
         .then((items) => items.map((item) => item.directory).filter((item) => pathKey(item) !== pathKey(root)))
         .catch(() => [] as string[])
       dirs = effectiveWorkspaceOrder(root, [root, ...listed], store.workspaceOrder[root])
@@ -1173,9 +1190,18 @@ export default function LegacyLayout(props: ParentProps) {
     }
     const openSession = async (target: { directory: string; id: string }) => {
       if (!canOpen(target.directory)) return false
-      const sync = serverSync().ensureDirSyncContext(target.directory)
+      const restoreTarget = () => {
+        if (!restore) return
+        const sdk = targetServer.ensureDirSdkContext(target.directory)
+        void announceSessionRestoration(
+          { client: sdk.client, protocol: sdk.protocol, sessionID: target.id },
+          language.t,
+        )
+      }
+      const sync = targetSync.ensureDirSyncContext(target.directory)
       if (sync.session.get(target.id)) {
         setStore("lastProjectSession", root, { directory: target.directory, id: target.id, at: Date.now() })
+        restoreTarget()
         navigateWithSidebarReset(`/${base64Encode(target.directory)}/session/${target.id}`)
         return true
       }
@@ -1186,6 +1212,7 @@ export default function LegacyLayout(props: ParentProps) {
       if (!resolved?.directory) return false
       if (!canOpen(resolved.directory)) return false
       setStore("lastProjectSession", root, { directory: resolved.directory, id: resolved.id, at: Date.now() })
+      restoreTarget()
       navigateWithSidebarReset(`/${base64Encode(resolved.directory)}/session/${resolved.id}`)
       return true
     }
@@ -1199,7 +1226,7 @@ export default function LegacyLayout(props: ParentProps) {
     }
 
     const latest = latestRootSession(
-      dirs.map((item) => serverSync().child(item, { bootstrap: false })[0]),
+      dirs.map((item) => targetSync.child(item, { bootstrap: false })[0]),
       Date.now(),
     )
     if (latest && (await openSession(latest))) {
@@ -1210,7 +1237,7 @@ export default function LegacyLayout(props: ParentProps) {
       await Promise.all(
         dirs.map(async (item) => ({
           path: { directory: item },
-          session: await listAllSessions(serverSDK().api.session, {
+          session: await listAllSessions(targetServer.api.session, {
             directory: item,
             parentID: null,
             order: "desc",
@@ -1228,12 +1255,17 @@ export default function LegacyLayout(props: ParentProps) {
 
   function navigateToSession(session: Session | undefined) {
     if (!session) return
+    const target = serverSDK().ensureDirSdkContext(session.directory)
+    void announceSessionRestoration(
+      { client: target.client, protocol: target.protocol, sessionID: session.id },
+      language.t,
+    )
     navigateWithSidebarReset(`/${base64Encode(session.directory)}/session/${session.id}`)
   }
 
   function openProject(directory: string, navigate = true) {
     layout.projects.open(directory)
-    if (navigate) return navigateToProject(directory)
+    if (navigate) return navigateToProject(directory, true)
   }
 
   const handleDeepLinks = (urls: string[]) => {
@@ -1319,7 +1351,7 @@ export default function LegacyLayout(props: ParentProps) {
     navigateWithSidebarReset(`/${base64Encode(next.worktree)}/session`)
     layout.projects.close(directory)
     queueMicrotask(() => {
-      void navigateToProject(next.worktree)
+      void navigateToProject(next.worktree, false)
     })
   }
 
@@ -1349,7 +1381,7 @@ export default function LegacyLayout(props: ParentProps) {
         for (const directory of result) {
           void openProject(directory, false)
         }
-        void navigateToProject(result[0])
+        void navigateToProject(result[0], true)
       } else if (result) {
         void openProject(result)
       }
@@ -1886,7 +1918,7 @@ export default function LegacyLayout(props: ParentProps) {
       if (!hoverOpen && state.hoverProject && state.hoverProject !== worktree) return
       setState("hoverProject", hoverOpen ? worktree : undefined)
     },
-    navigateToProject,
+    navigateToProject: (directory) => navigateToProject(directory, true),
     openSidebar: () => layout.sidebar.open(),
     closeProject,
     showEditProjectDialog: (proj) => showEditProjectDialog(server.current!, proj),
@@ -2218,6 +2250,8 @@ export default function LegacyLayout(props: ParentProps) {
       openProjectKeybind={() => command.keybind("project.open")}
       onOpenProject={chooseProject}
       renderProjectOverlay={projectOverlay}
+      pluginsLabel={() => language.t("plugins.title")}
+      onOpenPlugins={openPlugins}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}

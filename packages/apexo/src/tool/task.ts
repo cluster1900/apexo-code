@@ -14,6 +14,8 @@ import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@apexo/core/database/database"
+import { SchedulerStore } from "@apexo/core/scheduler-store"
+import { SessionGoalUsage } from "@apexo/core/session/goal-usage"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -175,21 +177,28 @@ export const TaskTool = Tool.define(
           ],
         }))
 
-      const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
-        Effect.provideService(Database.Service, database),
-        Effect.orDie,
-      )
-      if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
-      const variant = msg.info.variant
+      const inherited = ctx.extra?.scheduledModel
+        ? yield* Schema.decodeUnknownEffect(SchedulerStore.Resume.fields.model)(ctx.extra.scheduledModel)
+        : yield* Effect.gen(function* () {
+            const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
+              Effect.provideService(Database.Service, database),
+              Effect.orDie,
+            )
+            if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
+            return { modelID: msg.info.modelID, providerID: msg.info.providerID, variant: msg.info.variant }
+          })
+      const variant = inherited.variant
 
       const model = next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
+        modelID: inherited.modelID,
+        providerID: inherited.providerID,
       }
+      const goal = yield* SessionGoalUsage.Current
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
         model,
+        ...(goal ? { goalID: goal.goalID, goalAttemptID: goal.attemptID } : {}),
         ...(runInBackground ? { background: true } : {}),
       }
 
@@ -254,7 +263,11 @@ export const TaskTool = Tool.define(
               },
             ],
           })
-          .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+          .pipe(
+            Effect.provideService(SessionGoalUsage.Current, undefined),
+            Effect.ignore,
+            Effect.forkIn(scope, { startImmediately: true }),
+          )
       })
 
       const notify = Effect.fn("TaskTool.notifyBackgroundResult")(function* (jobID: string) {

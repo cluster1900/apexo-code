@@ -123,7 +123,11 @@ export function permissionInfo(request: PermissionRequest): PermissionInfo {
   }
 }
 
-export function permissionAlwaysLines(request: PermissionRequest): string[] {
+export function permissionAlwaysLines(request: PermissionRequest & { approvalLifetime?: "saved" }): string[] {
+  if (request.approvalLifetime === "saved")
+    return request.always.length
+      ? ["Save approval for the following resources:", ...request.always.map((item) => `- ${item}`)]
+      : ["This request does not offer a saved approval scope."]
   if (request.always.length === 1 && request.always[0] === "*") {
     return [`This will allow ${request.permission} until Apexo is restarted.`]
   }

@@ -5,6 +5,7 @@ import { optional } from "./schema"
 import { Event } from "./event"
 import { ProviderMetadata, ToolContent } from "./llm"
 import { Delivery } from "./session-delivery"
+import { SessionInput } from "./session-input"
 import { Model } from "./model"
 import { DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
 import { FileAttachment, Prompt } from "./prompt"
@@ -12,6 +13,7 @@ import { SessionID } from "./session-id"
 import { Location } from "./location"
 import { SessionMessage } from "./session-message"
 import { Revert } from "./revert"
+import { SessionTodo } from "./session-todo"
 
 export { FileAttachment }
 
@@ -33,6 +35,7 @@ const PromptFields = {
   messageID: SessionMessage.ID,
   prompt: Prompt,
   delivery: Delivery,
+  executionPolicy: SessionInput.ExecutionPolicy.pipe(optional),
 }
 
 const options = {
@@ -50,6 +53,28 @@ const stepSettlementOptions = {
 
 export const UnknownError = SessionMessage.UnknownError
 export type UnknownError = SessionMessage.UnknownError
+
+/** Imported history is context, never a new prompt or provider settlement. */
+export namespace HistoryCopy {
+  export const Source = Schema.Struct({ sessionID: SessionID, created: Event.ID, revision: NonNegativeInt })
+  export type Source = typeof Source.Type
+
+  export const Started = Event.define({
+    type: "session.next.history.copy.started",
+    ...options,
+    schema: { ...Base, source: Source, count: NonNegativeInt },
+  })
+  export const Message = Event.define({
+    type: "session.next.history.copy.message",
+    ...options,
+    schema: { ...Base, source: Source, sourceMessageID: SessionMessage.ID, message: SessionMessage.Message },
+  })
+  export const Completed = Event.define({
+    type: "session.next.history.copy.completed",
+    ...options,
+    schema: { ...Base, source: Source, count: NonNegativeInt, todos: Schema.Array(SessionTodo.Info) },
+  })
+}
 
 export const AgentSwitched = Event.define({
   type: "session.next.agent.switched",
@@ -97,6 +122,28 @@ export const PromptAdmitted = Event.define({
   schema: PromptFields,
 })
 export type PromptAdmitted = typeof PromptAdmitted.Type
+
+/** Terminal withdrawal preserves admission evidence without creating a visible user message. */
+export const PromptWithdrawn = Event.define({
+  type: "session.next.prompt.withdrawn",
+  ...options,
+  schema: { ...Base, messageID: SessionMessage.ID },
+})
+export type PromptWithdrawn = typeof PromptWithdrawn.Type
+
+export const InputExecutionSettled = Event.define({
+  type: "session.next.input.execution.settled",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    status: Schema.Literals(["completed", "failed", "interrupted", "superseded"]),
+    reason: SessionInput.ExecutionReason,
+    finish: Schema.String.pipe(optional),
+    usageIncomplete: Schema.Boolean,
+  },
+})
+export type InputExecutionSettled = typeof InputExecutionSettled.Type
 
 export const ContextUpdated = Event.define({
   type: "session.next.context.updated",
@@ -446,11 +493,16 @@ export namespace RevertEvent {
 }
 
 export const DurableDefinitions = Event.inventory(
+  HistoryCopy.Started,
+  HistoryCopy.Message,
+  HistoryCopy.Completed,
   AgentSwitched,
   ModelSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
+  PromptWithdrawn,
+  InputExecutionSettled,
   ContextUpdated,
   Synthetic,
   Shell.Started,
@@ -477,11 +529,16 @@ export const DurableDefinitions = Event.inventory(
 )
 
 export const Definitions = Event.inventory(
+  HistoryCopy.Started,
+  HistoryCopy.Message,
+  HistoryCopy.Completed,
   AgentSwitched,
   ModelSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
+  PromptWithdrawn,
+  InputExecutionSettled,
   ContextUpdated,
   Synthetic,
   Shell.Started,

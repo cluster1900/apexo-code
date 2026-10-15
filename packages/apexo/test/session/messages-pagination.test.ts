@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { describe, expect, test } from "bun:test"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { SessionV1 } from "@apexo/core/v1/session"
@@ -12,7 +13,7 @@ import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 
-const it = testEffect(LayerNode.compile(LayerNode.group([SessionNs.node, MessageV2.node, SessionProjector.node])))
+const it = testEffect(AppNodeBuilderV1.build(LayerNode.group([SessionNs.node, MessageV2.node, SessionProjector.node])))
 
 const withSession = <A, E, R>(
   fn: (input: { session: SessionNs.Interface; sessionID: SessionID }) => Effect.Effect<A, E, R>,

@@ -1,3 +1,4 @@
+import { mediaMetadata } from "@/utils/media-output"
 import type { ApexoEvent, SessionMessageInfo, SessionPendingMessage } from "@apexo/client/promise"
 
 type Assistant = Extract<SessionMessageInfo, { type: "assistant" }>
@@ -279,7 +280,7 @@ export function createV2SessionReducer() {
             ? {
                 ...tool,
                 // state: { ...tool.state, structured: event.data.structured, content: event.data.content },
-                state: { ...tool.state, metadata: event.data.metadata },
+                state: { ...tool.state, metadata: mediaMetadata(tool.name, event.data) ?? event.data.metadata },
               }
             : tool,
         )
@@ -294,7 +295,7 @@ export function createV2SessionReducer() {
               status: "completed",
               input: tool.state.input,
               // structured: event.data.structured,
-              metadata: event.data.metadata,
+              metadata: mediaMetadata(tool.name, event.data) ?? event.data.metadata,
               content: event.data.content,
               // result: event.data.result,
             },

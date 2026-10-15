@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigGoal } from "@apexo/core/config/goal"
 import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { it } from "../lib/effect"
@@ -10,6 +11,123 @@ const fromConfig = (input: Record<string, unknown>) =>
 const readFlags = RuntimeFlags.Service.useSync((flags) => flags)
 
 describe("RuntimeFlags", () => {
+  it.effect("preserves explicit false and invalid fallback for Goal current-model-only", () =>
+    Effect.gen(function* () {
+      for (const [raw, expected] of [
+        ["true", true],
+        ["1", true],
+        ["false", false],
+        ["0", false],
+        [" YES ", true],
+        ["On", true],
+        ["enabled", true],
+        [" NO ", false],
+        ["Off", false],
+        ["disabled", false],
+        ["invalid", undefined],
+      ] as const) {
+        expect(
+          (yield* readFlags.pipe(Effect.provide(fromConfig({ GROK_GOAL_USE_CURRENT_MODEL_ONLY: raw }))))
+            .grokGoalUseCurrentModelOnly,
+        ).toBe(expected)
+      }
+      expect((yield* readFlags.pipe(Effect.provide(fromConfig({})))).grokGoalUseCurrentModelOnly).toBeUndefined()
+    }),
+  )
+  it.effect("native Goal role selection preserves environment false and configuration fallback", () =>
+    Effect.sync(() => {
+      for (const [raw, value] of [
+        ["true", true],
+        ["1", true],
+        [" YES ", true],
+        ["On", true],
+        ["enabled", true],
+        ["false", false],
+        ["0", false],
+        [" NO ", false],
+        ["Off", false],
+        ["disabled", false],
+        ["invalid", undefined],
+        ["", undefined],
+        [undefined, undefined],
+      ] as const) {
+        for (const configured of [true, false, undefined]) {
+          expect(ConfigGoal.useCurrentModelOnly(configured, raw)).toBe(value ?? configured ?? false)
+          expect(ConfigGoal.summaryEnabled(configured, raw)).toBe(value ?? configured ?? true)
+        }
+      }
+    }),
+  )
+  it.effect("resolves Goal verifier environment counts using the official u32 range and clamp", () =>
+    Effect.gen(function* () {
+      for (const [raw, expected] of [
+        ["0", 1],
+        ["+2", 2],
+        ["4", 4],
+        ["99", 5],
+        ["4294967295", 5],
+        ["4294967296", undefined],
+        ["invalid", undefined],
+        [" 3 ", undefined],
+        ["-1", undefined],
+      ] as const) {
+        expect(
+          (yield* readFlags.pipe(Effect.provide(fromConfig({ GROK_GOAL_VERIFIER_N: raw })))).grokGoalVerifierCount,
+        ).toBe(expected)
+      }
+      expect((yield* readFlags.pipe(Effect.provide(fromConfig({})))).grokGoalVerifierCount).toBeUndefined()
+    }),
+  )
+  it.effect("parses all official Memory boolean spellings without opting in for unknown values", () =>
+    Effect.gen(function* () {
+      yield* Effect.forEach(
+        [
+          ["1", true],
+          ["TRUE", true],
+          [" yes ", true],
+          ["on", true],
+          ["enabled", true],
+          ["0", false],
+          ["FALSE", false],
+          [" no ", false],
+          ["off", false],
+          ["disabled", false],
+          ["", undefined],
+          ["maybe", undefined],
+          ["2", undefined],
+        ] as const,
+        ([raw, expected]) =>
+          Effect.gen(function* () {
+            const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ GROK_MEMORY: raw })))
+            expect(flags.grokMemory).toBe(expected)
+          }),
+      )
+    }),
+  )
+  it.effect("parses the official Grok wait ceiling including zero and falls back for invalid values", () =>
+    Effect.gen(function* () {
+      yield* Effect.forEach(
+        [
+          ["0", 0],
+          ["80", 80],
+          ["+80", 80],
+          ["7200000", 7_200_000],
+          ["-1", 3_600_000],
+          ["1.5", 3_600_000],
+          [" 80 ", 3_600_000],
+          ["invalid", 3_600_000],
+          ["18446744073709551616", 3_600_000],
+        ] as const,
+        ([raw, expected]) =>
+          Effect.gen(function* () {
+            const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ GROK_MAX_WAIT_BLOCK_MS: raw })))
+            expect(flags.grokMaxWaitBlockMs).toBe(expected)
+          }),
+      )
+      expect((yield* readFlags.pipe(Effect.provide(fromConfig({})))).grokMaxWaitBlockMs).toBe(3_600_000)
+    }),
+  )
+
   it.effect("layer parses plugin flags from the active ConfigProvider", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(

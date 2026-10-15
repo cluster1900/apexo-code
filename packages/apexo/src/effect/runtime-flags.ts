@@ -1,7 +1,13 @@
 import { Config, ConfigProvider, Context, Effect, Layer, Option } from "effect"
+import { EnvBoolean } from "@apexo/core/util/env-boolean"
 import { ConfigService } from "@/effect/config-service"
 
 const bool = (name: string) => Config.boolean(name).pipe(Config.withDefault(false))
+const grokBoolean = (name: string) =>
+  Config.string(name).pipe(
+    Config.map(EnvBoolean.parse),
+    Config.orElse(() => Config.succeed(undefined)),
+  )
 const positiveInteger = (name: string) =>
   Config.number(name).pipe(
     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
@@ -34,6 +40,14 @@ const lspTool = Config.all({
 
 export class Service extends ConfigService.Service<Service>()("@apexo/RuntimeFlags", {
   runtimeProfile,
+  grokGoalUseCurrentModelOnly: grokBoolean("GROK_GOAL_USE_CURRENT_MODEL_ONLY"),
+  grokGoalVerifierCount: Config.string("GROK_GOAL_VERIFIER_N").pipe(
+    Config.map((raw) =>
+      /^\+?\d+$/.test(raw) && BigInt(raw) <= 4_294_967_295n ? Math.max(1, Math.min(5, Number(raw))) : undefined,
+    ),
+    Config.orElse(() => Config.succeed(undefined)),
+  ),
+  grokMemory: grokBoolean("GROK_MEMORY"),
   pure: bool("APEXO_PURE"),
   disableDefaultPlugins: bool("APEXO_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("APEXO_DISABLE_EMBEDDED_WEB_UI"),
@@ -71,6 +85,15 @@ export class Service extends ConfigService.Service<Service>()("@apexo/RuntimeFla
   experimentalIconDiscovery: enabledByExperimental("APEXO_EXPERIMENTAL_ICON_DISCOVERY"),
   outputTokenMax: positiveInteger("APEXO_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("APEXO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+  grokMaxWaitBlockMs: Config.string("GROK_MAX_WAIT_BLOCK_MS").pipe(
+    Config.map((raw) => {
+      if (!/^\+?\d+$/.test(raw)) return 3_600_000
+      const value = BigInt(raw)
+      if (value > 18_446_744_073_709_551_615n) return 3_600_000
+      return Number(value > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : value)
+    }),
+    Config.orElse(() => Config.succeed(3_600_000)),
+  ),
   experimentalNativeLlm: bool("APEXO_EXPERIMENTAL_NATIVE_LLM"),
   experimentalWebSockets: bool("APEXO_EXPERIMENTAL_WEBSOCKETS"),
   client: Config.string("APEXO_CLIENT").pipe(Config.withDefault("cli")),

@@ -6,7 +6,7 @@ import { SessionV1 } from "@apexo/core/v1/session"
 import { serviceUse } from "@apexo/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import { jsonSchema, Output, streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@apexo/llm"
 import { LLMClient } from "@apexo/llm/route"
 import type { LLMClientService } from "@apexo/llm/route"
@@ -25,6 +25,9 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { Database } from "@apexo/core/database/database"
+import { SessionGoal } from "@apexo/core/session/goal"
+import { SessionGoalUsage } from "@apexo/core/session/goal-usage"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -41,6 +44,7 @@ export type StreamInput = {
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
+  outputSchema?: Record<string, unknown>
 }
 
 export type StreamRequest = StreamInput & {
@@ -66,6 +70,7 @@ const live: Layer.Layer<
   | EventV2Bridge.Service
   | LLMClientService
   | RuntimeFlags.Service
+  | Database.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -75,6 +80,8 @@ const live: Layer.Layer<
     const plugin = yield* Plugin.Service
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       yield* Effect.logInfo("stream", {
@@ -132,6 +139,7 @@ const live: Layer.Layer<
           messages: prepared.messages,
           tools: prepared.tools,
           toolChoice: input.toolChoice,
+          outputSchema: input.outputSchema,
           temperature: prepared.params.temperature,
           topP: prepared.params.topP,
           topK: prepared.params.topK,
@@ -215,6 +223,7 @@ const live: Layer.Layer<
           activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid"),
           tools: prepared.tools,
           toolChoice: input.toolChoice,
+          output: input.outputSchema ? Output.object({ schema: jsonSchema(input.outputSchema) }) : undefined,
           maxOutputTokens: prepared.params.maxOutputTokens,
           abortSignal: input.abort,
           headers: prepared.headers,
@@ -252,7 +261,7 @@ const live: Layer.Layer<
       }
     })
 
-    const stream: Interface["stream"] = (input) =>
+    const untracked: Interface["stream"] = (input) =>
       Stream.scoped(
         Stream.unwrap(
           Effect.gen(function* () {
@@ -278,6 +287,14 @@ const live: Layer.Layer<
         ),
       )
 
+    const stream: Interface["stream"] = (input) =>
+      Stream.unwrap(
+        Effect.gen(function* () {
+          const attempt = yield* SessionGoalUsage.Current
+          return attempt ? SessionGoalUsage.track(goals, attempt, () => untracked(input)) : untracked(input)
+        }),
+      )
+
     return Service.of({ stream })
   }),
 )
@@ -288,6 +305,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: live,
   deps: [
+    Database.node,
     Auth.node,
     Config.node,
     Provider.node,

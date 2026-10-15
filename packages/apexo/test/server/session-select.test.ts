@@ -1,12 +1,12 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { describe, expect } from "bun:test"
-import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import { Session } from "@/session/session"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(Session.node), httpApiLayer))
+const it = testEffect(Layer.mergeAll(AppNodeBuilderV1.build(Session.node), httpApiLayer))
 
 describe("tui.selectSession endpoint", () => {
   it.instance(

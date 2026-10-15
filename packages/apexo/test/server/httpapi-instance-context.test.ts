@@ -1,3 +1,4 @@
+import { SessionPrompt } from "@/session/prompt"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer, Schema } from "effect"
@@ -47,7 +48,7 @@ const workspaceLayer = workspaceLayerWithRuntimeFlags({ experimentalWorkspaces: 
 const it = testEffect(Layer.mergeAll(testStateLayer, NodeHttpServer.layerTest, NodeServices.layer, workspaceLayer))
 
 const instanceContextTestLayer = Layer.mergeAll(
-  instanceContextLayer,
+  instanceContextLayer.pipe(Layer.provide(Layer.mock(SessionPrompt.Service, { init: () => Effect.void }))),
   workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal)),
 )
 

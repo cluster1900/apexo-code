@@ -1,0 +1,10 @@
+# BUG-20261014-102: Workflow scratch and host receipts lacked cumulative limits
+
+- Scope: First-party Workflow scratch writes, interpreter host protocol, and durable host-call receipts.
+- Finding: Static review found that a one-megabyte per-file scratch limit allowed an unbounded file count and aggregate bytes. The interpreter had a call-count limit, but Core did not independently bound journal count or serialized receipt bytes. No historical resource-exhaustion incident is claimed.
+- Expected: Core rejects excess data before a scratch file changes or a journal mutation commits, independently of interpreter behavior.
+- Reproduction: Attempt to write a seventeenth full-size scratch file or a sixty-fifth empty file; directly attempt a Store update containing seventeen near-megabyte receipts or 10,001 calls.
+- Fix: Scratch writes serialize per run and preflight 64 files and 16 MB aggregate capacity. Core independently limits host messages, values, 10,000 calls, and a 16 MB serialized journal. Replacing an existing file subtracts its old size. Host admission reserves the maximum accepted receipt size before side effects; actual journal serialization is checked again before persistence. Rejection leaves previous files and the stored revision intact.
+- Verification: From packages/apexo, `bun test test/workflow/engine.test.ts test/workflow/scratch.test.ts test/workflow/limits.test.ts` passed nine tests and 40 assertions before the later terminal-race regression was added. Core `bun typecheck` passed. The subsequent focused suite including terminal-state coverage passed 10 tests and 44 assertions. Production CLI lifecycle rerun passed five scenarios with 11 provider calls; the rebuilt Desktop rerun also passed five scenarios with 11 provider calls.
+- Limits: These bounds concern each workflow's scratch and host journal; they are not a global disk quota or a retention policy. Other persisted child transcripts remain subject to Session storage behavior.
+- Occurrences: Static capacity finding; zero observed production exhaustion incidents.

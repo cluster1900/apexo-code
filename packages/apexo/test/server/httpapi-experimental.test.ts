@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Deferred, Effect, Fiber, Layer } from "effect"
@@ -6,6 +7,8 @@ import { eq } from "drizzle-orm"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { Session } from "@/session/session"
+import { BackgroundJob } from "@/background/job"
+import { BackgroundTask } from "@apexo/schema/background-task"
 import { SessionTable } from "@apexo/core/session/sql"
 import { Database } from "@apexo/core/database/database"
 import { Worktree } from "../../src/worktree"
@@ -14,7 +17,12 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(LayerNode.group([Session.node, Database.node])), httpApiLayer))
+const it = testEffect(
+  Layer.mergeAll(
+    AppNodeBuilderV1.build(LayerNode.group([Session.node, Database.node, BackgroundJob.node])),
+    httpApiLayer,
+  ),
+)
 const testWorktreeMutations = process.platform === "win32" ? it.instance.skip : it.instance
 
 function request(path: string, directory: string, init: RequestInit = {}) {
@@ -105,6 +113,45 @@ afterEach(async () => {
 })
 
 describe("experimental HttpApi", () => {
+  it.instance("lists all task kinds, isolates owners, and cancels only the selected task", () =>
+    Effect.gen(function* () {
+      const tmp = yield* TestInstance
+      const jobs = yield* BackgroundJob.Service
+      const owner = yield* createSession()
+      const other = yield* createSession()
+      const tasks = yield* Effect.forEach(["shell", "monitor", "scheduler", "task"], (type) =>
+        jobs.start({
+          type,
+          title: `${type} work`,
+          metadata:
+            type === "task"
+              ? { parentSessionId: owner.id, sessionId: "child", secret: "not-public" }
+              : { ownerSessionId: owner.id, secret: "not-public" },
+          run: Effect.never,
+        }),
+      )
+      const hidden = yield* jobs.start({ type: "shell", metadata: { ownerSessionId: other.id }, run: Effect.never })
+      const base = `/experimental/session/${owner.id}/task`
+      const list = yield* request(base, tmp.directory).pipe(Effect.flatMap(json<BackgroundTask.Summary[]>))
+      expect(list.map((job) => job.type).toSorted()).toEqual(["monitor", "scheduler", "shell", "task"])
+      expect(JSON.stringify(list)).not.toContain("not-public")
+      expect(list.some((job) => job.id === hidden.id)).toBe(false)
+      yield* jobs.report({ id: tasks[0].id, output: "live stdout 中文" })
+      const detail = yield* request(`${base}/${tasks[0].id}`, tmp.directory).pipe(
+        Effect.flatMap(json<BackgroundTask.Detail>),
+      )
+      expect(detail.output).toBe("live stdout 中文")
+      expect((yield* request(`${base}/${hidden.id}`, tmp.directory)).status).toBe(404)
+      expect((yield* request(`${base}/${hidden.id}/cancel`, tmp.directory, { method: "POST" })).status).toBe(404)
+      expect((yield* jobs.get(hidden.id))?.status).toBe("running")
+      const cancel = yield* request(`${base}/${tasks[0].id}/cancel`, tmp.directory, { method: "POST" })
+      expect(cancel.status).toBe(200)
+      expect((yield* json<BackgroundTask.Summary>(cancel)).status).toBe("cancelled")
+      expect((yield* request(`${base}/${tasks[0].id}/cancel`, tmp.directory, { method: "POST" })).status).toBe(200)
+      expect((yield* jobs.get(tasks[1].id))?.status).toBe("running")
+    }),
+  )
+
   it.instance(
     "serves read-only experimental endpoints through the default server app",
     () =>

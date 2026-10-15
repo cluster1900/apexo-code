@@ -27,7 +27,17 @@ export type FatalRendererErrorLog = {
   os?: DesktopOS
 }
 
+export type RuntimeProfile = "apexo" | "grok-build"
+export type RuntimeProfileState = {
+  active: RuntimeProfile | null
+  preferred: RuntimeProfile
+  supported: boolean
+}
+
 type PlatformBase = {
+  getRuntimeProfile?(): Promise<RuntimeProfileState>
+  setRuntimeProfile?(profile: RuntimeProfile): Promise<RuntimeProfileState>
+
   /** App version */
   version?: string
 

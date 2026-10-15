@@ -1,3 +1,4 @@
+import { mcpAttachmentParts, type McpAttachmentResult } from "@apexo/sdk/v2/mcp-attachment"
 // Prompt composer and its state machine for direct interactive mode.
 //
 // createPromptState() wires keymap command layers, history navigation, and
@@ -96,6 +97,7 @@ export type PromptState = {
   onContentChange: () => void
   replaceDraft: (text: string) => void
   replacePrompt: (prompt: RunPrompt) => void
+  attachMcp: (prepared: NonNullable<McpAttachmentResult["prepared"]>) => void
   bind: (area?: TextareaRenderable) => void
 }
 
@@ -972,6 +974,20 @@ export function createPromptState(input: PromptInput): PromptState {
     if (current === "variant") return false
     if (current === "queued-menu") return false
     if (current === "subagent-menu") return false
+    if (
+      current === "tasks" ||
+      current === "memory" ||
+      current === "remember" ||
+      current === "workflow" ||
+      current === "btw" ||
+      current === "feedback" ||
+      current === "hooks" ||
+      current === "command-sandbox" ||
+      current === "memory-work" ||
+      current === "mcp" ||
+      current === "plugins"
+    )
+      return false
     return true
   }
 
@@ -1301,6 +1317,10 @@ export function createPromptState(input: PromptInput): PromptState {
     },
     replaceDraft,
     replacePrompt: restore,
+    attachMcp: (prepared) => {
+      const added = mcpAttachmentParts(draft.text, prepared)
+      restore({ ...draft, text: added.text, parts: [...draft.parts, ...added.parts] })
+    },
     bind,
   }
 }

@@ -1,0 +1,12 @@
+# BUG-20261015-224: Native Scheduler expired ordinary intent after process restart
+
+- Status: Retention correction verified privately; shared acceptance pending. Automatic Session-restoration rearming remains an open parity requirement.
+- Scope: Native Scheduler state projection, explicit future-only Resume, and durability wording.
+- Occurrences: One independently reproduced implementation mismatch.
+- Observed: A stored schedule with durable=false became expired solely because its process owner changed, so its own surviving Session could not resume it. Both the pinned source test recurring_task_survives_restart_and_rearms and installed Grok 1.0.52 preserve ordinary schedule resources when restoring that same Session.
+- Expected: The original Session retains unexpired intent for either durability value. A different process must not replay an old claimed/admitted occurrence. Automatic future scheduling after explicit Session restoration is tracked separately until its ownership design and acceptance are complete.
+- Reproduction: From packages/apexo, run `bun test --timeout 30000 test/v2/schedule-store.test.ts --test-name-pattern 'durable=false'` against the old state predicate. It fails expected paused/restart_required versus actual expired after 77 assertions. The fixture uses actual native storage and owner replacement, not a substitute scheduler.
+- Root cause: The state predicate conflated the optional durable flag with same-Session resource persistence and treated any false-valued old-owner record as expired.
+- Fix: Expire by the actual TTL, preserve a paused/restart_required projection for both values, and keep old admission and passive claim blocked. Test both values through the existing real store lifecycle. Correct tool/feature wording and add an omitted-field option to actual CLI/Desktop acceptance.
+- Verification: Private store gate passed two tests / 166 assertions; Core bun typecheck passed. The isolated installed command `bun script/grok-scheduler-session-restart-official.mjs omitted` passed four observations / 15 provider requests after a real process kill, original Session load and real 60-second automatic fire; cleanup reaped both processes. Installed results are reference evidence, not tests of Apexo.
+- Remaining: Shared CLI/rebuilt Desktop default-field checks, aggregate gates and automatic future rearming after explicit Session restoration. No unrelated cross-Session migration or distributed ownership behavior is inferred from this probe.

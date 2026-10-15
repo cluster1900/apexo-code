@@ -1,4 +1,76 @@
 export const dict = {
+  "hooks.repository.title": "Εμπιστοσύνη στα hooks του αποθετηρίου",
+  "hooks.repository.hint":
+    "Επιτρέψτε στα hooks από τον ριζικό κατάλογο του αποθετηρίου να εκτελούνται στις συνεδρίες μέσα σε αυτό το αποθετήριο. Φορτώστε ξανά τα hooks μετά την έγκριση. Η ανάκληση αποτρέπει νέες κλήσεις hooks.",
+  "hooks.repository.grant": "Να επιτρέπονται τα hooks του αποθετηρίου",
+  "hooks.repository.revoke": "Ανάκληση εμπιστοσύνης στα hooks του αποθετηρίου",
+
+  "plugins.title": "Πρόσθετα",
+  "plugins.description":
+    "Ανακαλύψτε νέες δεξιότητες και εργαλεία. Εγκαταστήστε ό,τι χρειάζεστε και διαχειριστείτε τα όλα σε ένα μέρος.",
+  "plugins.discover": "Ανακαλύψτε",
+  "plugins.installed": "Εγκατεστημένα",
+  "plugins.sources": "Πηγές",
+  "plugins.recommended": "Προτεινόμενα πρόσθετα",
+  "plugins.add": "Εγκατάσταση δικού σας",
+  "plugins.addSource": "Προσθήκη πηγής",
+  "plugins.removeSource": "Αφαίρεση πηγής",
+  "plugins.allSources": "Όλες οι πηγές",
+  "plugins.search": "Αναζήτηση προσθέτων",
+  "plugins.download": "Λήψη",
+  "plugins.enable": "Ενεργοποίηση",
+  "plugins.disable": "Απενεργοποίηση",
+  "plugins.update": "Ενημέρωση",
+  "memory.operations.batchOutcome":
+    "Σημειώσεις σε αναβολή: {{deferred}} · Αρχειοθετημένες μη ενσωματωμένες σημειώσεις: {{unplaceable}}",
+  "plugins.uninstall": "Απεγκατάσταση",
+  "plugins.keepData": "Διατήρηση δεδομένων προσθέτου",
+  "plugins.cleanupDeferred":
+    "Τα δεδομένα του προσθέτου διατηρούνται όσο χρησιμοποιούνται ή όταν δεν μπορεί να επαληθευτεί η ιδιοκτησία τους.",
+  "plugins.version": "Έκδοση",
+  "plugins.files": "Ληφθέντα αρχεία",
+  "plugins.contents": "Δυνατότητες που περιλαμβάνονται",
+  "plugins.readme": "Σχετικά με το πρόσθετο",
+  "plugins.empty": "Δεν βρέθηκαν πρόσθετα. Δοκιμάστε άλλη αναζήτηση ή προσθέστε μια πηγή.",
+  "plugins.error": "Η ενέργεια δεν ολοκληρώθηκε. Ελέγξτε την πηγή και τη σύνδεσή σας και δοκιμάστε ξανά.",
+  "plugins.sourceError": "Δεν ήταν δυνατή η ανανέωση της πηγής. Τα αποτελέσματα που έχουν ληφθεί παραμένουν διαθέσιμα.",
+  "plugins.changed":
+    "Οι αλλαγές εφαρμόζονται μετά την επαναφόρτωση του έργου. Οι ενεργές συνεδρίες διατηρούν τα τρέχοντα πρόσθετα.",
+  "plugins.confirm": "Έλεγχος αλλαγών προσθέτων",
+  "plugins.trust":
+    "Εγκαθιστάτε πρόσθετα μόνο από αξιόπιστες πηγές. Μπορούν να εκτελούν εντολές, να συνδέονται με υπηρεσίες και να προσπελαύνουν αρχεία στον υπολογιστή σας.",
+  "plugins.removeNotice":
+    "Αφαίρεση αυτού του στοιχείου; Η αφαίρεση πηγής διατηρεί τα εγκατεστημένα πρόσθετα. Τα απεγκατεστημένα πρόσθετα δεν θα φορτώνονται σε μελλοντικές συνεδρίες.",
+  "plugins.sourceInput": "Αποθετήριο Git ή τοπικός φάκελος",
+  "plugins.sourcePlaceholder": "owner/repo, https://… ή /path/to/plugin",
+  "plugins.hooksWarning":
+    "Ορισμένα hooks κύκλου ζωής αυτού του προσθέτου δεν υποστηρίζονται ακόμα. Τα υποστηριζόμενα hooks και οι άλλες δυνατότητες παραμένουν διαθέσιμα.",
+  "plugins.status.available": "Διαθέσιμο",
+  "plugins.status.downloaded": "Έγινε λήψη",
+  "plugins.status.enabled": "Ενεργό",
+  "plugins.status.disabled": "Ανενεργό",
+  "plugins.component.skills": "Δεξιότητες",
+  "plugins.component.commands": "Εντολές",
+  "plugins.component.agents": "Πράκτορες",
+  "plugins.component.mcpServers": "Διακομιστές MCP",
+  "plugins.component.lspServers": "Διακομιστές γλώσσας",
+  "plugins.component.hooks": "Hooks",
+  "plugins.reload": "Εφαρμογή σε αυτό το έργο",
+  "plugins.activation.title": "Ενεργοποίηση σε αυτό το έργο",
+  "plugins.activation.hint":
+    "Τα ενεργοποιημένα πρόσθετα τίθενται σε λειτουργία αφού τα εφαρμόσετε σε αυτό το έργο. Οι εργασίες που εκτελούνται διατηρούν το τρέχον στιγμιότυπό τους.",
+  "plugins.activation.projectRequired": "Ανοίξτε ένα έργο για να ελέγξετε και να εφαρμόσετε τα πρόσθετα.",
+  "plugins.activation.generation": "Έκδοση στιγμιότυπου: {{generation}}",
+  "plugins.activation.active": "Ενεργό σε αυτό το έργο",
+  "plugins.activation.inactive": "Μη ενεργό σε αυτό το έργο",
+  "plugins.activation.unavailable": "Δεν ήταν δυνατή η ανάγνωση της κατάστασης ενεργοποίησης των πρόσθετων.",
+  "plugins.activation.failure.busy": "Περιμένετε να ολοκληρωθούν οι τρέχουσες εργασίες πριν εφαρμόσετε τα πρόσθετα.",
+  "plugins.activation.failure.invalid":
+    "Η διαμόρφωση των πρόσθετων δεν είναι έγκυρη. Το προηγούμενο στιγμιότυπο παραμένει ενεργό.",
+  "plugins.activation.failure.load":
+    "Δεν ήταν δυνατή η φόρτωση των πρόσθετων. Το προηγούμενο στιγμιότυπο παραμένει ενεργό.",
+  "plugins.activation.failure.unsupported":
+    "Αυτός ο διακομιστής δεν υποστηρίζει ορισμένες δυνατότητες των πρόσθετων. Το προηγούμενο στιγμιότυπο παραμένει ενεργό.",
   "desktop.menu.app": "Apexo",
   "desktop.menu.file": "Αρχείο",
   "desktop.menu.edit": "Επεξεργασία",

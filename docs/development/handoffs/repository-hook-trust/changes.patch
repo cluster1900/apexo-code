@@ -1,0 +1,1782 @@
+--- a/packages/schema/src/host-hooks.ts
++++ b/packages/schema/src/host-hooks.ts
+@@ -28,9 +28,24 @@
+   ),
+ }).annotate({ identifier: "HostHooks.Inspection" })
+ 
++export const Repository = Schema.Struct({
++  root: Schema.String,
++  token: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
++  trusted: Schema.Boolean,
++  allowed: Schema.Boolean,
++}).annotate({ identifier: "HostHooks.Repository" })
++export type Repository = Schema.Schema.Type<typeof Repository>
++export const RepositoryTrust = Schema.Struct({
++  root: Schema.String,
++  token: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
++  trusted: Schema.Boolean,
++}).annotate({ identifier: "HostHooks.RepositoryTrust" })
++export type RepositoryTrust = Schema.Schema.Type<typeof RepositoryTrust>
++
+ export interface Snapshot extends Schema.Schema.Type<typeof Snapshot> {}
+ export const Snapshot = Schema.Struct({
+   captured: Schema.Boolean,
++  repository: optional(Repository),
+   generation: Schema.Finite,
+   preferenceRevision: optional(Schema.String),
+   savedPreferenceRevision: optional(Schema.String),
+--- a/packages/protocol/src/groups/hooks.ts
++++ b/packages/protocol/src/groups/hooks.ts
+@@ -15,6 +15,12 @@
+     success: HostHooks.Snapshot,
+     error: [ConflictError, ServiceUnavailableError, SessionNotFoundError],
+   }).annotateMerge(OpenApi.annotations({ identifier: "v2.hooks.reload" })),
++  HttpApiEndpoint.post("hooks.trust", `${root}/trust`, {
++    params: { sessionID: SessionID },
++    payload: HostHooks.RepositoryTrust,
++    success: HostHooks.Snapshot,
++    error: [InvalidRequestError, ConflictError, ServiceUnavailableError, SessionNotFoundError],
++  }).annotateMerge(OpenApi.annotations({ identifier: "v2.hooks.trust" })),
+   HttpApiEndpoint.post("hooks.preference", `${root}/preference`, {
+     params: { sessionID: SessionID },
+     payload: HostHooks.Preference,
+--- a/packages/server/src/handlers/hooks.ts
++++ b/packages/server/src/handlers/hooks.ts
+@@ -41,6 +41,20 @@
+             )
+         }),
+       )
++      .handle("hooks.trust", ({ params, payload }) =>
++        Effect.gen(function* () {
++          const snapshots = yield* HookSnapshotLocation.Service
++          return yield* snapshots.trust(params.sessionID, payload).pipe(
++            Effect.andThen(snapshots.inspect(params.sessionID)),
++            Effect.mapError(
++              () =>
++                new ConflictError({
++                  message: "Repository Hook trust changed or is unavailable; refresh before retrying",
++                }),
++            ),
++          )
++        }),
++      )
+       .handle("hooks.preference", ({ params, payload }) =>
+         Effect.gen(function* () {
+           const snapshots = yield* HookSnapshotLocation.Service
+--- /dev/null
++++ b/packages/apexo/script/grok-hook-repository-trust.mjs
+@@ -0,0 +1,131 @@
++import assert from "node:assert/strict"
++import { spawnSync } from "node:child_process"
++import { mkdir, readFile, writeFile, rm } from "node:fs/promises"
++import { join } from "node:path"
++import { startShellFixture } from "./grok-shell-fixture.mjs"
++
++const kind = process.argv[2] ?? "cli"
++const runtime = await startShellFixture(kind, { deferBackend: true, next: () => ({ content: "REPOSITORY_HOOK_DONE" }) })
++const directory = join(runtime.directory, "nested")
++const home = join(runtime.env.APEXO_TEST_HOME, ".grok")
++const trace = join(runtime.output, "repository-hooks.jsonl")
++const checks = []
++const api = async (endpoint, body, method = body === undefined ? "GET" : "POST", expected = 200) => {
++  const url = new URL(endpoint, runtime.url)
++  url.searchParams.set("location[directory]", directory)
++  const response = await fetch(url, {
++    method,
++    ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
++    signal: AbortSignal.timeout(45000),
++  })
++  const text = await response.text()
++  assert.equal(response.status, expected, `${method} ${endpoint}: ${text}`)
++  return text ? JSON.parse(text) : undefined
++}
++const init = (cwd) => {
++  const child = spawnSync("git", ["init", "--quiet"], { cwd, encoding: "utf8" })
++  assert.equal(child.status, 0, child.stderr)
++}
++try {
++  await mkdir(directory)
++  await mkdir(home, { recursive: true })
++  init(runtime.directory)
++  await writeFile(join(directory, "apexo.json"), runtime.env.APEXO_CONFIG_CONTENT)
++  await mkdir(join(runtime.directory, ".grok/hooks"), { recursive: true })
++  await writeFile(join(home, "trusted_folders.toml"), `[folders.${JSON.stringify(runtime.directory)}]\ntrusted=true\n`)
++  await writeFile(
++    join(runtime.output, "observe.py"),
++    `import json,sys\nv=json.load(sys.stdin)\nwith open(sys.argv[1],'a') as f: f.write(json.dumps({'session':v['session_id'],'cwd':v['cwd']})+'\\n')\n`,
++  )
++  await writeFile(
++    join(runtime.directory, ".grok/hooks/root.json"),
++    JSON.stringify({
++      hooks: {
++        Stop: [{ hooks: [{ type: "command", command: `python3 '${join(runtime.output, "observe.py")}' '${trace}'` }] }],
++      },
++    }),
++  )
++  await runtime.reopen()
++  const rows = async () => (await readFile(trace, "utf8").catch(() => "")).split("\n").filter(Boolean).map(JSON.parse)
++  const create = async () =>
++    (
++      await api("/api/session", {
++        location: { directory },
++        model: { providerID: "xai", id: "grok-4.7" },
++        agent: "build",
++      })
++    ).data
++  const prompt = async (session) => {
++    await api(`/api/session/${session.id}/prompt`, { prompt: { text: "Complete this repository trust check" } })
++    await api(`/api/session/${session.id}/wait`, undefined, "POST")
++  }
++  const inspect = (session) => api(`/api/session/${session.id}/hooks`)
++  const consent = async (session, trusted) => {
++    const repository = (await inspect(session)).repository
++    assert.equal(repository.root, runtime.directory)
++    const before = runtime.calls.length
++    const result = await api(`/api/session/${session.id}/hooks/trust`, {
++      root: repository.root,
++      token: repository.token,
++      trusted,
++    })
++    assert.equal(result.repository.trusted, trusted)
++    assert.equal(runtime.calls.length, before, "consent must not execute a provider turn")
++    return result
++  }
++  const first = await create()
++  const preview = await inspect(first)
++  assert.equal(preview.captured, false)
++  assert.equal(preview.repository.trusted, false)
++  await prompt(first)
++  assert.equal((await rows()).length, 0)
++  checks.push("exact-root-legacy-grant-does-not-expand-to-nested-session")
++  await api(
++    `/api/session/${first.id}/hooks/trust`,
++    { root: runtime.directory, token: "0".repeat(64), trusted: true },
++    "POST",
++    409,
++  )
++  assert.equal((await inspect(first)).repository.trusted, false)
++  checks.push("stale-consent-token-rejected")
++  await consent(first, true)
++  await prompt(first)
++  assert.equal((await rows()).length, 0)
++  await api(`/api/session/${first.id}/hooks/reload`, undefined, "POST")
++  await prompt(first)
++  assert.equal((await rows()).length, 1)
++  assert.equal((await rows())[0].cwd, directory)
++  checks.push("explicit-root-consent-requires-reload-and-preserves-session-location")
++  const second = await create()
++  await prompt(second)
++  assert.equal((await rows()).length, 2)
++  await consent(first, false)
++  await prompt(first)
++  await prompt(second)
++  assert.equal((await rows()).length, 2)
++  checks.push("revocation-fences-two-existing-session-snapshots")
++  await consent(first, true)
++  await prompt(first)
++  assert.equal((await rows()).length, 2)
++  await api(`/api/session/${first.id}/hooks/reload`, undefined, "POST")
++  await prompt(first)
++  assert.equal((await rows()).length, 3)
++  checks.push("regrant-does-not-revive-old-snapshot-capability")
++  init(directory)
++  await prompt(first)
++  assert.equal((await rows()).length, 3)
++  assert.equal((await inspect(first)).repository.root, directory)
++  assert.equal((await inspect(first)).repository.trusted, false)
++  checks.push("nested-repository-boundary-fences-outer-root-hook")
++  await rm(join(directory, ".git"), { recursive: true })
++  await runtime.crash()
++  await runtime.reopen()
++  const fresh = await create()
++  assert.equal((await inspect(fresh)).repository.trusted, true)
++  await prompt(fresh)
++  assert.equal((await rows()).length, 4)
++  checks.push("explicit-repository-consent-survives-owned-backend-restart")
++  console.log(JSON.stringify({ kind, output: runtime.output, checks, providerCalls: runtime.calls.length }, null, 2))
++} finally {
++  await runtime.close()
++}
+--- a/packages/apexo/src/plugin/bundle-hooks.ts
++++ b/packages/apexo/src/plugin/bundle-hooks.ts
+@@ -125,6 +125,7 @@
+               undefined,
+               HostHooks.name(hook, `${bundle.name}:${event}:${groupIndex}:${handlerIndex}`),
+               bundle.data,
++              bundle.projectAuthority,
+             ).catch((error: unknown) => {
+               if (!bundle.host) throw error
+               console.warn("[host-hooks] Hook failed; continuing", { source: bundle.name, event, error })
+--- a/packages/apexo/src/plugin/hook-snapshot-location.ts
++++ b/packages/apexo/src/plugin/hook-snapshot-location.ts
+@@ -85,6 +85,17 @@
+               : new SessionHookSnapshot.Failure({ code: "load" }),
+           ),
+         ),
++      trust: (id, input) =>
++        run(
++          Effect.gen(function* () {
++            const service = yield* HookSnapshotLocation.Service
++            return yield* service.trust(id, input)
++          }),
++        ).pipe(
++          Effect.mapError((error) =>
++            error instanceof SessionHookSnapshot.Failure ? error : new SessionHookSnapshot.Failure({ code: "load" }),
++          ),
++        ),
+       release: (id) =>
+         run(
+           Effect.gen(function* () {
+--- a/packages/apexo/src/cli/cmd/run/runtime.ts
++++ b/packages/apexo/src/cli/cmd/run/runtime.ts
+@@ -476,6 +476,20 @@
+           : undefined,
+     },
+     hooksActions: {
++      trust: async (hostHooksRepositoryTrust, signal) =>
++        (
++          await ctx.sdk.hooks.trust(
++            {
++              sessionID: state.sessionID,
++              hostHooksRepositoryTrust: {
++                root: hostHooksRepositoryTrust.root,
++                token: hostHooksRepositoryTrust.token,
++                trusted: hostHooksRepositoryTrust.trusted,
++              },
++            },
++            { signal, throwOnError: true },
++          )
++        ).data,
+       preference: async (hookID, enabled, signal) =>
+         (
+           await ctx.sdk.hooks.preference(
+--- a/packages/apexo/src/server/routes/instance/httpapi/groups/hooks.ts
++++ b/packages/apexo/src/server/routes/instance/httpapi/groups/hooks.ts
+@@ -22,6 +22,13 @@
+         success: HostHooks.Snapshot,
+         error: [ApiNotFoundError, ConflictError, InvalidRequestError, ServiceUnavailableError],
+       }).annotateMerge(OpenApi.annotations({ identifier: "hooks.reload" })),
++      HttpApiEndpoint.post("trust", `${root}/trust`, {
++        params: { sessionID: SessionID },
++        query: WorkspaceRoutingQuery,
++        payload: HostHooks.RepositoryTrust,
++        success: HostHooks.Snapshot,
++        error: [ApiNotFoundError, InvalidRequestError, ConflictError, ServiceUnavailableError],
++      }).annotateMerge(OpenApi.annotations({ identifier: "hooks.trust" })),
+       HttpApiEndpoint.post("preference", `${root}/preference`, {
+         params: { sessionID: SessionID },
+         query: WorkspaceRoutingQuery,
+--- a/packages/apexo/src/server/routes/instance/httpapi/handlers/hooks.ts
++++ b/packages/apexo/src/server/routes/instance/httpapi/handlers/hooks.ts
+@@ -49,6 +49,19 @@
+           ),
+         ),
+       )
++      .handle("trust", ({ params, payload }) =>
++        authorize(params.sessionID).pipe(
++          Effect.andThen(snapshots.trust(params.sessionID, payload)),
++          Effect.andThen(snapshots.inspect(params.sessionID)),
++          Effect.catchTag("HookSnapshotFailure", () =>
++            Effect.fail(
++              new ConflictError({
++                message: "Repository Hook trust changed or is unavailable; refresh before retrying",
++              }),
++            ),
++          ),
++        ),
++      )
+       .handle("preference", ({ params, payload }) =>
+         authorize(params.sessionID).pipe(
+           Effect.andThen(snapshots.preference(params.sessionID, payload.hookID, payload.enabled)),
+--- /dev/null
++++ b/packages/apexo/test/plugin/hook-repository-trust.test.ts
+@@ -0,0 +1,330 @@
++import { expect, test } from "bun:test"
++import path from "node:path"
++import { mkdir, readFile, rename, rm, symlink } from "node:fs/promises"
++import { HookProjectTrust } from "@apexo/core/hook-project-trust"
++import { HostHooks } from "@apexo/core/hooks"
++import { HookDispatch } from "@apexo/core/hook-dispatch"
++import { Git } from "@apexo/core/git"
++import { AbsolutePath } from "@apexo/schema/schema"
++import { tmpdir } from "../fixture/fixture"
++import { hookTLS } from "../fixture/hook-tls"
++import { HookNetwork } from "@apexo/core/hook-network"
++import { Flock } from "@apexo/core/util/flock"
++
++async function fixture(root: string) {
++  const home = path.join(root, "home")
++  const data = path.join(root, "data")
++  const nested = path.join(root, "nested")
++  await Promise.all([mkdir(home), mkdir(data), mkdir(nested)])
++  const repository = new Git.Repository({
++    worktree: AbsolutePath.make(root),
++    gitDirectory: AbsolutePath.make(path.join(root, ".git")),
++    commonDirectory: AbsolutePath.make(path.join(root, ".git")),
++  })
++  const proof = await HookProjectTrust.capture(nested, home, repository)
++  if (!proof) throw new Error("Fixture repository was not captured")
++  const command = `printf '{"root":true}'`
++  await Bun.write(
++    path.join(root, ".grok/hooks/root.json"),
++    JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command }] }] } }),
++  )
++  await Bun.write(
++    path.join(nested, ".grok/hooks/nested.json"),
++    JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `printf '{"nested":true}'` }] }] } }),
++  )
++  return { home, data, nested, repository, proof }
++}
++async function grant(input: Awaited<ReturnType<typeof fixture>>, trusted = true) {
++  await HookProjectTrust.change(input.data, input.proof, {
++    ...(await HookProjectTrust.inspect(input.data, input.proof)),
++    trusted,
++  })
++}
++async function captured(input: Awaited<ReturnType<typeof fixture>>) {
++  const inspection = await HostHooks.discover(input.nested, input.home, input.home, {
++    proof: input.proof,
++    data: input.data,
++  })
++  const source = inspection.sources.find((source) => source.name.endsWith("root.json"))
++  if (!source) throw new Error("Repository root Hook was not discovered")
++  const hook = (source.hooks.Stop as { hooks: Record<string, unknown>[] }[])[0].hooks[0]
++  return { source, hook }
++}
++const run = (input: Awaited<ReturnType<typeof fixture>>, captured: Awaited<ReturnType<typeof captured>>) =>
++  HookDispatch.run(
++    captured.hook,
++    "{}",
++    captured.source.root,
++    input.nested,
++    1000,
++    true,
++    "Stop",
++    undefined,
++    "root",
++    undefined,
++    captured.source.projectAuthority,
++  )
++
++test("explicit repository Hook consent loads root hooks from nested cwd without broadening exact grants", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  await Bun.write(
++    path.join(input.home, "trusted_folders.toml"),
++    `[folders.${JSON.stringify(tmp.path)}]\ntrusted=true\n`,
++  )
++  expect((await HostHooks.discover(input.nested, input.home, input.home)).sources).toHaveLength(0)
++  await grant(input)
++  const current = await captured(input)
++  expect(await run(input, current)).toBe('{"root":true}')
++  expect(
++    (
++      await HostHooks.discover(input.nested, input.home, input.home, { proof: input.proof, data: input.data })
++    ).sources.map((x) => path.basename(x.name)),
++  ).toEqual(["root.json"])
++  expect(input.proof.workspace).toBe(input.nested)
++})
++
++test("repository revocation fences captured commands and regrant never revives an old capability", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  const marker = path.join(tmp.path, "executed")
++  await Bun.write(
++    path.join(tmp.path, ".grok/hooks/root.json"),
++    JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `touch '${marker}'` }] }] } }),
++  )
++  await grant(input)
++  const current = await captured(input)
++  await grant(input, false)
++  await expect(run(input, current)).rejects.toThrow()
++  expect(await Bun.file(marker).exists()).toBe(false)
++  await grant(input)
++  await expect(run(input, current)).rejects.toThrow()
++  expect(await Bun.file(marker).exists()).toBe(false)
++  await run(input, await captured(input))
++  expect(await Bun.file(marker).exists()).toBe(true)
++})
++
++test("captured repository hook revocation blocks HTTP before any request", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  const requests: string[] = []
++  using tls = hookTLS()
++  const server = Bun.serve({
++    hostname: "127.0.0.1",
++    port: 0,
++    tls: tls.tls,
++    fetch: async (request) => {
++      await request.text()
++      requests.push(request.url)
++      return new Response("{}")
++    },
++  })
++  try {
++    await grant(input)
++    const current = await captured(input)
++    expect(
++      await HookDispatch.run(
++        { type: "http", url: `https://127.0.0.1:${server.port}/hook` },
++        "{}",
++        current.source.root,
++        input.nested,
++        1000,
++        true,
++        "Stop",
++        undefined,
++        "root",
++        undefined,
++        current.source.projectAuthority,
++      ),
++    ).toBe("{}")
++    expect(requests).toHaveLength(1)
++    await grant(input, false)
++    await expect(
++      HookDispatch.run(
++        { type: "http", url: `https://127.0.0.1:${server.port}/hook` },
++        "{}",
++        current.source.root,
++        input.nested,
++        1000,
++        true,
++        "Stop",
++        undefined,
++        "root",
++        undefined,
++        current.source.projectAuthority,
++      ),
++    ).rejects.toThrow()
++    expect(requests).toHaveLength(1)
++  } finally {
++    await server.stop(true)
++  }
++})
++
++test("new nested Git boundary and replaced root metadata invalidate captured repository authority", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  await grant(input)
++  const current = await captured(input)
++  await mkdir(path.join(input.nested, ".git"))
++  await expect(run(input, current)).rejects.toThrow()
++  await rm(path.join(input.nested, ".git"), { recursive: true })
++  await rename(path.join(tmp.path, ".git"), path.join(tmp.path, ".git-retired"))
++  await mkdir(path.join(tmp.path, ".git"))
++  await expect(run(input, current)).rejects.toThrow()
++})
++
++test("symlink aliases share identity while stale preview tokens and replacement targets cannot grant", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  const alias = path.join(tmp.path, "alias")
++  await symlink(input.nested, alias)
++  const proof = await HookProjectTrust.capture(alias, input.home, input.repository)
++  expect(proof).toEqual(input.proof)
++  const preview = await HookProjectTrust.inspect(input.data, input.proof)
++  await grant(input)
++  await expect(HookProjectTrust.change(input.data, input.proof, { ...preview, trusted: false })).rejects.toThrow()
++  expect((await HookProjectTrust.inspect(input.data, input.proof)).trusted).toBe(true)
++})
++
++test("trust store and legacy symlinks, malformed and oversized records fail closed", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  await grant(input)
++  const current = await captured(input)
++  const target = HookProjectTrust.file(input.data)
++  const retained = path.join(tmp.path, "retained.json")
++  await rename(target, retained)
++  await symlink(retained, target)
++  await expect(run(input, current)).rejects.toThrow()
++  await rm(target)
++  await Bun.write(target, "{")
++  await expect(run(input, current)).rejects.toThrow()
++  await Bun.write(target, " ".repeat(1024 * 1024 + 1))
++  await expect(run(input, current)).rejects.toThrow()
++  await rm(target)
++  await rename(retained, target)
++  await Bun.write(path.join(tmp.path, "legacy.toml"), `[folders.${JSON.stringify(input.nested)}]\ntrusted=true\n`)
++  await symlink(path.join(tmp.path, "legacy.toml"), path.join(input.home, "trusted_folders.toml"))
++  await expect(run(input, current)).rejects.toThrow()
++})
++
++test("explicit repository denial fences legacy exact sources without rewriting the legacy trust file", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  const target = path.join(input.home, "trusted_folders.toml")
++  const legacy = `[folders.${JSON.stringify(input.nested)}]\ntrusted=true\n`
++  await Bun.write(target, legacy)
++  const source = (
++    await HostHooks.discover(input.nested, input.home, input.home, { proof: input.proof, data: input.data })
++  ).sources[0]
++  expect(source.projectAuthority?.mode).toBe("exact")
++  await grant(input, false)
++  await expect(HookProjectTrust.authorize(source.projectAuthority!)).rejects.toThrow()
++  expect(await readFile(target, "utf8")).toBe(legacy)
++})
++
++test("home and filesystem roots cannot become repository Hook grants", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  expect(await HookProjectTrust.capture(input.nested, tmp.path, input.repository)).toBeUndefined()
++  expect(await HookProjectTrust.capture(input.nested, input.home)).toBeUndefined()
++})
++
++test("symlinked store directory cannot redirect trust publication", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  const outside = path.join(tmp.path, "outside")
++  await mkdir(outside)
++  await symlink(outside, path.join(input.data, "hooks"))
++  await expect(grant(input)).rejects.toThrow()
++  expect(await Bun.file(path.join(outside, "repository-trust.json")).exists()).toBe(false)
++})
++
++test("final HTTPS authority callback rechecks consent after preparation before request", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  await grant(input)
++  const current = await captured(input)
++  using tls = hookTLS()
++  const requests: string[] = []
++  using server = Bun.serve({
++    hostname: "127.0.0.1",
++    port: 0,
++    tls: tls.tls,
++    fetch: async (request) => {
++      await request.text()
++      requests.push(request.url)
++      return new Response("{}")
++    },
++  })
++  const ready = Promise.withResolvers<void>()
++  const release = Promise.withResolvers<void>()
++  const pending = HookNetwork.post(new URL("/guard", server.url), "{}", {}, AbortSignal.timeout(3000), async () => {
++    ready.resolve()
++    await release.promise
++    await HookProjectTrust.authorize(current.source.projectAuthority!)
++  })
++  const settled = pending.then(
++    () => ({ allowed: true }),
++    () => ({ allowed: false }),
++  )
++  try {
++    await ready.promise
++    await grant(input, false)
++  } finally {
++    release.resolve()
++  }
++  expect(await settled).toEqual({ allowed: false })
++  expect(requests).toEqual([])
++})
++
++test("a denied host folder record remains restrictive after native repository consent", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  await grant(input)
++  const current = await captured(input)
++  await Bun.write(
++    path.join(input.home, "trusted_folders.toml"),
++    `[folders.${JSON.stringify(input.nested)}]\ntrusted=false\n`,
++  )
++  expect((await HookProjectTrust.inspect(input.data, input.proof, input.home)).trusted).toBe(true)
++  expect((await HookProjectTrust.inspect(input.data, input.proof, input.home)).allowed).toBe(false)
++  await expect(run(input, current)).rejects.toThrow()
++  expect(
++    (await HostHooks.discover(input.nested, input.home, input.home, { proof: input.proof, data: input.data })).sources,
++  ).toHaveLength(0)
++})
++
++test("concurrent consent writes retain unrelated repository decisions", async () => {
++  await using first = await tmpdir({ git: true })
++  await using second = await tmpdir({ git: true })
++  const one = await fixture(first.path)
++  const two = { ...(await fixture(second.path)), data: one.data }
++  await Promise.all([grant(one), grant(two)])
++  expect((await HookProjectTrust.inspect(one.data, one.proof)).trusted).toBe(true)
++  expect((await HookProjectTrust.inspect(two.data, two.proof)).trusted).toBe(true)
++})
++
++test("consent queued behind the store lock cannot publish after its owner is released", async () => {
++  await using tmp = await tmpdir({ git: true })
++  const input = await fixture(tmp.path)
++  await grant(input, false)
++  const preview = await HookProjectTrust.inspect(input.data, input.proof)
++  const target = HookProjectTrust.file(input.data)
++  const before = await readFile(target, "utf8")
++  const lock = await Flock.acquire(target, {
++    dir: path.join(path.dirname(target), ".locks"),
++    timeoutMs: 5000,
++    reclaimDeadOwner: true,
++  })
++  const owner = { active: true }
++  const pending = HookProjectTrust.change(input.data, input.proof, { ...preview, trusted: true }, () => owner.active)
++  const result = pending.then(
++    () => true,
++    () => false,
++  )
++  owner.active = false
++  await lock.release()
++  expect(await result).toBe(false)
++  expect(await readFile(target, "utf8")).toBe(before)
++})
+--- a/packages/apexo/test/server/httpapi-exercise/index.ts
++++ b/packages/apexo/test/server/httpapi-exercise/index.ts
+@@ -320,6 +320,15 @@
+     .at((ctx) => ({ path: `/session/${ctx.state.id}/hooks/reload`, headers: ctx.headers() }))
+     .status(409),
+   http.protected
++    .post("/session/{sessionID}/hooks/trust", "hooks.trust.stale")
++    .seeded((ctx) => ctx.session({ title: "Hooks repository owner" }))
++    .at((ctx) => ({
++      path: `/session/${ctx.state.id}/hooks/trust`,
++      headers: ctx.headers(),
++      body: { root: "/", token: "0".repeat(64), trusted: true },
++    }))
++    .status(409),
++  http.protected
+     .post("/session/{sessionID}/hooks/preference", "hooks.preference.uncaptured")
+     .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+     .at((ctx) => ({
+@@ -340,6 +349,15 @@
+     .post("/api/session/{sessionID}/hooks/reload", "v2.hooks.reload.uncaptured")
+     .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+     .at((ctx) => ({ path: `/api/session/${ctx.state.id}/hooks/reload`, headers: ctx.headers() }))
++    .status(409),
++  http.protected
++    .post("/api/session/{sessionID}/hooks/trust", "v2.hooks.trust.stale")
++    .seeded((ctx) => ctx.session({ title: "Hooks repository owner" }))
++    .at((ctx) => ({
++      path: `/api/session/${ctx.state.id}/hooks/trust`,
++      headers: ctx.headers(),
++      body: { root: "/", token: "0".repeat(64), trusted: true },
++    }))
+     .status(409),
+   http.protected
+     .post("/api/session/{sessionID}/hooks/preference", "v2.hooks.preference.uncaptured")
+--- a/packages/tui/src/component/hooks-browser.tsx
++++ b/packages/tui/src/component/hooks-browser.tsx
+@@ -2,12 +2,13 @@
+ import type { ColorInput } from "@opentui/core"
+ import type { HostHooksSnapshot } from "@apexo/sdk/v2/client"
+ import { For, Show, onCleanup, onMount } from "solid-js"
+-import { createStore } from "solid-js/store"
++import { createStore, reconcile } from "solid-js/store"
+ import { useBindings } from "../keymap"
+ 
+ export type HooksActions = {
+   get: (signal: AbortSignal) => Promise<HostHooksSnapshot>
+   reload: (signal: AbortSignal) => Promise<HostHooksSnapshot>
++  trust?: (repository: NonNullable<HostHooksSnapshot["repository"]>, signal: AbortSignal) => Promise<HostHooksSnapshot>
+   preference: (hookID: string, enabled: boolean, signal: AbortSignal) => Promise<HostHooksSnapshot>
+ }
+ 
+@@ -30,7 +31,7 @@
+     setState({ pending: true, reloading: reload, error: false })
+     await props.actions[reload ? "reload" : "get"](lifetime.signal)
+       .then((snapshot) => {
+-        if (!lifetime.signal.aborted) setState("snapshot", snapshot)
++        if (!lifetime.signal.aborted) setState("snapshot", reconcile(snapshot))
+       })
+       .catch(() => {
+         if (!lifetime.signal.aborted) setState("error", true)
+@@ -53,7 +54,23 @@
+     await props.actions
+       .preference(hook.id, hook.effectiveDisabled, lifetime.signal)
+       .then((snapshot) => {
+-        if (!lifetime.signal.aborted) setState("snapshot", snapshot)
++        if (!lifetime.signal.aborted) setState("snapshot", reconcile(snapshot))
++      })
++      .catch(() => {
++        if (!lifetime.signal.aborted) setState("error", true)
++      })
++      .finally(() => {
++        if (!lifetime.signal.aborted) setState("pending", false)
++      })
++  }
++  const trust = async () => {
++    const repository = state.snapshot?.repository
++    if (state.pending || !repository || !props.actions.trust) return
++    setState({ pending: true, error: false })
++    await props.actions
++      .trust({ ...repository, trusted: !repository.trusted }, lifetime.signal)
++      .then((snapshot) => {
++        if (!lifetime.signal.aborted) setState("snapshot", reconcile(snapshot))
+       })
+       .catch(() => {
+         if (!lifetime.signal.aborted) setState("error", true)
+@@ -82,6 +99,7 @@
+             Math.min(Math.max(0, (state.snapshot?.inspection?.hooks.length ?? 0) - 1), index + 1),
+           ),
+       },
++      { key: "t", desc: "Change repository Hook trust", group: "Hooks", cmd: () => void trust() },
+       { key: "space", desc: "Enable or disable hook", group: "Hooks", cmd: () => void preference() },
+       { key: "escape", desc: "Close hooks", group: "Hooks", cmd: props.onClose },
+       { key: "r", desc: "Refresh snapshot", group: "Hooks", cmd: () => void load() },
+@@ -115,6 +133,24 @@
+         </text>
+       </Show>
+       <scrollbox flexGrow={1}>
++        <Show when={state.snapshot?.repository}>
++          {(repository) => (
++            <box flexDirection="column" marginBottom={1}>
++              <text fg={props.theme().highlight}>Repository hook trust</text>
++              <text fg={props.theme().text}>{repository().root}</text>
++              <text fg={props.theme().muted}>
++                Allow root hooks in sessions inside this repository. Reload after allowing. Revoking prevents new
++                invocations.
++              </text>
++              <text fg={props.theme().muted}>
++                {repository().allowed ? "Project hook sources are trusted." : "Project hook sources are not trusted."}
++              </text>
++              <text fg={props.theme().highlight}>
++                {repository().trusted ? "t Revoke repository hook trust" : "t Allow repository hooks"}
++              </text>
++            </box>
++          )}
++        </Show>
+         <Show when={state.snapshot}>
+           {(snapshot) => (
+             <>
+--- a/packages/app/src/components/hooks-dialog.tsx
++++ b/packages/app/src/components/hooks-dialog.tsx
+@@ -1,5 +1,5 @@
+ import { For, Show, onCleanup, onMount } from "solid-js"
+-import { createStore } from "solid-js/store"
++import { createStore, reconcile } from "solid-js/store"
+ import type { HostHooksSnapshot } from "@apexo/sdk/v2/client"
+ import { Button } from "@apexo/ui/button"
+ import { Dialog } from "@apexo/ui/dialog"
+@@ -25,7 +25,7 @@
+     )
+       [reload ? "reload" : "get"]({ sessionID: props.sessionID }, { signal: lifetime.signal, throwOnError: true })
+       .then((result) => {
+-        if (!lifetime.signal.aborted) setState("snapshot", result.data)
++        if (!lifetime.signal.aborted) setState("snapshot", reconcile(result.data))
+       })
+       .catch(() => {
+         if (!lifetime.signal.aborted) setState("error", true)
+@@ -45,7 +45,31 @@
+         { signal: lifetime.signal, throwOnError: true },
+       )
+       .then((result) => {
+-        if (!lifetime.signal.aborted) setState("snapshot", result.data)
++        if (!lifetime.signal.aborted) setState("snapshot", reconcile(result.data))
++      })
++      .catch(() => {
++        if (!lifetime.signal.aborted) setState("error", true)
++      })
++      .finally(() => {
++        if (!lifetime.signal.aborted) setState("pending", false)
++      })
++  }
++  const trust = async () => {
++    const repository = state.snapshot?.repository
++    if (state.pending || !repository) return
++    setState({ pending: true, error: false })
++    await (
++      await api
++    )
++      .trust(
++        {
++          sessionID: props.sessionID,
++          hostHooksRepositoryTrust: { root: repository.root, token: repository.token, trusted: !repository.trusted },
++        },
++        { signal: lifetime.signal, throwOnError: true },
++      )
++      .then((result) => {
++        if (!lifetime.signal.aborted) setState("snapshot", reconcile(result.data))
+       })
+       .catch(() => {
+         if (!lifetime.signal.aborted) setState("error", true)
+@@ -61,6 +85,23 @@
+       <div data-component="hooks-dialog" class="min-h-0 max-h-[60vh] overflow-y-auto px-6 pb-6 space-y-4">
+         <p class="text-12-regular text-text-weak">{language.t("hooks.description")}</p>
+         <p class="text-12-regular text-text-weak">{language.t("hooks.preference.hint")}</p>
++        <Show when={state.snapshot?.repository}>
++          {(repository) => (
++            <section data-component="hooks-repository" class="rounded-md border border-border-base p-3 space-y-2">
++              <p class="text-14-medium">{language.t("hooks.repository.title")}</p>
++              <p data-component="hooks-repository-root" class="text-12-regular break-all">
++                {repository().root}
++              </p>
++              <p class="text-12-regular">{language.t("hooks.repository.hint")}</p>
++              <p data-component="hooks-repository-status">
++                {language.t(repository().allowed ? "hooks.trusted" : "hooks.untrusted")}
++              </p>
++              <Button data-action="hooks-repository-trust" disabled={state.pending} onClick={() => void trust()}>
++                {language.t(repository().trusted ? "hooks.repository.revoke" : "hooks.repository.grant")}
++              </Button>
++            </section>
++          )}
++        </Show>
+         <div class="flex gap-2">
+           <Button data-action="hooks-refresh" disabled={state.pending} onClick={() => void load()}>
+             {language.t("hooks.refresh")}
+--- a/packages/core/src/hook-observer.ts
++++ b/packages/core/src/hook-observer.ts
+@@ -90,6 +90,7 @@
+                   signal,
+                   HostHooks.name(hook, `${source.name}:${input.event}:${groupIndex}:${handlerIndex}`),
+                   source.data,
++                  source.projectAuthority,
+                 ).catch(() => "")
+               }
+             }
+--- a/packages/core/src/hook-dispatch.ts
++++ b/packages/core/src/hook-dispatch.ts
+@@ -6,6 +6,7 @@
+ import { Schema } from "effect"
+ import { HookEnvironment } from "./hook-environment"
+ import { HookNetwork } from "./hook-network"
++import { HookProjectTrust } from "./hook-project-trust"
+ 
+ function record(value: unknown): Record<string, unknown> {
+   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+@@ -22,6 +23,7 @@
+   signal?: AbortSignal,
+   name = event,
+   data?: string,
++  projectAuthority?: HookProjectTrust.Authority,
+ ) {
+   const parsed = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)(input)
+   const payload = parsed._tag === "Some" ? record(parsed.value) : {}
+@@ -55,6 +57,8 @@
+           )
+         : hook.url,
+     )
++    if (projectAuthority) await HookProjectTrust.authorize(projectAuthority)
++    if (signal?.aborted) throw new Error("Hook invocation was cancelled")
+     if (host)
+       return HookNetwork.post(
+         url,
+@@ -68,6 +72,7 @@
+           ),
+         },
+         signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
++        projectAuthority ? () => HookProjectTrust.authorize(projectAuthority) : undefined,
+       )
+     if (!["https:", "http:"].includes(url.protocol)) throw new Error("Invalid hook URL")
+     const response = await fetch(url, {
+@@ -103,6 +108,8 @@
+   const command = hook.command
+   if (host && HookEnvironment.unresolved(command, env).length)
+     throw new Error("Hook command references an unset environment variable")
++  if (projectAuthority) await HookProjectTrust.authorize(projectAuthority)
++  if (signal?.aborted) throw new Error("Hook invocation was cancelled")
+   return new Promise<string>((resolve, reject) => {
+     const child = spawn(
+       process.platform === "win32" ? "cmd.exe" : "/bin/sh",
+--- a/packages/core/src/hook-network.ts
++++ b/packages/core/src/hook-network.ts
+@@ -77,13 +77,20 @@
+   }
+ }
+ 
+-export async function post(url: URL, body: string, headers: Record<string, string>, signal: AbortSignal) {
++export async function post(
++  url: URL,
++  body: string,
++  headers: Record<string, string>,
++  signal: AbortSignal,
++  beforeRequest?: () => Promise<void>,
++) {
+   await abortable(validate(url), signal)
+   const roots = await abortable(extraRoots(bundlePath(process.env)), signal)
+   const { getCACertificates, rootCertificates } = await import("node:tls")
+   const ca = roots.length
+     ? [...(typeof getCACertificates === "function" ? getCACertificates("default") : rootCertificates), ...roots]
+     : undefined
++  if (beforeRequest) await beforeRequest()
+   signal.throwIfAborted()
+   return new Promise<string>((resolve, reject) => {
+     const outgoing = request(url, { method: "POST", headers, signal, ca }, (response) => {
+--- a/packages/core/src/hook-snapshot-location.ts
++++ b/packages/core/src/hook-snapshot-location.ts
+@@ -12,6 +12,9 @@
+ import { SessionStore } from "./session/store"
+ import { SessionSchema } from "./session/schema"
+ import { PluginBundleState } from "./plugin-bundle-state"
++import { HookProjectTrust } from "./hook-project-trust"
++import { Git } from "./git"
++import type { RepositoryTrust } from "@apexo/schema/host-hooks"
+ 
+ export interface Interface {
+   readonly select: (id: SessionSchema.ID) => Effect.Effect<HookPreferences.Selection, SessionHookSnapshot.Failure>
+@@ -20,12 +23,16 @@
+   readonly get: (id: SessionSchema.ID) => Effect.Effect<SessionHookSnapshot.Snapshot | undefined>
+   readonly inspect: (
+     id: SessionSchema.ID,
+-  ) => Effect.Effect<ReturnType<typeof SessionHookSnapshot.inspection>, SessionHookSnapshot.Failure>
++  ) => Effect.Effect<
++    ReturnType<typeof SessionHookSnapshot.inspection> & { repository?: HookProjectTrust.Preview },
++    SessionHookSnapshot.Failure
++  >
+   readonly preference: (
+     id: SessionSchema.ID,
+     hookID: string,
+     enabled: boolean,
+   ) => Effect.Effect<SessionHookSnapshot.Snapshot, SessionHookSnapshot.Failure | HookPreferences.Failure>
++  readonly trust: (id: SessionSchema.ID, input: RepositoryTrust) => Effect.Effect<void, SessionHookSnapshot.Failure>
+   readonly release: (id: SessionSchema.ID) => Effect.Effect<void>
+ }
+ export class Service extends Context.Service<Service, Interface>()("@apexo/HookSnapshotLocation") {}
+@@ -33,6 +40,7 @@
+   Service,
+   Effect.gen(function* () {
+     const location = yield* Location.Service
++    const git = yield* Git.Service
+     const global = yield* Global.Service
+     const snapshots = yield* SessionHookSnapshot.Service
+     const sessions = yield* SessionStore.Service
+@@ -49,6 +57,13 @@
+       )
+         return yield* new SessionHookSnapshot.Failure({ code: "owner_conflict" })
+     })
++    const repository = Effect.gen(function* () {
++      if (!enabled) return undefined
++      const discovered = yield* git.repo.discover(location.directory)
++      return yield* Effect.tryPromise(() => HookProjectTrust.capture(location.directory, global.home, discovered)).pipe(
++        Effect.mapError(() => new SessionHookSnapshot.Failure({ code: "load" })),
++      )
++    })
+     const owner = yield* snapshots
+       .registerLocation(
+         location,
+@@ -57,8 +72,16 @@
+             Effect.andThen(
+               Effect.gen(function* () {
+                 const installed = yield* bundles.get
++                const proof = yield* repository
+                 const host = enabled
+-                  ? yield* Effect.tryPromise(() => HostHooks.discover(location.directory, home, global.home))
++                  ? yield* Effect.tryPromise(() =>
++                      HostHooks.discover(
++                        location.directory,
++                        home,
++                        global.home,
++                        proof ? { proof, data: global.data } : undefined,
++                      ),
++                    )
+                   : { sources: [], diagnostics: [], projectTrusted: false }
+                 return { ...host, sources: [...installed.sources, ...host.sources] }
+               }),
+@@ -105,11 +128,47 @@
+               ),
+             ),
+           )
+-          return SessionHookSnapshot.inspection(snapshot, saved)
++          const proof = yield* repository
++          const preview = proof
++            ? yield* Effect.tryPromise(() => HookProjectTrust.inspect(global.data, proof, home)).pipe(
++                Effect.mapError(() => new SessionHookSnapshot.Failure({ code: "load" })),
++              )
++            : undefined
++          return { ...SessionHookSnapshot.inspection(snapshot, saved), ...(preview ? { repository: preview } : {}) }
+         }),
+       preference: (id, hookID, enabled) =>
+         lifecycle
+           .use(id, validate(id).pipe(Effect.andThen(snapshots.preference(owner, id, hookID, enabled))))
++          .pipe(
++            Effect.catchTag("SessionLifecycle.Closed", () =>
++              Effect.fail(new SessionHookSnapshot.Failure({ code: "closed" })),
++            ),
++          ),
++      trust: (id, input) =>
++        lifecycle
++          .use(
++            id,
++            Effect.gen(function* () {
++              yield* validate(id)
++              const claim = yield* lifecycle.capture(id)
++              const selection = yield* snapshots.select(owner, id)
++              const proof = yield* repository
++              yield* validate(id)
++              if (!proof) return yield* new SessionHookSnapshot.Failure({ code: "read_only" })
++              yield* Effect.tryPromise(() =>
++                HookProjectTrust.change(global.data, proof, input, () => {
++                  const choice = selection()
++                  return (
++                    lifecycle.available(claim) &&
++                    !(choice instanceof HookPreferences.Failure && choice.code === "conflict")
++                  )
++                }),
++              ).pipe(
++                Effect.mapError(() => new SessionHookSnapshot.Failure({ code: "load" })),
++                Effect.uninterruptible,
++              )
++            }),
++          )
+           .pipe(
+             Effect.catchTag("SessionLifecycle.Closed", () =>
+               Effect.fail(new SessionHookSnapshot.Failure({ code: "closed" })),
+@@ -124,6 +183,7 @@
+   layer,
+   deps: [
+     Location.node,
++    Git.node,
+     Global.node,
+     SessionHookSnapshot.node,
+     SessionStore.node,
+--- /dev/null
++++ b/packages/core/src/hook-project-trust.ts
+@@ -0,0 +1,291 @@
++export * as HookProjectTrust from "./hook-project-trust"
++
++import { createHash, randomUUID } from "node:crypto"
++import { constants } from "node:fs"
++import { lstat, mkdir, open, realpath, rename, rm, stat } from "node:fs/promises"
++import path from "node:path"
++import { Schema } from "effect"
++import { parse } from "toml"
++import type { Git } from "./git"
++import { Flock } from "./util/flock"
++
++const Record = Schema.Struct({ identity: Schema.String, revision: Schema.String, trusted: Schema.Boolean })
++const Document = Schema.fromJsonString(
++  Schema.Struct({ version: Schema.Literal(1), repositories: Schema.Record(Schema.String, Record) }),
++)
++export type Proof = {
++  readonly workspace: string
++  readonly root: string
++  readonly git: string
++  readonly common: string
++  readonly identity: string
++}
++export type Authority = {
++  readonly workspace: string
++  readonly home: string
++  readonly data: string
++  readonly directoryIdentity: string
++  readonly repository?: Proof
++  readonly revision?: string
++  readonly mode: "exact" | "repository"
++}
++export type Consent = { root: string; token: string; trusted: boolean }
++export type Preview = Consent & { allowed: boolean }
++export class Failure extends Error {
++  constructor(message = "Repository Hook trust could not be verified") {
++    super(message)
++    this.name = "HookProjectTrust.Failure"
++  }
++}
++const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
++const missing = (error: unknown) =>
++  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
++const contains = (root: string, directory: string) => directory === root || directory.startsWith(`${root}${path.sep}`)
++export const file = (data: string) => path.join(data, "hooks", "repository-trust.json")
++
++/** Git discovery belongs to the native Git service; this only binds its result to current filesystem identity. */
++export async function capture(
++  directory: string,
++  userHome: string,
++  repository?: Git.Repository,
++): Promise<Proof | undefined> {
++  if (!repository) return
++  const workspace = await realpath(directory)
++  const root = await realpath(repository.worktree)
++  if (root === path.parse(root).root || root === (await realpath(userHome)) || !contains(root, workspace)) return
++  const candidate = {
++    workspace,
++    root,
++    git: await realpath(repository.gitDirectory),
++    common: await realpath(repository.commonDirectory),
++  }
++  return { ...candidate, identity: await identity(candidate) }
++}
++
++export async function directoryIdentity(directory: string) {
++  const info = await stat(directory)
++  if (!info.isDirectory()) throw new Failure()
++  return digest([info.dev, info.ino])
++}
++
++async function identity(proof: Omit<Proof, "identity">) {
++  if ((await realpath(proof.workspace)) !== proof.workspace || (await realpath(proof.root)) !== proof.root)
++    throw new Failure()
++  // A new nearer .git boundary invalidates the captured repository capability.
++  for (let current = proof.workspace; current !== proof.root; current = path.dirname(current)) {
++    if (
++      !contains(proof.root, current) ||
++      (await lstat(path.join(current, ".git")).catch((error) => {
++        if (missing(error)) return undefined
++        throw error
++      }))
++    )
++      throw new Failure()
++  }
++  const marker = path.join(proof.root, ".git")
++  const info = await lstat(marker)
++  if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) throw new Failure()
++  const content = info.isFile() ? await bounded(marker, 4096) : undefined
++  const linked = content === undefined ? undefined : /^gitdir: (.+)\s*$/.exec(content)?.[1]?.trim()
++  if (content !== undefined && !linked) throw new Failure()
++  const target = linked === undefined ? marker : path.resolve(proof.root, linked)
++  if ((await realpath(target)) !== proof.git) throw new Failure()
++  if ((await realpath(proof.git)) !== proof.git || (await realpath(proof.common)) !== proof.common) throw new Failure()
++  const common = await bounded(path.join(proof.git, "commondir"), 4096).catch((error) => {
++    if (missing(error)) return undefined
++    throw error
++  })
++  if ((await realpath(common === undefined ? proof.git : path.resolve(proof.git, common.trim()))) !== proof.common)
++    throw new Failure()
++  return digest([
++    proof.root,
++    await directoryIdentity(proof.root),
++    proof.git,
++    await directoryIdentity(proof.git),
++    proof.common,
++    await directoryIdentity(proof.common),
++    info.dev,
++    info.ino,
++    content,
++    common,
++  ])
++}
++
++async function parentIdentity(directory: string) {
++  const info = await lstat(directory)
++  if (!info.isDirectory() || info.isSymbolicLink()) throw new Failure()
++  return digest([await realpath(directory), info.dev, info.ino])
++}
++
++async function bounded(target: string, limit = 1024 * 1024) {
++  const parent = await parentIdentity(path.dirname(target))
++  const before = await lstat(target)
++  if (!before.isFile() || before.isSymbolicLink() || before.size > limit) throw new Failure()
++  const handle = await open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
++  return await handle
++    .stat()
++    .then(async (info) => {
++      if (!info.isFile() || info.dev !== before.dev || info.ino !== before.ino || info.size > limit) throw new Failure()
++      const bytes = Buffer.alloc(limit + 1)
++      let size = 0
++      while (size < bytes.length) {
++        const result = await handle.read(bytes, size, bytes.length - size, size)
++        if (!result.bytesRead) break
++        size += result.bytesRead
++      }
++      const settled = await handle.stat()
++      if (
++        settled.size !== info.size ||
++        settled.mtimeMs !== info.mtimeMs ||
++        settled.ctimeMs !== info.ctimeMs ||
++        size !== settled.size
++      )
++        throw new Failure()
++      const after = await lstat(target)
++      if (
++        size > limit ||
++        !after.isFile() ||
++        after.isSymbolicLink() ||
++        after.dev !== info.dev ||
++        after.ino !== info.ino ||
++        after.size !== settled.size ||
++        after.mtimeMs !== settled.mtimeMs ||
++        parent !== (await parentIdentity(path.dirname(target)))
++      )
++        throw new Failure()
++      return bytes.subarray(0, size).toString("utf8")
++    })
++    .finally(() => handle.close())
++}
++
++async function read(data: string) {
++  const raw = await bounded(file(data)).catch((error) => {
++    if (missing(error)) return undefined
++    throw new Failure()
++  })
++  if (raw === undefined)
++    return { version: 1 as const, repositories: {} as Record<string, Schema.Schema.Type<typeof Record>> }
++  return await Schema.decodeUnknownPromise(Document)(raw).catch(() => {
++    throw new Failure()
++  })
++}
++
++export async function inspect(data: string, proof: Proof, home?: string): Promise<Preview> {
++  if ((await identity(proof)) !== proof.identity) throw new Failure()
++  const saved = (await read(data)).repositories[proof.root]
++  return {
++    root: proof.root,
++    token: digest([proof.identity, saved?.revision ?? ""]),
++    trusted: saved?.identity === proof.identity && saved.trusted,
++    allowed:
++      saved?.identity === proof.identity &&
++      saved.trusted &&
++      !(home && (await legacy(home, proof.workspace, proof.root)).denied),
++  }
++}
++
++export async function decision(data: string, proof: Proof) {
++  if ((await identity(proof)) !== proof.identity) throw new Failure()
++  const saved = (await read(data)).repositories[proof.root]
++  // A stale grant never authorizes a replacement repository. A denial stays restrictive.
++  return saved?.trusted === false ? saved : saved?.identity === proof.identity ? saved : undefined
++}
++
++export async function change(data: string, proof: Proof, input: Consent, current?: () => boolean) {
++  const target = file(data)
++  const directory = path.dirname(target)
++  await mkdir(directory, { recursive: true, mode: 0o700 })
++  const parent = await parentIdentity(directory)
++  const lease = await Flock.acquire(target, {
++    dir: path.join(directory, ".locks"),
++    timeoutMs: 5000,
++    reclaimDeadOwner: true,
++  })
++  try {
++    if (parent !== (await parentIdentity(directory))) throw new Failure()
++    if (current && !current()) throw new Failure("Session Hook owner was released")
++    const preview = await inspect(data, proof)
++    if (input.root !== preview.root || input.token !== preview.token)
++      throw new Failure("Repository identity or trust changed; refresh before retrying")
++    const document = await read(data)
++    const next = {
++      version: 1 as const,
++      repositories: {
++        ...document.repositories,
++        [proof.root]: { identity: proof.identity, revision: randomUUID(), trusted: input.trusted },
++      },
++    }
++    const raw = await Schema.encodePromise(Document)(next)
++    if (Buffer.byteLength(raw) > 1024 * 1024) throw new Failure()
++    const temporary = `${target}.${randomUUID()}.tmp`
++    if (parent !== (await parentIdentity(directory))) throw new Failure()
++    if (current && !current()) throw new Failure("Session Hook owner was released")
++    const handle = await open(temporary, "wx", 0o600)
++    const owned = await handle.stat()
++    await handle
++      .writeFile(raw)
++      .then(() => handle.sync())
++      .finally(() => handle.close())
++      .then(async () => {
++        if (parent !== (await parentIdentity(directory))) throw new Failure()
++        if (current && !current()) throw new Failure("Session Hook owner was released")
++        await rename(temporary, target)
++        if (parent !== (await parentIdentity(directory))) throw new Failure()
++      })
++      .catch(async (error: unknown) => {
++        if (parent === (await parentIdentity(directory).catch(() => undefined))) {
++          const current = await lstat(temporary).catch(() => undefined)
++          if (current?.isFile() && !current.isSymbolicLink() && current.dev === owned.dev && current.ino === owned.ino)
++            await rm(temporary)
++        }
++        throw error
++      })
++    if (process.platform !== "win32") {
++      const parent = await open(directory, "r")
++      await parent.sync().finally(() => parent.close())
++    }
++  } finally {
++    await lease.release()
++  }
++}
++
++/** No definition reload: validate only the captured authority immediately before external work. */
++export async function authorize(authority: Authority) {
++  if (
++    (await realpath(authority.workspace)) !== authority.workspace ||
++    (await directoryIdentity(authority.workspace)) !== authority.directoryIdentity
++  )
++    throw new Failure()
++  const saved = authority.repository ? await decision(authority.data, authority.repository) : undefined
++  if (saved?.trusted === false) throw new Failure("Repository Hook trust was revoked")
++  if (saved?.revision !== authority.revision) throw new Failure("Repository Hook grant changed; reload Hooks")
++  const previous = await legacy(authority.home, authority.workspace, authority.repository?.root)
++  if (previous.denied) throw new Failure("Host folder Hook trust is denied or unavailable")
++  if (authority.mode === "repository") {
++    if (!saved?.trusted || saved.revision !== authority.revision)
++      throw new Failure("Repository Hook grant changed; reload Hooks")
++    return
++  }
++  if (!previous.exact) throw new Failure("Exact folder Hook trust was revoked")
++}
++
++export async function legacy(home: string, workspace: string, root?: string) {
++  return await bounded(path.join(home, "trusted_folders.toml"))
++    .catch((error) => {
++      if (missing(error)) return ""
++      throw error
++    })
++    .then((raw) => {
++      const store: unknown = parse(raw)
++      const folders = typeof store === "object" && store !== null ? Reflect.get(store, "folders") : undefined
++      const decision = (key: string) => {
++        const entry = typeof folders === "object" && folders !== null ? Reflect.get(folders, key) : undefined
++        return typeof entry === "object" && entry !== null ? Reflect.get(entry, "trusted") : undefined
++      }
++      return {
++        exact: decision(workspace) === true,
++        denied: decision(workspace) === false || (root !== undefined && decision(root) === false),
++      }
++    })
++    .catch(() => ({ exact: false, denied: true }))
++}
+--- a/packages/core/src/hooks.ts
++++ b/packages/core/src/hooks.ts
+@@ -8,6 +8,7 @@
+ import { ConfigHooks } from "./config/hooks"
+ import { HookEnvironment } from "./hook-environment"
+ import { HookPreferences } from "./hook-preferences"
++import { HookProjectTrust } from "./hook-project-trust"
+ 
+ const identity = Symbol("hostHookIdentity")
+ 
+@@ -25,6 +26,7 @@
+   // Set only by trusted Core source construction, never copied from a handler document.
+   pluginID?: string
+   readonly data?: string
++  readonly projectAuthority?: HookProjectTrust.Authority
+   policy?: "managed"
+ }
+ 
+@@ -87,17 +89,25 @@
+   directory: string,
+   home = process.env.GROK_HOME ?? path.join(Global.Path.home, ".grok"),
+   userHome = Global.Path.home,
++  repository?: { proof: HookProjectTrust.Proof; data: string },
+ ): Promise<Inspection> {
+   if (!path.isAbsolute(home) || !path.isAbsolute(userHome)) throw new Error("Hook homes must be absolute")
+   const diagnostics: string[] = []
+   const workspace = await realpath(directory)
+-  const trust = await readFile(path.join(home, "trusted_folders.toml"), "utf8")
+-    .then(
+-      (text) => record(record(parse(text)).folders),
+-      () => ({}),
+-    )
+-    .catch(() => ({}))
+-  const projectTrusted = record(Reflect.get(trust, workspace)).trusted === true
++  const legacy = await HookProjectTrust.legacy(home, workspace, repository?.proof.root)
++  const saved = repository ? await HookProjectTrust.decision(repository.data, repository.proof) : undefined
++  const denied = saved?.trusted === false || legacy.denied
++  const exactTrusted = !denied && legacy.exact
++  const repositoryTrusted = !denied && saved?.trusted === true
++  const projectTrusted = exactTrusted || repositoryTrusted
++  const authority = {
++    workspace,
++    home,
++    data: repository?.data ?? Global.Path.data,
++    directoryIdentity: await HookProjectTrust.directoryIdentity(workspace),
++    ...(repository ? { repository: repository.proof } : {}),
++    ...(saved ? { revision: saved.revision } : {}),
++  }
+   const paths = await readFile(path.join(home, "hooks-paths"), "utf8").catch(() => "")
+   const load = async (file: string) =>
+     readFile(file, "utf8")
+@@ -121,8 +131,26 @@
+     ...(native ? [{ file: path.join(root, ".grok/hooks"), settings: false }] : []),
+     ...(imports.cursor === true ? [{ file: path.join(root, ".cursor/hooks.json"), settings: true }] : []),
+   ]
+-  const project = vendors(workspace, true)
+-  const candidates: { file: string; settings: boolean; provenance: NonNullable<Source["provenance"]> }[] = [
++  const project = [
++    ...(repositoryTrusted && repository
++      ? vendors(repository.proof.root, true).map((candidate) => ({
++          ...candidate,
++          projectAuthority: { ...authority, mode: "repository" as const, revision: saved!.revision },
++        }))
++      : []),
++    ...(exactTrusted
++      ? vendors(workspace, true).map((candidate) => ({
++          ...candidate,
++          projectAuthority: { ...authority, mode: "exact" as const },
++        }))
++      : []),
++  ]
++  const candidates: {
++    file: string
++    settings: boolean
++    provenance: NonNullable<Source["provenance"]>
++    projectAuthority?: HookProjectTrust.Authority
++  }[] = [
+     { file: path.join(home, "requirements.toml"), settings: true, provenance: "user_requirements" },
+     { file: configPath, settings: true, provenance: "user" },
+     { file: path.join(home, "managed_config.toml"), settings: true, provenance: "user_managed" },
+@@ -177,6 +205,7 @@
+         hooks: {},
+         host: true,
+         provenance: candidate.provenance,
++        ...(candidate.projectAuthority ? { projectAuthority: candidate.projectAuthority } : {}),
+       })
+       const hooks = ConfigHooks.normalize(
+         Object.fromEntries(
+@@ -269,7 +298,9 @@
+   }
+   if (
+     !projectTrusted &&
+-    (await Promise.all(project.map((candidate) => stat(candidate.file).catch(() => undefined)))).some(Boolean)
++    (await Promise.all(vendors(workspace, true).map((candidate) => stat(candidate.file).catch(() => undefined)))).some(
++      Boolean,
++    )
+   )
+     diagnostics.push("Project hooks are disabled until this exact workspace has a host folder-trust grant")
+   return { sources, diagnostics, projectTrusted }
+--- a/packages/core/src/session/hook-stop.ts
++++ b/packages/core/src/session/hook-stop.ts
+@@ -257,6 +257,7 @@
+           signal,
+           HostHooks.name(hook, `${source.name}:${event}:${groupIndex}:${handlerIndex}`),
+           source.data,
++          source.projectAuthority,
+         ).catch(() => "")
+         const parsed = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)(output)
+         if (parsed._tag === "None") continue
+--- /dev/null
++++ b/docs/repository-hook-trust.md
+@@ -0,0 +1,13 @@
++# Repository Hook trust
++
++Repository Hook trust is explicit host consent to execute Hook configuration from a repository root in Sessions located inside that repository. It does not alter a Session's Location or grant filesystem, sandbox, MCP, LSP or plugin permissions.
++
++Open the Hook panel to inspect the canonical repository root. Allow repository Hooks, then reload an already captured Session to apply its root definitions. A new Session captures current allowed definitions when it first executes. Refreshing the panel or choosing a folder does not grant trust or start model work.
++
++Revoking repository trust prevents new Hook invocations from captured sources in that repository, including previously exact-trusted folder sources. It does not kill an already running Hook; existing cancellation and Session deletion still own and join that work. Regranting does not revive a captured authority from before revocation: reload or start a new Session. A saved grant can remain visible while an independent host folder denial prevents execution; the panel reports current allowance separately.
++
++Existing exact canonical folder entries retain their exact scope. They are not automatically migrated into repository consent. Nested Git repositories require separate consent, and linked worktrees do not implicitly share grants. Home and filesystem roots cannot receive repository grants. Symlink aliases resolve to canonical identity, while changed roots or Git metadata invalidate prior proof.
++
++The native implementation discovers root Hook files under explicit repository consent. The pinned reference source does the same. Installed reference version 1.0.52 additionally loaded nested Hook files in the observed trusted-root case; native repository consent does not silently expand to arbitrary ancestor configuration. This difference is explicit.
++
++Administrator-enforced and signed organization Hook policy is separate from repository trust. A project field, ordinary environment variable, filename or user-owned signing key never makes a repository Hook administrator policy.
+--- /dev/null
++++ b/docs/testing/permissions/native-repository-hook-trust.md
+@@ -0,0 +1,27 @@
++# BUG-20261015-379: Native repository Hook consent and root discovery
++
++Status: implementation and verification in progress. No completed fix is claimed yet.
++
++## Scope and observed behavior
++
++The native host Hook loader accepts an exact canonical working-directory grant. A Session opened below a repository root cannot explicitly authorize that repository's root Hook configuration through the native Hook interface. An existing exact root grant must not silently become a repository-wide grant.
++
++Pinned reference source selects the discovered Git root at Session startup and reload, and exposes explicit repository trust and untrust actions. The installed reference's trusted-root comparison additionally ran nested Hook files; that difference is retained rather than presented as identical behavior. The bounded native slice implements explicit repository consent and root discovery, preserving existing exact-folder grants. Administrator-enforced or signed Hook policy is a separate scope.
++
++## Expected behavior
++
++The operator can inspect the canonical repository root, explicitly allow its Hooks, and reload a captured Session at the existing safe boundary. Trust never moves the Session or changes filesystem, sandbox, MCP, LSP or plugin permissions. A nested repository remains a separate authority. Revocation blocks new command and HTTP Hook work from captured sources across Sessions; regrant requires fresh capture or explicit reload.
++
++## Implementation boundaries under verification
++
++A versioned host-data trust store binds grants to canonical root and Git metadata identity. Native Git discovery remains authoritative. Source construction attaches immutable authority proof; configuration fields cannot forge it. Store changes serialize with the existing lock mechanism and recheck Session incarnation and captured owner before publication. Reads are bounded and verify descriptor, path and parent identity, including final size and modification time. Symlinks and unknown metadata errors fail closed. Temporary cleanup requires the original inode and unchanged parent.
++
++The dispatch fence checks current host consent without reloading executable definitions. HTTPS repeats that check after DNS, CA and transport preparation, immediately before the request. Existing exact grants keep their scope; an explicit native repository denial restricts those sources within that repository without rewriting the legacy store. A legacy explicit denial remains restrictive. The UI distinguishes a saved grant from whether it is currently allowed.
++
++## Reproduction and verification plan
++
++Run the focused repository Hook test from `packages/apexo`, alongside existing Hook source, snapshot, observer cancellation and preference tests. Exercise source CLI and the rebuilt Desktop backend with the repository trust acceptance script. Run the real App/TUI consent and revoke surfaces, including canonical translated labels. Generate Client and legacy SDK outputs before affected package typechecks and HTTP API exercises.
++
++Required controls include root discovery only after explicit consent, no broadening of legacy exact grants, stale preview rejection, nested repository boundaries, canonical aliases, changed Git/root metadata, malformed and symlinked stores, concurrent updates, queued owner retirement, real command/HTTPS revocation, and restart persistence. Negative and positive results will be recorded after the coordinated runtime slot becomes available.
++
++No recurring-rule promotion is justified by this new capability gap or by multiple review comments on the same draft.
+--- /dev/null
++++ b/packages/apexo/script/grok-hook-repository-trust-ui.mjs
+@@ -0,0 +1,309 @@
++import assert from "node:assert/strict"
++import { execFile, spawn, spawnSync } from "node:child_process"
++import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
++import { createServer, request } from "node:http"
++import { tmpdir } from "node:os"
++import { basename, dirname, join, resolve } from "node:path"
++import { fileURLToPath, pathToFileURL } from "node:url"
++import { promisify } from "node:util"
++import { startShellFixture, poll, deadline } from "./grok-shell-fixture.mjs"
++
++const kind = process.argv[2] ?? "desktop"
++const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
++const state = { nativeChild: undefined, nativeExited: undefined }
++const home = await mkdtemp(join(tmpdir(), "apexo-hooks-browser-"))
++const runtime = await startShellFixture("cli", { env: { GROK_HOME: home }, next: () => ({ content: "HOOK_UI_DONE" }) })
++const source = join(runtime.directory, ".grok/hooks/repository.json")
++const trace = join(runtime.output, "repository-hook-trace")
++await mkdir(join(runtime.directory, ".grok/hooks"), { recursive: true })
++const git = spawnSync("git", ["init", "--quiet"], { cwd: runtime.directory, encoding: "utf8" })
++assert.equal(git.status, 0, git.stderr)
++await writeFile(source, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `printf R >> '${trace}'` }] }] } }))
++await runtime.crash()
++await writeFile(
++  join(runtime.directory, "apexo.json"),
++  JSON.stringify({
++    ...JSON.parse(runtime.env.APEXO_CONFIG_CONTENT),
++    snapshots: false,
++    permissions: [{ action: "*", resource: "*", effect: "allow" }],
++    providers: {
++      xai: {
++        name: "Native UI fixture",
++        api: {
++          type: "aisdk",
++          package: "@ai-sdk/openai-compatible",
++          url: runtime.env.XAI_BASE_URL,
++          settings: { apiKey: "local-parity-key" },
++        },
++        models: {
++          "grok-4.7": {
++            name: "Native UI fixture",
++            capabilities: { tools: true, input: ["text"], output: ["text"] },
++            limit: { context: 100000, output: 10000 },
++          },
++        },
++      },
++    },
++  }),
++)
++const nativeServerFile = join(runtime.output, "native-server.mjs")
++await writeFile(
++  nativeServerFile,
++  `import { webHandler } from ${JSON.stringify(join(repo, "packages/server/src/routes.ts"))};const app=webHandler();const server=Bun.serve({hostname:"127.0.0.1",port:0,fetch:app.handler});console.log("NATIVE_URL="+server.url.origin);process.on("SIGTERM",async()=>{await server.stop(true);await app.dispose();process.exit(0)});`,
++)
++state.nativeChild = spawn(process.execPath, [nativeServerFile], {
++  cwd: runtime.directory,
++  env: { ...runtime.env, APEXO_SERVER_PASSWORD: "" },
++  stdio: ["ignore", "pipe", "pipe"],
++})
++state.nativeExited = new Promise((resolve) => state.nativeChild.once("exit", resolve))
++const serverLogs = []
++state.nativeChild.stdout.on("data", (chunk) => {
++  serverLogs.push(chunk)
++  const match = chunk.toString().match(/NATIVE_URL=(http:\/\/[^\s]+)/)
++  if (match) runtime.url = match[1]
++})
++state.nativeChild.stderr.on("data", (chunk) => serverLogs.push(chunk))
++const oldUrl = runtime.url
++await poll(() => runtime.url !== oldUrl, "native-only server ready", 30000)
++runtime.api = async (path, body, method = body ? "POST" : "GET") => {
++  const response = await fetch(`${runtime.url}${path}?location[directory]=${encodeURIComponent(runtime.directory)}`, {
++    method,
++    headers: { "content-type": "application/json" },
++    ...(body ? { body: JSON.stringify(body) } : {}),
++  })
++  const text = await response.text()
++  assert.ok(response.ok, text)
++  return text ? JSON.parse(text) : undefined
++}
++assert.equal((await fetch(`${runtime.url}/global/health`)).status, 404)
++assert.deepEqual(await runtime.api("/api/health"), { healthy: true })
++const requests = []
++const server = createServer((incoming, response) => {
++  response.on("finish", () => requests.push({ path: incoming.url, status: response.statusCode }))
++  const url = new URL(incoming.url, "http://localhost")
++  const document = incoming.headers.accept?.includes("text/html")
++  if (document || url.pathname.startsWith("/assets/") || /favicon|apple-touch-icon/.test(url.pathname)) {
++    const file = Bun.file(join(repo, "packages/app/dist", document ? "index.html" : url.pathname))
++    void file.arrayBuffer().then(
++      (content) => {
++        response.writeHead(200, { "content-type": file.type })
++        response.end(Buffer.from(content))
++      },
++      () => {
++        response.writeHead(404)
++        response.end()
++      },
++    )
++    return
++  }
++  const target = new URL(runtime.url)
++  const upstream = request(
++    {
++      hostname: target.hostname,
++      port: target.port,
++      path: incoming.url,
++      method: incoming.method,
++      headers: { ...incoming.headers, host: target.host },
++      agent: false,
++    },
++    (reply) => {
++      response.writeHead(reply.statusCode, reply.headers)
++      reply.pipe(response)
++      response.on("close", () => reply.destroy())
++    },
++  )
++  upstream.on("error", () => {
++    if (!response.headersSent) response.writeHead(502)
++    response.end()
++  })
++  response.on("close", () => upstream.destroy())
++  incoming.pipe(upstream)
++})
++await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
++const browserSession = `repository-hooks-${kind}-${basename(runtime.output)}`
++const history = []
++const native = { child: undefined, exited: undefined, port: undefined }
++const nativeLogs = []
++if (kind === "native") {
++  const appData = join(runtime.output, "native-app-data")
++  await mkdir(join(appData, "com.apexolab.desktop.dev"), { recursive: true })
++  await writeFile(
++    join(appData, "com.apexolab.desktop.dev/apexo.settings"),
++    JSON.stringify({ firstLaunchOnboardingComplete: true }),
++  )
++  const desktop = join(repo, "packages/desktop")
++  const wrapper = join(runtime.output, "native.cjs")
++  await writeFile(
++    wrapper,
++    `const {app}=require('electron');console.log('Workflow fixture initial app path:',app.getAppPath());if(!${JSON.stringify(process.argv.includes("--probe-original"))})app.setAppPath(${JSON.stringify(desktop)});console.log('Workflow fixture corrected app path:',app.getAppPath());app.setPath('appData',${JSON.stringify(appData)});import(${JSON.stringify(pathToFileURL(join(desktop, "out/main/index.js")).href)});`,
++  )
++  const reservation = createServer()
++  await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve))
++  native.port = reservation.address().port
++  await new Promise((resolve) => reservation.close(resolve))
++  native.child = spawn(
++    join(
++      desktop,
++      "node_modules/electron/dist",
++      (await readFile(join(desktop, "node_modules/electron/path.txt"), "utf8")).trim(),
++    ),
++    [wrapper, `--remote-debugging-port=${native.port}`],
++    {
++      cwd: runtime.directory,
++      env: { ...runtime.env, SHELL: "/bin/sh", APEXO_PORT: "", APEXO_TEST_ONBOARDING: "0" },
++      stdio: ["ignore", "pipe", "pipe"],
++    },
++  )
++  native.exited = new Promise((resolve) => native.child.once("exit", resolve))
++  native.child.stdout.on("data", (chunk) => nativeLogs.push(chunk))
++  native.child.stderr.on("data", (chunk) => nativeLogs.push(chunk))
++}
++const command = async (...args) => {
++  // agent-browser's click interception guard runs before nested-scroll reveal.
++  // Scroll the real form to the action, as a user would, before clicking it.
++  if (["click", "download"].includes(args[0]) && args[1]?.includes("hooks")) await command("scrollintoview", args[1])
++  const result = await promisify(execFile)(
++    "bunx",
++    [
++      "agent-browser",
++      "--session",
++      browserSession,
++      ...(kind === "native"
++        ? ["--cdp", String(native.port)]
++        : [
++            "--executable-path",
++            process.env.CHROMIUM_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
++          ]),
++      ...args,
++    ],
++    { timeout: 45_000, maxBuffer: 4 * 1024 * 1024 },
++  )
++  history.push({ args, output: result.stdout })
++  return result.stdout
++}
++const checks = []
++try {
++  if (kind === "native") {
++    await poll(
++      () =>
++        fetch(`http://127.0.0.1:${native.port}/json/list`)
++          .then((response) => response.json())
++          .then((tabs) => tabs.some((tab) => tab.type === "page"))
++          .catch(() => false),
++      "native feedback window",
++    )
++    await command("wait", "--fn", "!!window.api?.awaitInitialization")
++    const connection = JSON.parse(await command("eval", "window.api.awaitInitialization()"))
++    await command("eval", `window.api.setDefaultServerUrl(${JSON.stringify(runtime.url)})`)
++    await command(
++      "eval",
++      `window.api.storeSet("apexo.global.dat", "server", JSON.stringify({list:[{type:"http",http:{url:${JSON.stringify(runtime.url)}}}],projects:{},lastProject:{},recentlyClosed:{}}))`,
++    )
++  }
++  const session = (
++    await runtime.api("/api/session", {
++      location: { directory: runtime.directory },
++      agent: "build",
++      model: { providerID: "xai", id: "grok-4.7" },
++    })
++  ).data
++  const endpoint = `/api/session/${session.id}/hooks`
++  const browserUrl = `http://127.0.0.1:${server.address().port}`
++  const route = `/server/${Buffer.from(kind === "native" ? runtime.url : browserUrl).toString("base64url")}/session/${session.id}`
++  const url = `${browserUrl}${route}`
++  if (kind === "native") {
++    await command(
++      "eval",
++      `(async()=>{ const id=await window.api.getWindowID();localStorage.setItem('apexo.desktop.window.'+id+'.last-active-url',${JSON.stringify(route)});return true})()`,
++    )
++    await command("reload")
++  } else await command("open", url)
++  await command("wait", '[data-action="session-hooks"]')
++  await command("click", '[data-action="session-hooks"]')
++  await command("wait", '[data-component="hooks-repository"]')
++  assert.equal((await runtime.api(endpoint)).captured, false)
++  assert.equal((await runtime.api(endpoint)).repository.trusted, false)
++  assert.equal((await command("get", "text", '[data-component="hooks-repository-root"]')).trim(), runtime.directory)
++  assert.equal(runtime.calls.length, 0)
++  checks.push("passive-root-preview-does-not-grant-or-run-model")
++  const button = '[data-action="hooks-repository-trust"]'
++  const waitButton = (label) => command("wait", "--fn", `(()=>{const b=document.querySelector(${JSON.stringify(button)});return b&&!b.disabled&&b.textContent.trim()===${JSON.stringify(label)}})()`)
++  const prompt = async () => {
++    await runtime.api(`/api/session/${session.id}/prompt`, { prompt: { text: "Verify repository hook consent" } })
++    await runtime.api(`/api/session/${session.id}/wait`, undefined, "POST")
++  }
++  const rows = () => readFile(trace, "utf8").catch(() => "")
++  await waitButton("Allow repository hooks")
++  await command("click", button)
++  await waitButton("Revoke repository hook trust")
++  assert.equal((await runtime.api(endpoint)).repository.allowed, true)
++  assert.equal(runtime.calls.length, 0)
++  await prompt()
++  assert.equal(await rows(), "R")
++  await command("click", '[data-action="hooks-refresh"]')
++  await command("wait", '[data-component="hooks-generation"]')
++  checks.push("explicit-user-consent-enables-root-hook")
++  await waitButton("Revoke repository hook trust")
++  await command("click", button)
++  await waitButton("Allow repository hooks")
++  assert.equal((await runtime.api(endpoint)).repository.allowed, false)
++  await prompt()
++  assert.equal(await rows(), "R")
++  checks.push("visible-revoke-fences-captured-root-hook")
++  await command("click", button)
++  await waitButton("Revoke repository hook trust")
++  await prompt()
++  assert.equal(await rows(), "R")
++  await command("click", '[data-action="hooks-reload"]')
++  await command("wait", "--fn", `!document.querySelector('[data-action="hooks-reload"]')?.disabled`)
++  await prompt()
++  assert.equal(await rows(), "RR")
++  checks.push("regrant-requires-explicit-reload")
++  const before = runtime.calls.length
++  if (process.argv.includes("--locales")) {
++    for (const locale of ["zh", "zht"]) {
++      const dictionary = (await import(`../../app/src/i18n/${locale}.ts`)).dict
++      if (kind === "native") await command("eval", `window.api.storeSet("apexo.global.dat", "language", JSON.stringify({locale:${JSON.stringify(locale)}}))`)
++      await command("eval", `localStorage.setItem("apexo.global.dat:language", JSON.stringify({locale:${JSON.stringify(locale)}}))`)
++      await command("reload")
++      await command("wait", '[data-action="session-hooks"]')
++      await command("click", '[data-action="session-hooks"]')
++      await command("wait", '[data-component="hooks-repository"]')
++      const text = await command("get", "text", '[data-component="hooks-repository"]')
++      assert.ok(text.includes(dictionary["hooks.repository.title"]))
++      assert.ok(text.includes(dictionary["hooks.repository.hint"]))
++      await waitButton(dictionary["hooks.repository.revoke"])
++      await command("click", button)
++      await waitButton(dictionary["hooks.repository.grant"])
++      assert.equal((await runtime.api(endpoint)).repository.allowed, false)
++      await command("screenshot", join(runtime.output, `repository-hooks-${locale}.png`))
++      await command("click", button)
++      await waitButton(dictionary["hooks.repository.revoke"])
++      assert.equal((await runtime.api(endpoint)).repository.allowed, true)
++      assert.equal(runtime.calls.length, before)
++    }
++    checks.push("zh-and-zht-consent-and-revocation-labels")
++  }
++  await command("screenshot", join(runtime.output, "repository-hooks.png"))
++  console.log(JSON.stringify({ kind, passed: checks.length, checks, output: runtime.output, providerCalls: runtime.calls.length }))
++
++} finally {
++  await command("screenshot", join(runtime.output, "final.png")).catch(() => {})
++  await command("close").catch(() => {})
++  if (native.child && native.child.exitCode === null) {
++    native.child.kill("SIGTERM")
++    await deadline(native.exited, 15_000, "owned side-question native exit").catch(async () => {
++      native.child.kill("SIGKILL")
++      await native.exited
++    })
++  }
++  if (kind === "native") await writeFile(join(runtime.output, "native.log"), Buffer.concat(nativeLogs))
++  server.closeAllConnections()
++  await new Promise((resolve) => server.close(resolve))
++  state.nativeChild?.kill("SIGTERM")
++  await deadline(state.nativeExited, 10000, "native server cleanup").catch(() => state.nativeChild?.kill("SIGKILL"))
++  await writeFile(join(runtime.output, "native-server.log"), Buffer.concat(serverLogs))
++  await runtime.close()
++  await writeFile(join(runtime.output, "repository-hooks-ui.json"), JSON.stringify({ checks, history, requests }, null, 2))
++}

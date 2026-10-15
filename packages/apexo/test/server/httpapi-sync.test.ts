@@ -1,5 +1,5 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect, mock } from "bun:test"
-import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Context, Effect, Layer } from "effect"
 import { Flag } from "@apexo/core/flag/flag"
 import { SyncPaths } from "../../src/server/routes/instance/httpapi/groups/sync"
@@ -12,7 +12,7 @@ import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 const originalWorkspaces = Flag.APEXO_EXPERIMENTAL_WORKSPACES
 const context = Context.empty() as Context.Context<unknown>
-const it = testEffect(Layer.mergeAll(LayerNode.compile(Session.node), httpApiLayer))
+const it = testEffect(Layer.mergeAll(AppNodeBuilderV1.build(Session.node), httpApiLayer))
 
 afterEach(async () => {
   mock.restore()

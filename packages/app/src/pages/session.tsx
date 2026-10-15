@@ -59,6 +59,7 @@ import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
 import { TerminalProvider, useTerminal } from "@/context/terminal"
 import { PromptInput } from "@/components/prompt-input"
+import { createSessionTasks } from "@/components/background-tasks"
 import { PromptInputV2Composer, usePromptInputV2Controller } from "@/components/prompt-input-v2"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
@@ -398,6 +399,7 @@ export default function Page() {
   })
 
   const composer = createSessionComposerController()
+  const tasks = createSessionTasks(() => params.id)
   const inputController = createPromptInputController({
     sessionKey,
     sessionID: () => params.id,
@@ -2168,6 +2170,7 @@ export default function Page() {
                   when={newSessionDesign()}
                   fallback={
                     <PromptInput
+                      tasks={tasks}
                       controls={inputController()}
                       ref={(el) => {
                         inputRef = el
@@ -2197,6 +2200,7 @@ export default function Page() {
                 >
                   {(_) => {
                     const controller = usePromptInputV2Controller({
+                      tasks,
                       get controls() {
                         return inputController()
                       },

@@ -16,7 +16,7 @@ const output = await mkdtemp(join(tmpdir(), `apexo-grok-parity-${kind}-`))
 const directory = join(output, "workspace")
 await mkdir(directory)
 for (const key of Object.keys(process.env)) {
-  if (/^(APEXO_|OPENCODE_|OTEL_)/.test(key) || /(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN)$/.test(key)) delete process.env[key]
+  if (/^(APEXO_|OPENCODE_|OTEL_|GROK_MEMORY$)/.test(key) || /(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN)$/.test(key)) delete process.env[key]
 }
 for (const name of ["DATA", "CACHE", "CONFIG", "STATE"])
   process.env[`XDG_${name}_HOME`] = join(output, name.toLowerCase())
@@ -36,6 +36,10 @@ await mkdir(process.env.APEXO_TEST_HOME)
 await writeFile(process.env.APEXO_MODELS_PATH, "{}")
 const calls = []
 const replies = []
+const schedulerSnapshots = []
+const notifications = new Set()
+const backgroundCase = { turns: 0, observed: false, type: "shell" }
+const idleWakes = []
 const state = { index: 0, shell: "", monitor: "", schedule: "", image: "", child: "" }
 const text = (body) =>
   JSON.stringify(body.input?.filter((item) => item.type === "function_call_output").at(-1)?.output ?? "")
@@ -46,10 +50,10 @@ const steps = [
   ["search_replace", () => ({ file_path: join(directory, "note.txt"), old_string: "before", new_string: "after" })],
   ["run_terminal_cmd", () => ({ command: "printf SHELL_OK", description: "parity shell", block_until_ms: 0 })],
   ["get_task_output", (body) => ({ task_ids: [(state.shell = job(body))], timeout_ms: 10000 })],
-  ["monitor", () => ({ command: "printf MONITOR_OK; sleep 30", description: "parity monitor" })],
-  ["get_task_output", (body) => ({ task_ids: [(state.monitor = job(body))], timeout_ms: 50 })],
+  ["monitor", () => ({ command: "printf 'MONITOR_OK\\n' >&2; sleep 30", description: "parity monitor" })],
+  ["get_task_output", (body) => ({ task_ids: [(state.monitor = job(body))], timeout_ms: 250 })],
   ["kill_task", () => ({ task_id: state.monitor })],
-  ["scheduler_create", () => ({ interval: "1m", prompt: "PARITY_CHILD", recurring: false })],
+  ["scheduler_create", () => ({ interval: "1s", prompt: "PARITY_CHILD", recurring: false })],
   [
     "scheduler_list",
     (body) => {
@@ -57,6 +61,10 @@ const steps = [
       return {}
     },
   ],
+  ["scheduler_create", () => ({ task_id: state.schedule, prompt: "UPDATED_PARITY_CHILD", fire_immediately: true })],
+  ["scheduler_list", () => ({})],
+  ["scheduler_create", () => ({ task_id: state.schedule, interval: "2m" })],
+  ["scheduler_list", () => ({})],
   ["scheduler_delete", () => ({ task_id: state.schedule })],
   [
     "scheduler_create",
@@ -76,7 +84,7 @@ const steps = [
       return { image: state.image, duration: 6 }
     },
   ],
-  ["reference_to_video", () => ({ prompt: "animate the square", images: [state.image], duration: 6 })],
+  ["reference_to_video", () => ({ prompt: "animate the square", images: [state.image], aspect_ratio: "16:9", duration: 6 })],
   [
     "task",
     () => ({ description: "parity child", prompt: "PARITY_CHILD", subagent_type: "general", run_in_background: false }),
@@ -129,12 +137,65 @@ const fixture = createServer(async (request, response) => {
     return
   }
   const lastUser = body.input?.filter((item) => item.role === "user").at(-1)
-  const child = JSON.stringify(lastUser).includes("PARITY_CHILD")
-  const scheduled = JSON.stringify(lastUser).includes("SCHEDULED_PARITY_CHILD")
+  const backgroundInput = /Background command completed:|Monitor event:|Scheduled task completed:/.test(
+    JSON.stringify(lastUser),
+  )
+  const child = !backgroundInput && JSON.stringify(lastUser).includes("PARITY_CHILD")
+  const scheduled = child && JSON.stringify(lastUser).includes("SCHEDULED_PARITY_CHILD")
+  if (child && JSON.stringify(lastUser).includes("IDLE_SCHEDULED_PARITY_CHILD")) {
+    while (
+      !(await readFile(join(directory, "release-idle-scheduler")).then(
+        () => true,
+        () => false,
+      ))
+    )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+  }
   const ancillary = !body.tools?.length
-  const step = child || ancillary ? undefined : steps[state.index++]
-  if (!child && !ancillary) {
-    replies.push(text(body))
+  const idleCase = !ancillary && JSON.stringify(body.input).includes("BACKGROUND_IDLE_CASE")
+  const notices =
+    body.input?.filter(
+      (item) =>
+        item.role === "user" &&
+        /Background command completed:|Monitor event:|Scheduled task completed:/.test(JSON.stringify(item)),
+    ) ?? []
+  notices.forEach((item) => notifications.add(JSON.stringify(item)))
+  const idleTurn = idleCase ? backgroundCase.turns++ : -1
+  if (idleCase && notices.length) backgroundCase.observed = true
+  const step = idleCase
+    ? idleTurn === 0
+      ? [
+          backgroundCase.type === "shell"
+            ? "run_terminal_cmd"
+            : backgroundCase.type === "scheduler"
+              ? "scheduler_create"
+              : "monitor",
+          () =>
+            backgroundCase.type === "scheduler"
+              ? {
+                  interval: "1m",
+                  prompt: "IDLE_SCHEDULED_PARITY_CHILD",
+                  recurring: false,
+                  fire_immediately: true,
+                }
+              : {
+                  command: `while [ ! -f release-idle-${backgroundCase.type} ]; do sleep 0.01; done; printf 'BACKGROUND_IDLE_RESULT\\n'${backgroundCase.type === "monitor-stderr" ? " >&2" : ""}${backgroundCase.type !== "shell" ? "; sleep 30" : ""}`,
+                  description: "idle wake check",
+                  ...(backgroundCase.type === "shell" ? { block_until_ms: 0 } : { persistent: true }),
+                },
+        ]
+      : undefined
+    : child || ancillary
+      ? undefined
+      : steps[state.index++]
+  if (!child && !ancillary && !idleCase) {
+    const result = text(body)
+    if (result.includes("; next ")) {
+      const match = result.match(/(job_[\w-]+): once after (\dm); next ([^;]+); ([^"\\]+)/)
+      if (match)
+        schedulerSnapshots.push({ id: match[1], interval: match[2], next: Date.parse(match[3]), prompt: match[4] })
+    }
+    replies.push(result)
     calls.push({ tools: body.tools.map((tool) => tool.name).sort(), step: step?.[0] ?? "done" })
   }
   const id = `parity_${calls.length}_${Date.now()}`
@@ -154,7 +215,15 @@ const fixture = createServer(async (request, response) => {
         content: [
           {
             type: "output_text",
-            text: scheduled ? "SCHEDULED_CHILD_OK" : child ? "CHILD_OK" : "PARITY_OK",
+            text: idleCase
+              ? backgroundCase.observed
+                ? "BACKGROUND_IDLE_OBSERVED"
+                : "BACKGROUND_PARENT_IDLE"
+              : scheduled
+                ? "SCHEDULED_CHILD_OK"
+                : child
+                  ? "CHILD_OK"
+                  : "PARITY_OK",
             annotations: [],
           },
         ],
@@ -229,6 +298,7 @@ await new Promise((resolve) => fixture.listen(0, "127.0.0.1", resolve))
 process.env.XAI_BASE_URL = `http://127.0.0.1:${fixture.address().port}/v1`
 process.env.APEXO_CONFIG_CONTENT = JSON.stringify({
   model: "xai/grok-4.7",
+  memory: { enabled: true },
   ...(restricted
     ? { default_agent: "parity", agent: { parity: { mode: "primary", permission: { grep: "deny" } } } }
     : {}),
@@ -287,16 +357,17 @@ try {
       calls[0].tools,
       "CLI manifest differs from the tools sent to the model",
     )
-    for (const command of ["memory", "remember", "flush", "dream"]) assert.ok(advertised.commands.includes(command))
+    for (const command of ["memory", "remember", "flush", "dream", "loop"])
+      assert.ok(advertised.commands.includes(command))
   } else {
     const chunks = join(repo, "packages/desktop/out/main/chunks")
     const bundle = (await readdir(chunks)).find((name) => /^node-.*\.js$/.test(name))
     assert.ok(bundle, "Build Desktop before running this check")
     const { Server } = await import(join(chunks, bundle))
     const app = Server.Default().app
-    const api = async (endpoint, body) => {
+    const api = async (endpoint, body, method = body ? "POST" : "GET") => {
       const response = await app.request(`http://localhost${endpoint}?directory=${encodeURIComponent(directory)}`, {
-        method: body ? "POST" : "GET",
+        method,
         ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
       })
       assert.ok(response.ok, await response.clone().text())
@@ -318,6 +389,42 @@ try {
         .filter((part) => part.type === "tool" && part.state.status === "error").length,
       0,
     )
+    for (const type of ["shell", "monitor", "monitor-stderr", "scheduler"]) {
+      Object.assign(backgroundCase, { type, turns: 0, observed: false })
+      const idleSession = await api("/session", { title: `${type} idle wake` })
+      await api(
+        `/session/${idleSession.id}/${type === "scheduler" ? "command" : "message"}`,
+        type === "scheduler"
+          ? {
+              command: "loop",
+              arguments: "1m BACKGROUND_IDLE_CASE",
+              model: "xai/grok-4.7",
+            }
+          : {
+              model: { providerID: "xai", modelID: "grok-4.7" },
+              parts: [{ type: "text", text: "BACKGROUND_IDLE_CASE" }],
+            },
+      )
+      assert.equal(backgroundCase.observed, false, "The background command finished before the parent became idle")
+      await writeFile(join(directory, `release-idle-${type}`), "release")
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        const messages = await api(`/session/${idleSession.id}/message`)
+        if (
+          messages.some((message) =>
+            message.parts.some((part) => part.type === "text" && part.text === "BACKGROUND_IDLE_OBSERVED"),
+          )
+        ) {
+          await writeFile(join(output, `background-${type}-history.json`), JSON.stringify(messages, null, 2))
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      assert.equal(backgroundCase.observed, true, "Desktop did not wake the idle parent")
+      assert.equal(backgroundCase.turns, 3, "Desktop produced duplicate background completion turns")
+      idleWakes.push(type)
+      await api(`/session/${idleSession.id}`, undefined, "DELETE")
+    }
   }
   assert.equal(await readFile(join(directory, "note.txt"), "utf8"), "after\n")
   assert.ok(
@@ -325,6 +432,30 @@ try {
     "Media saved outside the session workspace",
   )
   assert.equal(calls.length, steps.length + 1)
+  assert.equal(schedulerSnapshots.length, 3, "Missing scheduler create/update snapshots")
+  assert.equal(schedulerSnapshots[1].id, schedulerSnapshots[0].id)
+  assert.equal(schedulerSnapshots[1].next, schedulerSnapshots[0].next, "Prompt-only update reset the schedule")
+  assert.equal(schedulerSnapshots[1].prompt, "UPDATED_PARITY_CHILD")
+  assert.equal(
+    schedulerSnapshots[2].next,
+    schedulerSnapshots[0].next + 60_000,
+    "Interval update lost the original anchor",
+  )
+  assert.equal(schedulerSnapshots[2].interval, "2m")
+  assert.ok(
+    [...notifications].some(
+      (item) => item.includes("Scheduled task completed:") && item.includes("SCHEDULED_CHILD_OK"),
+    ),
+    "The scheduled result was not delivered to the parent",
+  )
+  assert.ok(
+    [...notifications].some((item) => item.includes("SHELL_OK")),
+    "The model never received the shell completion notification",
+  )
+  assert.ok(
+    [...notifications].some((item) => item.includes("Monitor event:") && item.includes("MONITOR_OK")),
+    "The model never received a monitor event",
+  )
   if (restricted) assert.ok(!calls[0].tools.includes("grep"), "Default agent permission was ignored")
   for (const marker of [
     "SHELL_OK",
@@ -348,6 +479,8 @@ try {
     steps: steps.map((step) => step[0]),
     result: "pass",
     output,
+    backgroundNotifications: [...notifications],
+    ...(kind === "desktop" ? { idleBackgroundWakes: idleWakes } : {}),
   }
   await writeFile(join(output, "result.json"), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))

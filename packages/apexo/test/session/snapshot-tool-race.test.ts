@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 /**
  * Reproducer for snapshot race condition with instant tool execution.
  *
@@ -87,7 +88,7 @@ const root = LayerNode.group([
   LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] }),
 ])
 const it = testEffect(
-  LayerNode.compile(root, [
+  AppNodeBuilderV1.build(root, [
     [MCP.node, mcp],
     [LSP.node, lsp],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],

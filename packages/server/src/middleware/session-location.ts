@@ -3,6 +3,7 @@ import { LocationServiceMap } from "@apexo/core/location-services"
 import { Location } from "@apexo/core/location"
 import { AbsolutePath } from "@apexo/core/schema"
 import { SessionV2 } from "@apexo/core/session"
+import { SessionLifecycle } from "@apexo/core/session/lifecycle"
 import { SessionTable } from "@apexo/core/session/sql"
 import { WorkspaceV2 } from "@apexo/core/workspace"
 import { eq } from "drizzle-orm"
@@ -26,6 +27,7 @@ export const sessionLocationLayer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const locations = yield* LocationServiceMap.Service
+    const lifecycle = yield* SessionLifecycle.Service
 
     return SessionLocationMiddleware.of((effect) =>
       Effect.gen(function* () {
@@ -39,28 +41,39 @@ export const sessionLocationLayer = Layer.effect(
               }),
           ),
         )
-        const row = yield* db
-          .select({ directory: SessionTable.directory, workspaceID: SessionTable.workspace_id })
-          .from(SessionTable)
-          .where(eq(SessionTable.id, sessionID))
-          .get()
-          .pipe(Effect.orDie)
-        if (!row)
-          return yield* new SessionNotFoundError({
+        return yield* lifecycle
+          .read(
             sessionID,
-            message: `Session not found: ${sessionID}`,
-          })
+            Effect.gen(function* () {
+              const row = yield* db
+                .select({ directory: SessionTable.directory, workspaceID: SessionTable.workspace_id })
+                .from(SessionTable)
+                .where(eq(SessionTable.id, sessionID))
+                .get()
+                .pipe(Effect.orDie)
+              if (!row)
+                return yield* new SessionNotFoundError({
+                  sessionID,
+                  message: `Session not found: ${sessionID}`,
+                })
 
-        return yield* effect.pipe(
-          Effect.provide(
-            locations.get(
-              Location.Ref.make({
-                directory: AbsolutePath.make(row.directory),
-                workspaceID: row.workspaceID ? WorkspaceV2.ID.make(row.workspaceID) : undefined,
-              }),
+              return yield* effect.pipe(
+                Effect.provide(
+                  locations.get(
+                    Location.Ref.make({
+                      directory: AbsolutePath.make(row.directory),
+                      workspaceID: row.workspaceID ? WorkspaceV2.ID.make(row.workspaceID) : undefined,
+                    }),
+                  ),
+                ),
+              )
+            }),
+          )
+          .pipe(
+            Effect.catchTag("SessionLifecycle.Closed", () =>
+              Effect.fail(new SessionNotFoundError({ sessionID, message: `Session not found: ${sessionID}` })),
             ),
-          ),
-        )
+          )
       }),
     )
   }),

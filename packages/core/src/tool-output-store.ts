@@ -9,6 +9,7 @@ import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 import { SessionSchema } from "./session/schema"
 import { Identifier } from "./util/identifier"
 import type { ToolOutput } from "@apexo/llm"
+import type { OutputPolicy } from "./tool/tool"
 
 export const MAX_LINES = 2_000
 export const MAX_BYTES = 50 * 1024
@@ -20,6 +21,7 @@ export interface BoundInput {
   readonly sessionID: SessionSchema.ID
   readonly toolCallID: string
   readonly output: ToolOutput
+  readonly policy?: OutputPolicy
 }
 
 export interface BoundResult {
@@ -137,12 +139,35 @@ const layer = Layer.effect(
 
     const bound = Effect.fn("ToolOutputStore.bound")(function* (input: BoundInput) {
       const outputLimits = yield* limits()
-      const media = input.output.content.filter((item) => item.type === "file")
-      const text = input.output.content.filter((item) => item.type === "text")
+      const first = input.output.content.findIndex((item) => item.type === "text")
+      const content = input.output.content[first]
+      const characters = input.policy && content?.type === "text" ? Array.from(content.text) : undefined
+      const shellPath =
+        characters && input.policy && content?.type === "text" && characters.length > input.policy.firstTextCharacters
+          ? yield* write(content.text)
+          : undefined
+      const half = Math.floor((input.policy?.firstTextCharacters ?? 0) / 2)
+      const output =
+        shellPath && characters
+          ? {
+              ...input.output,
+              content: input.output.content.map((item, index) =>
+                index === first
+                  ? {
+                      type: "text" as const,
+                      text: `${characters.slice(0, half).join("")}\n... output truncated; full captured content saved to ${shellPath} ...\n${half ? characters.slice(-half).join("") : ""}`,
+                    }
+                  : item,
+              ),
+            }
+          : input.output
+      const outputPaths = shellPath ? [shellPath] : []
+      const media = output.content.filter((item) => item.type === "file")
+      const text = output.content.filter((item) => item.type === "text")
       const contextual =
-        input.output.content.length === 0
+        output.content.length === 0
           ? yield* Effect.try({
-              try: () => JSON.stringify(input.output.structured, null, 2) ?? String(input.output.structured),
+              try: () => JSON.stringify(output.structured, null, 2) ?? String(output.structured),
               catch: (cause) => new StorageError({ operation: "encode", cause }),
             })
           : text.map((item) => item.text).join("")
@@ -151,8 +176,8 @@ const layer = Layer.effect(
         Buffer.byteLength(contextual, "utf-8") <= outputLimits.maxBytes
       )
         return {
-          output: input.output,
-          outputPaths: [],
+          output,
+          outputPaths,
         }
 
       const outputPath = yield* write(contextual)
@@ -160,7 +185,7 @@ const layer = Layer.effect(
 
       return {
         output: {
-          structured: input.output.structured,
+          structured: output.structured,
           content: [
             {
               type: "text" as const,
@@ -169,7 +194,7 @@ const layer = Layer.effect(
             ...media,
           ],
         },
-        outputPaths: [outputPath],
+        outputPaths: [...outputPaths, outputPath],
       }
     })
 

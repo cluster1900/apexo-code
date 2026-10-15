@@ -1,3 +1,12 @@
+import { McpAttachmentsButton, createSessionMcpAttachments } from "./session-mcp-attachments"
+import { appendMcpAttachments } from "./prompt-input/mcp-attachments"
+import { CommandSandboxButton, createSessionCommandSandbox } from "./session-command-sandbox"
+import { WorkflowButton, createSessionWorkflow } from "./session-workflow"
+import { SideQuestionButton, createSessionSideQuestion } from "./session-side-question"
+import { HooksButton, createSessionHooks } from "./session-hooks"
+import { FeedbackButton, createSessionFeedback } from "./session-feedback"
+import { GoalButton, createSessionGoal } from "./session-goal"
+import { MemoryButton, createSessionMemory } from "./memory-browser"
 import { ImagePreview } from "@apexo/ui/image-preview"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { ProviderIcon } from "@apexo/ui/provider-icon"
@@ -14,6 +23,8 @@ import { normalizePromptHistoryEntry, promptLength, type PromptHistoryComment } 
 import { createPersistedPromptInputHistory } from "@/components/prompt-input/history-store"
 import { promptDesignPlaceholder, promptPlaceholder } from "@/components/prompt-input/placeholder"
 import { createPromptSubmit } from "@/components/prompt-input/submit"
+import { createForegroundShellBackground } from "@/components/prompt-input/background"
+import { BackgroundTasksButton, createSessionTasks } from "./background-tasks"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
 import { useComments } from "@/context/comments"
 import { useCommand } from "@/context/command"
@@ -42,6 +53,16 @@ export type PromptInputV2ComposerProps = {
 export type PromptInputV2ControllerProps = Omit<PromptInputProps, "class" | "submission">
 export type PromptInputV2ComposerController = PromptInputV2Interaction & {
   readonly model: PromptInputProps["controls"]["model"]
+  readonly background: ReturnType<typeof createForegroundShellBackground>
+  readonly tasks: ReturnType<typeof createSessionTasks>
+  readonly goal: ReturnType<typeof createSessionGoal>
+  readonly workflow: ReturnType<typeof createSessionWorkflow>
+  readonly sideQuestion: ReturnType<typeof createSessionSideQuestion>
+  readonly feedback: ReturnType<typeof createSessionFeedback>
+  readonly sandbox: ReturnType<typeof createSessionCommandSandbox>
+  readonly mcpAttachments: ReturnType<typeof createSessionMcpAttachments>
+  readonly hooks: ReturnType<typeof createSessionHooks>
+  readonly memory: ReturnType<typeof createSessionMemory>
 }
 
 export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
@@ -50,7 +71,18 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const language = useLanguage()
 
   return (
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-3" onKeyDown={(event) => props.controller.background.onKeyDown(event)}>
+      <div class="flex justify-end">
+        <GoalButton goal={props.controller.goal} />
+        <MemoryButton memory={props.controller.memory} />
+        <SideQuestionButton sideQuestion={props.controller.sideQuestion} />
+        <WorkflowButton workflow={props.controller.workflow} />
+        <FeedbackButton feedback={props.controller.feedback} />
+        <HooksButton hooks={props.controller.hooks} />
+        <McpAttachmentsButton attachments={props.controller.mcpAttachments} />
+        <CommandSandboxButton sandbox={props.controller.sandbox} />
+        <BackgroundTasksButton tasks={props.controller.tasks} />
+      </div>
       <PromptInputV2
         controller={props.controller}
         borderUnderlay={props.borderUnderlay}
@@ -58,6 +90,30 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
         variantControlVisible={!props.controller.model.loading}
         attachKeybind={command.keybindParts("file.attach")}
         attachShortcut={command.keybind("file.attach")}
+        submitAccessory={
+          <Show when={props.controller.background.available()}>
+            <TooltipV2
+              placement="top"
+              value={
+                <>
+                  {language.t("prompt.action.background")}
+                  <KeybindV2 keys={["Ctrl", "B"]} variant="neutral" />
+                </>
+              }
+            >
+              <ButtonV2
+                data-action="prompt-background"
+                type="button"
+                variant="ghost-muted"
+                size="normal"
+                disabled={props.controller.background.pending()}
+                onClick={() => void props.controller.background.run()}
+              >
+                {language.t("prompt.action.background")}
+              </ButtonV2>
+            </TooltipV2>
+          </Show>
+        }
         modelControl={
           <PromptInputV2ModelControl
             loading={props.controller.model.loading}
@@ -90,6 +146,50 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   const language = useLanguage()
   const platform = usePlatform()
   const prompt = props.state ?? usePrompt()
+  const background = createForegroundShellBackground(() => props.controls.session.id)
+  const tasks = props.tasks ?? createSessionTasks(() => props.controls.session.id)
+  const sideQuestion = createSessionSideQuestion(() => props.controls.session.id)
+  const workflow = createSessionWorkflow(
+    () => props.controls.session.id,
+    () => {
+      const model = props.controls.model.selection.current()
+      if (!model) return
+      return {
+        agent: props.controls.agents.current,
+        model: {
+          id: model.id,
+          providerID: model.provider.id,
+          variant: props.controls.model.selection.variant.current(),
+        },
+      }
+    },
+  )
+  const feedback = createSessionFeedback(() => props.controls.session.id)
+  const sandbox = createSessionCommandSandbox(() => props.controls.session.id)
+  const hooks = createSessionHooks(() => props.controls.session.id)
+  const mcpAttachments = createSessionMcpAttachments(
+    () => props.controls.session.id,
+    (prepared) => {
+      const next = appendMcpAttachments(prompt.current(), prepared)
+      prompt.set(next, promptLength(next))
+    },
+  )
+  const memory = createSessionMemory(() => props.controls.session.id)
+  const goal = createSessionGoal(
+    () => props.controls.session.id,
+    () => {
+      const model = props.controls.model.selection.current()
+      if (!model) return
+      return {
+        agent: props.controls.agents.current,
+        model: {
+          id: model.id,
+          providerID: model.provider.id,
+          variant: props.controls.model.selection.variant.current(),
+        },
+      }
+    },
+  )
   let editor: HTMLDivElement | undefined
 
   const interaction = createPromptInputV2State()
@@ -201,6 +301,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     imageAttachments: attachments,
     commentCount,
     autoAccept: accepting,
+    commandSandbox: sandbox.profile,
     mode,
     working,
     editor: () => editor,
@@ -218,6 +319,12 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     onQueue: props.onQueue,
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
+    onBtw: sideQuestion.open,
+    onWorkflow: workflow.open,
+    onGoal: goal.show,
+    onMemoryCommand: memory.command,
+    onRemember: memory.review,
+    onMemoryWork: memory.work,
     model: props.controls.model.selection,
   })
 
@@ -290,13 +397,17 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     })),
   ])
   const slashCommands = createMemo(() => [
-    ...sync().data.command.map((item) => ({
-      id: `custom.${item.name}`,
-      trigger: item.name,
-      title: item.name,
-      description: item.description,
-      type: "custom" as const,
-    })),
+    ...sync()
+      .data.command.filter(
+        (item) => !["memory", "remember", "flush", "dream"].includes(item.name) || !memory.available(),
+      )
+      .map((item) => ({
+        id: `custom.${item.name}`,
+        trigger: item.name,
+        title: item.name,
+        description: item.description,
+        type: "custom" as const,
+      })),
     ...command.options
       .filter((item) => !item.disabled && !item.id.startsWith("suggested.") && item.slash)
       .map((item) => ({
@@ -410,6 +521,16 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     },
   })
   Object.defineProperty(controller, "model", { get: () => props.controls.model })
+  Object.defineProperty(controller, "background", { value: background })
+  Object.defineProperty(controller, "tasks", { value: tasks })
+  Object.defineProperty(controller, "sideQuestion", { value: sideQuestion })
+  Object.defineProperty(controller, "workflow", { value: workflow })
+  Object.defineProperty(controller, "feedback", { value: feedback })
+  Object.defineProperty(controller, "hooks", { value: hooks })
+  Object.defineProperty(controller, "mcpAttachments", { value: mcpAttachments })
+  Object.defineProperty(controller, "sandbox", { value: sandbox })
+  Object.defineProperty(controller, "memory", { value: memory })
+  Object.defineProperty(controller, "goal", { value: goal })
 
   command.register("prompt-input", () => [
     {

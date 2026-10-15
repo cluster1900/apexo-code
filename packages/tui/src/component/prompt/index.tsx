@@ -1,3 +1,4 @@
+import { sideQuestionImages } from "../side-question-browser"
 import {
   BoxRenderable,
   RGBA,
@@ -341,6 +342,17 @@ export function Prompt(props: PromptProps) {
   const promptCommands = createMemo(() =>
     [
       {
+        title: "Command sandbox",
+        name: "session.sandbox",
+        category: "Session",
+        slashName: "sandbox",
+        run: async () => {
+          const { DialogCommandSandbox } = await import("../dialog-command-sandbox")
+          clearPrompt()
+          dialog.replace(() => <DialogCommandSandbox sessionID={props.sessionID} />)
+        },
+      },
+      {
         title: "Clear prompt",
         name: "prompt.clear",
         category: "Prompt",
@@ -419,9 +431,7 @@ export function Prompt(props: PromptProps) {
 
           if (store.interrupt >= 2) {
             queue.pause(props.sessionID)
-            void sdk.client.session.abort({
-              sessionID: props.sessionID,
-            })
+            void sdk.interrupt(props.sessionID)
             setStore("interrupt", 0)
           }
           dialog.clear()
@@ -954,7 +964,41 @@ export function Prompt(props: PromptProps) {
   function deliver(draft: PromptDraft) {
     move.startSubmit()
     if (draft.mode === "shell") setStore("mode", "normal")
-    void deliverPrompt(sdk.client.session, sync.data.command, draft).catch((error) => {
+    void (async () => {
+      const selected = await sdk.transport()
+      if (selected.kind !== "native") return deliverPrompt(sdk.client.session, sync.data.command, draft)
+      if (draft.mode === "shell") throw new Error("Native terminal user-shell execution is not available")
+      if (draft.editorParts.length) throw new Error("Native terminal editor-context attachments are not available")
+      const current = await selected.get(draft.sessionID)
+      if (draft.agentName !== current.agent)
+        await selected.switchAgent({ sessionID: draft.sessionID, agent: draft.agentName })
+      if (
+        draft.model.modelID !== current.model?.id ||
+        draft.model.providerID !== current.model?.providerID ||
+        draft.variant !== (current.model?.variant ?? undefined)
+      )
+        await selected.switchModel({
+          sessionID: draft.sessionID,
+          model: { id: draft.model.modelID, providerID: draft.model.providerID, variant: draft.variant },
+        })
+      return selected.admit({
+        sessionID: draft.sessionID,
+        prompt: {
+          text: draft.inputText,
+          files: draft.nonTextParts
+            .filter((part) => part.type === "file")
+            .map((file) => ({ uri: file.url, mime: file.mime, name: file.filename })),
+          agents: draft.nonTextParts
+            .filter((part) => part.type === "agent")
+            .map((agent) => ({
+              name: agent.name,
+              source: agent.source
+                ? { text: agent.source.value, start: agent.source.start, end: agent.source.end }
+                : undefined,
+            })),
+        },
+      })
+    })().catch((error) => {
       toast.show({ title: "Failed to send prompt", message: errorMessage(error), variant: "error" })
     })
   }
@@ -1022,6 +1066,35 @@ export function Prompt(props: PromptProps) {
     if (workspace.creating() || move.creating()) return false
     if (auto()?.visible) return false
     if (!store.prompt.input) return false
+    if (
+      sync.data.native &&
+      store.mode !== "shell" &&
+      /^\/(?:memory|remember|flush|dream)(?:\s|$)/u.test(store.prompt.input.trim())
+    ) {
+      if (
+        !["/memory", "/flush", "/dream"].includes(store.prompt.input.trim()) ||
+        store.prompt.parts.some((part) => part.type === "file") ||
+        !props.sessionID
+      ) {
+        toast.show({
+          message: !props.sessionID
+            ? "Open a session before managing Memory."
+            : "Use /memory, /flush or /dream without attachments. Manual note rewriting is not available in native Memory.",
+          variant: "info",
+        })
+        return true
+      }
+      const sessionID = props.sessionID
+      const operations = store.prompt.input.trim() !== "/memory"
+      const { DialogMemory } = await import("../dialog-memory")
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      dialog.replace(() => <DialogMemory sessionID={sessionID} operations={operations} />)
+      return true
+    }
     const agent = local.agent.current()
     if (!agent) return false
     const trimmed = store.prompt.input.trim()
@@ -1061,16 +1134,29 @@ export function Prompt(props: PromptProps) {
       if (move.pending() && !directory) return false
       finishMoveProgress = Boolean(move.progress())
 
-      const res = await sdk.client.session.create({
-        directory,
-        workspace: workspaceID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          id: selectedModel.modelID,
-          variant,
-        },
-      })
+      const selected = await sdk.transport()
+      if (selected.kind === "native" && workspaceID)
+        throw new Error("Native terminal remote workspace creation is not available")
+      const res =
+        selected.kind === "native"
+          ? {
+              data: await selected.create({
+                location: { directory: directory ?? sync.path.directory },
+                agent: agent.name,
+                model: { providerID: selectedModel.providerID, id: selectedModel.modelID, variant },
+              }),
+              error: undefined,
+            }
+          : await sdk.client.session.create({
+              directory,
+              workspace: workspaceID,
+              agent: agent.name,
+              model: {
+                providerID: selectedModel.providerID,
+                id: selectedModel.modelID,
+                variant,
+              },
+            })
 
       if (res.error) {
         if (finishMoveProgress) move.finishSubmit()
@@ -1097,6 +1183,111 @@ export function Prompt(props: PromptProps) {
       }),
     )
 
+    if (store.mode !== "shell" && /^\/goal(?:\s|$)/u.test(inputText.trim())) {
+      const { DialogGoal } = await import("../dialog-goal")
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (finishMoveProgress) move.finishSubmit()
+      if (!props.sessionID) route.navigate({ type: "session", sessionID })
+      dialog.replace(() => (
+        <DialogGoal
+          sessionID={sessionID}
+          objective={inputText.trim().replace(/^\/goal\s*/u, "")}
+          selection={{
+            agent: agent.name,
+            model: { id: selectedModel.modelID, providerID: selectedModel.providerID, variant },
+          }}
+        />
+      ))
+      return true
+    }
+    if (
+      store.mode !== "shell" &&
+      (/^\/remember(?:\s|$)/u.test(inputText.trim()) || ["/memory", "/flush", "/dream"].includes(inputText.trim())) &&
+      (sync.data.native || sync.data.command.some((command) => command.name === "memory"))
+    ) {
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (finishMoveProgress) move.finishSubmit()
+      if (!props.sessionID) route.navigate({ type: "session", sessionID })
+      if (inputText.trim() === "/memory") {
+        const { DialogMemory } = await import("../dialog-memory")
+        dialog.replace(() => <DialogMemory sessionID={sessionID} />)
+        return true
+      }
+      if (["/flush", "/dream"].includes(inputText.trim())) {
+        const { DialogMemoryWork } = await import("../dialog-memory-work")
+        dialog.replace(() => (
+          <DialogMemoryWork sessionID={sessionID} kind={inputText.trim() === "/flush" ? "flush" : "dream"} />
+        ))
+        return true
+      }
+      const { DialogMemoryReview } = await import("../dialog-memory-review")
+      const content = inputText.trim().replace(/^\/remember\s*/u, "")
+      dialog.replace(() => <DialogMemoryReview sessionID={sessionID} content={content} />)
+      return true
+    }
+    if (store.mode !== "shell" && /^\/(?:workflow|deep-research)(?:\s|$)/u.test(inputText.trim())) {
+      if (store.prompt.parts.some((part) => part.type === "file")) {
+        toast.show({ message: "Workflow commands do not accept attachments. Remove them first.", variant: "error" })
+        return true
+      }
+      const command = inputText.trim()
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (finishMoveProgress) move.finishSubmit()
+      if (!props.sessionID) route.navigate({ type: "session", sessionID })
+      const { DialogWorkflow } = await import("../dialog-workflow")
+      dialog.replace(() => <DialogWorkflow sessionID={sessionID} command={command} />)
+      return true
+    }
+    if (store.mode !== "shell" && /^\/btw(?:\s|$)/u.test(inputText.trim())) {
+      const question = inputText.trim().replace(/^\/btw\s*/u, "")
+      const images = sideQuestionImages(store.prompt.parts)
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (finishMoveProgress) move.finishSubmit()
+      if (!props.sessionID) route.navigate({ type: "session", sessionID })
+      const { DialogSideQuestion } = await import("../dialog-side-question")
+      dialog.replace(() => <DialogSideQuestion sessionID={sessionID} question={question} images={images} />)
+      return true
+    }
+    if (store.mode !== "shell" && inputText.trim() === "/feedback") {
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (finishMoveProgress) move.finishSubmit()
+      if (!props.sessionID) route.navigate({ type: "session", sessionID })
+      const { DialogFeedback } = await import("../dialog-feedback")
+      dialog.replace(() => <DialogFeedback sessionID={sessionID} />)
+      return true
+    }
+    if (store.mode !== "shell" && inputText.trim() === "/hooks") {
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (finishMoveProgress) move.finishSubmit()
+      if (!props.sessionID) route.navigate({ type: "session", sessionID })
+      const { DialogHooks } = await import("../dialog-hooks")
+      dialog.replace(() => <DialogHooks sessionID={sessionID} />)
+      return true
+    }
     // Filter out text parts (pasted content) since they're now expanded inline
     const nonTextParts = store.prompt.parts.filter((part) => part.type !== "text")
 
@@ -1421,85 +1612,85 @@ export function Prompt(props: PromptProps) {
               </box>
             </Show>
             <box flexDirection="row" width="100%">
-            {/* Input-mode marker: ">" for chat, "!" for shell mode. */}
-            <text flexShrink={0} fg={store.mode === "shell" ? theme.warning : theme.primary} selectable={false}>
-              <b>{store.mode === "shell" ? "! " : "> "}</b>
-            </text>
-            <textarea
-              flexGrow={1}
-              placeholder={placeholderText()}
-              placeholderColor={theme.textMuted}
-              textColor={leader() ? theme.textMuted : theme.text}
-              focusedTextColor={leader() ? theme.textMuted : theme.text}
-              minHeight={1}
-              maxHeight={maxHeight()}
-              onContentChange={() => {
-                const value = input.plainText
-                setStore("prompt", "input", value)
-                auto()?.onInput(value)
-                syncExtmarksWithPromptParts()
-                setCursorVersion((value) => value + 1)
-              }}
-              onCursorChange={() => setCursorVersion((value) => value + 1)}
-              onKeyDown={(e: { preventDefault(): void }) => {
-                if (props.disabled) {
-                  e.preventDefault()
-                  return
-                }
-              }}
-              onSubmit={() => {
-                // IME: double-defer so the last composed character (e.g. Korean
-                // hangul) is flushed to plainText before we read it for submission.
-                setTimeout(() => setTimeout(() => submit(), 0), 0)
-              }}
-              onPaste={async (event: PasteEvent) => {
-                if (props.disabled) {
+              {/* Input-mode marker: ">" for chat, "!" for shell mode. */}
+              <text flexShrink={0} fg={store.mode === "shell" ? theme.warning : theme.primary} selectable={false}>
+                <b>{store.mode === "shell" ? "! " : "> "}</b>
+              </text>
+              <textarea
+                flexGrow={1}
+                placeholder={placeholderText()}
+                placeholderColor={theme.textMuted}
+                textColor={leader() ? theme.textMuted : theme.text}
+                focusedTextColor={leader() ? theme.textMuted : theme.text}
+                minHeight={1}
+                maxHeight={maxHeight()}
+                onContentChange={() => {
+                  const value = input.plainText
+                  setStore("prompt", "input", value)
+                  auto()?.onInput(value)
+                  syncExtmarksWithPromptParts()
+                  setCursorVersion((value) => value + 1)
+                }}
+                onCursorChange={() => setCursorVersion((value) => value + 1)}
+                onKeyDown={(e: { preventDefault(): void }) => {
+                  if (props.disabled) {
+                    e.preventDefault()
+                    return
+                  }
+                }}
+                onSubmit={() => {
+                  // IME: double-defer so the last composed character (e.g. Korean
+                  // hangul) is flushed to plainText before we read it for submission.
+                  setTimeout(() => setTimeout(() => submit(), 0), 0)
+                }}
+                onPaste={async (event: PasteEvent) => {
+                  if (props.disabled) {
+                    event.preventDefault()
+                    return
+                  }
+
+                  // Normalize line endings at the boundary
+                  // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
+                  // Replace CRLF first, then any remaining CR
+                  const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+                  const pastedContent = normalizedText.trim()
+
+                  // Windows Terminal <1.25 can surface image-only clipboard as an
+                  // empty bracketed paste. Windows Terminal 1.25+ does not.
+                  if (!pastedContent) {
+                    keymap.dispatchCommand("prompt.paste")
+                    return
+                  }
+
+                  // Once we cross an async boundary below, the terminal may perform its
+                  // default paste unless we suppress it first and handle insertion ourselves.
                   event.preventDefault()
-                  return
-                }
 
-                // Normalize line endings at the boundary
-                // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
-                // Replace CRLF first, then any remaining CR
-                const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-                const pastedContent = normalizedText.trim()
-
-                // Windows Terminal <1.25 can surface image-only clipboard as an
-                // empty bracketed paste. Windows Terminal 1.25+ does not.
-                if (!pastedContent) {
-                  keymap.dispatchCommand("prompt.paste")
-                  return
-                }
-
-                // Once we cross an async boundary below, the terminal may perform its
-                // default paste unless we suppress it first and handle insertion ourselves.
-                event.preventDefault()
-
-                await pasteInputText(normalizedText)
-              }}
-              ref={(r: TextareaRenderable) => {
-                input = r
-                Object.assign(r, {
-                  getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.parts),
-                })
-                setInputTarget(r)
-                if (promptPartTypeId === 0) {
-                  promptPartTypeId = input.extmarks.registerType("prompt-part")
-                }
-                props.ref?.(ref)
-                setTimeout(() => {
-                  // setTimeout is a workaround and needs to be addressed properly
-                  if (!input || input.isDestroyed) return
-                  input.cursorColor = theme.text
-                  if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
-                }, 0)
-              }}
-              onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={props.disabled ? theme.backgroundElement : theme.text}
-              cursorStyle={tuiConfig.cursor}
-              syntaxStyle={syntax()}
-            />
+                  await pasteInputText(normalizedText)
+                }}
+                ref={(r: TextareaRenderable) => {
+                  input = r
+                  Object.assign(r, {
+                    getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.parts),
+                  })
+                  setInputTarget(r)
+                  if (promptPartTypeId === 0) {
+                    promptPartTypeId = input.extmarks.registerType("prompt-part")
+                  }
+                  props.ref?.(ref)
+                  setTimeout(() => {
+                    // setTimeout is a workaround and needs to be addressed properly
+                    if (!input || input.isDestroyed) return
+                    input.cursorColor = theme.text
+                    if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
+                  }, 0)
+                }}
+                onMouseDown={(r: MouseEvent) => r.target?.focus()}
+                focusedBackgroundColor={theme.backgroundElement}
+                cursorColor={props.disabled ? theme.backgroundElement : theme.text}
+                cursorStyle={tuiConfig.cursor}
+                syntaxStyle={syntax()}
+              />
             </box>
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1}>
@@ -1646,7 +1837,9 @@ export function Prompt(props: PromptProps) {
                 </box>
                 <text fg={theme.text}>
                   {queueShortcut()}{" "}
-                  <span style={{ fg: theme.textMuted }}>{queued().length > 0 ? `queue ${queued().length}` : "queue"}</span>
+                  <span style={{ fg: theme.textMuted }}>
+                    {queued().length > 0 ? `queue ${queued().length}` : "queue"}
+                  </span>
                 </text>
                 <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
                   esc{" "}

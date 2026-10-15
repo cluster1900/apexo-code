@@ -1,5 +1,8 @@
 import type {
   HealthGetOutput,
+  ServerProjectListOutput,
+  ServerProjectCurrentInput,
+  ServerProjectCurrentOutput,
   LocationGetInput,
   LocationGetOutput,
   AgentsListInput,
@@ -8,17 +11,29 @@ import type {
   SessionsListOutput,
   SessionsCreateInput,
   SessionsCreateOutput,
+  SessionsSandboxInput,
+  SessionsSandboxOutput,
   SessionsActiveOutput,
   SessionsGetInput,
   SessionsGetOutput,
+  SessionsRemoveInput,
+  SessionsRemoveOutput,
   SessionsSwitchAgentInput,
   SessionsSwitchAgentOutput,
   SessionsSwitchModelInput,
   SessionsSwitchModelOutput,
   SessionsPromptInput,
   SessionsPromptOutput,
+  SessionsInputExecutionInput,
+  SessionsInputExecutionOutput,
+  SessionsInputWaitInput,
+  SessionsInputWaitOutput,
+  SessionsInputInterruptInput,
+  SessionsInputInterruptOutput,
   SessionsCompactInput,
   SessionsCompactOutput,
+  SessionsRestoreInput,
+  SessionsRestoreOutput,
   SessionsWaitInput,
   SessionsWaitOutput,
   SessionsStageInput,
@@ -37,6 +52,163 @@ import type {
   SessionsInterruptOutput,
   SessionsMessageInput,
   SessionsMessageOutput,
+  ServerGoalGetInput,
+  ServerGoalGetOutput,
+  ServerGoalCreateInput,
+  ServerGoalCreateOutput,
+  ServerGoalStartInput,
+  ServerGoalStartOutput,
+  ServerGoalRunInput,
+  ServerGoalRunOutput,
+  ServerGoalResumeInput,
+  ServerGoalResumeOutput,
+  ServerGoalPauseInput,
+  ServerGoalPauseOutput,
+  ServerGoalClearInput,
+  ServerGoalClearOutput,
+  ServerGoalReportsInput,
+  ServerGoalReportsOutput,
+  ServerGoalReportInput,
+  ServerGoalReportOutput,
+  ServerGoalCleanupReportsInput,
+  ServerGoalCleanupReportsOutput,
+  ServerTaskSendInput,
+  ServerTaskSendOutput,
+  ServerTaskGetInput,
+  ServerTaskGetOutput,
+  ServerTaskListInput,
+  ServerTaskListOutput,
+  ServerTaskOutputInput,
+  ServerTaskOutputOutput,
+  ServerTaskWaitInput,
+  ServerTaskWaitOutput,
+  ServerTaskCancelInput,
+  ServerTaskCancelOutput,
+  ServerProcessListInput,
+  ServerProcessListOutput,
+  ServerProcessOutputInput,
+  ServerProcessOutputOutput,
+  ServerProcessWaitInput,
+  ServerProcessWaitOutput,
+  ServerProcessCancelInput,
+  ServerProcessCancelOutput,
+  ServerScheduleListInput,
+  ServerScheduleListOutput,
+  ServerScheduleGetInput,
+  ServerScheduleGetOutput,
+  ServerScheduleDeleteInput,
+  ServerScheduleDeleteOutput,
+  ServerSchedulePauseInput,
+  ServerSchedulePauseOutput,
+  ServerScheduleResumeInput,
+  ServerScheduleResumeOutput,
+  ServerFeedbackListInput,
+  ServerFeedbackListOutput,
+  ServerFeedbackSaveInput,
+  ServerFeedbackSaveOutput,
+  ServerFeedbackReviewInput,
+  ServerFeedbackReviewOutput,
+  ServerFeedbackImageInput,
+  ServerFeedbackImageOutput,
+  ServerFeedbackRemoveInput,
+  ServerFeedbackRemoveOutput,
+  ServerMemoryStatusInput,
+  ServerMemoryStatusOutput,
+  ServerMemoryToggleInput,
+  ServerMemoryToggleOutput,
+  ServerMemoryListInput,
+  ServerMemoryListOutput,
+  ServerMemoryPreviewInput,
+  ServerMemoryPreviewOutput,
+  ServerMemoryForgetInput,
+  ServerMemoryForgetOutput,
+  ServerMemoryOperationRetryInput,
+  ServerMemoryOperationRetryOutput,
+  ServerMemoryOperationRecoveryPreviewInput,
+  ServerMemoryOperationRecoveryPreviewOutput,
+  ServerMemoryOperationRecoverInput,
+  ServerMemoryOperationRecoverOutput,
+  ServerMemoryOperationMigrationPreviewInput,
+  ServerMemoryOperationMigrationPreviewOutput,
+  ServerMemoryOperationMigrateInput,
+  ServerMemoryOperationMigrateOutput,
+  ServerMemoryOperationDreamInput,
+  ServerMemoryOperationDreamOutput,
+  ServerMemoryOperationFlushInput,
+  ServerMemoryOperationFlushOutput,
+  ServerMemoryOperationOperationsInput,
+  ServerMemoryOperationOperationsOutput,
+  ServerMemoryOperationOperationInput,
+  ServerMemoryOperationOperationOutput,
+  ServerMemoryOperationCancelInput,
+  ServerMemoryOperationCancelOutput,
+  ServerHooksGetInput,
+  ServerHooksGetOutput,
+  ServerHooksReloadInput,
+  ServerHooksReloadOutput,
+  ServerHooksTrustInput,
+  ServerHooksTrustOutput,
+  ServerHooksPreferenceInput,
+  ServerHooksPreferenceOutput,
+  ServerPluginsListOutput,
+  ServerPluginsDetailInput,
+  ServerPluginsDetailOutput,
+  ServerPluginsManageInput,
+  ServerPluginsManageOutput,
+  ServerPluginsRuntimeInput,
+  ServerPluginsRuntimeOutput,
+  ServerPluginsReloadInput,
+  ServerPluginsReloadOutput,
+  ServerMcpStatusInput,
+  ServerMcpStatusOutput,
+  ServerMcpConnectInput,
+  ServerMcpConnectOutput,
+  ServerMcpDisconnectInput,
+  ServerMcpDisconnectOutput,
+  ServerMcpRetryInput,
+  ServerMcpRetryOutput,
+  ServerMcpResetPreferenceInput,
+  ServerMcpResetPreferenceOutput,
+  ServerMcpAuthStartInput,
+  ServerMcpAuthStartOutput,
+  ServerMcpAuthCancelInput,
+  ServerMcpAuthCancelOutput,
+  SessionMcpAttachmentsReserveInput,
+  SessionMcpAttachmentsReserveOutput,
+  SessionMcpAttachmentsExecuteInput,
+  SessionMcpAttachmentsExecuteOutput,
+  SessionMcpAttachmentsStatusInput,
+  SessionMcpAttachmentsStatusOutput,
+  SessionMcpAttachmentsCancelInput,
+  SessionMcpAttachmentsCancelOutput,
+  ServerLspStatusInput,
+  ServerLspStatusOutput,
+  ServerWorkflowRelatedInput,
+  ServerWorkflowRelatedOutput,
+  ServerWorkflowLaunchInput,
+  ServerWorkflowLaunchOutput,
+  ServerWorkflowSourcesInput,
+  ServerWorkflowSourcesOutput,
+  ServerWorkflowValidateInput,
+  ServerWorkflowValidateOutput,
+  ServerWorkflowListInput,
+  ServerWorkflowListOutput,
+  ServerWorkflowStartInput,
+  ServerWorkflowStartOutput,
+  ServerWorkflowGetInput,
+  ServerWorkflowGetOutput,
+  ServerWorkflowResumeInput,
+  ServerWorkflowResumeOutput,
+  ServerWorkflowPauseInput,
+  ServerWorkflowPauseOutput,
+  ServerWorkflowStopInput,
+  ServerWorkflowStopOutput,
+  ServerSideQuestionListInput,
+  ServerSideQuestionListOutput,
+  ServerSideQuestionAskInput,
+  ServerSideQuestionAskOutput,
+  ServerSideQuestionCancelInput,
+  ServerSideQuestionCancelOutput,
   MessagesListInput,
   MessagesListOutput,
   ModelsListInput,
@@ -45,8 +217,8 @@ import type {
   ProvidersListOutput,
   ProvidersGetInput,
   ProvidersGetOutput,
-  IntegrationsConnectExternalInput,
-  IntegrationsConnectExternalOutput,
+  IntegrationsExternalInput,
+  IntegrationsExternalOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -258,6 +430,25 @@ export function make(options: ClientOptions) {
           requestOptions,
         ),
     },
+    "server.project": {
+      list: (requestOptions?: RequestOptions) =>
+        request<ServerProjectListOutput>(
+          { method: "GET", path: `/api/project`, successStatus: 200, declaredStatuses: [503, 401, 400], empty: false },
+          requestOptions,
+        ),
+      current: (input?: ServerProjectCurrentInput, requestOptions?: RequestOptions) =>
+        request<ServerProjectCurrentOutput>(
+          {
+            method: "GET",
+            path: `/api/project/current`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
     location: {
       get: (input?: LocationGetInput, requestOptions?: RequestOptions) =>
         request<LocationGetOutput>(
@@ -318,13 +509,25 @@ export function make(options: ClientOptions) {
               agent: input?.["agent"],
               model: input?.["model"],
               location: input?.["location"],
+              commandSandbox: input?.["commandSandbox"],
             },
             successStatus: 200,
-            declaredStatuses: [401, 400],
+            declaredStatuses: [409, 400, 503, 404, 401],
             empty: false,
           },
           requestOptions,
         ).then((value) => value.data),
+      sandbox: (input: SessionsSandboxInput, requestOptions?: RequestOptions) =>
+        request<SessionsSandboxOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/sandbox`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
       active: (requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsActiveOutput }>(
           {
@@ -347,6 +550,17 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      remove: (input: SessionsRemoveInput, requestOptions?: RequestOptions) =>
+        request<SessionsRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}`,
+            successStatus: 204,
+            declaredStatuses: [503, 401, 400],
+            empty: true,
+          },
+          requestOptions,
+        ),
       switchAgent: (input: SessionsSwitchAgentInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchAgentOutput>(
           {
@@ -376,9 +590,49 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/prompt`,
-            body: { id: input["id"], prompt: input["prompt"], delivery: input["delivery"], resume: input["resume"] },
+            body: {
+              id: input["id"],
+              prompt: input["prompt"],
+              delivery: input["delivery"],
+              executionPolicy: input["executionPolicy"],
+              resume: input["resume"],
+            },
             successStatus: 200,
             declaredStatuses: [409, 404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      inputExecution: (input: SessionsInputExecutionInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsInputExecutionOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/input/${encodeURIComponent(input.inputID)}/execution`,
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      inputWait: (input: SessionsInputWaitInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsInputWaitOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/input/${encodeURIComponent(input.inputID)}/execution/wait`,
+            body: { timeoutMs: input["timeoutMs"] },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      inputInterrupt: (input: SessionsInputInterruptInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsInputInterruptOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/input/${encodeURIComponent(input.inputID)}/execution/interrupt`,
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 401],
             empty: false,
           },
           requestOptions,
@@ -391,6 +645,17 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [404, 503, 400, 401],
             empty: true,
+          },
+          requestOptions,
+        ),
+      restore: (input: SessionsRestoreInput, requestOptions?: RequestOptions) =>
+        request<SessionsRestoreOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/restore`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
           },
           requestOptions,
         ),
@@ -497,6 +762,974 @@ export function make(options: ClientOptions) {
           requestOptions,
         ).then((value) => value.data),
     },
+    "server.goal": {
+      get: (input: ServerGoalGetInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalGetOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      create: (input: ServerGoalCreateInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalCreateOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal`,
+            body: { id: input["id"], objective: input["objective"], tokenBudget: input["tokenBudget"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      start: (input: ServerGoalStartInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalStartOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/start`,
+            body: { model: input["model"], agent: input["agent"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      run: (input: ServerGoalRunInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalRunOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/run`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      resume: (input: ServerGoalResumeInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalResumeOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/resume`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      pause: (input: ServerGoalPauseInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalPauseOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/pause`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      clear: (input: ServerGoalClearInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalClearOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}`,
+            successStatus: 204,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      reports: (input: ServerGoalReportsInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalReportsOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/reports`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      report: (input: ServerGoalReportInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalReportOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/reports/${encodeURIComponent(input.reportID)}/${encodeURIComponent(input.file)}`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cleanupReports: (input: ServerGoalCleanupReportsInput, requestOptions?: RequestOptions) =>
+        request<ServerGoalCleanupReportsOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/goal/${encodeURIComponent(input.goalID)}/reports`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.task": {
+      send: (input: ServerTaskSendInput, requestOptions?: RequestOptions) =>
+        request<ServerTaskSendOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/task/${encodeURIComponent(input.taskID)}/message`,
+            body: { inputID: input["inputID"], text: input["text"], delivery: input["delivery"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      get: (input: ServerTaskGetInput, requestOptions?: RequestOptions) =>
+        request<ServerTaskGetOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/task/${encodeURIComponent(input.taskID)}/message/${encodeURIComponent(input.inputID)}`,
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      list: (input: ServerTaskListInput, requestOptions?: RequestOptions) =>
+        request<ServerTaskListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/task`,
+            query: { limit: input["limit"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      output: (input: ServerTaskOutputInput, requestOptions?: RequestOptions) =>
+        request<ServerTaskOutputOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/task/${encodeURIComponent(input.taskID)}`,
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      wait: (input: ServerTaskWaitInput, requestOptions?: RequestOptions) =>
+        request<ServerTaskWaitOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/task/${encodeURIComponent(input.taskID)}/wait`,
+            body: { timeoutMs: input["timeoutMs"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cancel: (input: ServerTaskCancelInput, requestOptions?: RequestOptions) =>
+        request<ServerTaskCancelOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/task/${encodeURIComponent(input.taskID)}/cancel`,
+            successStatus: 204,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    "server.process": {
+      list: (input: ServerProcessListInput, requestOptions?: RequestOptions) =>
+        request<ServerProcessListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/process`,
+            query: { limit: input["limit"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      output: (input: ServerProcessOutputInput, requestOptions?: RequestOptions) =>
+        request<ServerProcessOutputOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/process/${encodeURIComponent(input.processID)}`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      wait: (input: ServerProcessWaitInput, requestOptions?: RequestOptions) =>
+        request<ServerProcessWaitOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/process/${encodeURIComponent(input.processID)}/wait`,
+            body: { timeoutMs: input["timeoutMs"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cancel: (input: ServerProcessCancelInput, requestOptions?: RequestOptions) =>
+        request<ServerProcessCancelOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/process/${encodeURIComponent(input.processID)}/cancel`,
+            successStatus: 204,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    "server.schedule": {
+      list: (input: ServerScheduleListInput, requestOptions?: RequestOptions) =>
+        request<ServerScheduleListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/schedule`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      get: (input: ServerScheduleGetInput, requestOptions?: RequestOptions) =>
+        request<ServerScheduleGetOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/schedule/${encodeURIComponent(input.scheduleID)}`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      delete: (input: ServerScheduleDeleteInput, requestOptions?: RequestOptions) =>
+        request<ServerScheduleDeleteOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/schedule/${encodeURIComponent(input.scheduleID)}`,
+            successStatus: 204,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      pause: (input: ServerSchedulePauseInput, requestOptions?: RequestOptions) =>
+        request<ServerSchedulePauseOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/schedule/${encodeURIComponent(input.scheduleID)}/pause`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      resume: (input: ServerScheduleResumeInput, requestOptions?: RequestOptions) =>
+        request<ServerScheduleResumeOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/schedule/${encodeURIComponent(input.scheduleID)}/resume`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.feedback": {
+      list: (input: ServerFeedbackListInput, requestOptions?: RequestOptions) =>
+        request<ServerFeedbackListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/feedback`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      save: (input: ServerFeedbackSaveInput, requestOptions?: RequestOptions) =>
+        request<ServerFeedbackSaveOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/feedback`,
+            body: {
+              title: input["title"],
+              details: input["details"],
+              product_area: input["product_area"],
+              type: input["type"],
+              task_category: input["task_category"],
+              failure_mode: input["failure_mode"],
+              draft_id: input["draft_id"],
+              revision: input["revision"],
+              images: input["images"],
+            },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      review: (input: ServerFeedbackReviewInput, requestOptions?: RequestOptions) =>
+        request<ServerFeedbackReviewOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/feedback/${encodeURIComponent(input.draftID)}/review`,
+            body: { revision: input["revision"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      image: (input: ServerFeedbackImageInput, requestOptions?: RequestOptions) =>
+        request<ServerFeedbackImageOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/feedback/${encodeURIComponent(input.draftID)}/image/${encodeURIComponent(input.imageID)}`,
+            body: { revision: input["revision"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      remove: (input: ServerFeedbackRemoveInput, requestOptions?: RequestOptions) =>
+        request<ServerFeedbackRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/feedback/${encodeURIComponent(input.draftID)}`,
+            body: { revision: input["revision"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.memory": {
+      status: (input: ServerMemoryStatusInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory`,
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      toggle: (input: ServerMemoryToggleInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryToggleOutput>(
+          {
+            method: "PATCH",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory`,
+            body: { enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      list: (input: ServerMemoryListInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/notes`,
+            query: { query: input["query"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      preview: (input: ServerMemoryPreviewInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryPreviewOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/note`,
+            query: { path: input["path"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      forget: (input: ServerMemoryForgetInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryForgetOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/note`,
+            body: { path: input["path"], hash: input["hash"] },
+            successStatus: 200,
+            declaredStatuses: [403, 404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.memoryOperation": {
+      retry: (input: ServerMemoryOperationRetryInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationRetryOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/retry`,
+            body: { id: input["id"], retryOf: input["retryOf"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      recoveryPreview: (input: ServerMemoryOperationRecoveryPreviewInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationRecoveryPreviewOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/recovery`,
+            query: { action: input["action"], scope: input["scope"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      recover: (input: ServerMemoryOperationRecoverInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationRecoverOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/recovery`,
+            body: { id: input["id"], retryOf: input["retryOf"], preview: input["preview"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      migrationPreview: (input: ServerMemoryOperationMigrationPreviewInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationMigrationPreviewOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/migration`,
+            query: { kind: input["kind"], scope: input["scope"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      migrate: (input: ServerMemoryOperationMigrateInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationMigrateOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/migration`,
+            body: { id: input["id"], retryOf: input["retryOf"], preview: input["preview"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      dream: (input: ServerMemoryOperationDreamInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationDreamOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/dream`,
+            body: { id: input["id"], retryOf: input["retryOf"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      flush: (input: ServerMemoryOperationFlushInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationFlushOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/flush`,
+            body: { id: input["id"], retryOf: input["retryOf"] },
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      operations: (input: ServerMemoryOperationOperationsInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationOperationsOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/operation`,
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      operation: (input: ServerMemoryOperationOperationInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationOperationOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/operation/${encodeURIComponent(input.operationID)}`,
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cancel: (input: ServerMemoryOperationCancelInput, requestOptions?: RequestOptions) =>
+        request<ServerMemoryOperationCancelOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/memory/operation/${encodeURIComponent(input.operationID)}/cancel`,
+            successStatus: 200,
+            declaredStatuses: [404, 403, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.hooks": {
+      get: (input: ServerHooksGetInput, requestOptions?: RequestOptions) =>
+        request<ServerHooksGetOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/hooks`,
+            successStatus: 200,
+            declaredStatuses: [503, 404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      reload: (input: ServerHooksReloadInput, requestOptions?: RequestOptions) =>
+        request<ServerHooksReloadOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/hooks/reload`,
+            successStatus: 200,
+            declaredStatuses: [409, 503, 404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      trust: (input: ServerHooksTrustInput, requestOptions?: RequestOptions) =>
+        request<ServerHooksTrustOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/hooks/trust`,
+            body: { root: input["root"], token: input["token"], trusted: input["trusted"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      preference: (input: ServerHooksPreferenceInput, requestOptions?: RequestOptions) =>
+        request<ServerHooksPreferenceOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/hooks/preference`,
+            body: { hookID: input["hookID"], enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.plugins": {
+      list: (requestOptions?: RequestOptions) =>
+        request<ServerPluginsListOutput>(
+          {
+            method: "GET",
+            path: `/api/plugins`,
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      detail: (input: ServerPluginsDetailInput, requestOptions?: RequestOptions) =>
+        request<ServerPluginsDetailOutput>(
+          {
+            method: "GET",
+            path: `/api/plugins/detail`,
+            query: { id: input["id"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      manage: (input: ServerPluginsManageInput, requestOptions?: RequestOptions) =>
+        request<ServerPluginsManageOutput>(
+          {
+            method: "POST",
+            path: `/api/plugins/manage`,
+            body: {
+              action: input["action"],
+              id: input["id"],
+              source: input["source"],
+              trust: input["trust"],
+              keepData: input["keepData"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      runtime: (input?: ServerPluginsRuntimeInput, requestOptions?: RequestOptions) =>
+        request<ServerPluginsRuntimeOutput>(
+          {
+            method: "GET",
+            path: `/api/plugins/runtime`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      reload: (input?: ServerPluginsReloadInput, requestOptions?: RequestOptions) =>
+        request<ServerPluginsReloadOutput>(
+          {
+            method: "POST",
+            path: `/api/plugins/reload`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.mcp": {
+      status: (input?: ServerMcpStatusInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/mcp`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      connect: (input: ServerMcpConnectInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpConnectOutput>(
+          {
+            method: "POST",
+            path: `/api/mcp/${encodeURIComponent(input.server)}/connect`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      disconnect: (input: ServerMcpDisconnectInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpDisconnectOutput>(
+          {
+            method: "POST",
+            path: `/api/mcp/${encodeURIComponent(input.server)}/disconnect`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      retry: (input: ServerMcpRetryInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpRetryOutput>(
+          {
+            method: "POST",
+            path: `/api/mcp/${encodeURIComponent(input.server)}/retry`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      resetPreference: (input: ServerMcpResetPreferenceInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpResetPreferenceOutput>(
+          {
+            method: "POST",
+            path: `/api/mcp/${encodeURIComponent(input.server)}/resetPreference`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      authStart: (input: ServerMcpAuthStartInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpAuthStartOutput>(
+          {
+            method: "POST",
+            path: `/api/mcp/${encodeURIComponent(input.server)}/auth/start`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      authCancel: (input: ServerMcpAuthCancelInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpAuthCancelOutput>(
+          {
+            method: "DELETE",
+            path: `/api/mcp/${encodeURIComponent(input.server)}/auth/${encodeURIComponent(input.flowID)}`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    sessionMcpAttachments: {
+      reserve: (input: SessionMcpAttachmentsReserveInput, requestOptions?: RequestOptions) =>
+        request<SessionMcpAttachmentsReserveOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/operations`,
+            body: { request: input["request"] },
+            successStatus: 200,
+            declaredStatuses: [403, 409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      execute: (input: SessionMcpAttachmentsExecuteInput, requestOptions?: RequestOptions) =>
+        request<SessionMcpAttachmentsExecuteOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/operations/${encodeURIComponent(input.operationID)}/execute`,
+            body: { request: input["request"] },
+            successStatus: 200,
+            declaredStatuses: [403, 409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      status: (input: SessionMcpAttachmentsStatusInput, requestOptions?: RequestOptions) =>
+        request<SessionMcpAttachmentsStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/operations/${encodeURIComponent(input.operationID)}`,
+            successStatus: 200,
+            declaredStatuses: [403, 409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cancel: (input: SessionMcpAttachmentsCancelInput, requestOptions?: RequestOptions) =>
+        request<SessionMcpAttachmentsCancelOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/operations/${encodeURIComponent(input.operationID)}/cancel`,
+            successStatus: 200,
+            declaredStatuses: [403, 409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.lsp": {
+      status: (input?: ServerLspStatusInput, requestOptions?: RequestOptions) =>
+        request<ServerLspStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/lsp`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.workflow": {
+      related: (input: ServerWorkflowRelatedInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowRelatedOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/related`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      launch: (input: ServerWorkflowLaunchInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowLaunchOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/launch`,
+            body: {
+              source: input["source"],
+              args: input["args"],
+              agentBudget: input["agentBudget"],
+              concurrency: input["concurrency"],
+              model: input["model"],
+              agent: input["agent"],
+            },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      sources: (input: ServerWorkflowSourcesInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowSourcesOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/sources`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      validate: (input: ServerWorkflowValidateInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowValidateOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/validate`,
+            body: { source: input["source"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      list: (input: ServerWorkflowListInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      start: (input: ServerWorkflowStartInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowStartOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow`,
+            body: {
+              source: input["source"],
+              args: input["args"],
+              agentBudget: input["agentBudget"],
+              concurrency: input["concurrency"],
+            },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      get: (input: ServerWorkflowGetInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowGetOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/${encodeURIComponent(input.workflowID)}`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      resume: (input: ServerWorkflowResumeInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowResumeOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/${encodeURIComponent(input.workflowID)}/resume`,
+            body: { agentBudget: input["agentBudget"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      pause: (input: ServerWorkflowPauseInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowPauseOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/${encodeURIComponent(input.workflowID)}/pause`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      stop: (input: ServerWorkflowStopInput, requestOptions?: RequestOptions) =>
+        request<ServerWorkflowStopOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/workflow/${encodeURIComponent(input.workflowID)}/stop`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.sideQuestion": {
+      list: (input: ServerSideQuestionListInput, requestOptions?: RequestOptions) =>
+        request<ServerSideQuestionListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/side-question`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      ask: (input: ServerSideQuestionAskInput, requestOptions?: RequestOptions) =>
+        request<ServerSideQuestionAskOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/side-question`,
+            body: { question: input["question"], images: input["images"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cancel: (input: ServerSideQuestionCancelInput, requestOptions?: RequestOptions) =>
+        request<ServerSideQuestionCancelOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/side-question/${encodeURIComponent(input.questionID)}/cancel`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
     messages: {
       list: (input: MessagesListInput, requestOptions?: RequestOptions) =>
         request<MessagesListOutput>(
@@ -552,8 +1785,8 @@ export function make(options: ClientOptions) {
         ),
     },
     integrations: {
-      connectExternal: (input: IntegrationsConnectExternalInput, requestOptions?: RequestOptions) =>
-        request<IntegrationsConnectExternalOutput>(
+      external: (input: IntegrationsExternalInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsExternalOutput>(
           {
             method: "POST",
             path: `/api/integration/${encodeURIComponent(input.integrationID)}/connect/external`,
@@ -922,7 +2155,7 @@ export function make(options: ClientOptions) {
             path: `/api/question/request`,
             query: { location: input?.["location"] },
             successStatus: 200,
-            declaredStatuses: [401, 400],
+            declaredStatuses: [503, 401, 400],
             empty: false,
           },
           requestOptions,
@@ -933,7 +2166,7 @@ export function make(options: ClientOptions) {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/question`,
             successStatus: 200,
-            declaredStatuses: [404, 400, 401],
+            declaredStatuses: [404, 503, 400, 401],
             empty: false,
           },
           requestOptions,
@@ -945,7 +2178,7 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/question/${encodeURIComponent(input.requestID)}/reply`,
             body: { answers: input["answers"] },
             successStatus: 204,
-            declaredStatuses: [404, 400, 401],
+            declaredStatuses: [404, 409, 403, 503, 400, 401],
             empty: true,
           },
           requestOptions,
@@ -956,7 +2189,7 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/question/${encodeURIComponent(input.requestID)}/reject`,
             successStatus: 204,
-            declaredStatuses: [404, 400, 401],
+            declaredStatuses: [404, 409, 403, 503, 400, 401],
             empty: true,
           },
           requestOptions,

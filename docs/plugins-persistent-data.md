@@ -1,0 +1,19 @@
+# Persistent plugin data
+
+Installed native Plugins receive a writable data directory owned by Apexo. Command hooks receive `GROK_PLUGIN_DATA` and `CLAUDE_PLUGIN_DATA`; these values override handler environment fields. Plugin commands, agents, skills, MCP configuration, and LSP configuration can use `${GROK_PLUGIN_DATA}` and `${CLAUDE_PLUGIN_DATA}` substitutions. Package-root variables continue to refer to the immutable installed package.
+
+Data belongs to the exact installed plugin ID, not its display name or author-supplied path. Updating a package, restarting Apexo, disabling a plugin, and enabling it again retain the same data epoch. Downloading a plugin does not activate it or allocate runtime data.
+
+Uninstall removes activation and normally retires the current data epoch. The Plugins confirmation offers **Keep plugin data**; the CLI equivalent is `apexo plugins uninstall <id> --keep-data`. Keeping data allows a later installation of the same plugin ID to reuse it. A default uninstall followed by reinstall creates a new epoch even while the previous epoch remains in use.
+
+Apexo does not delete data underneath captured plugin consumers. Native Location snapshots hold reader leases until disposal joins their users. Reload may retain older leases until that Location closes. Uninstall can therefore succeed while data cleanup remains deferred. Plugins displays the retained-data notice, and CLI output includes `retainedData` plus a readable notice. The returned reason distinguishes reader leases from changed filesystem ownership.
+
+Cleanup requires an exact generated epoch path and the recorded directory identity. Replaced directories and symlinks are retained rather than followed. A coordinator crash leaves an unknown reader: its PID exiting does not prove that orphaned plugin children stopped using data. Such data is conservatively retained; age does not revoke ownership, and there is currently no automatic crash-reader reclamation or force-prune command. This is an intentional safety difference from immediate reference-runtime uninstall cleanup.
+
+The implementation remains Apexo-owned. The pinned reference source at commit `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` supplies behavioral evidence: `crates/codegen/xai-grok-agent/src/plugins/hooks_adapter.rs` injects authoritative aliases, `plugins/registry.rs` defines stable data identity, `plugins/manifest.rs` substitutes variables, and `plugins/git_install.rs` plus `xai-grok-pager/src/plugin_cmd.rs` implement uninstall and `--keep-data`. Isolated installed version 1.0.52 passed seven comparison checks including fresh-process persistence and both uninstall modes. No reference executable is a product dependency.
+
+Desktop uses canonical localized Plugins keys in all 62 locale dictionaries. The terminal browser retains its existing English-only presentation; this change does not introduce a separate terminal localization system.
+
+## Shared integration acceptance
+
+Shared runtime/store tests pass19 tests /98 assertions. Source CLI and the unified rebuilt Desktop backend each pass five checks /six provider calls, covering authoritative Hook aliases, retained data across update/disable/enable, keep-data reinstall and new epochs after ordinary uninstall. All21 workspace types, canonical generation and App/Desktop builds pass. The new keys occur exactly once in each of62 locale dictionaries. The composed CLI command probe passes four checks and the real terminal passes seven checks with zero provider requests. Actual native windows each pass eight checks in en, zh and zht, including translated keep-data confirmation, deferred cleanup, and removal of an omitted retained-data field after refresh. The first zh invocation used a leftover English assertion while the native window correctly displayed Chinese; the fixture correction and successful reruns are recorded under BUG088. Installed-reference evidence remains separately scoped.

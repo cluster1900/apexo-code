@@ -161,7 +161,9 @@ const nativeLayer = (config: Config) =>
         create: config.create ?? true,
       })
       yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
-      if (config.disableWAL !== true) native.run("PRAGMA journal_mode = WAL;")
+      // Opening WAL can race another process's recovery before Database.layer sets its pragmas.
+      native.run("PRAGMA busy_timeout = 5000;")
+      if (config.disableWAL !== true && config.readonly !== true) native.run("PRAGMA journal_mode = WAL;")
       return native
     }),
   )

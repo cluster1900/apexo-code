@@ -1,0 +1,45 @@
+# Native automatic legacy Dream
+
+Automatic legacy consolidation uses the existing native Session activity epoch, durable Memory operation receipt and canonical Dream executor. It adds no compatibility runtime or second execution loop. Manual Dream retains its original behavior and explicit recorded-output recovery.
+
+## Arming and scheduling
+
+A successfully completed live Session drain arms a check after coordinator settlement and idle confirmation. Session creation, reads, listing, opening Memory controls, exact prompt retries and process restart do not arm it. The first completed activity is an intentional Apexo policy boundary: the reference legacy actor performs a check at actor startup. These behaviors are not claimed identical.
+
+Dream arming is independent of automatic flush eligibility. Automatic Dream obeys enabled mode, `dream.enabled`, elapsed `min_hours`, distinct new `min_sessions`, current-Session exclusion and processed source versions. A positive `check_interval_secs` schedules another check after the previous check/operation settles; the native default is 3600 seconds. Zero allows the initial activity check only. The timer never aborts an in-flight consolidation merely because an interval elapsed. Each later check takes a fresh bounded snapshot. No source plan is retained across the sleep. The Location runtime guard covers each preparation/admission and canonical worker, not timer sleep. A reloaded Location retires its old timer; passive reconstruction does not rearm one.
+
+The timer and admitted worker register under the same existing activity Claim/token. New activity invalidates the token and joins old work before starting its new epoch. New durable steer or queue input invalidates synchronously under the Session input-admission fence and joins workers after releasing it. Exact retry and a caller joining the same drain preserve its epoch. Mode disable, Agent replacement, close/delete, Created identity and maintenance generation remain authority boundaries. A timer captured before clear cannot adopt a new maintenance generation.
+
+## Durable identity and publication
+
+An automatic receipt ID derives from the Session/Created identity, mode revision, maintenance generation, selected agent/model and exact selected source versions. It deliberately excludes destination bytes and timer timestamps. Thus the same failed/interrupted source does not manufacture another provider request after a periodic tick, new activity, destination edit or restarted controller. A genuinely new source or authority scope can admit a new candidate. Historical receipts remain evidence, not a timer-restoration queue.
+
+Automatic and manual operations share the per-Session worker lock, canonical workspace Dream lock and destination lock. A waiting plan revalidates its original state, memory and source snapshots before inference. A winning publication makes a stale competitor fail before a redundant model call. Separate Sessions in one workspace use that same canonical lease.
+
+After acquiring storage leases, automatic publication takes the existing short Session input-admission fence, revalidates its epoch inside the mode commit and performs the real filesystem publication. A prompt admitted first cancels prior automatic work before writing. If publication enters the fence first, the prompt's durable insertion waits until that commit ends. No prompt fence is held across provider work or external lock waits. Explicit manual operations do not gain automatic cancellation semantics.
+
+The manual slice's bounded inputs/output, permission intersection, captured Agent checks, durable pre-publication payload, exact-byte recovery and original-receipt proof continue to apply. Recovery of a recorded partial publication remains explicit; passive startup and automatic timers do not replay it. New successful receipts can settle [consumed-source cleanup](native-dream-consumed-cleanup.md); old receipts and protected sources remain retained. Whole-batch Dream and semantic/vector retrieval remain separate capabilities.
+
+## Verification checkpoint
+
+- Before-change focused control: live activity with eligible source files produced no automatic receipt; the positive expectation failed. Before-change real CLI: two checks, one ordinary provider call and zero Dream calls.
+- Final focused legacy/automatic/V2/storage gate: 46 tests / 225 assertions passed. This covers actual periodic second-source discovery, interval zero, failed-source deduplication, in-flight tick behavior, epoch replacement/join, both manual/automatic winner orders, cross-Session lease serialization, disable/Agent/clear/delete and cancellation after the durable publication payload while the real destination lease is held. Enabled/time/session-count/current-Session gates and the real reload regression are included.
+- Real native CLI: five checks, five provider calls including three Dream calls. Creation/listing are passive; live activity works with flush disabled; periodic discovery works; passive restart and exact retry do not restore a timer; genuinely new activity can consolidate a new source.
+- Failed-source real restart control: three checks, three provider calls including one failed Dream. Passive restart, exact retry, subsequent live activity, periodic ticks and a foreign destination edit do not resample the failed source or replace the operator's bytes.
+- Publication-order control: a test-only loader pauses the actual uninterruptible storage publisher and observes the actual SQLite input insert. With the final fence deliberately removed, the probe fails because admission overtakes publication. With the production fence present, admission occurs after publication release. Both use real durable writes. This is regression evidence for [BUG327](testing/runtime/native-memory-automatic-publication.md), not another counted historical defect.
+- A real Location-guard regression exposed the initial sleeping-timer guard lifetime defect. The fixed focused case passes one test / six assertions, including actual runtime invalidation and fresh-activity rearming; see [BUG366](testing/runtime/automatic-dream-location-guard.md).
+- Final Core and Apexo package typechecks and the rebuilt Desktop production build pass after the guard fix. Rebuilt Desktop backend acceptance passes the same five positive checks / five calls (three Dream), plus three failed-source/restart checks / three calls (one failed Dream). Browser and native Electron window acceptance each pass four checks / three calls: passive `/dream`, a real composer turn, a visible automatic result and a later visible periodic result without a manual Dream request. Both completed receipts were visually inspected in the native window. The renderer reuses the verified manual-slice artifact after comparing 2143 App/UI source/configuration files; the Desktop backend is rebuilt from the final production sources. Shared integration and repository-wide gates remain the integrator's separate acceptance.
+
+## Reference comparison
+
+Fixed source revision `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` establishes the reference behavior: `xai-grok-shell/src/session/acp_session_impl/run_loop.rs` starts one legacy actor check, schedules positive timer intervals without aborting an active Dream, and joins it during teardown; `memory_dream.rs` rechecks gates under the canonical lock; `xai-grok-memory/src/dream.rs` defines enabled/time/session gates.
+
+The fresh isolated installed Grok 1.0.52 (`0920c8169e27`) probe requested legacy mode but exposed effective V2 artifacts; its home-denial/exact-port controls passed and it made zero provider calls. It verifies isolation and passive behavior, not an effective installed legacy scheduler. No installed legacy execution parity is claimed. Apexo's first-completed-activity policy, post-settlement timer cadence, protected source retention and explicit-only crash recovery are stated boundaries alongside independent native execution evidence.
+
+## Shared integration checkpoint
+
+All14 frozen handoff files were verified; documentation overlaps preserve current shared acceptance and recurrence counts. The shared automatic/manual/V2/storage gate passes46 tests/225 assertions. Final shared source CLI passes positive5checks/5calls (3Dream), failed-source3checks/3calls (1failedDream), and publication ordering2checks/2calls (1Dream). A combined shared Desktop rebuild and refreshed repository gates are still required. Private Desktop/UI evidence above is not substituted for those shared checks.
+
+## Shared integration acceptance
+
+The unified shared App/Desktop builds and all 21 workspace types pass. The rebuilt Desktop backend passes the positive five-check/five-call flow and failed-source three-check/three-call flow. Publication-order instrumentation remains a source CLI proof (two checks / two calls), explicitly rejected for packaged Desktop; it is not substituted for a Desktop-instrumented proof. The subsequent cleanup-inclusive shared regression passes 62 tests / 311 assertions including six existing LSP policy cases.

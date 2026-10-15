@@ -84,6 +84,76 @@ const desktop = [
 ]
 
 export const dict = {
+  "hooks.repository.title": "Bizalom a tároló hookjaiban",
+  "hooks.repository.hint":
+    "Engedélyezze a tároló gyökérkönyvtárában lévő hookok futtatását a tárolón belüli munkamenetekben. Az engedélyezés után töltse újra a hookokat. A bizalom visszavonása megakadályozza az új hookhívásokat.",
+  "hooks.repository.grant": "Tároló hookjainak engedélyezése",
+  "hooks.repository.revoke": "A tároló hookjaihoz adott bizalom visszavonása",
+
+  "plugins.title": "Bővítmények",
+  "plugins.description":
+    "Fedezzen fel új készségeket és eszközöket. Telepítse, amire szüksége van, és kezeljen mindent egy helyen.",
+  "plugins.discover": "Felfedezés",
+  "plugins.installed": "Telepítve",
+  "plugins.sources": "Források",
+  "plugins.recommended": "Ajánlott bővítmények",
+  "plugins.add": "Saját telepítése",
+  "plugins.addSource": "Forrás hozzáadása",
+  "plugins.removeSource": "Forrás eltávolítása",
+  "plugins.allSources": "Minden forrás",
+  "plugins.search": "Bővítmények keresése",
+  "plugins.download": "Letöltés",
+  "plugins.enable": "Engedélyezés",
+  "plugins.disable": "Letiltás",
+  "plugins.update": "Frissítés",
+  "memory.operations.batchOutcome":
+    "Elhalasztott jegyzetek: {{deferred}} · Archivált, be nem sorolt jegyzetek: {{unplaceable}}",
+  "plugins.uninstall": "Eltávolítás",
+  "plugins.keepData": "A bővítmény adatainak megtartása",
+  "plugins.cleanupDeferred":
+    "A bővítmény adatai megmaradnak, amíg használatban vannak, vagy ha a tulajdonjoguk nem ellenőrizhető.",
+  "plugins.version": "Verzió",
+  "plugins.files": "Letöltött fájlok",
+  "plugins.contents": "Tartalmazott funkciók",
+  "plugins.readme": "A bővítmény névjegye",
+  "plugins.empty": "Nem találhatók bővítmények. Próbáljon más keresést, vagy adjon hozzá forrást.",
+  "plugins.error": "A művelet nem fejezhető be. Ellenőrizze a forrást és a kapcsolatot, majd próbálja újra.",
+  "plugins.sourceError": "A forrás nem frissíthető. A korábban letöltött találatok továbbra is elérhetők.",
+  "plugins.changed":
+    "A módosítások a projekt újratöltésekor lépnek életbe. A futó munkamenetek megtartják jelenlegi bővítményeiket.",
+  "plugins.confirm": "Bővítménymódosítások áttekintése",
+  "plugins.trust":
+    "Csak megbízható forrásból telepítsen bővítményeket. A bővítmények parancsokat futtathatnak, szolgáltatásokhoz csatlakozhatnak és hozzáférhetnek a számítógép fájljaihoz.",
+  "plugins.removeNotice":
+    "Eltávolítja ezt az elemet? A forrás eltávolítása megőrzi a telepített bővítményeket. Az eltávolított bővítmények a későbbi munkamenetekben nem töltődnek be.",
+  "plugins.sourceInput": "Git-tároló vagy helyi mappa",
+  "plugins.sourcePlaceholder": "owner/repo, https://… vagy /path/to/plugin",
+  "plugins.hooksWarning":
+    "A bővítmény egyes életciklushookjai még nem támogatottak. A támogatott hookok és más funkciók továbbra is elérhetők.",
+  "plugins.status.available": "Elérhető",
+  "plugins.status.downloaded": "Letöltve",
+  "plugins.status.enabled": "Engedélyezve",
+  "plugins.status.disabled": "Letiltva",
+  "plugins.component.skills": "Készségek",
+  "plugins.component.commands": "Parancsok",
+  "plugins.component.agents": "Ügynökök",
+  "plugins.component.mcpServers": "MCP-kiszolgálók",
+  "plugins.component.lspServers": "Nyelvi kiszolgálók",
+  "plugins.component.hooks": "Hookok",
+  "plugins.reload": "Alkalmazás erre a projektre",
+  "plugins.activation.title": "Aktiválás ebben a projektben",
+  "plugins.activation.hint":
+    "Az engedélyezett bővítmények akkor válnak aktívvá, amikor alkalmazza őket erre a projektre. A futó feladatok megtartják a jelenlegi pillanatképüket.",
+  "plugins.activation.projectRequired": "A bővítmények áttekintéséhez és alkalmazásához nyisson meg egy projektet.",
+  "plugins.activation.generation": "A pillanatkép verziója: {{generation}}",
+  "plugins.activation.active": "Aktív ebben a projektben",
+  "plugins.activation.inactive": "Nem aktív ebben a projektben",
+  "plugins.activation.unavailable": "Nem sikerült beolvasni a bővítmények aktiválási állapotát.",
+  "plugins.activation.failure.busy": "A bővítmények alkalmazása előtt várja meg a futó feladatok befejezését.",
+  "plugins.activation.failure.invalid": "A bővítmények konfigurációja érvénytelen. Az előző pillanatkép aktív marad.",
+  "plugins.activation.failure.load": "Nem sikerült betölteni a bővítményeket. Az előző pillanatkép aktív marad.",
+  "plugins.activation.failure.unsupported":
+    "Ez a kiszolgáló nem támogatja a bővítmények egyes képességeit. Az előző pillanatkép aktív marad.",
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Javasolt",
   "command.category.view": "Nézet",

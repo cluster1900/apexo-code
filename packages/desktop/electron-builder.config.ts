@@ -55,8 +55,9 @@ const getBase = (appId: string): Configuration => ({
   extraMetadata: {
     desktopName: `${appId}.desktop`,
   },
-  files: ["out/**/*", "resources/**/*", "!resources/apexo-cli*"],
+  files: ["out/**/*", "resources/**/*", "!resources/apexo-cli*", "!resources/apexo-workflow-script*"],
   extraResources: [
+    { from: "resources/", to: "", filter: ["apexo-workflow-script*"] },
     ...(channel === "dev"
       ? [
           {

@@ -68,6 +68,10 @@ export interface GlobInput {
 }
 
 export interface GrepInput {
+  /** Search these immutable UTF-8 bytes over stdin; file becomes a result label only. */
+  readonly content?: string
+  /** Exclusive original byte offset, filtered before the result budget. */
+  readonly afterOffset?: number
   readonly cwd: string
   readonly pattern: string
   readonly file?: string
@@ -98,6 +102,7 @@ const layer = Layer.effect(
     const run = <A>(input: {
       readonly cwd: string
       readonly args: string[]
+      readonly content?: string
       readonly limit: number
       readonly signal?: AbortSignal
       readonly parse: (line: string) => Effect.Effect<A | undefined, Error>
@@ -107,7 +112,11 @@ const layer = Layer.effect(
       const program = Effect.scoped(
         Effect.gen(function* () {
           const handle = yield* process.spawn(
-            ChildProcess.make(yield* binary.filepath, input.args, { cwd: input.cwd, extendEnv: true, stdin: "ignore" }),
+            ChildProcess.make(yield* binary.filepath, input.args, {
+              cwd: input.cwd,
+              extendEnv: true,
+              stdin: input.content === undefined ? "ignore" : Stream.make(Buffer.from(input.content)),
+            }),
           )
           const stderrFiber = yield* collectStream(handle.stderr, ERROR_BYTES).pipe(
             Effect.map((output) => output.buffer.toString("utf8")),
@@ -227,7 +236,7 @@ const layer = Layer.effect(
             "--glob=!**/.git/**",
             "--",
             input.pattern,
-            input.file ?? ".",
+            input.content === undefined ? (input.file ?? ".") : "-",
           ],
           parse: (line) =>
             (Buffer.byteLength(line, "utf8") > MAX_RECORD_BYTES
@@ -241,11 +250,15 @@ const layer = Layer.effect(
                 if (!json || typeof json !== "object" || !("type" in json) || json.type !== "match")
                   return Effect.succeed(undefined)
                 return Schema.decodeUnknownEffect(RawMatch)(json).pipe(
-                  Effect.map((match) => ({
-                    ...match.data,
-                    path: { text: match.data.path.text.replace(/^\.[\\/]/, "") },
-                    submatches: match.data.submatches.slice(0, MAX_SUBMATCHES),
-                  })),
+                  Effect.map((match) =>
+                    input.afterOffset !== undefined && match.data.absolute_offset <= input.afterOffset
+                      ? undefined
+                      : {
+                          ...match.data,
+                          path: { text: match.data.path.text.replace(/^\.[\\/]/, "") },
+                          submatches: match.data.submatches.slice(0, MAX_SUBMATCHES),
+                        },
+                  ),
                   Effect.mapError((cause) => failure("Invalid ripgrep match output", cause)),
                 )
               }),
@@ -253,7 +266,7 @@ const layer = Layer.effect(
         }).pipe(
           Effect.map((result) =>
             result.items.map((match) => {
-              const relative = match.path.text
+              const relative = (input.content === undefined ? match.path.text : (input.file ?? "stdin"))
                 .replace(/^(?:\.[\\/])+/u, "")
                 .replace(/^[\\/]+/u, "")
                 .replaceAll("\\", "/")

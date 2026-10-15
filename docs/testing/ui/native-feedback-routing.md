@@ -1,0 +1,9 @@
+# BUG-20261014-155: Feedback dialog used legacy routes for native sessions
+
+- Scope: App and Desktop local Feedback drafts for V2 Sessions.
+- Observed: the Feedback dialog always selected the legacy feedback client, even when connected to a native-only server with `/api/session` routes.
+- Expected: native Sessions use the native Feedback routes; legacy Sessions retain the legacy routes.
+- Reproduction: open a native Session, open Feedback, and attempt to list or save a draft against a server exposing only the production native router.
+- Root cause: Feedback operations accessed `client.feedback` directly without the protocol selection used by native management panels.
+- Fix: resolve the directory SDK protocol and select `client.v2.feedback` for V2 or `client.feedback` for V1. List, save, exact-revision review, and remove share that selection.
+- Verification: App `bun typecheck` and `bun run build` passed. `bun ./script/grok-native-feedback-ui.mjs desktop` from `packages/apexo` passed 12 browser checks against the actual native-only Core server: entry point, draft creation/type selection, reload persistence, edit/review revision, Markdown download, invalidating review on edit, stale-revision protection preserving local text, cancel/confirm deletion, large-body fallback, and no model execution or transcript turn. The fixture also verifies legacy health is absent. `bun ./script/grok-feedback-ui.mjs desktop` also passed all 12 checks against the legacy server after the routing change. `bun ./script/grok-native-feedback-ui.mjs native` subsequently passed the same 12 checks in the actual macOS Electron window after the separate native CORS correction ([BUG-20261014-159](../runtime/native-server-cors.md)). The native review screenshot was inspected: saved state, exact review text, and copy/download actions are readable. All owned processes were reaped.

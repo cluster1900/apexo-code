@@ -1,3 +1,4 @@
+import { policy } from "@/plugin/hook-policy"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { Provider } from "@/provider/provider"
@@ -13,7 +14,7 @@ import { Truncate } from "@/tool/truncate"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
@@ -23,6 +24,8 @@ import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { SessionGoalRole } from "./goal-role"
+import { PermissionV1 } from "@apexo/core/v1/permission"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -47,6 +50,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
+  recordMemoryRead?: (path: string) => Effect.Effect<void>
+  watchBackground?: Tool.Context["watchBackground"]
+  notifyBackground?: Tool.Context["notifyBackground"]
+  runScheduledTask?: Tool.Context["runScheduledTask"]
 }) {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
@@ -56,8 +63,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+  const goalRole = yield* SessionGoalRole.Current
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
+  const context = (toolID: string, args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
@@ -67,9 +75,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       bypassAgentCheck: input.bypassAgentCheck,
       promptOps: input.promptOps,
       directory: input.session.directory,
+      scheduledModel: {
+        providerID: input.processor.message.providerID,
+        modelID: input.processor.message.modelID,
+        variant: input.processor.message.variant,
+      },
     },
     agent: input.agent.name,
     messages: input.messages,
+    watchBackground: input.watchBackground,
+    notifyBackground: input.notifyBackground,
+    runScheduledTask: input.runScheduledTask,
     metadata: (val) =>
       input.processor.updateToolCall(options.toolCallId, (match) => {
         if (!["running", "pending"].includes(match.state.status)) return match
@@ -85,14 +101,40 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }
       }),
     ask: (req) =>
-      permission
-        .ask({
+      Effect.gen(function* () {
+        const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+        // A resumed reviewer must not reuse an old approval to override a newly inherited denial.
+        if (
+          goalRole &&
+          req.patterns.some((pattern) =>
+            [ruleset, input.agent.permission, goalRole.parentPermission].some(
+              (rules) => Permission.evaluate(req.permission, pattern, rules).action === "deny",
+            ),
+          )
+        )
+          return yield* new PermissionV1.DeniedError({ ruleset })
+        return yield* permission.ask({
           ...req,
+          force: policy(args)?.ask,
+          hook: { sessionID: input.session.id, callID: options.toolCallId, toolName: toolID, toolInput: args },
+          metadata: { ...req.metadata, ...(policy(args)?.reason ? { hookReason: policy(args)?.reason } : {}) },
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ruleset,
         })
-        .pipe(Effect.orDie),
+      }).pipe(
+        Effect.tapError((error) =>
+          error instanceof PermissionV1.DeniedError ||
+          error instanceof PermissionV1.RejectedError ||
+          error instanceof PermissionV1.CorrectedError
+            ? input.processor.updateToolCall(options.toolCallId, (part) => ({
+                ...part,
+                metadata: { ...part.metadata, permissionDenied: true },
+              }))
+            : Effect.void,
+        ),
+        Effect.orDie,
+      ),
   })
 
   for (const item of yield* registry.tools({
@@ -100,6 +142,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     providerID: input.model.providerID,
     agent: input.agent,
     permission: input.session.permission,
+    sessionID: input.session.id,
   })) {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     tools[item.id] = tool({
@@ -108,13 +151,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(item.id, args, options)
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
-            const result = yield* item.execute(args, ctx)
+            const validated = policy(args)?.rewritten
+              ? yield* Schema.decodeUnknownEffect(item.parameters)(args).pipe(Effect.orDie)
+              : args
+            const result = yield* item.execute(validated, ctx)
+            if (
+              (item.id === "read" || item.id === "read_file") &&
+              input.recordMemoryRead &&
+              isRecord(result.metadata.display) &&
+              result.metadata.display.type === "file" &&
+              typeof result.metadata.display.path === "string"
+            )
+              yield* input.recordMemoryRead(result.metadata.display.path)
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -139,6 +193,64 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
+  if (goalRole) {
+    const reports = goalRole.reports
+    if (reports)
+      tools.write = tool({
+        description:
+          "Write this Goal role's assigned report files. No other files may be written. The host validates these files after the review.",
+        inputSchema: jsonSchema<{ file_path: string; content: string }>({
+          type: "object",
+          properties: {
+            file_path: { type: "string", enum: reports.paths },
+            content: { type: "string" },
+          },
+          required: ["file_path", "content"],
+          additionalProperties: false,
+        }),
+        execute: (args, options) =>
+          run.promise(
+            Effect.gen(function* () {
+              const ctx = context("write", args, options)
+              yield* plugin.trigger(
+                "tool.execute.before",
+                { tool: "write", sessionID: ctx.sessionID, callID: ctx.callID },
+                { args },
+              )
+              if (
+                typeof args.file_path !== "string" ||
+                typeof args.content !== "string" ||
+                !reports.paths.includes(args.file_path)
+              )
+                throw new Error("Goal role can write only its assigned report files")
+              yield* ctx.ask({
+                permission: "edit",
+                patterns: [args.file_path],
+                always: [],
+                metadata: { path: args.file_path },
+              })
+              yield* reports.write(args.file_path, args.content)
+              const output = { title: args.file_path, output: "Goal report saved", metadata: { path: args.file_path } }
+              yield* plugin.trigger(
+                "tool.execute.after",
+                { tool: "write", sessionID: ctx.sessionID, callID: ctx.callID, args },
+                output,
+              )
+              return output
+            }),
+          ),
+      })
+    const hidden = new Set([
+      ...Permission.disabled(Object.keys(tools), input.agent.permission),
+      ...Permission.disabled(Object.keys(tools), goalRole.parentPermission),
+    ])
+    return Object.fromEntries(
+      Object.entries(tools).filter(
+        ([name]) => (SessionGoalRole.tools.has(name) || (name === "write" && reports)) && !hidden.has(name),
+      ),
+    )
+  }
+
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
     (client) => !!client.getServerCapabilities()?.resources,
   )
@@ -161,8 +273,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return run.promise(
           Effect.gen(function* () {
+            yield* plugin.trigger(
+              "tool.execute.before",
+              { tool: MCP_RESOURCE_TOOLS.list, sessionID: input.session.id, callID: opts.toolCallId },
+              { args },
+            )
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(MCP_RESOURCE_TOOLS.list, toRecord(args), opts)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -178,11 +295,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const permissionPatterns = parsed.server
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
             yield* ctx.ask({
               permission: "read",
               metadata: parsed.server ? { server: parsed.server } : {},
@@ -244,8 +356,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return run.promise(
           Effect.gen(function* () {
+            yield* plugin.trigger(
+              "tool.execute.before",
+              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: input.session.id, callID: opts.toolCallId },
+              { args },
+            )
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(MCP_RESOURCE_TOOLS.listTemplates, toRecord(args), opts)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -261,11 +378,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const permissionPatterns = parsed.server
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
             yield* ctx.ask({
               permission: "read",
               metadata: parsed.server ? { server: parsed.server } : {},
@@ -331,8 +443,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, opts) {
         return run.promise(
           Effect.gen(function* () {
+            yield* plugin.trigger(
+              "tool.execute.before",
+              { tool: MCP_RESOURCE_TOOLS.read, sessionID: input.session.id, callID: opts.toolCallId },
+              { args },
+            )
             const parsed = parseReadMcpResourceArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(MCP_RESOURCE_TOOLS.read, toRecord(args), opts)
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -341,11 +458,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             if (!client.getServerCapabilities()?.resources) {
               throw new Error(`MCP server "${parsed.server}" does not support resources`)
             }
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
             yield* ctx.ask({
               permission: "read",
               metadata: { server: parsed.server, uri: parsed.uri },
@@ -409,12 +521,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          const ctx = context(key, args, opts)
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
             { args },
           )
+          if (policy(args)?.rewritten) {
+            const validate = asSchema(item.inputSchema).validate
+            if (!validate) throw new Error("Hook input rewrites require a validator for this MCP tool")
+            const checked = yield* Effect.promise(() => Promise.resolve(validate(args)))
+            if (!checked.success) throw new Error("Hook updatedInput does not satisfy the MCP tool schema")
+          }
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(args, opts))

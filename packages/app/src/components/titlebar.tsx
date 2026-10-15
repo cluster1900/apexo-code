@@ -39,6 +39,7 @@ import type { PromptSession } from "@/context/prompt"
 import "./titlebar.css"
 import { newTabTooltipKeybind } from "./command-tooltip-keybind"
 import { normalizeSessionInfo } from "@/utils/session"
+import { announceSessionRestoration } from "@/utils/session-restore"
 
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
@@ -379,6 +380,16 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
                   forceTruncate={tabsAreOverflowing()}
                   onOverflowChange={setTabsAreOverflowing}
                   onNavigate={(tab, el) => {
+                    if (tab.type === "session") {
+                      const connection = global.servers.list().find((item) => ServerConnection.key(item) === tab.server)
+                      if (connection) {
+                        const target = global.ensureServerCtx(connection).sdk
+                        void announceSessionRestoration(
+                          { client: target.client, protocol: target.protocol, sessionID: tab.sessionId },
+                          language.t,
+                        )
+                      }
+                    }
                     tabs.select(tab)
                     el?.scrollIntoView({ behavior: "instant" })
                   }}

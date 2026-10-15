@@ -1,3 +1,10 @@
+import { taskMessageDraft } from "@apexo/sdk/v2/task-message"
+import { nativeMemoryActions } from "@apexo/tui/util/session-memory"
+import { mcpActions } from "@apexo/tui/component/mcp-browser"
+import { pluginsActions } from "@apexo/tui/component/plugins-browser"
+import { workflowActions } from "@apexo/tui/component/workflow-browser"
+import { taskActions } from "@apexo/tui/util/session-tasks"
+import { goalActions } from "@apexo/tui/component/session-goal"
 // Top-level orchestrator for `apexo --mini`.
 //
 // Wires the boot sequence, lifecycle (renderer + footer), stream transport,
@@ -12,11 +19,17 @@
 //   3. starts the stream transport (SDK event subscription), lazily for fresh
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
-import { createApexoClient } from "@apexo/sdk/v2"
+import { createApexoClient } from "@apexo/sdk/v2/client"
 import { Flag } from "@apexo/core/flag/flag"
 import { MessageID } from "@/session/schema"
 import { createRunDemo } from "./demo"
-import { resolveModelInfo, resolveRunTuiConfig, resolveSessionInfo } from "./runtime.boot"
+import {
+  resolveModelInfo,
+  resolveNativeModelInfo,
+  resolveNativeSessionInfo,
+  resolveRunTuiConfig,
+  resolveSessionInfo,
+} from "./runtime.boot"
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
 import { cycleVariant, formatModelLabel, resolveSavedVariant, resolveVariant, saveVariant } from "./variant.shared"
@@ -30,7 +43,7 @@ export { runPromptQueue } from "./runtime.queue"
 
 type BootContext = Pick<
   RunInput,
-  "sdk" | "directory" | "sessionID" | "sessionTitle" | "resume" | "agent" | "model" | "variant"
+  "sdk" | "native" | "directory" | "sessionID" | "sessionTitle" | "resume" | "agent" | "model" | "variant"
 >
 
 type CreateSessionInput = {
@@ -42,6 +55,8 @@ type CreateSessionInput = {
 type CreateSession = (sdk: RunInput["sdk"], input: CreateSessionInput) => Promise<{ id: string; title?: string }>
 
 type RunRuntimeInput = {
+  startupNotice?: string
+  signal?: AbortSignal
   boot: () => Promise<BootContext>
   afterPaint?: (ctx: BootContext) => Promise<void> | void
   resolveSession?: (
@@ -163,6 +178,8 @@ async function resolveExitTitle(
     return undefined
   }
 
+  if (ctx.native) return ctx.native.get(state.sessionID).then((value) => value.title ?? undefined)
+
   return ctx.sdk.session
     .get({
       sessionID: state.sessionID,
@@ -182,10 +199,14 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
   const log = trace()
   const tuiConfigTask = resolveRunTuiConfig()
   const ctx = await input.boot()
-  const modelTask = resolveModelInfo(ctx.sdk, ctx.directory, ctx.model)
+  const modelTask = ctx.native
+    ? resolveNativeModelInfo(ctx.native, ctx.model)
+    : resolveModelInfo(ctx.sdk, ctx.directory, ctx.model)
   const sessionTask =
     ctx.resume === true
-      ? resolveSessionInfo(ctx.sdk, ctx.sessionID, ctx.model)
+      ? ctx.native
+        ? resolveNativeSessionInfo(ctx.native, ctx.sessionID, ctx.model)
+        : resolveSessionInfo(ctx.sdk, ctx.sessionID, ctx.model)
       : Promise.resolve({
           first: true,
           history: [],
@@ -224,6 +245,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     return state.session
   }
 
+  const tasks = taskActions(
+    ctx.sdk,
+    () => state.sessionID,
+    async () => (ctx.native ? "native" : "compatibility"),
+  )
   const shell = await (deps.createRuntimeLifecycle ?? createRuntimeLifecycle)({
     directory: ctx.directory,
     findFiles: (query) =>
@@ -249,6 +275,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       log?.write("send.permission.reply", next)
+      if (ctx.native) {
+        if (!next.sessionID) throw new Error("Native permission reply is missing its original Session")
+        await ctx.native.replyPermission({ sessionID: next.sessionID, requestID: next.requestID, reply: next.reply })
+        return
+      }
       await ctx.sdk.permission.reply(next)
     },
     onQuestionReply: async (next) => {
@@ -256,6 +287,16 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         return
       }
 
+      if (ctx.native) {
+        if (!next.sessionID || !next.answers)
+          throw new Error("Native question reply is missing its original Session or answers")
+        await ctx.native.replyQuestion({
+          sessionID: next.sessionID,
+          requestID: next.requestID,
+          questionV2Reply: { answers: next.answers },
+        })
+        return
+      }
       await ctx.sdk.question.reply(next)
     },
     onQuestionReject: async (next) => {
@@ -263,6 +304,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         return
       }
 
+      if (ctx.native) {
+        if (!next.sessionID) throw new Error("Native question rejection is missing its original Session")
+        await ctx.native.rejectQuestion({ sessionID: next.sessionID, requestID: next.requestID })
+        return
+      }
       await ctx.sdk.question.reject(next)
     },
     onCycleVariant: () => {
@@ -342,10 +388,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       }
 
       state.aborting = true
-      void ctx.sdk.session
-        .abort({
-          sessionID: state.sessionID,
-        })
+      void (ctx.native ? ctx.native.interrupt(state.sessionID) : ctx.sdk.session.abort({ sessionID: state.sessionID }))
         .catch(() => {})
         .finally(() => {
           state.aborting = false
@@ -355,6 +398,289 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       if (!hasSession(input, state)) return
       void ctx.sdk.experimental.session.background({ sessionID: state.sessionID }).catch(() => {})
     },
+    goalActions: goalActions(
+      ctx.sdk,
+      async () => {
+        await ensureSession()
+        if (!state.sessionID) throw new Error("Session is unavailable")
+        return state.sessionID
+      },
+      async () => {
+        if (state.model)
+          return {
+            agent: state.agent ?? "build",
+            model: { id: state.model.modelID, providerID: state.model.providerID, variant: state.activeVariant },
+          }
+        await ensureSession()
+        if (ctx.native) {
+          const current = state.sessionID ? await ctx.native.get(state.sessionID) : undefined
+          return current?.model ? { agent: state.agent ?? current.agent ?? "build", model: current.model } : undefined
+        }
+        if (state.sessionID) {
+          const current = (await ctx.sdk.session.get({ sessionID: state.sessionID }, { throwOnError: true })).data
+          if (current.model) return { agent: state.agent ?? current.agent ?? "build", model: current.model }
+        }
+        const configured = (await ctx.sdk.config.get({}, { throwOnError: true })).data.model
+        const separator = configured?.indexOf("/") ?? -1
+        if (configured && separator > 0)
+          return {
+            agent: state.agent ?? "build",
+            model: {
+              providerID: configured.slice(0, separator),
+              id: configured.slice(separator + 1),
+              variant: state.activeVariant,
+            },
+          }
+      },
+      async () => (ctx.native ? "native" : "compatibility"),
+    ),
+    pluginsActions: pluginsActions(ctx.sdk, ctx.directory),
+    mcpActions: mcpActions(ctx.sdk, ctx.directory, () => state.sessionID),
+    workflowActions: workflowActions(
+      ctx.sdk,
+      async () => {
+        await ensureSession()
+        if (!state.sessionID) throw new Error("Session is unavailable")
+        return state.sessionID
+      },
+      () =>
+        state.model
+          ? {
+              agent: state.agent ?? "build",
+              model: { id: state.model.modelID, providerID: state.model.providerID, variant: state.activeVariant },
+            }
+          : undefined,
+    ),
+    sideQuestionActions: {
+      list: async (signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.sideQuestion : ctx.sdk.sideQuestion).list(
+            { sessionID: state.sessionID },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      ask: async (sideQuestionInput, signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.sideQuestion : ctx.sdk.sideQuestion).ask(
+            { sessionID: state.sessionID, sideQuestionInput },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      cancel: async (questionID, signal) =>
+        (
+          await (ctx.native ? ctx.sdk.v2.sideQuestion : ctx.sdk.sideQuestion).cancel(
+            { sessionID: state.sessionID, questionID },
+            { signal, throwOnError: true },
+          )
+        ).data,
+    },
+    commandSandboxActions: {
+      get: async (signal) =>
+        state.sessionID
+          ? (await ctx.sdk.v2.session.sandbox({ sessionID: state.sessionID }, { signal, throwOnError: true })).data
+          : undefined,
+    },
+    hooksActions: {
+      trust: async (hostHooksRepositoryTrust, signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.hooks : ctx.sdk.hooks).trust(
+            {
+              sessionID: state.sessionID,
+              hostHooksRepositoryTrust: {
+                root: hostHooksRepositoryTrust.root,
+                token: hostHooksRepositoryTrust.token,
+                trusted: hostHooksRepositoryTrust.trusted,
+              },
+            },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      preference: async (hookID, enabled, signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.hooks : ctx.sdk.hooks).preference(
+            { sessionID: state.sessionID, hostHooksPreference: { hookID, enabled } },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      get: async (signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.hooks : ctx.sdk.hooks).get(
+            { sessionID: state.sessionID },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      reload: async (signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.hooks : ctx.sdk.hooks).reload(
+            { sessionID: state.sessionID },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+    },
+    feedbackActions: {
+      list: async (signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.feedback : ctx.sdk.feedback).list(
+            { sessionID: state.sessionID },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      save: async (feedbackSave, signal) => {
+        await ensureSession()
+        return (
+          await (ctx.native ? ctx.sdk.v2.feedback : ctx.sdk.feedback).save(
+            { sessionID: state.sessionID, feedbackSave },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      review: async (draftID, revision, signal) =>
+        (
+          await (ctx.native ? ctx.sdk.v2.feedback : ctx.sdk.feedback).review(
+            { sessionID: state.sessionID, draftID, feedbackReview: { revision } },
+            { signal, throwOnError: true },
+          )
+        ).data,
+      image: async (draftID, revision, imageID, signal) =>
+        (
+          await (ctx.native ? ctx.sdk.v2.feedback : ctx.sdk.feedback).image(
+            { sessionID: state.sessionID, draftID, imageID, feedbackReview: { revision } },
+            { signal, throwOnError: true },
+          )
+        ).data,
+      remove: (draftID, revision, signal) =>
+        (ctx.native ? ctx.sdk.v2.feedback : ctx.sdk.feedback).remove(
+          { sessionID: state.sessionID, draftID, feedbackReview: { revision } },
+          { signal, throwOnError: true },
+        ),
+    },
+    memoryActions: ctx.native
+      ? nativeMemoryActions(ctx.sdk, async () => {
+          await ensureSession()
+          return state.sessionID
+        })
+      : {
+          work: {
+            get: async (signal) => {
+              await ensureSession()
+              return (
+                await ctx.sdk.experimental.memory.operation(
+                  { sessionID: state.sessionID },
+                  { signal, throwOnError: true },
+                )
+              ).data
+            },
+            start: async (kind, signal) => {
+              await ensureSession()
+              return (
+                await ctx.sdk.experimental.memory.start(
+                  { sessionID: state.sessionID, memoryWorkStart: { kind } },
+                  { signal, throwOnError: true },
+                )
+              ).data
+            },
+            cancel: async (id, signal) =>
+              (
+                await ctx.sdk.experimental.memory.cancel(
+                  { sessionID: state.sessionID, memoryWorkCancel: { id } },
+                  { signal, throwOnError: true },
+                )
+              ).data,
+          },
+          review: {
+            save: async (content, scope, signal) => {
+              await ensureSession()
+              return (
+                await ctx.sdk.experimental.memory.remember(
+                  { sessionID: state.sessionID, memoryReviewSave: { content, scope } },
+                  { signal, throwOnError: true },
+                )
+              ).data
+            },
+            rewrite: async (content, signal) => {
+              await ensureSession()
+              return (
+                await ctx.sdk.experimental.memory.rewrite(
+                  { sessionID: state.sessionID, memoryReviewRewrite: { content } },
+                  { signal, throwOnError: true },
+                )
+              ).data
+            },
+          },
+          health: async (signal) => {
+            await ensureSession()
+            return (
+              await ctx.sdk.experimental.memory.health({ sessionID: state.sessionID }, { throwOnError: true, signal })
+            ).data
+          },
+          status: async (signal) => {
+            await ensureSession()
+            return (
+              await ctx.sdk.experimental.memory.status({ sessionID: state.sessionID }, { throwOnError: true, signal })
+            ).data
+          },
+          toggle: async (enabled, signal) =>
+            (
+              await ctx.sdk.experimental.memory.toggle(
+                { sessionID: state.sessionID, memoryModeUpdate: { enabled } },
+                { throwOnError: true, signal },
+              )
+            ).data,
+          list: async (search, signal) => {
+            await ensureSession()
+            return (
+              await ctx.sdk.experimental.memory.list(
+                { sessionID: state.sessionID, search },
+                { throwOnError: true, signal },
+              )
+            ).data
+          },
+          get: async (path, signal) =>
+            (
+              await ctx.sdk.experimental.memory.get(
+                { sessionID: state.sessionID, path },
+                { throwOnError: true, signal },
+              )
+            ).data,
+          forget: (note, signal) =>
+            ctx.sdk.experimental.memory.forget(
+              { sessionID: state.sessionID, memoryNoteForget: note },
+              { throwOnError: true, signal },
+            ),
+        },
+    taskActions: {
+      messageDraft: (target) =>
+        target.source === "native-task"
+          ? taskMessageDraft(ctx.sdk, state.sessionID, target.id, target.started_at)
+          : undefined,
+      get: (target, signal) => tasks.get(target, signal),
+      wait: (target, signal) => tasks.wait(target, signal),
+      changeSchedule: async (target, action, signal) => {
+        const owner = state.sessionID
+        const result = await tasks.changeSchedule(target, action, signal)
+        if (state.sessionID === owner) await refreshTasks()
+        return result
+      },
+      cancel: async (target, signal) => {
+        const owner = state.sessionID
+        await tasks.cancel(target, signal)
+        if (state.sessionID === owner) await refreshTasks()
+      },
+    },
     onSubagentSelect: (sessionID) => {
       state.selectSubagent?.(sessionID)
       log?.write("subagent.select", {
@@ -363,6 +689,41 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     },
   })
   const footer = shell.footer
+  const abort = () => footer.close()
+  input.signal?.addEventListener("abort", abort, { once: true })
+  if (input.signal?.aborted) abort()
+  const taskAbort = new AbortController()
+  let taskTimer: ReturnType<typeof setTimeout> | undefined
+  let taskRevision = 0
+  let taskOwner = state.sessionID
+  const refreshTasks = async () => {
+    const revision = ++taskRevision
+    clearTimeout(taskTimer)
+    const sessionID = state.sessionID
+    if (taskOwner !== sessionID) {
+      taskOwner = sessionID
+      footer.event({ type: "stream.patch", patch: { tasks: [], taskError: "", taskIssues: [] } })
+    }
+    if (sessionID)
+      await tasks
+        .list(AbortSignal.any([taskAbort.signal, AbortSignal.timeout(10_000)]))
+        .then((result) => {
+          if (!taskAbort.signal.aborted && revision === taskRevision && state.sessionID === sessionID)
+            footer.event({
+              type: "stream.patch",
+              patch: { tasks: result.items, taskNative: result.native, taskError: "", taskIssues: result.issues },
+            })
+        })
+        .catch((error: unknown) => {
+          if (!taskAbort.signal.aborted && revision === taskRevision && state.sessionID === sessionID)
+            footer.event({
+              type: "stream.patch",
+              patch: { taskError: error instanceof Error ? error.message : String(error) },
+            })
+        })
+    if (!taskAbort.signal.aborted && revision === taskRevision) taskTimer = setTimeout(refreshTasks, 2_000)
+  }
+  void refreshTasks()
   const rememberLocal = (commit: StreamCommit, after?: LocalReplayAnchor) => {
     state.localRows = [...state.localRows, { commit, after }].slice(-LOCAL_REPLAY_ROW_LIMIT)
   }
@@ -372,6 +733,29 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       return
     }
 
+    if (ctx.native) {
+      const catalog = await ctx.native.catalog()
+      if (!footer.isClosed)
+        footer.event({
+          type: "catalog",
+          agents: catalog.agents.map((agent) => ({
+            name: agent.id,
+            description: agent.description ?? undefined,
+            mode: agent.mode,
+            hidden: agent.hidden ?? undefined,
+            color: agent.color ?? undefined,
+            model: agent.model ? { providerID: agent.model.providerID, modelID: agent.model.id } : undefined,
+          })),
+          resources: [],
+          commands: catalog.commands.map((command) => ({
+            name: command.name,
+            description: command.description ?? undefined,
+            template: command.template,
+            hints: ["[interval] <prompt>"],
+          })),
+        })
+      return
+    }
     const [agents, resources, commands] = await Promise.all([
       ctx.sdk.app
         .agents({ directory: ctx.directory })
@@ -473,6 +857,19 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
 
       const handle = await mod.createSessionTransport({
         sdk: ctx.sdk,
+        native: ctx.native,
+        onSelection: (session) => {
+          state.agent = session.agent ?? undefined
+          state.model = session.model ? { modelID: session.model.id, providerID: session.model.providerID } : undefined
+          state.activeVariant = session.model?.variant ?? undefined
+          footer.event({
+            type: "stream.patch",
+            patch: {
+              agent: state.agent,
+              model: state.model ? formatModelLabel(state.model, state.activeVariant, state.providers) : "",
+            },
+          })
+        },
         directory: ctx.directory,
         sessionID: state.sessionID,
         thinking: input.thinking,
@@ -708,6 +1105,12 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       })
     }
 
+    if (input.startupNotice) {
+      const commit = { kind: "system", text: input.startupNotice, phase: "final", source: "system" } as const
+      rememberLocal(commit)
+      footer.append(commit)
+    }
+
     try {
       await runQueue()
     } finally {
@@ -718,6 +1121,9 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       await state.stream?.then((item) => item.handle.close()).catch(() => {})
     }
   } finally {
+    input.signal?.removeEventListener("abort", abort)
+    taskAbort.abort()
+    clearTimeout(taskTimer)
     const title = await resolveExitTitle(ctx, input, state)
 
     await shell.close({
@@ -783,11 +1189,13 @@ export async function runInteractiveLocalMode(input: RunLocalInput): Promise<voi
 
 // Attach mode. Uses the caller-provided SDK client directly.
 export async function runInteractiveMode(
-  input: RunInput & { createSession?: CreateSession },
+  input: RunInput & { createSession?: CreateSession; signal?: AbortSignal },
   deps?: RunRuntimeDeps,
 ): Promise<void> {
   return runInteractiveRuntime(
     {
+      signal: input.signal,
+      startupNotice: input.startupNotice,
       files: input.files,
       initialInput: input.initialInput,
       thinking: input.thinking,
@@ -797,6 +1205,7 @@ export async function runInteractiveMode(
       demo: input.demo,
       boot: async () => ({
         sdk: input.sdk,
+        native: input.native,
         directory: input.directory,
         sessionID: input.sessionID,
         sessionTitle: input.sessionTitle,

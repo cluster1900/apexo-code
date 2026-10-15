@@ -3,6 +3,7 @@ import { BackgroundJob } from "@/background/job"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
+import { Permission } from "@/permission"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
@@ -14,6 +15,11 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import { notFound, ConflictError, ForbiddenError, ServiceUnavailableError, InvalidRequestError } from "../errors"
+import { MemoryManagement } from "@/session/memory-management"
+import { SessionMemoryWork } from "@/session/memory-work"
+import { MemoryCatalog } from "@apexo/core/memory-catalog"
+import { HostHooks } from "@apexo/core/hooks"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -31,22 +37,48 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessions = yield* Session.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
+    const memory = yield* MemoryManagement.Service
+    const memoryWork = yield* SessionMemoryWork.Service
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
-      return { backgroundSubagents: flags.experimentalBackgroundSubagents }
+      return {
+        backgroundSubagents: flags.experimentalBackgroundSubagents,
+        memoryManagement: flags.runtimeProfile === "grok-build" && flags.grokMemory !== false,
+      }
     })
 
     const tool = Effect.fn("ExperimentalHttpApi.tool")(function* (ctx: { query: typeof ToolListQuery.Type }) {
+      const session = ctx.query.sessionID
+        ? yield* sessions.get(ctx.query.sessionID).pipe(Effect.mapError(() => notFound("Session not found")))
+        : undefined
+      const location = yield* InstanceState.context
+      if (
+        session &&
+        (session.projectID !== location.project.id ||
+          (location.project.id === "global" && session.directory !== location.directory))
+      )
+        return yield* notFound("Session not found")
+      const agent = session?.agent ? yield* agents.get(session.agent) : yield* agents.defaultInfo()
       const list = yield* registry.tools({
         providerID: ctx.query.provider,
         modelID: ctx.query.model,
-        agent: yield* agents.defaultInfo(),
+        agent,
+        permission: session?.permission,
+        sessionID: session?.id,
       })
-      return list.map((item) => ({
-        id: item.id,
-        description: item.description,
-        parameters: ToolJsonSchema.fromTool(item),
-      }))
+      const hidden = session
+        ? Permission.disabled(
+            list.map((item) => item.id),
+            Permission.merge(agent.permission, session.permission ?? []),
+          )
+        : new Set<string>()
+      return list
+        .filter((item) => !hidden.has(item.id))
+        .map((item) => ({
+          id: item.id,
+          description: item.description,
+          parameters: ToolJsonSchema.fromTool(item),
+        }))
     })
 
     const toolIDs = Effect.fn("ExperimentalHttpApi.toolIDs")(function* () {
@@ -104,23 +136,60 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessionBackground = Effect.fn("ExperimentalHttpApi.sessionBackground")(function* (ctx: {
       params: { sessionID: SessionID }
     }) {
-      if (!flags.experimentalBackgroundSubagents) return false
-      const jobs = (yield* background.list()).filter(
-        (job) =>
-          job.type === "task" &&
-          job.status === "running" &&
-          job.metadata?.parentSessionId === ctx.params.sessionID &&
-          job.metadata.background !== true,
+      return yield* BackgroundJob.promoteSession(
+        background,
+        ctx.params.sessionID,
+        flags.experimentalBackgroundSubagents,
       )
-      const promoted = yield* Effect.forEach(jobs, (job) => background.promote(job.id), { concurrency: "unbounded" })
-      return promoted.some((job) => job !== undefined)
     })
 
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
 
+    const tasks = Effect.fn("ExperimentalHttpApi.tasks")(function* (ctx: { params: { sessionID: SessionID } }) {
+      return (yield* background.list())
+        .filter((job) => BackgroundJob.owns(job, ctx.params.sessionID))
+        .map((job) => BackgroundJob.summary(job, ctx.params.sessionID))
+        .toSorted(
+          (a, b) => Number(b.status === "running") - Number(a.status === "running") || b.started_at - a.started_at,
+        )
+    })
+
+    const task = Effect.fn("ExperimentalHttpApi.task")(function* (ctx: {
+      params: { sessionID: SessionID; taskID: string }
+    }) {
+      const job = yield* background.get(ctx.params.taskID)
+      if (!job || !BackgroundJob.owns(job, ctx.params.sessionID)) return yield* notFound("Task not found")
+      return { ...BackgroundJob.summary(job, ctx.params.sessionID), output: job.output ?? "", error: job.error }
+    })
+
+    const taskCancel = Effect.fn("ExperimentalHttpApi.taskCancel")(function* (ctx: {
+      params: { sessionID: SessionID; taskID: string }
+    }) {
+      const job = yield* background.get(ctx.params.taskID)
+      if (!job || !BackgroundJob.owns(job, ctx.params.sessionID)) return yield* notFound("Task not found")
+      const cancelled = yield* background.cancel(job.id)
+      return BackgroundJob.summary(cancelled ?? job, ctx.params.sessionID)
+    })
+
     return handlers
+      .handle("hooks", () =>
+        Effect.gen(function* () {
+          const directory = yield* InstanceState.directory
+          const inspection = yield* Effect.tryPromise({
+            try: () => HostHooks.inspect(directory),
+            catch: () =>
+              new ServiceUnavailableError({ message: "Hook configuration is unavailable", service: "hooks" }),
+          })
+          if (flags.runtimeProfile === "grok-build") return inspection
+          return {
+            ...inspection,
+            diagnostics: [...inspection.diagnostics, "Grok host hooks are inactive in the Apexo runtime profile."],
+            hooks: inspection.hooks.map((hook) => ({ ...hook, supported: false })),
+          }
+        }),
+      )
       .handle("capabilities", capabilities)
       .handle("tool", tool)
       .handle("toolIDs", toolIDs)
@@ -130,6 +199,43 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
+      .handle("tasks", tasks)
+      .handle("task", task)
+      .handle("taskCancel", taskCancel)
+      .handle("memory", (ctx) => memory.list(ctx.params.sessionID, ctx.query.search).pipe(Effect.mapError(memoryError)))
+      .handle("memoryStatus", (ctx) => memory.status(ctx.params.sessionID).pipe(Effect.mapError(memoryError)))
+      .handle("memoryHealth", (ctx) => memory.health(ctx.params.sessionID).pipe(Effect.mapError(memoryError)))
+      .handle("memoryToggle", (ctx) =>
+        memory.toggle(ctx.params.sessionID, ctx.payload.enabled).pipe(Effect.mapError(memoryError)),
+      )
+      .handle("memoryNote", (ctx) =>
+        memory.preview(ctx.params.sessionID, ctx.query.path).pipe(Effect.mapError(memoryError)),
+      )
+      .handle("memoryForget", (ctx) =>
+        memory.forget(ctx.params.sessionID, ctx.payload).pipe(Effect.mapError(memoryError)),
+      )
+      .handle("memoryRemember", (ctx) =>
+        memory.remember(ctx.params.sessionID, ctx.payload).pipe(Effect.mapError(memoryError)),
+      )
+      .handle("memoryRewrite", (ctx) =>
+        memory.rewrite(ctx.params.sessionID, ctx.payload).pipe(Effect.mapError(memoryError)),
+      )
+      .handle("memoryWork", (ctx) => memoryWork.get(ctx.params.sessionID).pipe(Effect.mapError(memoryError)))
+      .handle("memoryWorkStart", (ctx) =>
+        memoryWork.start(ctx.params.sessionID, ctx.payload.kind).pipe(Effect.mapError(memoryError)),
+      )
+      .handle("memoryWorkCancel", (ctx) =>
+        memoryWork.cancel(ctx.params.sessionID, ctx.payload.id).pipe(Effect.mapError(memoryError)),
+      )
       .handle("resource", resource)
   }),
 )
+
+function memoryError(error: MemoryCatalog.Error) {
+  if (error.reason === "invalid") return new InvalidRequestError({ message: error.message, kind: "memory" })
+  if (error.reason === "not_found") return notFound(error.message)
+  if (error.reason === "forbidden" || error.reason === "not_deletable")
+    return new ForbiddenError({ message: error.message })
+  if (error.reason === "changed") return new ConflictError({ message: error.message, resource: "memory" })
+  return new ServiceUnavailableError({ message: error.message, service: "memory" })
+}

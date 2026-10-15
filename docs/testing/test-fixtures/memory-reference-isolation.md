@@ -1,0 +1,16 @@
+# Installed Memory comparison lacked an egress boundary
+
+- Bug ID: BUG-20261015-287.
+- Scope: `packages/apexo/script/grok-memory-dream-reference.mjs`, comparison-only fixture.
+- Status: Source-detected hardening defect corrected, integrated and verified in private and shared script-only runs.
+- Evidence count: one source audit. No observed credential disclosure, external request or user-profile mutation is claimed, and no runtime recurrence count is invented.
+
+The previous script isolated HOME/GROK_HOME/XDG paths but formed its child environment by copying host variables except a small provider-prefix exclusion. It had no network egress guard, left auxiliary service locations implicit and did not explicitly disable every vendor import. Therefore the source did not guarantee that an installed auxiliary request would stay inside the intended local comparison. Its provider classifier also searched the entire serialized history and returned Chat Completions chunks even for requests using Responses.
+
+Existing [BUG067](official-fixture-home-isolation.md) and [BUG149](official-compaction-home-isolation.md) describe observed inherited-home/import contamination. This fixture already isolated those home values, so this audit is not counted as another occurrence of either observed cause. Authoritative request classification follows the existing [RULE016](../../rules/fixture-evidence-projection.md); this source correction is not added to its runtime episode count.
+
+The repair uses the already verified headless-comparison pattern: explicit environment whitelist, private state and temp directories, disabled imports/telemetry, local endpoint redirects, and macOS sandbox denial of all network destinations except the exact owned provider listener. Real-home access is denied except the explicit installed binary and the single disposable non-temporary Memory workspace. Actual system messages and tool names classify main/capture/Dream/title/dashboard requests; responses use the request's Chat Completions or Responses protocol. Unexpected requests fail visibly. Request size and command durations are bounded, and cleanup joins owned processes and removes the workspace.
+
+Verification from `packages/apexo`: `bun script/grok-memory-dream-reference.mjs` passed eight Memory checks on installed 1.0.52 with exactly five provider requests: one each for main, capture, Dream, title and dashboard. Actual preflight commands verified denied home reads and denied non-whitelisted local-port access, plus allowed owned-workspace reads and provider access. The separate supported CLI clear removed both fixture topics with zero requests. There were zero responder errors, empty agent stderr, and no matching fixture process after joined cleanup. Syntax bundling and repository-configured formatting passed. See the [reference audit](../../native-memory-reference-audit.md) for source revision, scope and non-equivalence to Apexo receipt discard.
+
+The reviewed three-file handoff is integrated. The shared command independently passed the same eight checks/five classified requests, real isolation preflight and two-topic clear with zero clear requests. Agent stderr and responder errors were empty; the owned workspace was removed and processes exited. This rerun verifies the same correction and adds no recurrence.

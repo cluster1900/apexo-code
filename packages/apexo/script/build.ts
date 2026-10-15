@@ -4,6 +4,7 @@ import { $ } from "bun"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
+import { stageWorkflowInterpreter } from "../../workflow-script/script/artifact"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -155,6 +156,7 @@ for (const item of targets) {
     .join("-")
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
+  await stageWorkflowInterpreter(`dist/${name}/bin`, item)
 
   const workerPath = "./src/cli/tui/worker.ts"
   const treeSitterWorkerPath = "opentui-tree-sitter-worker.js"

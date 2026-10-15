@@ -38,6 +38,8 @@ export const dict = {
   "ui.sessionReviewV2.empty.noGit.actionLoading": "正在创建 Git 仓库...",
   "ui.sessionReviewV2.empty.changes.title": "尚无文件变更",
   "ui.sessionReviewV2.empty.changes.description": "项目变更将显示在此处",
+  "ui.fileMedia.kind.video": "视频",
+  "ui.fileMedia.previewVideo": "预览视频",
   "ui.fileMedia.kind.image": "图片",
   "ui.fileMedia.kind.audio": "音频",
   "ui.fileMedia.state.removed": "{{kind}}已移除",

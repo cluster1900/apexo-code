@@ -16,6 +16,8 @@ import {
   RunSubagentSelectBody,
   RunVariantSelectBody,
 } from "@/cli/cmd/run/footer.command"
+import { RunTasksBody } from "@/cli/cmd/run/footer.tasks"
+import type { TaskItem, TaskOutput } from "@apexo/tui/util/session-tasks"
 import { RunFooterView } from "@/cli/cmd/run/footer.view"
 import { RunEntryContent } from "@/cli/cmd/run/scrollback.writer"
 import { RUN_THEME_FALLBACK, type RunTheme } from "@/cli/cmd/run/theme"
@@ -165,6 +167,8 @@ async function renderFooter(
     height?: number
     state?: Partial<FooterState>
     onCycle?: () => void
+    onBackground?: () => void
+    taskActions?: import("@/cli/cmd/run/types").RunTaskActions
     onSubmit?: (prompt: RunPrompt) => boolean
   } = {},
 ) {
@@ -205,6 +209,8 @@ async function renderFooter(
           onQuestionReply={() => {}}
           onQuestionReject={() => {}}
           onCycle={input.onCycle ?? (() => {})}
+          onBackground={input.onBackground}
+          taskActions={input.taskActions}
           onInterrupt={() => false}
           onEditorOpen={async () => undefined}
           onInputClear={() => {}}
@@ -286,6 +292,61 @@ function panelMenu(root: BoxRenderable | RootRenderable) {
   const content = child(panel, 0)
   return child(content.getChildren().at(-1) as BoxRenderable, 0)
 }
+
+test("tasks command opens the unified panel without sending a model prompt and stops the selected task", async () => {
+  const cancelled: { source: string; id: string }[] = []
+  const submitted: RunPrompt[] = []
+  const task = {
+    id: "job-shell",
+    source: "compatibility" as const,
+    key: "compatibility:job-shell",
+    type: "shell",
+    title: "Live command",
+    status: "running" as const,
+    started_at: 1,
+    sessionID: "ses-parent",
+    background: true,
+  }
+  const app = await renderFooter({
+    height: 25,
+    state: { tasks: [task] },
+    onSubmit: (prompt) => {
+      submitted.push(prompt)
+      return true
+    },
+    taskActions: {
+      changeSchedule: async () => {
+        throw new Error("Compatibility task must never change native schedules")
+      },
+      get: async () => ({ ...task, output: "LIVE_OUTPUT_中文" }),
+      wait: async () => {
+        throw new Error("Compatibility task must never use native process wait")
+      },
+      cancel: async (target) => {
+        cancelled.push(target)
+      },
+    },
+  })
+  try {
+    await app.renderOnce()
+    "/tasks".split("").forEach((key) => app.mockInput.pressKey(key))
+    await app.renderOnce()
+    app.mockInput.pressEnter()
+    await app.renderOnce()
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("Live command")
+    expect(app.captureCharFrame()).toContain("LIVE_OUTPUT_中文")
+    expect(submitted).toEqual([])
+    app.mockInput.pressKey("c")
+    await app.renderOnce()
+    expect(cancelled).toEqual([task])
+    app.mockInput.pressKey("ESCAPE")
+    await app.renderOnce()
+    expect(app.captureCharFrame()).not.toContain("LIVE_OUTPUT_中文")
+  } finally {
+    app.cleanup()
+  }
+})
 
 test("direct footer composer area does not adopt footer surface", async () => {
   const surface = RGBA.fromHex("#123456")
@@ -1088,6 +1149,25 @@ test("direct footer separates a lone context hint from model and command hint", 
   }
 })
 
+test("direct footer backgrounds a foreground shell with Ctrl+B when subagents are disabled", async () => {
+  const calls: string[] = []
+  const app = await renderFooter({
+    backgroundSubagents: false,
+    state: { phase: "running", foregroundShells: 1 },
+    onBackground: () => calls.push("background"),
+    width: 160,
+  })
+  try {
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("ctrl+b background")
+    app.mockInput.pressKey("b", { ctrl: true })
+    await app.renderOnce()
+    expect(calls).toEqual(["background"])
+  } finally {
+    app.cleanup()
+  }
+})
+
 test("direct footer hides the subagent hint when only completed subagents remain", async () => {
   const app = await renderFooter({
     providers: [provider()],
@@ -1405,6 +1485,65 @@ test("direct variant panel renders current variant selector", async () => {
     expect(frame).not.toContain("┌")
     expect(frame).not.toContain("┃")
     expectPaletteList(list, 1)
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("process wait survives same-key list refresh and aborts on actual selection change", async () => {
+  const item: TaskItem = {
+    id: "proc-one",
+    key: "native-process:proc-one",
+    source: "native-process",
+    type: "monitor",
+    status: "running",
+    title: "Held monitor",
+    started_at: 1,
+    sessionID: "session-one",
+    background: true,
+  }
+  const [items, setItems] = createSignal([item])
+  const request = { signal: undefined as AbortSignal | undefined }
+  const result = Promise.withResolvers<{ detail: TaskOutput; timedOut: boolean }>()
+  const app = await testRender(
+    () => (
+      <RunTasksBody
+        theme={() => RUN_THEME_FALLBACK.footer}
+        tasks={items}
+        native={() => true}
+        error={() => undefined}
+        onClose={() => {}}
+        actions={{
+          changeSchedule: async () => {
+            throw new Error("Process must never change schedules")
+          },
+          get: async () => ({ ...item, output: "live output" }),
+          cancel: async () => {},
+          wait: async (_target, signal) => {
+            request.signal = signal
+            return result.promise
+          },
+        }}
+      />
+    ),
+    { width: 120, height: 30 },
+  )
+  try {
+    await app.renderOnce()
+    app.mockInput.pressKey("w")
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("Waiting up to 10 seconds")
+    setItems([{ ...item, title: "Refreshed monitor" }])
+    await app.renderOnce()
+    expect(request.signal?.aborted).toBe(false)
+    expect(app.captureCharFrame()).toContain("Waiting up to 10 seconds")
+    result.resolve({ detail: { ...item, output: "live output" }, timedOut: true })
+    await Bun.sleep(0)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("process is still running")
+    setItems([{ ...item, id: "proc-two", key: "native-process:proc-two" }])
+    await app.renderOnce()
+    expect(request.signal?.aborted).toBe(true)
   } finally {
     app.renderer.destroy()
   }

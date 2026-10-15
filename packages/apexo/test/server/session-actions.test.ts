@@ -1,12 +1,12 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect, mock } from "bun:test"
-import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(SessionNs.node), httpApiLayer))
+const it = testEffect(Layer.mergeAll(AppNodeBuilderV1.build(SessionNs.node), httpApiLayer))
 
 afterEach(async () => {
   mock.restore()

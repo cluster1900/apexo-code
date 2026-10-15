@@ -1,0 +1,18 @@
+# Native managed-child input ownership
+
+Workflow and Goal child Sessions accept work only from their owning native operation. The existing Task private ownership remains authoritative. Apexo owns execution, permissions, persistence and lifecycle; no external runtime is embedded.
+
+A private row binds parent Created identity, child Created identity and domain owner. Workflow binds its run and immutable task key. Goal binds its Goal ID, originating attempt ID and role kind; reusing a verifier also requires the current private verification receipt and retained originating attempt. Reusing a Goal ID after clear does not revive an old child.
+
+New child creation publishes the command policy and input ownership atomically before Created listeners run. Public metadata remains editable presentation data. Removing it cannot admit an unrelated prompt, side question, Goal, Workflow, compatibility command or shell. Native prompt refusal uses the existing HTTP 409 contract; compatibility model-start routes use their existing HTTP 400 boundary. Manual compaction remains unavailable for managed children.
+
+Live scoped role capabilities authorize one native drain and one deterministic input ID. The runner promotes only that owned input; tool/provider-turn continuation remains the existing native loop. Schema correction has a fresh capability for its explicitly claimed second drain, not two provider turns. Usage, budget, interruption and receipt settlement continue through existing owners.
+
+Private authority survives restart, while live execution capabilities do not. Reads do not retry providers. A missing private record is ordinary only when no immutable managed Created marker exists; historical markers can quarantine, never grant authority. Historical or stale managed children require a new Workflow run or Goal attempt. This is a conservative safety boundary, not automatic migration from mutable metadata. Transcripts and reports are preserved. Deleting a child removes its private row through foreign keys, allowing legitimate ordinary Session-ID reuse.
+
+Isolated verification currently includes eight real-runtime tests with 150 assertions and a CLI script with four checks/two provider calls. The CLI covers active native/compatibility refusals, unchanged state/files, owned completion, restart without replay and ordinary ID reuse. The synthetic legacy store test is explicitly labeled; it does not claim captured historical data. Core, Apexo and Server package typechecks passed. The shared implementation subsequently passed 12 tests / 217 assertions, all 21 typecheck tasks and migration consistency. Both CLI and rebuilt Desktop passed four boundary checks / two provider calls each. Goal summary lifecycle passed ten checks / 80 provider calls in each backend, and the isolated official comparison passed two checks / 24 total requests. The installed Grok ACP surface cannot verify Apexo-specific HTTP/private-table ownership.
+
+Related records: [Workflow admission defect](testing/permissions/workflow-managed-child-admission.md) and [fixture authoring](testing/test-fixtures/workflow-managed-admission-fixture.md).
+
+
+The distinct public-resume early-start gap is now repaired: public resume and advisory wake check private/historical ownership before coordinator admission, while the internal trusted child capability retains its original path. The shared real-runtime gate passed 39 tests / 272 assertions and all 21 typechecks. Patched CLI/rebuilt Desktop Task, Workflow and Goal summary checks all passed. See [BUG091](testing/runtime/managed-child-public-resume.md). Owner cancellation already joined the child in the regression; no escaped cancellation is claimed.

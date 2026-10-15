@@ -175,7 +175,7 @@ export function RunPermissionBody(props: {
     }))
 
     try {
-      await props.onReply(next)
+      await props.onReply({ ...next, sessionID: props.request.sessionID })
     } catch {
       setState((prev) => ({
         ...prev,

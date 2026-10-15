@@ -136,10 +136,14 @@ function normalizeSettings(input: Record<string, unknown>, result: Record<string
     const value = decodeValue(Schema.Boolean, input.snapshots, ["snapshots"], diagnostics)
     if (value !== undefined) preferLegacy(result, "snapshot", value, ["snapshots"], diagnostics)
   }
-  if (Object.hasOwn(input, "media")) {
-    const value = decodeValue(ConfigAttachmentV1.Info, input.media, ["media"], diagnostics)
-    if (value !== undefined) preferLegacy(result, "attachment", value, ["media"], diagnostics)
-  }
+  const media = decodeRecord(input.media)
+  if (Option.isNone(media) || !Object.hasOwn(media.value, "image")) return
+  const value = decodeValue(ConfigAttachmentV1.Info, media.value, ["media"], diagnostics)
+  if (value !== undefined) preferLegacy(result, "attachment", value, ["media"], diagnostics)
+  // The attachment alias shares this container with media generation settings.
+  const remaining = Object.fromEntries(Object.entries(media.value).filter(([key]) => key !== "image"))
+  if (Object.keys(remaining).length) result.media = remaining
+  if (!Object.keys(remaining).length) delete result.media
 }
 
 function normalizeModel(input: Record<string, unknown>, result: Record<string, unknown>, diagnostics: Diagnostic[]) {

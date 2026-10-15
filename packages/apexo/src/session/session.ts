@@ -1,10 +1,20 @@
+import { SessionCommandSandbox } from "@apexo/core/session/command-sandbox"
+import { CommandSandboxPolicy } from "@apexo/core/command-sandbox/policy"
+import { SessionLifecycle } from "@apexo/core/session/lifecycle"
+import { SessionRemoval } from "@apexo/core/session/removal"
+import { SessionExecution } from "@apexo/core/session/execution"
+import { SessionExecutionLocal } from "@apexo/core/session/execution/local"
+import { SessionHookSnapshot } from "@apexo/core/session/hook-snapshot"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { Slug } from "@apexo/core/util/slug"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { serviceUse } from "@apexo/core/effect/service-use"
 import path from "path"
+import { SessionRunState } from "./run-state"
 import { BackgroundJob } from "@/background/job"
+import { SessionGoal } from "@apexo/core/session/goal"
+import { SessionGoalCleanup } from "@apexo/core/session/goal-cleanup"
 import { Decimal } from "decimal.js"
 import type { ProviderMetadata, Usage } from "@apexo/llm"
 import { InstallationVersion } from "@apexo/core/installation/version"
@@ -401,9 +411,7 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   }
 }
 
-export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusyError", {
-  sessionID: SessionID,
-}) {}
+export { BusyError } from "./errors"
 
 export type NotFound = NotFoundError
 
@@ -482,13 +490,31 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service
+  | SessionLifecycle.Service
+  | SessionRemoval.Service
+  | SessionExecution.Service
+  | SessionHookSnapshot.Service
+  | BackgroundJob.Service
+  | SessionCommandSandbox.Service
+  | SessionRunState.Service
+  | SessionGoalCleanup.Service
+  | RuntimeFlags.Service
+  | Database.Service
+  | EventV2Bridge.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const policies = yield* SessionCommandSandbox.Service
+    const lifecycle = yield* SessionLifecycle.Service
+    const removal = yield* SessionRemoval.Service
     const database = yield* Database.Service
+    const execution = yield* SessionExecution.Service
+    const hookSnapshots = yield* SessionHookSnapshot.Service
+    const runs = yield* SessionRunState.Service
     const background = yield* BackgroundJob.Service
+    const cleanup = yield* SessionGoalCleanup.Service
+    const goals = SessionGoal.make(db)
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
 
@@ -504,6 +530,7 @@ const layer: Layer.Layer<
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
     }) {
+      const parent = input.parentID ? yield* policies.capture(input.parentID).pipe(Effect.orDie) : undefined
       const ctx = yield* InstanceState.context
       const result: Info = {
         id: SessionID.descending(input.id),
@@ -526,11 +553,25 @@ const layer: Layer.Layer<
           updated: Date.now(),
         },
       }
-      yield* Effect.logInfo("created", result)
-
-      yield* events.publish(SessionV1.Event.Created, { sessionID: result.id, info: result })
-
-      return result
+      const publish = Effect.gen(function* () {
+        if (input.parentID) yield* get(input.parentID)
+        yield* Effect.logInfo("created", result)
+        const prepared = yield* parent
+          ? policies.prepareChild(parent, result.id)
+          : policies.prepareRoot(result.id, CommandSandboxPolicy.off)
+        yield* events.publish(
+          SessionV1.Event.Created,
+          { sessionID: result.id, info: result },
+          {
+            id: prepared.eventID,
+            commit: () => prepared.commit.pipe(Effect.orDie),
+          },
+        )
+        return result
+      })
+      return yield* (
+        input.parentID ? lifecycle.child(input.parentID, result.id, publish) : lifecycle.use(result.id, publish)
+      ).pipe(Effect.orDie)
     })
 
     const get = Effect.fn("Session.get")(function* (id: SessionID) {
@@ -599,34 +640,13 @@ const layer: Layer.Layer<
       return rows.map(fromRow)
     })
 
-    const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const session = yield* get(sessionID)
-      try {
-        // `remove` needs to work in all cases, such as broken sessions that
-        // run cleanup without instance state.
-        const hasInstance = yield* InstanceState.directory.pipe(
-          Effect.as(true),
-          Effect.catchCause(() => Effect.succeed(false)),
-        )
-
-        if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
-        const kids = yield* children(sessionID)
-        for (const child of kids) {
-          yield* remove(child.id)
-        }
-
-        yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
-        yield* events.remove(sessionID)
-      } catch (error) {
-        yield* Effect.logError("failed to remove session", { sessionID, error })
-      }
-    })
+    const remove: Interface["remove"] = (sessionID) => removal.remove(sessionID).pipe(Effect.orDie)
 
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
         yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg })
         return msg
-      }).pipe(Effect.withSpan("Session.updateMessage"))
+      }).pipe((effect) => lifecycle.use(msg.sessionID, effect), Effect.orDie, Effect.withSpan("Session.updateMessage"))
 
     const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
@@ -636,7 +656,7 @@ const layer: Layer.Layer<
           time: Date.now(),
         })
         return part
-      }).pipe(Effect.withSpan("Session.updatePart"))
+      }).pipe((effect) => lifecycle.use(part.sessionID, effect), Effect.orDie, Effect.withSpan("Session.updatePart"))
 
     const getPart: Interface["getPart"] = Effect.fn("Session.getPart")(function* (input) {
       const row = yield* db
@@ -660,72 +680,89 @@ const layer: Layer.Layer<
       } as SessionV1.Part
     })
 
-    const create = Effect.fn("Session.create")(function* (input?: {
-      parentID?: SessionID
-      title?: string
-      agent?: string
-      model?: Schema.Schema.Type<typeof Model>
-      metadata?: typeof Metadata.Type
-      permission?: PermissionV1.Ruleset
-      workspaceID?: WorkspaceV2.ID
-    }) {
-      const ctx = yield* InstanceState.context
-      const workspace = yield* InstanceState.workspaceID
-      return yield* createNext({
-        parentID: input?.parentID,
-        directory: ctx.directory,
-        path: sessionPath(ctx.worktree, ctx.directory),
-        title: input?.title,
-        agent: input?.agent,
-        model: input?.model,
-        metadata: input?.metadata,
-        permission: input?.permission,
-        workspaceID: input?.workspaceID ?? workspace,
-      })
-    })
-
-    const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
-      const ctx = yield* InstanceState.context
-      const original = yield* get(input.sessionID)
-      const title = getForkedTitle(original.title)
-      const session = yield* createNext({
-        directory: ctx.directory,
-        path: sessionPath(ctx.worktree, ctx.directory),
-        workspaceID: original.workspaceID,
-        title,
-        metadata: structuredClone(original.metadata),
-      })
-      const msgs = yield* messages({ sessionID: input.sessionID })
-      const idMap = new Map<string, MessageID>()
-      const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
-
-      for (const msg of msgs.slice(0, target < 0 ? msgs.length : target)) {
-        const newID = MessageID.ascending()
-        idMap.set(msg.info.id, newID)
-
-        const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
-        const cloned = yield* updateMessage({
-          ...msg.info,
-          sessionID: session.id,
-          id: newID,
-          ...(parentID && { parentID }),
+    const create = Effect.fn("Session.create")(
+      function* (input?: {
+        parentID?: SessionID
+        title?: string
+        agent?: string
+        model?: Schema.Schema.Type<typeof Model>
+        metadata?: typeof Metadata.Type
+        permission?: PermissionV1.Ruleset
+        workspaceID?: WorkspaceV2.ID
+      }) {
+        const ctx = yield* InstanceState.context
+        const workspace = yield* InstanceState.workspaceID
+        return yield* createNext({
+          parentID: input?.parentID,
+          directory: ctx.directory,
+          path: sessionPath(ctx.worktree, ctx.directory),
+          title: input?.title,
+          agent: input?.agent,
+          model: input?.model,
+          metadata: input?.metadata,
+          permission: input?.permission,
+          workspaceID: input?.workspaceID ?? workspace,
         })
+      },
+      (effect, input) => (input?.parentID ? lifecycle.read(input.parentID, effect).pipe(Effect.orDie) : effect),
+    )
 
-        for (const part of msg.parts) {
-          const p: SessionV1.Part = {
-            ...part,
-            id: PartID.ascending(),
-            messageID: cloned.id,
-            sessionID: session.id,
-          }
-          if (p.type === "compaction" && p.tail_start_id) {
-            p.tail_start_id = idMap.get(p.tail_start_id)
-          }
-          yield* updatePart(p)
-        }
-      }
-      return session
-    })
+    const fork = Effect.fn("Session.fork")(
+      function* (input: { sessionID: SessionID; messageID?: MessageID }) {
+        const ctx = yield* InstanceState.context
+        const original = yield* get(input.sessionID)
+        yield* policies.assertLegacy(input.sessionID).pipe(Effect.orDie)
+        const title = getForkedTitle(original.title)
+        const id = SessionID.descending()
+        return yield* lifecycle
+          .use(
+            id,
+            Effect.gen(function* () {
+              const session = yield* createNext({
+                id,
+                directory: ctx.directory,
+                path: sessionPath(ctx.worktree, ctx.directory),
+                workspaceID: original.workspaceID,
+                title,
+                metadata: structuredClone(original.metadata),
+              })
+              const msgs = yield* messages({ sessionID: input.sessionID })
+              const idMap = new Map<string, MessageID>()
+              const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
+
+              for (const msg of msgs.slice(0, target < 0 ? msgs.length : target)) {
+                const newID = MessageID.ascending()
+                idMap.set(msg.info.id, newID)
+
+                const parentID =
+                  msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
+                const cloned = yield* updateMessage({
+                  ...msg.info,
+                  sessionID: session.id,
+                  id: newID,
+                  ...(parentID && { parentID }),
+                })
+
+                for (const part of msg.parts) {
+                  const p: SessionV1.Part = {
+                    ...part,
+                    id: PartID.ascending(),
+                    messageID: cloned.id,
+                    sessionID: session.id,
+                  }
+                  if (p.type === "compaction" && p.tail_start_id) {
+                    p.tail_start_id = idMap.get(p.tail_start_id)
+                  }
+                  yield* updatePart(p)
+                }
+              }
+              return session
+            }),
+          )
+          .pipe(Effect.orDie)
+      },
+      (effect, input) => lifecycle.use(input.sessionID, effect).pipe(Effect.orDie),
+    )
 
     const patch = (sessionID: SessionID, info: Patch) =>
       Effect.gen(function* () {
@@ -740,7 +777,7 @@ const layer: Layer.Layer<
           permission: info.permission === null ? undefined : (info.permission ?? current.permission),
         } as Info
         yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
-      })
+      }).pipe((effect) => lifecycle.use(sessionID, effect), Effect.orDie)
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
@@ -842,39 +879,35 @@ const layer: Layer.Layer<
       return result.reverse()
     })
 
-    const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-    }) {
-      yield* events.publish(SessionV1.Event.MessageRemoved, {
-        sessionID: input.sessionID,
-        messageID: input.messageID,
-      })
-      return input.messageID
-    })
+    const removeMessage = Effect.fn("Session.removeMessage")(
+      function* (input: { sessionID: SessionID; messageID: MessageID }) {
+        yield* events.publish(SessionV1.Event.MessageRemoved, {
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+        })
+        return input.messageID
+      },
+      (effect, input) => lifecycle.use(input.sessionID, effect).pipe(Effect.orDie),
+    )
 
-    const removePart = Effect.fn("Session.removePart")(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-      partID: PartID
-    }) {
-      yield* events.publish(SessionV1.Event.PartRemoved, {
-        sessionID: input.sessionID,
-        messageID: input.messageID,
-        partID: input.partID,
-      })
-      return input.partID
-    })
+    const removePart = Effect.fn("Session.removePart")(
+      function* (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) {
+        yield* events.publish(SessionV1.Event.PartRemoved, {
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          partID: input.partID,
+        })
+        return input.partID
+      },
+      (effect, input) => lifecycle.use(input.sessionID, effect).pipe(Effect.orDie),
+    )
 
-    const updatePartDelta = Effect.fnUntraced(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-      partID: PartID
-      field: string
-      delta: string
-    }) {
-      yield* events.publish(MessageV2.Event.PartDelta, input)
-    })
+    const updatePartDelta = Effect.fnUntraced(
+      function* (input: { sessionID: SessionID; messageID: MessageID; partID: PartID; field: string; delta: string }) {
+        yield* events.publish(MessageV2.Event.PartDelta, input)
+      },
+      (effect, input) => lifecycle.use(input.sessionID, effect).pipe(Effect.orDie),
+    )
 
     /** Finds the first message matching the predicate, searching newest-first. */
     const findMessage: Interface["findMessage"] = Effect.fn("Session.findMessage")(function* (sessionID, predicate) {
@@ -925,23 +958,6 @@ const layer: Layer.Layer<
     })
   }),
 )
-
-const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function* (
-  background: BackgroundJob.Interface,
-  sessionID: SessionID,
-) {
-  const jobs = yield* background.list()
-  yield* Effect.forEach(
-    jobs.filter((job) => {
-      if (job.status !== "running") return false
-      if (job.id === sessionID) return true
-      if (job.metadata?.sessionId === sessionID) return true
-      return job.metadata?.parentSessionId === sessionID || job.metadata?.ownerSessionId === sessionID
-    }),
-    (job) => background.cancel(job.id),
-    { concurrency: "unbounded", discard: true },
-  )
-})
 
 function listByProject(
   db: Database.Interface["db"],
@@ -1001,7 +1017,19 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [
+    SessionLifecycle.node,
+    SessionCommandSandbox.node,
+    SessionRemoval.node,
+    SessionExecutionLocal.node,
+    SessionHookSnapshot.node,
+    BackgroundJob.node,
+    SessionRunState.node,
+    SessionGoalCleanup.node,
+    RuntimeFlags.node,
+    Database.node,
+    EventV2Bridge.node,
+  ],
 })
 
 export * as Session from "./session"

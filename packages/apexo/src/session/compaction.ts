@@ -1,7 +1,9 @@
+import { SessionManagedChild } from "@apexo/core/session/managed-child"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { ConfigV1 } from "@apexo/core/v1/config/config"
 import { Session } from "./session"
+import { SessionMemoryFlush } from "./memory-flush"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
@@ -191,6 +193,7 @@ export const use = serviceUse(Service)
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const tasks = yield* SessionManagedChild.Service
     const config = yield* Config.Service
     const session = yield* Session.Service
     const agents = yield* Agent.Service
@@ -199,6 +202,7 @@ const layer = Layer.effect(
     const provider = yield* Provider.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const memoryFlush = yield* SessionMemoryFlush.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: SessionV1.Assistant["tokens"]
@@ -323,11 +327,14 @@ const layer = Layer.effect(
       auto: boolean
       overflow?: boolean
     }) {
+      if (yield* tasks.managed(input.sessionID).pipe(Effect.orDie))
+        return yield* Effect.die(new Error("Managed children only accept their owner's input"))
       const parent = input.messages.findLast((m) => m.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") {
         throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
       }
       const userMessage = parent.info
+      yield* memoryFlush.flush(input.sessionID, "compaction")
       const compactionPart = parent.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
 
       let messages = input.messages
@@ -563,6 +570,8 @@ const layer = Layer.effect(
       auto: boolean
       overflow?: boolean
     }) {
+      if (yield* tasks.managed(input.sessionID).pipe(Effect.orDie))
+        return yield* Effect.die(new Error("Managed children only accept their owner's input"))
       const msg = yield* session.updateMessage({
         id: MessageID.ascending(),
         role: "user",
@@ -594,6 +603,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    SessionManagedChild.node,
     Config.node,
     Session.node,
     Agent.node,
@@ -602,6 +612,7 @@ export const node = LayerNode.make({
     Provider.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
+    SessionMemoryFlush.node,
   ],
 })
 

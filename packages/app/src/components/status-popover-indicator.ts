@@ -1,4 +1,4 @@
-import type { LspStatus } from "@apexo/sdk/v2/client"
+import type { LspConnectionStatus } from "@/context/global-sync/types"
 import type { McpServer } from "@apexo/client/promise"
 
 export function hasServiceNeedingAttention(input: { mcp: Array<McpServer["status"]["status"]> }) {
@@ -7,11 +7,11 @@ export function hasServiceNeedingAttention(input: { mcp: Array<McpServer["status
 
 export function hasNonBlockingServiceIssue(input: {
   mcp: Array<McpServer["status"]["status"]>
-  lsp: Array<LspStatus["status"]>
+  lsp: Array<LspConnectionStatus["status"]>
 }) {
   return (
     input.mcp.some((status) => status !== "connected" && status !== "pending" && status !== "disabled") ||
-    input.lsp.some((status) => status === "error")
+    input.lsp.some((status) => status === "error" || status === "failed")
   )
 }
 

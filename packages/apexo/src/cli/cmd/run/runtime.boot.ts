@@ -200,3 +200,47 @@ export async function resolveRunTuiConfig(): Promise<RunTuiConfig> {
 export async function resolveDiffStyle(): Promise<RunDiffStyle> {
   return runtime.runPromise((svc) => svc.resolveDiffStyle()).catch(() => "auto")
 }
+
+export async function resolveNativeModelInfo(
+  native: NonNullable<RunInput["native"]>,
+  model: RunInput["model"],
+): Promise<ModelInfo> {
+  const catalog = await native.catalog()
+  return {
+    providers: catalog.providers
+      .filter((provider) => provider.disabled !== true)
+      .map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        models: Object.fromEntries(
+          catalog.models
+            .filter((item) => item.enabled && item.providerID === provider.id)
+            .map((item) => [
+              item.id,
+              {
+                id: item.id,
+                name: item.name,
+                status: item.status,
+                limit: item.limit,
+                variants: Object.fromEntries(item.variants.map((variant) => [variant.id, variant.body])),
+              },
+            ]),
+        ),
+      })),
+    variants:
+      catalog.models
+        .find((item) => item.id === model?.modelID && item.providerID === model.providerID)
+        ?.variants.map((item) => item.id) ?? [],
+    limits: Object.fromEntries(catalog.models.map((item) => [`${item.providerID}/${item.id}`, item.limit.context])),
+  }
+}
+
+export async function resolveNativeSessionInfo(
+  native: NonNullable<RunInput["native"]>,
+  sessionID: string,
+  model: RunInput["model"],
+): Promise<SessionInfo> {
+  const { createSession } = await import("./session.shared")
+  const session = createSession((await native.history(sessionID)).snapshot())
+  return { first: session.first, history: sessionHistory(session), variant: pickVariant(model, session) }
+}

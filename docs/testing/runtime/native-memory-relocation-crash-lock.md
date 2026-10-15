@@ -1,0 +1,7 @@
+# BUG-20261015-259: Implicit migration waited on an explicitly interrupted relocation
+
+- **Scope:** Private explicit legacy relocation crash recovery and compatibility-read boundary.
+- **Observed:** Real child-process crashes after writing the prepared journal or after target rename left the compatibility migration probe waiting on its default dead-writer lock. Both unchanged tests reached their five-second test deadline.
+- **Expected:** An implicit read must refuse a pending explicitly owned relocation, without adopting its journal or waiting for an age-based lock takeover. Only an explicit request with matching source, original target and generation proof may recover it.
+- **Fix:** Detect the explicit pending journal before entering compatibility locking, retain the same check inside the critical section, and use strict dead-owner-only locking for explicit relocation. A bounded prepared receipt records source/before/after hashes before target publication; retry recognizes the exact published target and finishes its marker without writing the notes again.
+- **Verification:** The same real process-crash cases passed at approximately 0.6–0.7 seconds without deadline changes. The six-case migration suite passed 31 assertions. Both cases reject a foreign preview, preserve source bytes, and verify only one imported copy. The child-only filesystem observer delegates the actual rename, then the parent kills and reaps that exact child. Run `bun test test/tool/memory-migration-native.test.ts` from `packages/apexo`.

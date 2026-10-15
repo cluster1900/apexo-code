@@ -2,7 +2,7 @@ import { LayerNode } from "@apexo/core/effect/layer-node"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@apexo/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Schedule } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -25,6 +25,7 @@ import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@apexo/core/database/database"
 import { Usage, type LLMEvent } from "@apexo/llm"
+import { SessionGoalRole } from "./goal-role"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -639,6 +640,7 @@ const layer = Layer.effect(
       })
 
       const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
+        const goalRole = yield* SessionGoalRole.Current
         yield* Effect.logInfo("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
@@ -672,19 +674,21 @@ const layer = Layer.effect(
               (cause) => Effect.fail(Cause.squash(cause)),
             ),
             Effect.retry(
-              SessionRetry.policy({
-                provider: input.model.providerID,
-                parse,
-                set: (info) => {
-                  return status.set(ctx.sessionID, {
-                    type: "retry",
-                    attempt: info.attempt,
-                    message: info.message,
-                    action: info.action,
-                    next: info.next,
-                  })
-                },
-              }),
+              goalRole
+                ? Schedule.recurs(0)
+                : SessionRetry.policy({
+                    provider: input.model.providerID,
+                    parse,
+                    set: (info) => {
+                      return status.set(ctx.sessionID, {
+                        type: "retry",
+                        attempt: info.attempt,
+                        message: info.message,
+                        action: info.action,
+                        next: info.next,
+                      })
+                    },
+                  }),
             ),
             Effect.catch(halt),
             Effect.ensuring(cleanup()),

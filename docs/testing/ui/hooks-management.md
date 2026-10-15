@@ -1,0 +1,30 @@
+# Hook snapshot management UI acceptance
+
+## Intended behavior
+
+The App and Desktop Hooks panel and terminal `/hooks` panel inspect the current Session's captured configuration. Opening or refreshing the panel calls the read-only snapshot operation. An uncaptured Session shows an explanatory state and cannot reload. Explicit reload queues at the next safe boundary; it must not start model work or synthesize a prompt. Existing metadata remains visible while a reload is pending or fails.
+
+The metadata view includes generation, project trust, handler name/event/type/source, optional matcher, support status, and diagnostics. It never asks the API for command text, HTTP URLs, or environment values. App requests select the native or legacy client using the directory SDK protocol. Terminal mini and fullscreen share a stable-root component; closing cancels the view's in-flight request.
+
+## Planned acceptance
+
+- App production browser with the actual native-only Core server: passive uncaptured state, captured metadata after a real execution, secret exclusion, refresh retaining the snapshot after a file edit, explicit reload showing the new generation, unchanged provider request count, and passive reopening.
+- Real PTY in both mini and fullscreen: the same operations through `/hooks`, `r`, `l`, and Escape.
+- Native macOS Desktop window against the actual native-only Core server using the rebuilt shared artifact, including Simplified and Traditional Chinese panels.
+- Controlled production composer benchmark before and after wiring the App entry point, using the same fixed Desktop backend artifact while the host is reserved for the comparison.
+
+## Current evidence
+
+App and TUI typechecks passed for the standalone components; App typecheck also passed after entry-point integration. `bun script/grok-native-hooks-ui.mjs desktop` passed seven checks against the actual native-only Core server, covering all planned browser assertions. The snapshot screenshot was inspected and showed readable metadata, actions, and source paths. The first mini PTY run exposed a missing TUI package export and is not acceptance evidence; the export was added, with the failure and pending rerun recorded in [BUG-20261014-156](../types/hooks-ui-wire-types.md). `bun script/grok-native-hooks-ui.mjs native --locales` passed eight checks in the actual macOS Electron window after the separate native CORS fix ([BUG-20261014-159](../runtime/native-server-cors.md)). This includes the seven behavioral checks plus Simplified and Traditional Chinese panel captures. Both localized screenshots were inspected: descriptions, controls, version, trust state, and metadata were readable without overlap. Other locales retain the documented English fallback. All fixture processes were reaped. The controlled production composer comparison used the unchanged built Desktop backend (SHA-256 checked), 10 browser-clock reload samples per variant with two warmups discarded. Before entry-point integration: median 114 ms, p95 121 ms. After integration and a successful App production build: median 115 ms, p95 126 ms. The observed change was +1 ms at the median and +5 ms at the tail in this small local sample. Both fixtures and browser processes were reaped. Command: `bun script/grok-plugins-ui.mjs desktop --benchmark --benchmark-only` from `packages/apexo`, pinned Bun 1.3.14. The earlier concurrent navigation sample was contaminated by other work and is excluded from the performance comparison.
+
+## Localization scope
+
+All App-visible labels, descriptions, loading and failure states use the typed `language.t` API. English source copy and keys remain unchanged. The Hook keys are translated in Simplified Chinese and Traditional Chinese; other locales retain the existing shared English fallback. No locale-specific grammar, plural selection, or dictionary branching is present in the component. Native event names, handler type tokens, source paths, and matcher expressions remain API data rather than translated identifiers.
+
+Terminology was checked against two maintained developer-product corpora: Microsoft's [Simplified Chinese VS Code strings](https://github.com/microsoft/vscode-loc/blob/main/i18n/vscode-language-pack-zh-hans/translations/main.i18n.json) and [Traditional Chinese strings](https://github.com/microsoft/vscode-loc/blob/main/i18n/vscode-language-pack-zh-hant/translations/main.i18n.json), plus Mozilla's [Simplified Chinese developer-tools memory strings](https://github.com/mozilla-l10n/firefox-l10n/blob/main/zh-CN/devtools/client/memory.properties) and [Traditional Chinese strings](https://github.com/mozilla-l10n/firefox-l10n/blob/main/zh-TW/devtools/client/memory.properties). The [Taiwan Ministry of Education definition of 設定](https://dict.revised.moe.edu.tw/dictView.jsp?ID=129562&la=1&powerMode=0) supplied a language-authority check; developer-product context determined the software terminology.
+
+The copy keeps existing Apexo terminology: 钩子/掛鉤, 会话/工作階段, 刷新/重新整理, and 重新加载/重新載入. VS Code uses different hook terms in parts of its corpus (挂钩 and 勾點); these were not substituted for Apexo's established labels. Both Mozilla corpora use 快照. “Safe boundary” is expressed as the next time configuration can safely switch, and the generation counter is presented as the snapshot version; these full-phrase adaptations should receive particular attention in native-speaker review. Placeholder sets are preserved. No new Hook translation value equals its English source; retained event/type/path/matcher values are runtime identifiers.
+
+## Terminal acceptance result
+
+`bun script/grok-hooks-tui.mjs` and `bun script/grok-hooks-tui.mjs --fullscreen` each passed seven checks after the route-height and fixture-pending corrections. Both real PTYs verified passive open, uncaptured reload guard, captured metadata, secret exclusion, explicit reload, no additional model request, and passive reopening. See [BUG-20261014-083](side-question-mini-panel.md) for the recurring route integration omission and [BUG-20261014-157](../test-fixtures/hooks-terminal-pending-action.md) for the fixture race.

@@ -1,7 +1,7 @@
 export * as AgentV2 from "./agent"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Array, Context, Effect, Layer, Types } from "effect"
+import { Array, Context, Effect, Layer, Scope, Types } from "effect"
 import { Agent } from "@apexo/schema/agent"
 import { State } from "./state"
 
@@ -33,6 +33,7 @@ export type Draft = {
 }
 
 export interface Interface extends State.Transformable<Draft> {
+  readonly prepareReload: Effect.Effect<() => void, never, Scope.Scope>
   readonly get: (id: ID) => Effect.Effect<Info | undefined>
   readonly default: () => Effect.Effect<Info | undefined>
   readonly resolve: (id?: ID | string) => Effect.Effect<Info | undefined>
@@ -80,6 +81,7 @@ const layer = Layer.effect(
 
     return Service.of({
       transform: state.transform,
+      prepareReload: state.prepareReload,
       reload: state.reload,
       get: Effect.fn("AgentV2.get")(function* (id) {
         return state.get().agents.get(id)

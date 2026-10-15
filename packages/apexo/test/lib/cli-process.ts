@@ -227,18 +227,43 @@ export function withCliFixture<A, E>(
       // Catch AppProcessError (timeout OR spawn failure) and synthesize a
       // non-zero result so the test sees it via the usual `expectExit`
       // path rather than as an unhandled Effect failure.
-      const result = yield* appProc.run(command, { timeout: Duration.millis(timeoutMs) }).pipe(
-        Effect.catchTag("AppProcessError", (err) =>
-          Effect.succeed({
-            command: err.command,
-            exitCode: err.exitCode ?? -1,
-            stdout: Buffer.alloc(0),
-            stderr: Buffer.from((err.stderr ?? String(err.cause ?? err.message)) + "\n"),
-            stdoutTruncated: false,
-            stderrTruncated: false,
-          } satisfies AppProcess.RunResult),
-        ),
-      )
+      const observed = {
+        pid: 0,
+        startedMs: 0,
+        outputMs: 0,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.alloc(0),
+      }
+      const result = yield* appProc
+        .run(command, {
+          timeout: Duration.millis(timeoutMs),
+          onStart: (pid) =>
+            Effect.sync(() => {
+              observed.pid = pid
+              observed.startedMs = Date.now() - start
+            }),
+          onOutput: (chunk) =>
+            Effect.sync(() => {
+              if (chunk.channel === "combined") return
+              observed.outputMs = Date.now() - start
+              observed[chunk.channel] = Buffer.concat([observed[chunk.channel], chunk.data]).subarray(-16_384)
+            }),
+        })
+        .pipe(
+          Effect.catchTag("AppProcessError", (err) =>
+            Effect.succeed({
+              command: err.command,
+              exitCode: err.exitCode ?? -1,
+              stdout: observed.stdout,
+              stderr: Buffer.from(
+                `${observed.stderr.toString()}\n${err.stderr ?? String(err.cause ?? err.message)}\n` +
+                  `[fixture] pid=${observed.pid} startedMs=${observed.startedMs} lastOutputMs=${observed.outputMs}\n`,
+              ),
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            } satisfies AppProcess.RunResult),
+          ),
+        )
       return {
         exitCode: result.exitCode,
         stdout: normalizeLines(result.stdout.toString()),

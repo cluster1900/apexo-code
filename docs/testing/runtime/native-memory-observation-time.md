@@ -1,0 +1,8 @@
+# BUG-20261015-230: Native observation timestamp used milliseconds
+
+- **Scope:** New native Memory capture adapter; one independently observed implementation defect in the private draft.
+- **Observed:** The real CLI completed its ordinary turn and sent a valid tool-free extraction response, but the automatic operation returned `retry_required` and published no observation. Temporary bounded diagnostics identified `MemoryCaptureError: Integer outside the supported range` while parsing the observation.
+- **Expected:** A valid observation uses the canonical Unix-second `created_at` field and commits once.
+- **Cause:** The adapter supplied `Date.now()` milliseconds to `MemoryCapture.parse`. The existing observation format accepts seconds up to year 9999; the compatibility adapter already converts milliseconds to seconds. Earlier positive tests used no-op outcomes, which contain no observation timestamp, while observation responses in negative tests did not prove positive publication.
+- **Fix:** Read the Effect clock and pass `Math.floor(now / 1000)` to the canonical parser. Keep lease and operation timestamps in their existing milliseconds units. Change the positive runtime test to extract an actual observation. Do not weaken the store validator.
+- **Verification:** `bun script/grok-memory-native-lifecycle.mjs cli` from `packages/apexo` passed five checks with two ordinary and three extraction requests, including an actual observation and generated index, exact deduplication, crash/restart and explicit retry. The original failed response and diagnostic were retained during testing; temporary diagnostic logging was removed. Packaged Desktop and shared integration remain separate gates.

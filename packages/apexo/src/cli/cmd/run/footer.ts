@@ -57,6 +57,7 @@ import type {
   RunProvider,
   RunResource,
   RunTuiConfig,
+  RunTaskActions,
   StreamCommit,
 } from "./types"
 
@@ -94,6 +95,16 @@ type RunFooterOptions = {
   onVariantSelect?: (variant: string | undefined) => CycleResult | void | Promise<CycleResult | void>
   onInterrupt?: () => void
   onBackground?: () => void
+  taskActions?: RunTaskActions
+  goalActions?: import("@apexo/tui/component/session-goal").GoalActions
+  pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
+  mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
+  workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
+  commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
+  hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
+  feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
+  memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
   onEditorOpen: (input: { value: string }) => Promise<string | undefined>
   onExit?: () => void
   onSubagentSelect?: (sessionID: string | undefined) => void
@@ -322,7 +333,9 @@ export class RunFooter implements FooterApi {
               tuiConfig: options.tuiConfig,
               backgroundSubagents: options.backgroundSubagents,
               history: options.history,
-              agent: options.agentLabel,
+              get agent() {
+                return footer.state().agent ?? options.agentLabel
+              },
               onSubmit: footer.handlePrompt,
               onPermissionReply: footer.handlePermissionReply,
               onQuestionReply: footer.handleQuestionReply,
@@ -330,6 +343,16 @@ export class RunFooter implements FooterApi {
               onCycle: footer.handleCycle,
               onInterrupt: footer.handleInterrupt,
               onBackground: options.onBackground,
+              taskActions: options.taskActions,
+              goalActions: options.goalActions,
+              pluginsActions: options.pluginsActions,
+              mcpActions: options.mcpActions,
+              memoryActions: options.memoryActions,
+              workflowActions: options.workflowActions,
+              sideQuestionActions: options.sideQuestionActions,
+              feedbackActions: options.feedbackActions,
+              hooksActions: options.hooksActions,
+              commandSandboxActions: options.commandSandboxActions,
               onEditorOpen: options.onEditorOpen,
               onInputClear: footer.handleInputClear,
               onExitRequest: footer.handleExit,
@@ -394,7 +417,7 @@ export class RunFooter implements FooterApi {
       this.flushing = this.flushing
         .then(() =>
           this.scrollback.writeTurnSummary({
-            agent: this.options.agentLabel,
+            agent: this.state().agent ?? this.options.agentLabel,
             model: current ? modelInfo(this.providers(), current).model : this.state().model,
             duration: next.duration,
           }),
@@ -484,7 +507,13 @@ export class RunFooter implements FooterApi {
       this.statusVersion++
     }
     const state = {
+      agent: next.agent ?? prev.agent,
       phase: next.phase ?? prev.phase,
+      tasks: next.tasks ?? prev.tasks,
+      taskError: next.taskError ?? prev.taskError,
+      taskNative: next.taskNative ?? prev.taskNative,
+      taskIssues: next.taskIssues ?? prev.taskIssues,
+      foregroundShells: next.phase === "idle" ? 0 : (next.foregroundShells ?? prev.foregroundShells ?? 0),
       status: typeof next.status === "string" ? next.status : prev.status,
       queue: typeof next.queue === "number" ? Math.max(0, next.queue) : prev.queue,
       model: typeof next.model === "string" ? next.model : prev.model,
@@ -700,21 +729,34 @@ export class RunFooter implements FooterApi {
         ? this.base + PERMISSION_ROWS
         : type === "question"
           ? this.base + QUESTION_ROWS
-          : this.promptRoute.type === "command"
-            ? 1 + COMMAND_ROWS
-            : this.promptRoute.type === "skill"
-              ? 1 + SKILL_ROWS
-              : this.promptRoute.type === "model"
-                ? 1 + MODEL_ROWS
-                : this.promptRoute.type === "variant"
-                  ? 1 + VARIANT_ROWS
-                  : this.promptRoute.type === "queued-menu"
-                    ? 1 + this.subagentMenuRows
-                    : this.promptRoute.type === "subagent-menu"
+          : this.promptRoute.type === "goal" ||
+              this.promptRoute.type === "tasks" ||
+              this.promptRoute.type === "memory" ||
+              this.promptRoute.type === "remember" ||
+              this.promptRoute.type === "workflow" ||
+              this.promptRoute.type === "btw" ||
+              this.promptRoute.type === "feedback" ||
+              this.promptRoute.type === "hooks" ||
+              this.promptRoute.type === "command-sandbox" ||
+              this.promptRoute.type === "memory-work" ||
+              this.promptRoute.type === "mcp" ||
+              this.promptRoute.type === "plugins"
+            ? 21
+            : this.promptRoute.type === "command"
+              ? 1 + COMMAND_ROWS
+              : this.promptRoute.type === "skill"
+                ? 1 + SKILL_ROWS
+                : this.promptRoute.type === "model"
+                  ? 1 + MODEL_ROWS
+                  : this.promptRoute.type === "variant"
+                    ? 1 + VARIANT_ROWS
+                    : this.promptRoute.type === "queued-menu"
                       ? 1 + this.subagentMenuRows
-                      : this.promptRoute.type === "subagent"
-                        ? this.base + SUBAGENT_INSPECTOR_ROWS
-                        : this.base + Math.max(TEXTAREA_MIN_ROWS, Math.min(PROMPT_MAX_ROWS, this.rows))
+                      : this.promptRoute.type === "subagent-menu"
+                        ? 1 + this.subagentMenuRows
+                        : this.promptRoute.type === "subagent"
+                          ? this.base + SUBAGENT_INSPECTOR_ROWS
+                          : this.base + Math.max(TEXTAREA_MIN_ROWS, Math.min(PROMPT_MAX_ROWS, this.rows))
 
     if (height !== this.renderer.footerHeight) {
       this.renderer.footerHeight = height

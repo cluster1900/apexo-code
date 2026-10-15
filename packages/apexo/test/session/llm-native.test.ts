@@ -216,10 +216,15 @@ describe("session.llm-native.request", () => {
       topP: 0.9,
       topK: 40,
       maxOutputTokens: 1024,
+      outputSchema: { type: "object", properties: { outcome: { type: "string" } }, required: ["outcome"] },
       providerOptions: { openai: { store: false } },
       headers: { "x-request": "request-header" },
     })
 
+    expect(request.responseFormat).toEqual({
+      type: "json",
+      schema: { type: "object", properties: { outcome: { type: "string" } }, required: ["outcome"] },
+    })
     expect(request.model).toMatchObject({
       id: "gpt-5-mini",
       provider: "openai",

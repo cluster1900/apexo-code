@@ -408,12 +408,12 @@ it.instance("updates config and preserves empty shell sentinel", () =>
     yield* writeConfigEffect(
       test.directory,
       { $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json", shell: "bash" },
-      "config.json",
+      "apexo.json",
     )
 
     yield* Config.Service.use((svc) => svc.update(ConfigParse.schema(ConfigV1.Info, { shell: "" }, "test:config")))
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "apexo.json"))
     expect(writtenConfig).toMatchObject({ shell: "" })
   }),
 )
@@ -513,7 +513,7 @@ for (const input of projectInputs) {
     Effect.gen(function* () {
       const instance = yield* TestInstance
       const fs = yield* FSUtil.Service
-      const file = path.join(instance.directory, "config.json")
+      const file = path.join(instance.directory, "apexo.json")
       yield* fs.writeFileString(file, yield* fs.readFileString(path.join(updateFixtures, input)))
       const patch = ConfigParse.schema(ConfigV1.Info, yield* fs.readJson(`${prefix}-patch.json`), input)
       yield* Config.use.update(patch)
@@ -556,7 +556,7 @@ it.instance("rejects a project update with native agent permissions without writ
   Effect.gen(function* () {
     const instance = yield* TestInstance
     const fs = yield* FSUtil.Service
-    const file = path.join(instance.directory, "config.json")
+    const file = path.join(instance.directory, "apexo.json")
     const before = JSON.stringify({ agents: { reviewer: { permissions: [] } } })
     yield* fs.writeFileString(file, before)
     const exit = yield* Effect.exit(Config.use.update({ username: "changed" }))
@@ -1073,7 +1073,7 @@ it.instance("updates config and writes to file", () =>
       svc.update(ConfigParse.schema(ConfigV1.Info, { model: "updated/model" }, "test:config")),
     )
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "apexo.json"))
     expect(writtenConfig).toMatchObject({ model: "updated/model" })
   }),
 )

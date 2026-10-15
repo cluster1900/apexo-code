@@ -1,13 +1,20 @@
 export * as SessionCompaction from "./compaction"
 
 import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model } from "@apexo/llm"
-import { DateTime, Effect, Stream } from "effect"
+import { DateTime, Effect, Schema, Stream } from "effect"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
+import type { SessionGoal } from "./goal"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { Token } from "../util/token"
+import { HookObserver } from "../hook-observer"
+import type { HookSnapshotLocation } from "../hook-snapshot-location"
+
+export class Failure extends Schema.TaggedErrorClass<Failure>()("Session.CompactionFailure", {
+  message: Schema.String,
+}) {}
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -65,12 +72,28 @@ type Settings = {
   readonly tokens: number
 }
 
+export type MemoryBoundary = {
+  readonly sessionID: SessionSchema.ID
+  readonly compactionID: SessionMessage.ID
+  readonly reason: "auto" | "manual"
+  readonly source: { readonly messageID: SessionMessage.ID; readonly seq: number } | undefined
+  readonly estimatedInputTokens: number
+  readonly contextTokens: number
+  readonly outputReserveTokens: number
+  readonly compactThresholdTokens: number
+}
+
 type Dependencies = {
   readonly events: EventV2.Interface
   readonly llm: {
-    readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>
+    readonly stream: (
+      request: LLMRequest,
+      sessionID: SessionSchema.ID,
+    ) => Stream.Stream<LLMEvent, LLMError | SessionGoal.Error>
   }
   readonly config: readonly Config.Entry[]
+  readonly hooks?: Pick<HookSnapshotLocation.Interface, "capture">
+  readonly before?: (boundary: MemoryBoundary) => Effect.Effect<void>
 }
 
 type Input = {
@@ -175,29 +198,76 @@ export const buildPrompt = (input: { readonly previousSummary?: string; readonly
 
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
-  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (input: Input) {
-    const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
-    const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    const selected = select(input.entries, config.tokens)
+  const compact = Effect.fn("SessionCompaction.compact")(function* (input: Input, reason: "auto" | "manual") {
+    const unavailable = (message: string) =>
+      reason === "manual" ? Effect.fail(new Failure({ message })) : Effect.succeed(false)
     const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
-    if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
+    const selected = select(input.entries, reason === "manual" ? 0 : config.tokens)
+    if (!selected && previousSummary?.type !== "compaction") return false
+    const context = input.model.route.defaults.limits?.context
+    if (context === undefined || context <= 0)
+      return yield* unavailable("The model has no usable compaction context limit")
+    const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
+    if (reason === "auto" && (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")))
+      return false
     const summaryPrompt = buildPrompt({
       previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
-      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head].filter(Boolean),
+      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected?.head ?? ""].filter(
+        Boolean,
+      ),
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
-    if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
+    if (Token.estimate(summaryPrompt) > context - summaryOutput)
+      return yield* unavailable("The conversation exceeds the model compaction context limit")
     const messageID = SessionMessage.ID.create()
+    const source = input.entries.findLast(
+      (entry) =>
+        entry.message.type === "assistant" &&
+        entry.message.time.completed !== undefined &&
+        entry.message.finish === "stop" &&
+        !entry.message.error,
+    )
+    const outputReserveTokens = Math.max(output, config.buffer)
+    yield* dependencies.before?.({
+      sessionID: input.sessionID,
+      compactionID: messageID,
+      reason,
+      source: source ? { messageID: source.message.id, seq: source.seq } : undefined,
+      estimatedInputTokens: estimate({
+        system: input.request.system,
+        messages: input.request.messages,
+        tools: input.request.tools,
+      }),
+      contextTokens: context,
+      outputReserveTokens,
+      compactThresholdTokens: Math.max(0, context - outputReserveTokens),
+    }) ?? Effect.void
+    // Both observations belong to one captured registry even if a later explicit reload replaces it.
+    const hooks = yield* dependencies.hooks?.capture(input.sessionID) ?? Effect.succeed(undefined)
+    const observe = (event: "PreCompact" | "PostCompact") =>
+      hooks
+        ? HookObserver.observe({
+            event,
+            sessionID: input.sessionID,
+            directory: hooks.location.directory,
+            registry: hooks.registry,
+            selection: hooks.selection,
+            matcher: reason,
+            payload: { source: reason },
+          })
+        : Effect.void
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
       messageID,
       timestamp: yield* DateTime.now,
-      reason: "auto",
+      reason,
     })
+
+    yield* observe("PreCompact")
 
     const chunks: string[] = []
     let failed = false
+    let finished = false
     const summarized = yield* dependencies.llm
       .stream(
         LLM.request({
@@ -207,10 +277,12 @@ export const make = (dependencies: Dependencies) => {
           tools: [],
           generation: { maxTokens: summaryOutput },
         }),
+        input.sessionID,
       )
       .pipe(
         Stream.runForEach((event) => {
           if (LLMEvent.is.providerError(event)) failed = true
+          if (LLMEvent.is.finish(event)) finished = event.reason === "stop"
           if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
           return Effect.void
         }),
@@ -218,17 +290,21 @@ export const make = (dependencies: Dependencies) => {
         Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
       )
     const summary = chunks.join("")
-    if (!summarized || failed || !summary.trim()) return false
+    if (!summarized || failed || !finished || !summary.trim())
+      return yield* unavailable("The provider did not finish a usable compaction summary")
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
       messageID,
       timestamp: yield* DateTime.now,
-      reason: "auto",
+      reason,
       text: summary,
-      recent: selected.recent,
+      recent: selected?.recent ?? "",
     })
+    yield* observe("PostCompact")
     return true
   })
+  const compactAfterOverflow = (input: Input) =>
+    compact(input, "auto").pipe(Effect.catchTag("Session.CompactionFailure", () => Effect.succeed(false)))
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
     if (!config.auto) return false
     const context = input.model.route.defaults.limits?.context
@@ -244,5 +320,6 @@ export const make = (dependencies: Dependencies) => {
   return {
     compactIfNeeded,
     compactAfterOverflow,
+    manual: (input: Input) => compact(input, "manual").pipe(Effect.asVoid),
   }
 }

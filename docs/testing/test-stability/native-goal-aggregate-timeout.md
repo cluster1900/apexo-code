@@ -1,0 +1,22 @@
+# BUG-20261015-376: Native Goal lifecycle exceeded the aggregate test deadline
+
+- **Status:** Investigating; no confirmed root cause or runtime repair.
+- **Scope:** Native V2 Goal HTTP end-to-end execution, compaction, queued delivery, verification, summary, budget and pause.
+- **Observed:** The frozen shared unit gate passed 4614 tests and failed this one case at 30001.06 ms. It retained 19 skips, one todo, 53 snapshots and 17994 assertions across 463 files. All 5103 captured package source files were unchanged during the gate. Five of six Turbo tasks passed; the gate exited 1 after 1440.622 seconds.
+- **Expected:** The actual Goal lifecycle and joined fixture cleanup finish within the existing 30-second case deadline, preserving all 39 assertions.
+- **Reproduction:** From the repository root with pinned Bun 1.3.14, run `GITHUB_ACTIONS=false bun turbo test --concurrency=2`. The affected case is `Native V2 Goal execution > plans, works, evaluates and verifies through durable V2 child Sessions`.
+- **Root cause:** Unknown. The failed aggregate retained no current lifecycle phase or provider-call count. The older compatibility Goal timeout investigation concerns different cases and deadlines; this symptom does not prove a shared cause.
+- **Change:** Add a diagnostic at 25 seconds reporting the current test phase, Session and Goal IDs, elapsed time and provider-call count. The diagnostic is scoped to the test and does not change requests, responses, deadlines or product behavior.
+- **Verification:** The unchanged isolated `bun test --timeout 30000 test/e2e/v2-goal.e2e.test.ts` passed one test and 39 assertions; the case took 20669.99 ms and the process 38.43 seconds. This pass does not establish a repair. The diagnostic change passes the shared Goal/LSP five-file gate: 38 tests / 218 assertions, zero failures; the Goal case takes 6648.74 ms. This is diagnostic validation only. A fresh aggregate remains required. No recurrence count or rule is inferred.
+
+## Deterministic compaction-admission investigation
+
+A separate private negative control held the compact HTTP request before admission until the fourth provider request was observed. That request was the independent Goal evaluator, not compaction. The fixture's positional response queue handed it the compaction summary; evaluation retried and the run made eleven provider calls instead of the expected ten. The negative run failed at the call-count assertion after 5813.07 ms: zero passing tests, one failure and fourteen assertions. This proves a fixture ordering defect, not a production Goal deadlock or the cause of the original aggregate timeout.
+
+The original fixture used a 30 ms sleep after forking the compact request before releasing the held worker. SessionRunCoordinator's queue is private, and neither the public execution service nor the HTTP compact response exposes an admission receipt before completion. A sleep cannot establish that the control reached the worker's safe boundary.
+
+The test-only correction matches the compaction response by its actual request prompt, identifies evaluation and verification by their request roles, and removes the timed admission assumption. It retains ten calls, one compaction, per-turn usage and all Budget/Pause/report checks. The concurrent case expects either the known 23-token active-Goal schedule or the known 16-token post-Goal schedule based only on independently observed request order. A deliberate late-admission case expects sixteen tokens unconditionally. The positive run passed two tests and 87 assertions: concurrent admission took 6412.68 ms and deliberately late admission took 5761.54 ms (14.76 seconds process time). The original 39 assertions remain in each case, with added role/order checks; neither case raises its 30-second deadline. The unchanged aggregate timeout remains unconfirmed until a fresh aggregate supplies evidence.
+
+The current scoped 25-second diagnostic begins after fixture/layer acquisition and is cancelled before outer layer cleanup completes. An absent diagnostic on a future timeout therefore does not exclude setup or outer teardown. Source inspection found no confirmed production deadlock and no body on the no-payload compact, pause or resume requests.
+
+The private Apexo package typecheck passed after the two-case fixture correction. No production code, response deadlines, global test helpers or API hooks were changed.

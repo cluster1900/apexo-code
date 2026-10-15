@@ -33,9 +33,9 @@ import {
 import { color, printHeader, printResults } from "./report"
 import { coverageResult, parseOptions, routeKey, routeKeys, selectedScenarios } from "./routing"
 import { runScenario } from "./runner"
-import { disposeApps } from "./backend"
+import { call, disposeApps } from "./backend"
 import { runtime } from "./runtime"
-import { type Scenario } from "./types"
+import { type Scenario, type ScenarioContext } from "./types"
 
 function cursor(input: Record<string, unknown>) {
   return Buffer.from(JSON.stringify(input)).toString("base64url")
@@ -55,6 +55,28 @@ function locationData(validate: (value: any) => void) {
     object(body.location.project)
     validate(body.data)
   }
+}
+
+const attachmentRead = { kind: "prepare", input: { kind: "resource", server: "local", uri: "fixture://http" } } as const
+function reserveAttachment(ctx: ScenarioContext) {
+  return Effect.gen(function* () {
+    const session = yield* ctx.session({ title: "MCP attachment owner" })
+    const result = yield* call(
+      http.protected
+        .post("/api/session/{sessionID}/mcp/operations", "attachment.seed")
+        .at(() => ({
+          path: `/api/session/${session.id}/mcp/operations`,
+          headers: ctx.headers(),
+          body: { request: attachmentRead },
+        }))
+        .json(),
+      { ...ctx, state: undefined },
+    )
+    check(result.status === 200, "attachment reservation must succeed")
+    object(result.body)
+    check(typeof result.body.id === "string", "attachment reservation must return an operation ID")
+    return { sessionID: session.id, operationID: String(result.body.id) }
+  })
 }
 
 const scenarios: Scenario[] = [
@@ -138,6 +160,16 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: "/vcs/apply", headers: ctx.headers(), body: { patch: "" } }))
     .status(400, undefined, "status"),
   http.protected.get("/command", "command.list").json(200, array, "status"),
+  http.protected.get("/hooks", "experimental.hooks").json(
+    200,
+    (body) => {
+      object(body)
+      array(body.hooks)
+      array(body.diagnostics)
+      check(typeof body.projectTrusted === "boolean", "hook inspection exposes trust state")
+    },
+    "status",
+  ),
   http.protected.get("/agent", "app.agents").json(200, array, "status"),
   http.protected.get("/skill", "app.skills").json(200, array, "status"),
   http.protected.post("/skill/reload", "skill.reload").json(200, boolean, "status"),
@@ -161,6 +193,351 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: "/config", headers: ctx.headers(), body: { username: 1 } }))
     .status(400),
   http.protected.get("/config/providers", "config.providers").json(),
+  http.protected.get("/plugins", "plugins.list").json(
+    200,
+    (body) => {
+      object(body)
+      array(body.sources)
+      array(body.items)
+    },
+    "status",
+  ),
+  http.protected
+    .get("/plugins/detail", "plugins.detail.missing")
+    .at((ctx) => ({ path: "/plugins/detail?id=missing", headers: ctx.headers() }))
+    .status(400),
+  http.protected
+    .post("/plugins/manage", "plugins.manage.trust")
+    .at((ctx) => ({
+      path: "/plugins/manage",
+      headers: ctx.headers(),
+      body: { action: "install", source: "/does-not-exist" },
+    }))
+    .status(400),
+  http.protected.post("/plugins/reload", "plugins.reload").mutating().json(200, boolean, "status"),
+  http.protected.get("/api/plugins", "v2.plugins.list").json(200, (body) => {
+    object(body)
+    array(body.sources)
+    array(body.items)
+  }),
+  http.protected
+    .get("/api/plugins/detail", "v2.plugins.detail.missing")
+    .at((ctx) => ({ path: "/api/plugins/detail?id=missing", headers: ctx.headers() }))
+    .status(400),
+  http.protected
+    .post("/api/plugins/manage", "v2.plugins.manage.trust")
+    .at((ctx) => ({
+      path: "/api/plugins/manage",
+      headers: ctx.headers(),
+      body: { action: "install", source: "/does-not-exist" },
+    }))
+    .status(400),
+  http.protected.get("/api/plugins/runtime", "v2.plugins.runtime").json(200, (body) => {
+    object(body)
+    check(Number.isFinite(body.generation), "runtime generation must be finite")
+    array(body.active)
+  }),
+  http.protected.post("/api/plugins/reload", "v2.plugins.reload").json(200, boolean, "status"),
+  http.protected.get("/api/mcp", "v2.mcp.status").json(200, (body) => {
+    object(body)
+    check(Object.keys(body).length === 0, "isolated project has no configured MCP servers")
+  }),
+  http.protected.get("/api/lsp", "v2.lsp.status").json(200, (body) => {
+    array(body)
+    check(body.length === 0, "isolated project has no configured language servers")
+  }),
+  http.protected
+    .get("/api/project", "v2.project.list")
+    .global()
+    .json(200, (body) => {
+      array(body)
+      for (const project of body) {
+        object(project)
+        check(typeof project.id === "string", "persisted project must have an identity")
+        check(typeof project.worktree === "string", "persisted project must have a worktree")
+      }
+    }),
+  http.protected.get("/api/project/current", "v2.project.current").json(200, (body) => {
+    object(body)
+    check(typeof body.id === "string", "current project must have an identity")
+    check(typeof body.directory === "string", "current project must have a directory")
+  }),
+  http.protected
+    .post("/api/mcp/{server}/connect", "v2.mcp.connect.missing")
+    .at((ctx) => ({ path: "/api/mcp/missing/connect", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/mcp/{server}/disconnect", "v2.mcp.disconnect.missing")
+    .at((ctx) => ({ path: "/api/mcp/missing/disconnect", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/mcp/{server}/retry", "v2.mcp.retry.missing")
+    .at((ctx) => ({ path: "/api/mcp/missing/retry", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/mcp/{server}/resetPreference", "v2.mcp.resetPreference.missing")
+    .at((ctx) => ({ path: "/api/mcp/missing/resetPreference", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/mcp/{server}/auth/start", "v2.mcp.authStart.missing")
+    .at((ctx) => ({ path: "/api/mcp/missing/auth/start", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .delete("/api/mcp/{server}/auth/{flowID}", "v2.mcp.authCancel.missing")
+    .at((ctx) => ({ path: "/api/mcp/missing/auth/missing", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .get("/session/{sessionID}/goal", "goal.get")
+    .seeded((ctx) => ctx.session({ title: "Goal owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/goal`, headers: ctx.headers() }))
+    .json(200, (body) => check(body === null, "new session has no goal")),
+  http.protected
+    .get("/session/{sessionID}/side-question", "sideQuestion.list")
+    .seeded((ctx) => ctx.session({ title: "Side question owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/side-question`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/session/{sessionID}/side-question", "sideQuestion.ask.invalid")
+    .seeded((ctx) => ctx.session({ title: "Side question owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/side-question`, headers: ctx.headers(), body: { question: "" } }))
+    .status(400),
+  http.protected
+    .post("/session/{sessionID}/side-question/{questionID}/cancel", "sideQuestion.cancel.missing")
+    .seeded((ctx) => ctx.session({ title: "Side question owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/side-question/btw_missing/cancel`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .get("/session/{sessionID}/hooks", "hooks.get")
+    .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/hooks`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(body.captured === false && body.generation === 0, "inspection must not capture hooks")
+    }),
+  http.protected
+    .post("/session/{sessionID}/hooks/reload", "hooks.reload.uncaptured")
+    .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/hooks/reload`, headers: ctx.headers() }))
+    .status(409),
+  http.protected
+    .post("/session/{sessionID}/hooks/trust", "hooks.trust.stale")
+    .seeded((ctx) => ctx.session({ title: "Hooks repository owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/hooks/trust`,
+      headers: ctx.headers(),
+      body: { root: "/", token: "0".repeat(64), trusted: true },
+    }))
+    .status(409),
+  http.protected
+    .post("/session/{sessionID}/hooks/preference", "hooks.preference.uncaptured")
+    .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/hooks/preference`,
+      headers: ctx.headers(),
+      body: { hookID: `hook_${"a".repeat(64)}`, enabled: false },
+    }))
+    .status(409),
+  http.protected
+    .get("/api/session/{sessionID}/hooks", "v2.hooks.get")
+    .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/hooks`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(body.captured === false && body.generation === 0, "inspection must not capture hooks")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/hooks/reload", "v2.hooks.reload.uncaptured")
+    .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/hooks/reload`, headers: ctx.headers() }))
+    .status(409),
+  http.protected
+    .post("/api/session/{sessionID}/hooks/trust", "v2.hooks.trust.stale")
+    .seeded((ctx) => ctx.session({ title: "Hooks repository owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/hooks/trust`,
+      headers: ctx.headers(),
+      body: { root: "/", token: "0".repeat(64), trusted: true },
+    }))
+    .status(409),
+  http.protected
+    .post("/api/session/{sessionID}/hooks/preference", "v2.hooks.preference.uncaptured")
+    .seeded((ctx) => ctx.session({ title: "Hooks owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/hooks/preference`,
+      headers: ctx.headers(),
+      body: { hookID: `hook_${"a".repeat(64)}`, enabled: false },
+    }))
+    .status(409),
+  http.protected
+    .get("/session/{sessionID}/feedback", "feedback.list")
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/feedback`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/session/{sessionID}/feedback", "feedback.save")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/feedback`,
+      headers: ctx.headers(),
+      body: { title: "Local draft", details: "Saved without sending", type: "bug" },
+    }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(body.revision === 1 && body.type === "bug", "local feedback draft must persist")
+      },
+      "status",
+    ),
+  http.protected
+    .post("/session/{sessionID}/feedback/{draftID}/image/{imageID}", "feedback.image.missing")
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/feedback/feedback_missing/image/feedback_image_missing`,
+      headers: ctx.headers(),
+      body: { revision: 1 },
+    }))
+    .status(404),
+  http.protected
+    .post("/session/{sessionID}/feedback/{draftID}/review", "feedback.review.missing")
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/feedback/feedback_missing/review`,
+      headers: ctx.headers(),
+      body: { revision: 1 },
+    }))
+    .status(404),
+  http.protected
+    .delete("/session/{sessionID}/feedback/{draftID}", "feedback.remove.missing")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/feedback/feedback_missing`,
+      headers: ctx.headers(),
+      body: { revision: 1 },
+    }))
+    .json(200, (body) => check(body === false, "missing feedback removal is idempotent"), "status"),
+  http.protected
+    .get("/api/session/{sessionID}/feedback", "v2.feedback.list")
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/feedback`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/feedback", "v2.feedback.save")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/feedback`,
+      headers: ctx.headers(),
+      body: { title: "Local draft", details: "Saved without sending", type: "bug" },
+    }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(body.revision === 1 && body.type === "bug", "local feedback draft must persist")
+      },
+      "status",
+    ),
+  http.protected
+    .post("/api/session/{sessionID}/feedback/{draftID}/image/{imageID}", "v2.feedback.image.missing")
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/feedback/feedback_missing/image/feedback_image_missing`,
+      headers: ctx.headers(),
+      body: { revision: 1 },
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/feedback/{draftID}/review", "v2.feedback.review.missing")
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/feedback/feedback_missing/review`,
+      headers: ctx.headers(),
+      body: { revision: 1 },
+    }))
+    .status(404),
+  http.protected
+    .delete("/api/session/{sessionID}/feedback/{draftID}", "v2.feedback.remove.missing")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Feedback owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/feedback/feedback_missing`,
+      headers: ctx.headers(),
+      body: { revision: 1 },
+    }))
+    .json(200, (body) => check(body === false, "missing feedback removal is idempotent"), "status"),
+  http.protected
+    .post("/session/{sessionID}/goal", "goal.create")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Goal owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/goal`,
+      headers: ctx.headers(),
+      body: { id: "goal_httpapi", objective: "Persist without running a model", tokenBudget: 1000 },
+    }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(
+          body.status === "active" && body.phase === "idle" && body.tokensUsed === 0,
+          "goal must be admitted without model work",
+        )
+      },
+      "status",
+    ),
+  ...(["run", "pause", "resume"] as const).map((action) =>
+    http.protected
+      .post(`/session/{sessionID}/goal/{goalID}/${action}`, `goal.${action}.missing`)
+      .seeded((ctx) => ctx.session({ title: "Goal owner" }))
+      .at((ctx) => ({ path: `/session/${ctx.state.id}/goal/goal_missing/${action}`, headers: ctx.headers() }))
+      .status(404),
+  ),
+  http.protected
+    .post("/session/{sessionID}/goal/{goalID}/start", "goal.start.missing")
+    .seeded((ctx) => ctx.session({ title: "Goal owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/goal/goal_missing/start`,
+      headers: ctx.headers(),
+      body: { agent: "build", model: { providerID: "xai", id: "grok-4.7" } },
+    }))
+    .status(404),
+  http.protected
+    .delete("/session/{sessionID}/goal/{goalID}", "goal.clear.missing")
+    .seeded((ctx) => ctx.session({ title: "Goal owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/goal/goal_missing`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .get("/session/{sessionID}/goal/{goalID}/reports", "goal.reports.empty")
+    .seeded((ctx) => ctx.session({ title: "Goal reports owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/goal/goal_missing/reports`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .get("/session/{sessionID}/goal/{goalID}/reports/{reportID}/{file}", "goal.report.missing")
+    .seeded((ctx) => ctx.session({ title: "Goal reports owner" }))
+    .at((ctx) => ({
+      path: `/session/${ctx.state.id}/goal/goal_missing/reports/review-missing/plan`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .delete("/session/{sessionID}/goal/{goalID}/reports", "goal.cleanupReports.empty")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Goal reports owner" }))
+    .at((ctx) => ({ path: `/session/${ctx.state.id}/goal/goal_missing/reports`, headers: ctx.headers() }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(
+          body.removed === 0 && Array.isArray(body.failed) && body.failed.length === 0,
+          "empty cleanup is idempotent",
+        )
+      },
+      "status",
+    ),
   http.protected.get("/project", "project.list").json(200, array, "status"),
   http.protected.get("/project/current", "project.current").json(
     200,
@@ -378,6 +755,73 @@ const scenarios: Scenario[] = [
         }),
       "status",
     ),
+  http.protected
+    .post("/api/session/{sessionID}/mcp/operations", "v2.sessionMcpAttachment.reserve")
+    .seeded((ctx) => ctx.session({ title: "MCP reservation owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/mcp/operations`,
+      headers: ctx.headers(),
+      body: { request: { kind: "catalog", input: {} } },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "reserved" && typeof body.id === "string", "reserve must create only a zero-work handle")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/mcp/operations/{operationID}", "v2.sessionMcpAttachment.status")
+    .seeded(reserveAttachment)
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.sessionID}/mcp/operations/${ctx.state.operationID}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "reserved", "status must not execute a reserved operation")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/mcp/operations/{operationID}/cancel", "v2.sessionMcpAttachment.cancel")
+    .seeded(reserveAttachment)
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.sessionID}/mcp/operations/${ctx.state.operationID}/cancel`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "cancelled", "cancel must join and retain a cancelled handle")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/mcp/operations/{operationID}/execute", "v2.sessionMcpAttachment.execute")
+    .inProject({
+      config: {
+        permission: { "*": "allow" },
+        mcp: {
+          local: {
+            type: "local",
+            command: [process.execPath, path.resolve(import.meta.dir, "../../fixture/mcp-attachment-stdio.ts")],
+          },
+        },
+      },
+    })
+    .seeded(reserveAttachment)
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.sessionID}/mcp/operations/${ctx.state.operationID}/execute`,
+      headers: ctx.headers(),
+      body: { request: attachmentRead },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "completed", "execute must complete the resource read")
+      object(body.prepared)
+      array(body.prepared.files)
+      object(body.prepared.files[0])
+      check(
+        Buffer.from(String(body.prepared.files[0].uri).split(",")[1], "base64")
+          .toString()
+          .includes("UNICODE:雪:fixture://http"),
+        "execute must return canonical resource bytes",
+      )
+    }),
+
   http.protected.get("/mcp", "mcp.status").json(),
   http.protected
     .post("/mcp", "mcp.add")
@@ -590,7 +1034,135 @@ const scenarios: Scenario[] = [
     .json(200, (body) => {
       check(body === false, "background route should be a no-op without running subagents")
     }),
+  http.protected
+    .get("/experimental/session/{sessionID}/memory", "experimental.memory.list")
+    .seeded((ctx) => ctx.session({ title: "Memory list owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(403),
+  http.protected
+    .post("/experimental/session/{sessionID}/memory/remember", "experimental.memory.remember")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Memory review owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/remember", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { content: "A reviewed note", scope: "global" },
+    }))
+    .json(403),
+  http.protected
+    .post("/experimental/session/{sessionID}/memory/rewrite", "experimental.memory.rewrite")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Memory review owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/rewrite", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { content: "A draft to rewrite" },
+    }))
+    .json(403),
+  http.protected
+    .get("/experimental/session/{sessionID}/memory/operation", "experimental.memory.operation")
+    .seeded((ctx) => ctx.session({ title: "Memory work owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/operation", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(403),
+  http.protected
+    .post("/experimental/session/{sessionID}/memory/operation", "experimental.memory.start")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Memory work owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/operation", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { kind: "flush" },
+    }))
+    .json(403),
+  http.protected
+    .post("/experimental/session/{sessionID}/memory/operation/cancel", "experimental.memory.cancel")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Memory work owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/operation/cancel", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { id: "not-running" },
+    }))
+    .json(403),
+  http.protected
+    .get("/experimental/session/{sessionID}/memory/note", "experimental.memory.get")
+    .seeded((ctx) => ctx.session({ title: "Memory preview owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/note", { sessionID: ctx.state.id }) + "?path=missing.md",
+      headers: ctx.headers(),
+    }))
+    .json(403),
+  http.protected
+    .post("/experimental/session/{sessionID}/memory/forget", "experimental.memory.forget")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Memory deletion owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/forget", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { path: "missing.md", hash: "a".repeat(64) },
+    }))
+    .json(403),
   http.protected.get("/experimental/resource", "experimental.resource.list").json(),
+  http.protected
+    .get("/experimental/session/{sessionID}/memory/health", "experimental.memory.health")
+    .seeded((ctx) => ctx.session({ title: "Memory health owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/health", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(403),
+  http.protected
+    .get("/experimental/session/{sessionID}/memory/status", "experimental.memory.status")
+    .seeded((ctx) => ctx.session({ title: "Memory status owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/status", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(403),
+  http.protected
+    .post("/experimental/session/{sessionID}/memory/toggle", "experimental.memory.toggle")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Memory toggle owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/memory/toggle", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { enabled: true },
+    }))
+    .json(403),
+  http.protected
+    .get("/experimental/session/{sessionID}/task", "experimental.task.list")
+    .seeded((ctx) => ctx.session({ title: "Task list owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/task", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, array),
+  http.protected
+    .get("/experimental/session/{sessionID}/task/{taskID}", "experimental.task.get")
+    .seeded((ctx) => ctx.session({ title: "Task detail owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/task/{taskID}", { sessionID: ctx.state.id, taskID: "missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404),
+  http.protected
+    .post("/experimental/session/{sessionID}/task/{taskID}/cancel", "experimental.task.cancel")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Task cancel owner" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/task/{taskID}/cancel", {
+        sessionID: ctx.state.id,
+        taskID: "missing",
+      }),
+      headers: ctx.headers(),
+    }))
+    .json(404),
   http.protected
     .post("/sync/history", "sync.history.list")
     .at((ctx) => ({ path: "/sync/history", headers: ctx.headers(), body: {} }))
@@ -972,6 +1544,524 @@ const scenarios: Scenario[] = [
     .status(400, undefined, "none"),
   http.protected.get("/api/session/active", "v2.session.active").json(200, data(object), "none"),
   http.protected
+    .post("/api/session/{sessionID}/restore", "v2.session.restore.empty")
+    .seeded((ctx) => ctx.session({ title: "Explicit native restoration owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/restore`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(typeof body.sessionID === "string", "restoration identifies its existing Session")
+      array(body.schedules)
+      check(body.schedules.length === 0, "restoration without saved schedules is an empty control")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/input/{inputID}/execution", "v2.session.input.execution.missing")
+    .seeded((ctx) => ctx.session({ title: "Native input receipt owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/input/msg_00000000000000000000000000/execution`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/input/{inputID}/execution/wait", "v2.session.input.wait.missing")
+    .seeded((ctx) => ctx.session({ title: "Native input receipt owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/input/msg_00000000000000000000000000/execution/wait`,
+      headers: ctx.headers(),
+      body: { timeoutMs: 0 },
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/input/{inputID}/execution/wait", "v2.session.input.wait.invalidTimeout")
+    .seeded((ctx) => ctx.session({ title: "Native input receipt owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/input/msg_00000000000000000000000000/execution/wait`,
+      headers: ctx.headers(),
+      body: { timeoutMs: 30001 },
+    }))
+    .status(400),
+  http.protected
+    .post("/api/session/{sessionID}/input/{inputID}/execution/interrupt", "v2.session.input.interrupt.missing")
+    .seeded((ctx) => ctx.session({ title: "Native input receipt owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/input/msg_00000000000000000000000000/execution/interrupt`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/side-question", "v2.sideQuestion.list")
+    .seeded((ctx) => ctx.session({ title: "Side question owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/side-question`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/side-question", "v2.sideQuestion.ask.invalid")
+    .seeded((ctx) => ctx.session({ title: "Side question owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/side-question`,
+      headers: ctx.headers(),
+      body: { question: "" },
+    }))
+    .status(400),
+  http.protected
+    .post("/api/session/{sessionID}/side-question/{questionID}/cancel", "v2.sideQuestion.cancel.missing")
+    .seeded((ctx) => ctx.session({ title: "Side question owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/side-question/btw_missing/cancel`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/workflow/related", "v2.workflow.related")
+    .seeded((ctx) => ctx.session({ title: "Workflow parent" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/workflow/related`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/workflow/launch", "v2.workflow.launch.invalid")
+    .seeded((ctx) => ctx.session({ title: "Workflow parent" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/workflow/launch`, headers: ctx.headers(), body: {} }))
+    .status(400),
+  http.protected
+    .get("/api/session/{sessionID}/workflow/sources", "v2.workflow.sources")
+    .seeded((ctx) => ctx.session({ title: "Workflow source discovery" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/workflow/sources`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/workflow/validate", "v2.workflow.validate")
+    .seeded((ctx) => ctx.session({ title: "Workflow validation" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/workflow/validate`,
+      headers: ctx.headers(),
+      body: { source: { type: "builtin", name: "deep-research" } },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.name === "deep-research" && body.valid === true, "builtin workflow validation must succeed")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/workflow", "v2.workflow.list")
+    .seeded((ctx) => ctx.session({ title: "Native Workflow owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/workflow`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/workflow", "v2.workflow.start.invalid")
+    .seeded((ctx) => ctx.session({ title: "Native Workflow owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/workflow`, headers: ctx.headers(), body: {} }))
+    .status(400),
+  http.protected
+    .get("/api/session/{sessionID}/workflow/{workflowID}", "v2.workflow.get.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Workflow owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/workflow/workflow_missing`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/workflow/{workflowID}/resume", "v2.workflow.resume.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Workflow owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/workflow/workflow_missing/resume`,
+      headers: ctx.headers(),
+      body: {},
+    }))
+    .status(404),
+  ...(["pause", "stop"] as const).map((action) =>
+    http.protected
+      .post(`/api/session/{sessionID}/workflow/{workflowID}/${action}`, `v2.workflow.${action}.missing`)
+      .seeded((ctx) => ctx.session({ title: "Native Workflow owner" }))
+      .at((ctx) => ({
+        path: `/api/session/${ctx.state.id}/workflow/workflow_missing/${action}`,
+        headers: ctx.headers(),
+      }))
+      .status(404),
+  ),
+  http.protected
+    .get("/api/session/{sessionID}/goal", "v2.goal.get")
+    .seeded((ctx) => ctx.session({ title: "Native Goal owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/goal`, headers: ctx.headers() }))
+    .json(200, (body) => check(body === null, "new native session has no goal")),
+  http.protected
+    .post("/api/session/{sessionID}/goal", "v2.goal.create")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Native Goal owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/goal`,
+      headers: ctx.headers(),
+      body: { id: "goal_nativehttpapi", objective: "Admit a native Goal without model execution", tokenBudget: 1000 },
+    }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(
+          body.status === "active" && body.phase === "idle" && body.tokensUsed === 0,
+          "native goal must be admitted without execution",
+        )
+      },
+      "status",
+    ),
+  ...(["run", "pause", "resume"] as const).map((action) =>
+    http.protected
+      .post(`/api/session/{sessionID}/goal/{goalID}/${action}`, `v2.goal.${action}.missing`)
+      .seeded((ctx) => ctx.session({ title: "Native Goal owner" }))
+      .at((ctx) => ({ path: `/api/session/${ctx.state.id}/goal/goal_missing/${action}`, headers: ctx.headers() }))
+      .status(409),
+  ),
+  http.protected
+    .post("/api/session/{sessionID}/goal/{goalID}/start", "v2.goal.start.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Goal owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/goal/goal_missing/start`,
+      headers: ctx.headers(),
+      body: { agent: "build", model: { providerID: "xai", id: "grok-4.7" } },
+    }))
+    .status(409),
+  http.protected
+    .delete("/api/session/{sessionID}/goal/{goalID}", "v2.goal.clear.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Goal owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/goal/goal_missing`, headers: ctx.headers() }))
+    .status(409),
+  http.protected
+    .get("/api/session/{sessionID}/goal/{goalID}/reports", "v2.goal.reports.empty")
+    .seeded((ctx) => ctx.session({ title: "Native Goal reports owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/goal/goal_missing/reports`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .get("/api/session/{sessionID}/goal/{goalID}/reports/{reportID}/{file}", "v2.goal.report.missingSession")
+    .at((ctx) => ({
+      path: "/api/session/ses_httpapi_missing/goal/goal_missing/reports/review-missing/plan",
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .delete("/api/session/{sessionID}/goal/{goalID}/reports", "v2.goal.cleanupReports.empty")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Native Goal reports owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/goal/goal_missing/reports`, headers: ctx.headers() }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(
+          body.removed === 0 && Array.isArray(body.failed) && body.failed.length === 0,
+          "native empty cleanup is idempotent",
+        )
+      },
+      "status",
+    ),
+  http.protected
+    .post("/api/session/{sessionID}/task/{taskID}/message", "v2.task.message.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Task message owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/task/ses_httpapi_task_missing/message`,
+      headers: ctx.headers(),
+      body: { inputID: "msg_httpapi_taskmessage", text: "Update the task" },
+    }))
+    .status(403),
+  http.protected
+    .post("/api/session/{sessionID}/task/{taskID}/message", "v2.task.message.blank")
+    .seeded((ctx) => ctx.session({ title: "Native Task message owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/task/ses_httpapi_task_missing/message`,
+      headers: ctx.headers(),
+      body: { inputID: "msg_httpapi_taskmessage", text: " " },
+    }))
+    .status(400),
+  http.protected
+    .get("/api/session/{sessionID}/task/{taskID}/message/{inputID}", "v2.task.message.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Task message owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/task/ses_httpapi_task_missing/message/msg_httpapi_taskmessage`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/task", "v2.task.list.empty")
+    .seeded((ctx) => ctx.session({ title: "Native Task owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/task?limit=100`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "new parent has no native Tasks")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/task", "v2.task.list.invalidLimit")
+    .seeded((ctx) => ctx.session({ title: "Native Task owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/task?limit=101`, headers: ctx.headers() }))
+    .status(400, undefined, "none"),
+  http.protected
+    .get("/api/session/{sessionID}/task/{taskID}", "v2.task.output.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Task owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/task/ses_httpapi_task_missing`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/task/{taskID}/wait", "v2.task.wait.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Task owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/task/ses_httpapi_task_missing/wait`,
+      headers: ctx.headers(),
+      body: { timeoutMs: 0 },
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/task/{taskID}/cancel", "v2.task.cancel.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Task owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/task/ses_httpapi_task_missing/cancel`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/process", "v2.process.list.empty")
+    .seeded((ctx) => ctx.session({ title: "Native process owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/process?limit=100`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "new Session has no native processes")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/process", "v2.process.list.invalidLimit")
+    .seeded((ctx) => ctx.session({ title: "Native process owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/process?limit=101`, headers: ctx.headers() }))
+    .status(400, undefined, "none"),
+  http.protected
+    .get("/api/session/{sessionID}/process/{processID}", "v2.process.output.missing")
+    .seeded((ctx) => ctx.session({ title: "Native process owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/process/proc_00000000000000000000000000`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/process/{processID}/wait", "v2.process.wait.missing")
+    .seeded((ctx) => ctx.session({ title: "Native process owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/process/proc_00000000000000000000000000/wait`,
+      headers: ctx.headers(),
+      body: { timeoutMs: 0 },
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/process/{processID}/cancel", "v2.process.cancel.missing")
+    .seeded((ctx) => ctx.session({ title: "Native process owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/process/proc_00000000000000000000000000/cancel`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/schedule", "v2.schedule.list.empty")
+    .seeded((ctx) => ctx.session({ title: "Native schedule owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/schedule`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "new Session has no native schedules")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/schedule", "v2.schedule.list.missing")
+    .at((ctx) => ({ path: "/api/session/ses_httpapi_schedule_missing/schedule", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/schedule/{scheduleID}", "v2.schedule.get.missing")
+    .seeded((ctx) => ctx.session({ title: "Native schedule owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/schedule/sched_00000000000000000000000000`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .delete("/api/session/{sessionID}/schedule/{scheduleID}", "v2.schedule.delete.missing")
+    .seeded((ctx) => ctx.session({ title: "Native schedule owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/schedule/sched_00000000000000000000000000`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/schedule/{scheduleID}/pause", "v2.schedule.pause.missing")
+    .seeded((ctx) => ctx.session({ title: "Native schedule owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/schedule/sched_00000000000000000000000000/pause`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/schedule/{scheduleID}/resume", "v2.schedule.resume.missing")
+    .seeded((ctx) => ctx.session({ title: "Native schedule owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/schedule/sched_00000000000000000000000000/resume`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/memory", "v2.memory.status.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/memory`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(body.enabled === false && body.canToggle === false && body.busy === false, "profile disables Memory")
+      check(body.backend === "legacy" || body.backend === "v2", "status exposes the selected Memory backend")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/memory/flush", "v2.memory.flush.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory operation owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/flush`,
+      headers: ctx.headers(),
+      body: { id: "mop_00000000000000000000000000" },
+    }))
+    .status(409),
+  http.protected
+    .post("/api/session/{sessionID}/memory/dream", "v2.memory.dream.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory Dream owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/dream`,
+      headers: ctx.headers(),
+      body: { id: "mop_00000000000000000000000000" },
+    }))
+    .status(409),
+  http.protected
+    .get("/api/session/{sessionID}/memory/migration", "v2.memory.migration.preview.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory migration owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/migration?kind=carryover&scope=workspace`,
+      headers: ctx.headers(),
+    }))
+    .status(409),
+  http.protected
+    .post("/api/session/{sessionID}/memory/migration", "v2.memory.migration.apply.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory migration owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/migration`,
+      headers: ctx.headers(),
+      body: {
+        id: "mop_00000000000000000000000000",
+        preview: {
+          kind: "carryover",
+          scope: "workspace",
+          sourceHash: "",
+          targetHash: "",
+          generation: "initial",
+          available: false,
+        },
+      },
+    }))
+    .status(409),
+  http.protected
+    .get("/api/session/{sessionID}/memory/recovery", "v2.memory.recovery.preview.unsupported")
+    .seeded((ctx) => ctx.session({ title: "Native Memory recovery owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/recovery?action=clear&scope=workspace`,
+      headers: ctx.headers(),
+    }))
+    .status(403),
+  http.protected
+    .post("/api/session/{sessionID}/memory/recovery", "v2.memory.recovery.apply.unsupported")
+    .seeded((ctx) => ctx.session({ title: "Native Memory recovery owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/recovery`,
+      headers: ctx.headers(),
+      body: {
+        id: "mop_00000000000000000000000000",
+        preview: {
+          action: "clear",
+          scope: "workspace",
+          generation: "initial",
+          digest: "",
+          files: 0,
+          plans: 0,
+          available: false,
+        },
+      },
+    }))
+    .status(403),
+  http.protected
+    .post("/api/session/{sessionID}/memory/retry", "v2.memory.retry.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Memory retry owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/retry`,
+      headers: ctx.headers(),
+      body: { id: "mop_00000000000000000000000001", retryOf: "mop_00000000000000000000000000" },
+    }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/memory/operation", "v2.memory.operations.empty")
+    .seeded((ctx) => ctx.session({ title: "Native Memory operation owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/memory/operation`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "new Session has no Memory operation receipts")
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/memory/operation/{operationID}", "v2.memory.operation.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Memory operation owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/operation/mop_00000000000000000000000000`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/memory/operation/{operationID}/cancel", "v2.memory.cancel.missing")
+    .seeded((ctx) => ctx.session({ title: "Native Memory operation owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/operation/mop_00000000000000000000000000/cancel`,
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .patch("/api/session/{sessionID}/memory", "v2.memory.toggle.disabled")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Native Memory owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory`,
+      headers: ctx.headers(),
+      body: { enabled: true },
+    }))
+    .status(403),
+  http.protected
+    .get("/api/session/{sessionID}/memory/notes", "v2.memory.list.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/memory/notes`, headers: ctx.headers() }))
+    .status(403),
+  http.protected
+    .get("/api/session/{sessionID}/memory/note", "v2.memory.preview.disabled")
+    .seeded((ctx) => ctx.session({ title: "Native Memory owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/memory/note?path=missing.md`, headers: ctx.headers() }))
+    .status(403),
+  http.protected
+    .delete("/api/session/{sessionID}/memory/note", "v2.memory.forget.disabled")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Native Memory owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/memory/note`,
+      headers: ctx.headers(),
+      body: { path: "missing.md", hash: "0".repeat(64) },
+    }))
+    .status(403),
+  http.protected
+    .get("/api/session/{sessionID}/sandbox", "v2.session.sandbox.off")
+    .seeded((ctx) => ctx.session({ title: "Native command sandbox owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/sandbox`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        body.scope === "native_commands" && body.stored === true && body.profile === "off",
+        "new root stores explicit off",
+      )
+      check(
+        body.network === "unrestricted" && body.latestExecution === undefined,
+        "passive status has no execution receipt",
+      )
+    }),
+  http.protected
+    .get("/api/session/{sessionID}/sandbox", "v2.session.sandbox.missing")
+    .at((ctx) => ({ path: "/api/session/ses_httpapi_sandbox_missing/sandbox", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/session", "v2.session.create.invalidSandbox")
+    .at((ctx) => ({ path: "/api/session", headers: ctx.headers(), body: { commandSandbox: "unsupported" } }))
+    .status(400, undefined, "none"),
+  http.protected
+    .post("/api/session", "v2.session.create.sandboxConflict")
+    .seeded((ctx) => ctx.session({ title: "Immutable native command sandbox owner" }))
+    .at((ctx) => ({
+      path: "/api/session",
+      headers: ctx.headers(),
+      body: { id: ctx.state.id, commandSandbox: "workspace" },
+    }))
+    .status(409),
+  http.protected
     .post("/api/session", "v2.session.create")
     .at((ctx) => ({
       path: "/api/session",
@@ -987,6 +2077,23 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .json(200, data(object)),
+  http.protected
+    .delete("/api/session/{sessionID}", "v2.session.remove")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Native Session deletion" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .status(204, undefined, "none"),
+  http.protected
+    .delete("/api/session/{sessionID}", "v2.session.remove.missing")
+    .mutating()
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}", { sessionID: "ses_httpapi_delete_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(204, undefined, "none"),
   http.protected
     .post("/api/session/{sessionID}/agent", "v2.session.switchAgent")
     .seeded((ctx) => ctx.session({ title: "Switch agent" }))

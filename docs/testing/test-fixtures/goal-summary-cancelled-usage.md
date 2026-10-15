@@ -1,0 +1,10 @@
+# BUG-20261014-241: Summary UI fixture reused a Goal with unknown cancelled usage
+
+- Scope: native Goal terminal and browser/window acceptance fixtures.
+- Observed: the expanded terminal fixture timed out waiting for a running optional summary. The captured panel already showed a completed Goal, a lower-bound usage receipt, and an unavailable summary.
+- Expected: unknown usage prevents an optional provider request, while independently verified Goal completion remains complete. An uninterrupted Goal with complete receipts can produce the optional summary.
+- Reproduction: hold an actual worker provider request, pause the Goal before the response supplies usage, resume to independent completion, and expect a closing summary.
+- Root cause: the fixture combined cancellation and summary-success expectations. The final summary admission guard correctly rejects unknown usage; the fixture had assumed that cancellation still allowed an optional provider call.
+- Fix: explicitly wait for the held worker provider request, verify the completed Goal reports a failed summary with reason `usage`, then clear that Goal and create a fresh uninterrupted Goal for summary progress, output, reopening, and report checks. Apply the same separation to browser/window acceptance.
+- Verification: the failing expanded trace and implementation guard establish the root cause. The corrected compact and expanded terminal fixtures each passed seven checks. The production App browser fixture passed eleven checks, including Simplified/Traditional Chinese rendering and report preview/download/cleanup. The rebuilt real macOS window also passed all eleven checks. Two intervening terminal reruns still used the original sequence because a bulk edit matched the browser suffix first; those repeated the same unresolved fixture failure and are not independent historical occurrences.
+- Independent occurrences: one failed terminal run. The browser fixture was corrected from the same source finding before it ran, not counted as another occurrence.

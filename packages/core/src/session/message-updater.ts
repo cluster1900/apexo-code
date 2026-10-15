@@ -100,6 +100,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
 
   return Effect.gen(function* () {
     yield* SessionEvent.All.match(event, {
+      "session.next.history.copy.started": () => Effect.void,
+      "session.next.history.copy.completed": () => Effect.void,
+      "session.next.history.copy.message": (event) => adapter.appendMessage(event.data.message),
       "session.next.agent.switched": (event) => {
         return adapter.appendMessage(
           SessionMessage.AgentSwitched.make({
@@ -123,6 +126,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         )
       },
       "session.next.moved": () => Effect.void,
+      "session.next.input.execution.settled": () => Effect.void,
       "session.next.prompted": (event) => {
         return adapter.appendMessage(
           SessionMessage.User.make({
@@ -137,6 +141,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         )
       },
       "session.next.prompt.admitted": () => Effect.void,
+      "session.next.prompt.withdrawn": () => Effect.void,
       "session.next.context.updated": (event) =>
         adapter.appendMessage(
           SessionMessage.System.make({

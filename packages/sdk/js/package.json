@@ -16,7 +16,11 @@
     "./v2/client": "./src/v2/client.ts",
     "./v2/gen/client": "./src/v2/gen/client/index.ts",
     "./v2/server": "./src/v2/server.ts",
-    "./v2/types": "./src/v2/gen/types.gen.ts"
+    "./v2/types": "./src/v2/gen/types.gen.ts",
+    "./v2/command-prompt": "./src/v2/command-prompt.ts",
+    "./v2/task-message": "./src/v2/task-message.ts",
+    "./v2/mcp-attachment": "./src/v2/mcp-attachment.ts"
+    ,"./v2/feedback-images": "./src/v2/feedback-images.ts"
   },
   "files": [
     "dist"

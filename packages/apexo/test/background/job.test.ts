@@ -1,12 +1,31 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@apexo/core/effect/layer-node"
-import { Deferred, Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import { BackgroundJob } from "@/background/job"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(BackgroundJob.node))
 
 describe("background.job", () => {
+  it.instance("finishes durable cancellation when its caller is interrupted during deletion", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const started = yield* Deferred.make<void>()
+      const persisted = yield* Deferred.make<void>()
+      const job = yield* jobs.start({
+        type: "scheduler",
+        onCancel: Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(persisted))),
+        run: Effect.never,
+      })
+      const cancellation = yield* jobs.cancel(job.id).pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+      const interrupted = yield* Fiber.interrupt(cancellation).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.succeed(persisted, undefined)
+      yield* Fiber.join(interrupted)
+      expect((yield* jobs.get(job.id))?.status).toBe("cancelled")
+    }),
+  )
+
   it.instance("tracks started jobs through completion", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

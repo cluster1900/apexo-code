@@ -33,6 +33,30 @@ import type {
   ExperimentalCapabilitiesGetResponses,
   ExperimentalControlPlaneMoveSessionErrors,
   ExperimentalControlPlaneMoveSessionResponses,
+  ExperimentalHooksErrors,
+  ExperimentalHooksResponses,
+  ExperimentalMemoryCancelErrors,
+  ExperimentalMemoryCancelResponses,
+  ExperimentalMemoryForgetErrors,
+  ExperimentalMemoryForgetResponses,
+  ExperimentalMemoryGetErrors,
+  ExperimentalMemoryGetResponses,
+  ExperimentalMemoryHealthErrors,
+  ExperimentalMemoryHealthResponses,
+  ExperimentalMemoryListErrors,
+  ExperimentalMemoryListResponses,
+  ExperimentalMemoryOperationErrors,
+  ExperimentalMemoryOperationResponses,
+  ExperimentalMemoryRememberErrors,
+  ExperimentalMemoryRememberResponses,
+  ExperimentalMemoryRewriteErrors,
+  ExperimentalMemoryRewriteResponses,
+  ExperimentalMemoryStartErrors,
+  ExperimentalMemoryStartResponses,
+  ExperimentalMemoryStatusErrors,
+  ExperimentalMemoryStatusResponses,
+  ExperimentalMemoryToggleErrors,
+  ExperimentalMemoryToggleResponses,
   ExperimentalProjectCopyGenerateNameErrors,
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
@@ -41,6 +65,12 @@ import type {
   ExperimentalSessionBackgroundResponses,
   ExperimentalSessionListErrors,
   ExperimentalSessionListResponses,
+  ExperimentalTaskCancelErrors,
+  ExperimentalTaskCancelResponses,
+  ExperimentalTaskGetErrors,
+  ExperimentalTaskGetResponses,
+  ExperimentalTaskListErrors,
+  ExperimentalTaskListResponses,
   ExperimentalWorkspaceAdapterListErrors,
   ExperimentalWorkspaceAdapterListResponses,
   ExperimentalWorkspaceCreateErrors,
@@ -55,6 +85,20 @@ import type {
   ExperimentalWorkspaceSyncListResponses,
   ExperimentalWorkspaceWarpErrors,
   ExperimentalWorkspaceWarpResponses,
+  FeedbackId,
+  FeedbackImageErrors,
+  FeedbackImageId,
+  FeedbackImageResponses,
+  FeedbackListErrors,
+  FeedbackListResponses,
+  FeedbackRemoveErrors,
+  FeedbackRemoveResponses,
+  FeedbackReview,
+  FeedbackReviewErrors,
+  FeedbackReviewResponses,
+  FeedbackSave,
+  FeedbackSaveErrors,
+  FeedbackSaveResponses,
   FileListErrors,
   FileListResponses,
   FilePartInput,
@@ -81,6 +125,41 @@ import type {
   GlobalEventResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
+  GoalCleanupReportsErrors,
+  GoalCleanupReportsResponses,
+  GoalClearErrors,
+  GoalClearResponses,
+  GoalCreate,
+  GoalCreateErrors,
+  GoalCreateResponses,
+  GoalGetErrors,
+  GoalGetResponses,
+  GoalId,
+  GoalPauseErrors,
+  GoalPauseResponses,
+  GoalReportErrors,
+  GoalReportFileKey,
+  GoalReportId,
+  GoalReportResponses,
+  GoalReportsErrors,
+  GoalReportsResponses,
+  GoalResumeErrors,
+  GoalResumeResponses,
+  GoalRunErrors,
+  GoalRunResponses,
+  GoalStart,
+  GoalStartErrors,
+  GoalStartResponses,
+  HooksGetErrors,
+  HooksGetResponses,
+  HooksPreferenceErrors,
+  HooksPreferenceResponses,
+  HooksReloadErrors,
+  HooksReloadResponses,
+  HooksTrustErrors,
+  HooksTrustResponses,
+  HostHooksPreference,
+  HostHooksRepositoryTrust,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   LocationRef,
@@ -104,6 +183,16 @@ import type {
   McpRemoteConfig,
   McpStatusErrors,
   McpStatusResponses,
+  MemoryModeUpdate,
+  MemoryNoteForget,
+  MemoryOperationInput,
+  MemoryOperationMigrationInput,
+  MemoryOperationRecoveryInput,
+  MemoryOperationRetryInput,
+  MemoryReviewRewrite,
+  MemoryReviewSave,
+  MemoryWorkCancel,
+  MemoryWorkStart,
   ModelRef,
   MoveSessionDestination,
   OutputFormat,
@@ -123,6 +212,15 @@ import type {
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
+  PluginsDetailErrors,
+  PluginsDetailResponses,
+  PluginsListErrors,
+  PluginsListResponses,
+  PluginsManageErrors,
+  PluginsManageResponses,
+  PluginsReloadErrors,
+  PluginsReloadResponses,
+  PluginStoreAction,
   ProjectCommands,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
@@ -170,6 +268,7 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  SandboxProfile,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -190,18 +289,23 @@ import type {
   SessionGetResponses,
   SessionInitErrors,
   SessionInitResponses,
+  SessionInputExecutionPolicy,
   SessionListErrors,
   SessionListResponses,
+  SessionMcpAttachmentInput,
   SessionMessageErrors,
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionProcessId,
+  SessionProcessWait,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionScheduleId,
   SessionShellErrors,
   SessionShellResponses,
   SessionStatusErrors,
@@ -214,6 +318,13 @@ import type {
   SessionUnrevertResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SideQuestionAskErrors,
+  SideQuestionAskResponses,
+  SideQuestionCancelErrors,
+  SideQuestionCancelResponses,
+  SideQuestionInput,
+  SideQuestionListErrors,
+  SideQuestionListResponses,
   SkillReloadErrors,
   SkillReloadResponses,
   SubtaskPartInput,
@@ -225,6 +336,8 @@ import type {
   SyncStartResponses,
   SyncStealErrors,
   SyncStealResponses,
+  TaskMessageInput,
+  TaskWait,
   TextPartInput,
   ToolIdsErrors,
   ToolIdsResponses,
@@ -266,14 +379,52 @@ import type {
   V2CredentialUpdateResponses,
   V2EventSubscribeErrors,
   V2EventSubscribeResponses,
+  V2FeedbackImageErrors,
+  V2FeedbackImageResponses,
+  V2FeedbackListErrors,
+  V2FeedbackListResponses,
+  V2FeedbackRemoveErrors,
+  V2FeedbackRemoveResponses,
+  V2FeedbackReviewErrors,
+  V2FeedbackReviewResponses,
+  V2FeedbackSaveErrors,
+  V2FeedbackSaveResponses,
   V2FsFindErrors,
   V2FsFindResponses,
   V2FsListErrors,
   V2FsListResponses,
   V2FsReadErrors,
   V2FsReadResponses,
+  V2GoalCleanupReportsErrors,
+  V2GoalCleanupReportsResponses,
+  V2GoalClearErrors,
+  V2GoalClearResponses,
+  V2GoalCreateErrors,
+  V2GoalCreateResponses,
+  V2GoalGetErrors,
+  V2GoalGetResponses,
+  V2GoalPauseErrors,
+  V2GoalPauseResponses,
+  V2GoalReportErrors,
+  V2GoalReportResponses,
+  V2GoalReportsErrors,
+  V2GoalReportsResponses,
+  V2GoalResumeErrors,
+  V2GoalResumeResponses,
+  V2GoalRunErrors,
+  V2GoalRunResponses,
+  V2GoalStartErrors,
+  V2GoalStartResponses,
   V2HealthGetErrors,
   V2HealthGetResponses,
+  V2HooksGetErrors,
+  V2HooksGetResponses,
+  V2HooksPreferenceErrors,
+  V2HooksPreferenceResponses,
+  V2HooksReloadErrors,
+  V2HooksReloadResponses,
+  V2HooksTrustErrors,
+  V2HooksTrustResponses,
   V2IntegrationAttemptCancelErrors,
   V2IntegrationAttemptCancelResponses,
   V2IntegrationAttemptCompleteErrors,
@@ -292,6 +443,52 @@ import type {
   V2IntegrationListResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
+  V2LspStatusErrors,
+  V2LspStatusResponses,
+  V2McpAuthCancelErrors,
+  V2McpAuthCancelResponses,
+  V2McpAuthStartErrors,
+  V2McpAuthStartResponses,
+  V2McpConnectErrors,
+  V2McpConnectResponses,
+  V2McpDisconnectErrors,
+  V2McpDisconnectResponses,
+  V2McpResetPreferenceErrors,
+  V2McpResetPreferenceResponses,
+  V2McpRetryErrors,
+  V2McpRetryResponses,
+  V2McpStatusErrors,
+  V2McpStatusResponses,
+  V2MemoryCancelErrors,
+  V2MemoryCancelResponses,
+  V2MemoryDreamErrors,
+  V2MemoryDreamResponses,
+  V2MemoryFlushErrors,
+  V2MemoryFlushResponses,
+  V2MemoryForgetErrors,
+  V2MemoryForgetResponses,
+  V2MemoryListErrors,
+  V2MemoryListResponses,
+  V2MemoryMigrateErrors,
+  V2MemoryMigrateResponses,
+  V2MemoryMigrationPreviewErrors,
+  V2MemoryMigrationPreviewResponses,
+  V2MemoryOperationErrors,
+  V2MemoryOperationResponses,
+  V2MemoryOperationsErrors,
+  V2MemoryOperationsResponses,
+  V2MemoryPreviewErrors,
+  V2MemoryPreviewResponses,
+  V2MemoryRecoverErrors,
+  V2MemoryRecoverResponses,
+  V2MemoryRecoveryPreviewErrors,
+  V2MemoryRecoveryPreviewResponses,
+  V2MemoryRetryErrors,
+  V2MemoryRetryResponses,
+  V2MemoryStatusErrors,
+  V2MemoryStatusResponses,
+  V2MemoryToggleErrors,
+  V2MemoryToggleResponses,
   V2ModelListErrors,
   V2ModelListResponses,
   V2PermissionRequestListErrors,
@@ -300,12 +497,34 @@ import type {
   V2PermissionSavedListResponses,
   V2PermissionSavedRemoveErrors,
   V2PermissionSavedRemoveResponses,
+  V2PluginsDetailErrors,
+  V2PluginsDetailResponses,
+  V2PluginsListErrors,
+  V2PluginsListResponses,
+  V2PluginsManageErrors,
+  V2PluginsManageResponses,
+  V2PluginsReloadErrors,
+  V2PluginsReloadResponses,
+  V2PluginsRuntimeErrors,
+  V2PluginsRuntimeResponses,
+  V2ProcessCancelErrors,
+  V2ProcessCancelResponses,
+  V2ProcessListErrors,
+  V2ProcessListResponses,
+  V2ProcessOutputErrors,
+  V2ProcessOutputResponses,
+  V2ProcessWaitErrors,
+  V2ProcessWaitResponses,
   V2ProjectCopyCreateErrors,
   V2ProjectCopyCreateResponses,
   V2ProjectCopyRefreshErrors,
   V2ProjectCopyRefreshResponses,
   V2ProjectCopyRemoveErrors,
   V2ProjectCopyRemoveResponses,
+  V2ProjectCurrentErrors,
+  V2ProjectCurrentResponses,
+  V2ProjectListErrors,
+  V2ProjectListResponses,
   V2ProviderGetErrors,
   V2ProviderGetResponses,
   V2ProviderListErrors,
@@ -328,6 +547,16 @@ import type {
   V2QuestionRequestListResponses,
   V2ReferenceListErrors,
   V2ReferenceListResponses,
+  V2ScheduleDeleteErrors,
+  V2ScheduleDeleteResponses,
+  V2ScheduleGetErrors,
+  V2ScheduleGetResponses,
+  V2ScheduleListErrors,
+  V2ScheduleListResponses,
+  V2SchedulePauseErrors,
+  V2SchedulePauseResponses,
+  V2ScheduleResumeErrors,
+  V2ScheduleResumeResponses,
   V2SessionActiveErrors,
   V2SessionActiveResponses,
   V2SessionCompactErrors,
@@ -342,10 +571,24 @@ import type {
   V2SessionGetResponses,
   V2SessionHistoryErrors,
   V2SessionHistoryResponses,
+  V2SessionInputExecutionErrors,
+  V2SessionInputExecutionResponses,
+  V2SessionInputInterruptErrors,
+  V2SessionInputInterruptResponses,
+  V2SessionInputWaitErrors,
+  V2SessionInputWaitResponses,
   V2SessionInterruptErrors,
   V2SessionInterruptResponses,
   V2SessionListErrors,
   V2SessionListResponses,
+  V2SessionMcpAttachmentCancelErrors,
+  V2SessionMcpAttachmentCancelResponses,
+  V2SessionMcpAttachmentExecuteErrors,
+  V2SessionMcpAttachmentExecuteResponses,
+  V2SessionMcpAttachmentReserveErrors,
+  V2SessionMcpAttachmentReserveResponses,
+  V2SessionMcpAttachmentStatusErrors,
+  V2SessionMcpAttachmentStatusResponses,
   V2SessionMessageErrors,
   V2SessionMessageResponses,
   V2SessionMessagesErrors,
@@ -366,22 +609,66 @@ import type {
   V2SessionQuestionRejectResponses,
   V2SessionQuestionReplyErrors,
   V2SessionQuestionReplyResponses,
+  V2SessionRemoveErrors,
+  V2SessionRemoveResponses,
+  V2SessionRestoreErrors,
+  V2SessionRestoreResponses,
   V2SessionRevertClearErrors,
   V2SessionRevertClearResponses,
   V2SessionRevertCommitErrors,
   V2SessionRevertCommitResponses,
   V2SessionRevertStageErrors,
   V2SessionRevertStageResponses,
+  V2SessionSandboxErrors,
+  V2SessionSandboxResponses,
   V2SessionSwitchAgentErrors,
   V2SessionSwitchAgentResponses,
   V2SessionSwitchModelErrors,
   V2SessionSwitchModelResponses,
   V2SessionWaitErrors,
   V2SessionWaitResponses,
+  V2SideQuestionAskErrors,
+  V2SideQuestionAskResponses,
+  V2SideQuestionCancelErrors,
+  V2SideQuestionCancelResponses,
+  V2SideQuestionListErrors,
+  V2SideQuestionListResponses,
   V2SkillListErrors,
   V2SkillListResponses,
   V2SkillReloadErrors,
   V2SkillReloadResponses,
+  V2TaskCancelErrors,
+  V2TaskCancelResponses,
+  V2TaskListErrors,
+  V2TaskListResponses,
+  V2TaskMessageGetErrors,
+  V2TaskMessageGetResponses,
+  V2TaskMessageSendErrors,
+  V2TaskMessageSendResponses,
+  V2TaskOutputErrors,
+  V2TaskOutputResponses,
+  V2TaskWaitErrors,
+  V2TaskWaitResponses,
+  V2WorkflowGetErrors,
+  V2WorkflowGetResponses,
+  V2WorkflowLaunchErrors,
+  V2WorkflowLaunchResponses,
+  V2WorkflowListErrors,
+  V2WorkflowListResponses,
+  V2WorkflowPauseErrors,
+  V2WorkflowPauseResponses,
+  V2WorkflowRelatedErrors,
+  V2WorkflowRelatedResponses,
+  V2WorkflowResumeErrors,
+  V2WorkflowResumeResponses,
+  V2WorkflowSourcesErrors,
+  V2WorkflowSourcesResponses,
+  V2WorkflowStartErrors,
+  V2WorkflowStartResponses,
+  V2WorkflowStopErrors,
+  V2WorkflowStopResponses,
+  V2WorkflowValidateErrors,
+  V2WorkflowValidateResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -392,6 +679,10 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WorkflowId,
+  WorkflowLaunch,
+  WorkflowSource,
+  WorkflowStart,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -738,9 +1029,9 @@ export class Session extends HeyApiClient {
   }
 
   /**
-   * Background subagents
+   * Background running tasks
    *
-   * Detach any synchronous subagents currently blocking the session and continue them in the background.
+   * Continue running foreground Shell commands and enabled synchronous subagents in the background without restarting them.
    */
   public background<ThrowOnError extends boolean = false>(
     parameters: {
@@ -770,6 +1061,532 @@ export class Session extends HeyApiClient {
       url: "/experimental/session/{sessionID}/background",
       ...options,
       ...params,
+    })
+  }
+}
+
+export class Task extends HeyApiClient {
+  /**
+   * List session tasks
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalTaskListResponses,
+      ExperimentalTaskListErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/task",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read session task output
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ExperimentalTaskGetResponses, ExperimentalTaskGetErrors, ThrowOnError>({
+      url: "/experimental/session/{sessionID}/task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel a session task
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalTaskCancelResponses,
+      ExperimentalTaskCancelErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/task/{taskID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Memory extends HeyApiClient {
+  /**
+   * Read memory health without running maintenance
+   */
+  public health<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalMemoryHealthResponses,
+      ExperimentalMemoryHealthErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/health",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read session memory state
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalMemoryStatusResponses,
+      ExperimentalMemoryStatusErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Set session memory state
+   */
+  public toggle<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      memoryModeUpdate?: MemoryModeUpdate
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "memoryModeUpdate", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalMemoryToggleResponses,
+      ExperimentalMemoryToggleErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/toggle",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Browse memory notes
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      search?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "search" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalMemoryListResponses,
+      ExperimentalMemoryListErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Preview a memory note
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalMemoryGetResponses,
+      ExperimentalMemoryGetErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/note",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Delete an unchanged memory note
+   */
+  public forget<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      memoryNoteForget?: MemoryNoteForget
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "memoryNoteForget", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalMemoryForgetResponses,
+      ExperimentalMemoryForgetErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/forget",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Save a reviewed memory note
+   */
+  public remember<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      memoryReviewSave?: MemoryReviewSave
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "memoryReviewSave", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalMemoryRememberResponses,
+      ExperimentalMemoryRememberErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/remember",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Read latest memory operation
+   */
+  public operation<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalMemoryOperationResponses,
+      ExperimentalMemoryOperationErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/operation",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Start memory extraction or consolidation
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      memoryWorkStart?: MemoryWorkStart
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "memoryWorkStart", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalMemoryStartResponses,
+      ExperimentalMemoryStartErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/operation",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel a memory operation
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      memoryWorkCancel?: MemoryWorkCancel
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "memoryWorkCancel", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalMemoryCancelResponses,
+      ExperimentalMemoryCancelErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/operation/cancel",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Rewrite a draft without saving or adding a conversation turn
+   */
+  public rewrite<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      memoryReviewRewrite?: MemoryReviewRewrite
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "memoryReviewRewrite", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalMemoryRewriteResponses,
+      ExperimentalMemoryRewriteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/memory/rewrite",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }
@@ -1129,6 +1946,34 @@ export class Workspace extends HeyApiClient {
 }
 
 export class Experimental extends HeyApiClient {
+  /**
+   * Inspect host hook configuration without exposing executable content or secrets
+   */
+  public hooks<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ExperimentalHooksResponses, ExperimentalHooksErrors, ThrowOnError>({
+      url: "/hooks",
+      ...options,
+      ...params,
+    })
+  }
+
   private _controlPlane?: ControlPlane
   get controlPlane(): ControlPlane {
     return (this._controlPlane ??= new ControlPlane({ client: this.client }))
@@ -1142,6 +1987,16 @@ export class Experimental extends HeyApiClient {
   private _session?: Session
   get session(): Session {
     return (this._session ??= new Session({ client: this.client }))
+  }
+
+  private _task?: Task
+  get task(): Task {
+    return (this._task ??= new Task({ client: this.client }))
+  }
+
+  private _memory?: Memory
+  get memory(): Memory {
+    return (this._memory ??= new Memory({ client: this.client }))
   }
 
   private _resource?: Resource
@@ -1384,6 +2239,7 @@ export class Tool extends HeyApiClient {
       workspace?: string
       provider: string
       model: string
+      sessionID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1396,6 +2252,7 @@ export class Tool extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "query", key: "provider" },
             { in: "query", key: "model" },
+            { in: "query", key: "sessionID" },
           ],
         },
       ],
@@ -1577,6 +2434,880 @@ export class Worktree extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+}
+
+export class Plugins extends HeyApiClient {
+  /**
+   * Apply plugin changes to an idle project
+   */
+  public reload<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PluginsReloadResponses, PluginsReloadErrors, ThrowOnError>({
+      url: "/plugins/reload",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Browse Plugins
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PluginsListResponses, PluginsListErrors, ThrowOnError>({
+      url: "/plugins",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read plugin details
+   */
+  public detail<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "id" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PluginsDetailResponses, PluginsDetailErrors, ThrowOnError>({
+      url: "/plugins/detail",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Manage Plugins and sources
+   */
+  public manage<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      pluginStoreAction?: PluginStoreAction
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "pluginStoreAction", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PluginsManageResponses, PluginsManageErrors, ThrowOnError>({
+      url: "/plugins/manage",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Goal extends HeyApiClient {
+  /**
+   * Read the session goal without starting or recovering it
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<GoalGetResponses, GoalGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Persist a goal without starting model execution
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      goalCreate?: GoalCreate
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "goalCreate", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalCreateResponses, GoalCreateErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Admit the objective with the selected model and start the goal, including in an empty session
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+      goalStart?: GoalStart
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "goalStart", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalStartResponses, GoalStartErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Start an active goal and acknowledge exclusive execution admission
+   */
+  public run<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalRunResponses, GoalRunErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}/run",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Pause the goal and stop its owned execution
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalPauseResponses, GoalPauseErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Explicitly resume and run a paused goal
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalResumeResponses, GoalResumeErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop and clear the specified goal
+   */
+  public clear<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<GoalClearResponses, GoalClearErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Remove reports of a finished or cleared Goal; protect resumable Goals
+   */
+  public cleanupReports<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<GoalCleanupReportsResponses, GoalCleanupReportsErrors, ThrowOnError>(
+      {
+        url: "/session/{sessionID}/goal/{goalID}/reports",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * List finalized and incomplete Goal reports
+   */
+  public reports<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<GoalReportsResponses, GoalReportsErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}/reports",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read a bounded, integrity-verified Goal report for viewing or download
+   */
+  public report<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      reportID: GoalReportId
+      file: GoalReportFileKey
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "path", key: "reportID" },
+            { in: "path", key: "file" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<GoalReportResponses, GoalReportErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/{goalID}/reports/{reportID}/{file}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Feedback extends HeyApiClient {
+  /**
+   * List local feedback drafts for this session
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<FeedbackListResponses, FeedbackListErrors, ThrowOnError>({
+      url: "/session/{sessionID}/feedback",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Save or replace a local feedback draft without submitting it
+   */
+  public save<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      feedbackSave?: FeedbackSave
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "feedbackSave", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<FeedbackSaveResponses, FeedbackSaveErrors, ThrowOnError>({
+      url: "/session/{sessionID}/feedback",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Prepare the reviewed draft for the user to open in the issue form; never submit it
+   */
+  public review<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      draftID: FeedbackId
+      directory?: string
+      workspace?: string
+      feedbackReview?: FeedbackReview
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "draftID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "feedbackReview", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<FeedbackReviewResponses, FeedbackReviewErrors, ThrowOnError>({
+      url: "/session/{sessionID}/feedback/{draftID}/review",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Read an image from the exact reviewed draft revision
+   */
+  public image<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      draftID: FeedbackId
+      imageID: FeedbackImageId
+      directory?: string
+      workspace?: string
+      feedbackReview?: FeedbackReview
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "draftID" },
+            { in: "path", key: "imageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "feedbackReview", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<FeedbackImageResponses, FeedbackImageErrors, ThrowOnError>({
+      url: "/session/{sessionID}/feedback/{draftID}/image/{imageID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete the reviewed revision of a local feedback draft
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      draftID: FeedbackId
+      directory?: string
+      workspace?: string
+      feedbackReview?: FeedbackReview
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "draftID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "feedbackReview", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<FeedbackRemoveResponses, FeedbackRemoveErrors, ThrowOnError>({
+      url: "/session/{sessionID}/feedback/{draftID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Hooks extends HeyApiClient {
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<HooksGetResponses, HooksGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/hooks",
+      ...options,
+      ...params,
+    })
+  }
+
+  public reload<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<HooksReloadResponses, HooksReloadErrors, ThrowOnError>({
+      url: "/session/{sessionID}/hooks/reload",
+      ...options,
+      ...params,
+    })
+  }
+
+  public trust<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      hostHooksRepositoryTrust?: HostHooksRepositoryTrust
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "hostHooksRepositoryTrust", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<HooksTrustResponses, HooksTrustErrors, ThrowOnError>({
+      url: "/session/{sessionID}/hooks/trust",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public preference<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      hostHooksPreference?: HostHooksPreference
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "hostHooksPreference", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<HooksPreferenceResponses, HooksPreferenceErrors, ThrowOnError>({
+      url: "/session/{sessionID}/hooks/preference",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class SideQuestion extends HeyApiClient {
+  /**
+   * List this session's independent side questions
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SideQuestionListResponses, SideQuestionListErrors, ThrowOnError>({
+      url: "/session/{sessionID}/side-question",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Start an independent side question without changing the conversation
+   */
+  public ask<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      sideQuestionInput?: SideQuestionInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "sideQuestionInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SideQuestionAskResponses, SideQuestionAskErrors, ThrowOnError>({
+      url: "/session/{sessionID}/side-question",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel only this side question
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      questionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "questionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SideQuestionCancelResponses, SideQuestionCancelErrors, ThrowOnError>({
+      url: "/session/{sessionID}/side-question/{questionID}/cancel",
+      ...options,
+      ...params,
     })
   }
 }
@@ -4899,6 +6630,38 @@ export class Health extends HeyApiClient {
   }
 }
 
+export class Project2 extends HeyApiClient {
+  /**
+   * List persisted projects
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2ProjectListResponses, V2ProjectListErrors, ThrowOnError>({
+      url: "/api/project",
+      ...options,
+    })
+  }
+
+  /**
+   * Resolve the current project
+   */
+  public current<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2ProjectCurrentResponses, V2ProjectCurrentErrors, ThrowOnError>({
+      url: "/api/project/current",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Location extends HeyApiClient {
   /**
    * Get location
@@ -4941,6 +6704,107 @@ export class Agent extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2AgentListResponses, V2AgentListErrors, ThrowOnError>({
       url: "/api/agent",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Input extends HeyApiClient {
+  /**
+   * Read input execution
+   */
+  public execution<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      inputID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "inputID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      V2SessionInputExecutionResponses,
+      V2SessionInputExecutionErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/input/{inputID}/execution",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Passively wait for input execution
+   */
+  public wait<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      inputID: string
+      timeoutMs?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "inputID" },
+            { in: "body", key: "timeoutMs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionInputWaitResponses, V2SessionInputWaitErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/input/{inputID}/execution/wait",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Interrupt only the owned input
+   */
+  public interrupt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      inputID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "inputID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SessionInputInterruptResponses,
+      V2SessionInputInterruptErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/input/{inputID}/execution/interrupt",
       ...options,
       ...params,
     })
@@ -5341,6 +7205,7 @@ export class Session3 extends HeyApiClient {
       agent?: string
       model?: ModelRef
       location?: LocationRef
+      commandSandbox?: SandboxProfile
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5353,6 +7218,7 @@ export class Session3 extends HeyApiClient {
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "location" },
+            { in: "body", key: "commandSandbox" },
           ],
         },
       ],
@@ -5370,6 +7236,25 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
+   * Inspect native command sandbox
+   *
+   * Read stored command policy, backend availability and latest confirmed execution. Does not launch a process or change policy.
+   */
+  public sandbox<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionSandboxResponses, V2SessionSandboxErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/sandbox",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * List active sessions
    *
    * Retrieve foreground Session drains currently owned by this Apexo process. Sessions absent from the result are inactive.
@@ -5378,6 +7263,25 @@ export class Session3 extends HeyApiClient {
     return (options?.client ?? this.client).get<V2SessionActiveResponses, V2SessionActiveErrors, ThrowOnError>({
       url: "/api/session/active",
       ...options,
+    })
+  }
+
+  /**
+   * Delete session
+   *
+   * Stop and join owned execution, then delete the persisted session and its owned descendants. Missing sessions succeed. Failed teardown remains retryable and does not admit new work.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).delete<V2SessionRemoveResponses, V2SessionRemoveErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}",
+      ...options,
+      ...params,
     })
   }
 
@@ -5489,6 +7393,7 @@ export class Session3 extends HeyApiClient {
       id?: string
       prompt?: PromptInput
       delivery?: "steer" | "queue"
+      executionPolicy?: SessionInputExecutionPolicy
       resume?: boolean
     },
     options?: Options<never, ThrowOnError>,
@@ -5502,6 +7407,7 @@ export class Session3 extends HeyApiClient {
             { in: "body", key: "id" },
             { in: "body", key: "prompt" },
             { in: "body", key: "delivery" },
+            { in: "body", key: "executionPolicy" },
             { in: "body", key: "resume" },
           ],
         },
@@ -5533,6 +7439,25 @@ export class Session3 extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
     return (options?.client ?? this.client).post<V2SessionCompactResponses, V2SessionCompactErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/compact",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Restore future Session schedules
+   *
+   * Explicitly adopt eligible future schedule intent without draining inputs or replaying provider work. Reads and headless admission never call this operation.
+   */
+  public restore<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).post<V2SessionRestoreResponses, V2SessionRestoreErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/restore",
       ...options,
       ...params,
     })
@@ -5721,6 +7646,11 @@ export class Session3 extends HeyApiClient {
     })
   }
 
+  private _input?: Input
+  get input(): Input {
+    return (this._input ??= new Input({ client: this.client }))
+  }
+
   private _revert?: Revert
   get revert(): Revert {
     return (this._revert ??= new Revert({ client: this.client }))
@@ -5734,6 +7664,2214 @@ export class Session3 extends HeyApiClient {
   private _question?: Question2
   get question(): Question2 {
     return (this._question ??= new Question2({ client: this.client }))
+  }
+}
+
+export class Goal2 extends HeyApiClient {
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2GoalGetResponses, V2GoalGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalCreate: GoalCreate
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "goalCreate", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2GoalCreateResponses, V2GoalCreateErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      goalStart: GoalStart
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { key: "goalStart", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2GoalStartResponses, V2GoalStartErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public run<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2GoalRunResponses, V2GoalRunErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}/run",
+      ...options,
+      ...params,
+    })
+  }
+
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2GoalResumeResponses, V2GoalResumeErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2GoalPauseResponses, V2GoalPauseErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  public clear<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2GoalClearResponses, V2GoalClearErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  public cleanupReports<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      V2GoalCleanupReportsResponses,
+      V2GoalCleanupReportsErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/goal/{goalID}/reports",
+      ...options,
+      ...params,
+    })
+  }
+
+  public reports<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2GoalReportsResponses, V2GoalReportsErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}/reports",
+      ...options,
+      ...params,
+    })
+  }
+
+  public report<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      goalID: GoalId
+      reportID: GoalReportId
+      file: GoalReportFileKey
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "goalID" },
+            { in: "path", key: "reportID" },
+            { in: "path", key: "file" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2GoalReportResponses, V2GoalReportErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/goal/{goalID}/reports/{reportID}/{file}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Message extends HeyApiClient {
+  public send<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+      taskMessageInput: TaskMessageInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+            { key: "taskMessageInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2TaskMessageSendResponses, V2TaskMessageSendErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/task/{taskID}/message",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+      inputID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+            { in: "path", key: "inputID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2TaskMessageGetResponses, V2TaskMessageGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/task/{taskID}/message/{inputID}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Task2 extends HeyApiClient {
+  /**
+   * Owned Task summaries, newest child creation first. Default limit 50, maximum 100.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2TaskListResponses, V2TaskListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/task",
+      ...options,
+      ...params,
+    })
+  }
+
+  public output<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2TaskOutputResponses, V2TaskOutputErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Wait for an owned Task without waking model execution. Default timeout 30 seconds.
+   */
+  public wait<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+      taskWait: TaskWait
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+            { key: "taskWait", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2TaskWaitResponses, V2TaskWaitErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/task/{taskID}/wait",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel and join an owned Task. No request body.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      taskID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "taskID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2TaskCancelResponses, V2TaskCancelErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/task/{taskID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _message?: Message
+  get message(): Message {
+    return (this._message ??= new Message({ client: this.client }))
+  }
+}
+
+export class Process extends HeyApiClient {
+  /**
+   * Owned shell process summaries, newest admission first. Still-starting entries are hidden. Default limit 50, maximum 100.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2ProcessListResponses, V2ProcessListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/process",
+      ...options,
+      ...params,
+    })
+  }
+
+  public output<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      processID: SessionProcessId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "processID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2ProcessOutputResponses, V2ProcessOutputErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/process/{processID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Wait for an owned shell process without waking model execution. Default timeout 30 seconds.
+   */
+  public wait<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      processID: SessionProcessId
+      sessionProcessWait: SessionProcessWait
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "processID" },
+            { key: "sessionProcessWait", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ProcessWaitResponses, V2ProcessWaitErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/process/{processID}/wait",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel and join an owned shell process. No request body.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      processID: SessionProcessId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "processID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ProcessCancelResponses, V2ProcessCancelErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/process/{processID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Schedule extends HeyApiClient {
+  /**
+   * Passive list of nonterminal owned schedule intent. Does not activate timers or replay interrupted work.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2ScheduleListResponses, V2ScheduleListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/schedule",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Delete future schedule intent. Admitted Tasks remain independently controllable. No body.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      scheduleID: SessionScheduleId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "scheduleID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2ScheduleDeleteResponses, V2ScheduleDeleteErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/schedule/{scheduleID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      scheduleID: SessionScheduleId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "scheduleID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2ScheduleGetResponses, V2ScheduleGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/schedule/{scheduleID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Pause future schedule intent without cancelling an already admitted Task. No body.
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      scheduleID: SessionScheduleId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "scheduleID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SchedulePauseResponses, V2SchedulePauseErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/schedule/{scheduleID}/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Explicit future-only Resume. Revalidate authority and placement; never replay interrupted occurrences. No body.
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      scheduleID: SessionScheduleId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "scheduleID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ScheduleResumeResponses, V2ScheduleResumeErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/schedule/{scheduleID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Feedback2 extends HeyApiClient {
+  /**
+   * List local feedback drafts
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2FeedbackListResponses, V2FeedbackListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/feedback",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Save a local draft without submitting feedback
+   */
+  public save<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      feedbackSave: FeedbackSave
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "feedbackSave", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2FeedbackSaveResponses, V2FeedbackSaveErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/feedback",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Prepare an issue form from the reviewed draft revision
+   */
+  public review<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      draftID: FeedbackId
+      feedbackReview: FeedbackReview
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "draftID" },
+            { key: "feedbackReview", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2FeedbackReviewResponses, V2FeedbackReviewErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/feedback/{draftID}/review",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Read an image from the exact reviewed draft revision
+   */
+  public image<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      draftID: FeedbackId
+      imageID: FeedbackImageId
+      feedbackReview: FeedbackReview
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "draftID" },
+            { in: "path", key: "imageID" },
+            { key: "feedbackReview", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2FeedbackImageResponses, V2FeedbackImageErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/feedback/{draftID}/image/{imageID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete the reviewed local draft revision
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      draftID: FeedbackId
+      feedbackReview: FeedbackReview
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "draftID" },
+            { key: "feedbackReview", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2FeedbackRemoveResponses, V2FeedbackRemoveErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/feedback/{draftID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Memory2 extends HeyApiClient {
+  /**
+   * Read passive Memory mode status
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2MemoryStatusResponses, V2MemoryStatusErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Enable or disable Memory without starting background work
+   */
+  public toggle<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryModeUpdate: MemoryModeUpdate
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryModeUpdate", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<V2MemoryToggleResponses, V2MemoryToggleErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List authorized saved notes without migration or model work
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      query?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "query" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2MemoryListResponses, V2MemoryListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/notes",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Forget the exact reviewed note hash
+   */
+  public forget<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryNoteForget: MemoryNoteForget
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryNoteForget", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2MemoryForgetResponses, V2MemoryForgetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/note",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Preview an authorized saved note
+   */
+  public preview<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2MemoryPreviewResponses, V2MemoryPreviewErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/note",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Explicitly retry an owned Memory receipt using its original private request
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryOperationRetryInput: MemoryOperationRetryInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryOperationRetryInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2MemoryRetryResponses, V2MemoryRetryErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/retry",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Inspect explicit Memory discard or clear without recovery or provider work
+   */
+  public recoveryPreview<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      action: "discard" | "clear"
+      scope: "workspace" | "global"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "action" },
+            { in: "query", key: "scope" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      V2MemoryRecoveryPreviewResponses,
+      V2MemoryRecoveryPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/memory/recovery",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Admit a permissioned generation-bound Memory discard or clear
+   */
+  public recover<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryOperationRecoveryInput: MemoryOperationRecoveryInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryOperationRecoveryInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2MemoryRecoverResponses, V2MemoryRecoverErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/recovery",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Preview fixed-scope Memory migration without publication or provider work
+   */
+  public migrationPreview<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      kind: "relocation" | "carryover"
+      scope: "workspace" | "global"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "kind" },
+            { in: "query", key: "scope" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      V2MemoryMigrationPreviewResponses,
+      V2MemoryMigrationPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/memory/migration",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Admit an explicit source-hash and generation-bound Memory migration
+   */
+  public migrate<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryOperationMigrationInput: MemoryOperationMigrationInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryOperationMigrationInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2MemoryMigrateResponses, V2MemoryMigrateErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/migration",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Admit an explicit Dream operation; exact retry never relaunches inference
+   */
+  public dream<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryOperationInput: MemoryOperationInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryOperationInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2MemoryDreamResponses, V2MemoryDreamErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/dream",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Admit an explicit bounded Memory flush; exact operation retry never relaunches work
+   */
+  public flush<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      memoryOperationInput: MemoryOperationInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "memoryOperationInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2MemoryFlushResponses, V2MemoryFlushErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/flush",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Read the newest 100 Memory operation receipts without starting or recovering work
+   */
+  public operations<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2MemoryOperationsResponses, V2MemoryOperationsErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/operation",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read a Session-owned Memory operation receipt
+   */
+  public operation<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      operationID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "operationID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2MemoryOperationResponses, V2MemoryOperationErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/operation/{operationID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel and join a local Memory worker; bodyless and never guesses a remote owner dead
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      operationID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "operationID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2MemoryCancelResponses, V2MemoryCancelErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/memory/operation/{operationID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Hooks2 extends HeyApiClient {
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2HooksGetResponses, V2HooksGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/hooks",
+      ...options,
+      ...params,
+    })
+  }
+
+  public reload<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).post<V2HooksReloadResponses, V2HooksReloadErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/hooks/reload",
+      ...options,
+      ...params,
+    })
+  }
+
+  public trust<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      hostHooksRepositoryTrust: HostHooksRepositoryTrust
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "hostHooksRepositoryTrust", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2HooksTrustResponses, V2HooksTrustErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/hooks/trust",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public preference<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      hostHooksPreference: HostHooksPreference
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "hostHooksPreference", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2HooksPreferenceResponses, V2HooksPreferenceErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/hooks/preference",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Plugins2 extends HeyApiClient {
+  /**
+   * Browse Plugins
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2PluginsListResponses, V2PluginsListErrors, ThrowOnError>({
+      url: "/api/plugins",
+      ...options,
+    })
+  }
+
+  /**
+   * Read plugin details
+   */
+  public detail<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "id" }] }])
+    return (options?.client ?? this.client).get<V2PluginsDetailResponses, V2PluginsDetailErrors, ThrowOnError>({
+      url: "/api/plugins/detail",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Manage installed Plugins and sources
+   */
+  public manage<ThrowOnError extends boolean = false>(
+    parameters: {
+      pluginStoreAction: PluginStoreAction
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "pluginStoreAction", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2PluginsManageResponses, V2PluginsManageErrors, ThrowOnError>({
+      url: "/api/plugins/manage",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Inspect Plugins active in the native project runtime
+   */
+  public runtime<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2PluginsRuntimeResponses, V2PluginsRuntimeErrors, ThrowOnError>({
+      url: "/api/plugins/runtime",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Apply validated Plugin changes to an idle native project
+   */
+  public reload<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).post<V2PluginsReloadResponses, V2PluginsReloadErrors, ThrowOnError>({
+      url: "/api/plugins/reload",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Mcp2 extends HeyApiClient {
+  /**
+   * Inspect native project MCP connections
+   *
+   * Read active MCP connection status and tool counts without starting model work.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2McpStatusResponses, V2McpStatusErrors, ThrowOnError>({
+      url: "/api/mcp",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Connect a configured MCP server and save this project choice
+   *
+   * Saves a personal choice for this Location and applies it without editing configuration or starting model work.
+   */
+  public connect<ThrowOnError extends boolean = false>(
+    parameters: {
+      server: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "server" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2McpConnectResponses, V2McpConnectErrors, ThrowOnError>({
+      url: "/api/mcp/{server}/connect",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Disconnect one MCP server and save this project choice
+   *
+   * Saves a personal choice for this Location and applies it without editing configuration or starting model work.
+   */
+  public disconnect<ThrowOnError extends boolean = false>(
+    parameters: {
+      server: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "server" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2McpDisconnectResponses, V2McpDisconnectErrors, ThrowOnError>({
+      url: "/api/mcp/{server}/disconnect",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Replace one MCP connection while preserving a healthy connection on failure
+   *
+   * Changes only the current Location runtime. It does not write configuration or start model work.
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      server: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "server" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2McpRetryResponses, V2McpRetryErrors, ThrowOnError>({
+      url: "/api/mcp/{server}/retry",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Clear a saved MCP choice and apply current configuration
+   *
+   * Uses only currently configured trusted definitions. Does not edit configuration or start model work.
+   */
+  public resetPreference<ThrowOnError extends boolean = false>(
+    parameters: {
+      server: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "server" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2McpResetPreferenceResponses,
+      V2McpResetPreferenceErrors,
+      ThrowOnError
+    >({
+      url: "/api/mcp/{server}/resetPreference",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Start explicit MCP authentication
+   *
+   * Binds a backend loopback callback before returning the authorization URL. The client opens it only after explicit user action. Does not change the saved connection preference or start model work.
+   */
+  public authStart<ThrowOnError extends boolean = false>(
+    parameters: {
+      server: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "server" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2McpAuthStartResponses, V2McpAuthStartErrors, ThrowOnError>({
+      url: "/api/mcp/{server}/auth/start",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel one current MCP authentication operation
+   *
+   * Cancels and joins the exact operation. It does not disconnect a healthy transport or delete saved credentials.
+   */
+  public authCancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      server: string
+      flowID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "server" },
+            { in: "path", key: "flowID" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2McpAuthCancelResponses, V2McpAuthCancelErrors, ThrowOnError>({
+      url: "/api/mcp/{server}/auth/{flowID}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class SessionMcpAttachment extends HeyApiClient {
+  /**
+   * Reserve a Session-owned attachment operation without MCP or model work
+   */
+  public reserve<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      request?:
+        | {
+            kind: "catalog"
+            input: {
+              server?: string
+            }
+          }
+        | {
+            kind: "prepare"
+            input: SessionMcpAttachmentInput
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "request" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SessionMcpAttachmentReserveResponses,
+      V2SessionMcpAttachmentReserveErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mcp/operations",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Execute or join an exact reserved MCP attachment operation
+   */
+  public execute<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      operationID: string
+      request?:
+        | {
+            kind: "catalog"
+            input: {
+              server?: string
+            }
+          }
+        | {
+            kind: "prepare"
+            input: SessionMcpAttachmentInput
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "operationID" },
+            { in: "body", key: "request" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SessionMcpAttachmentExecuteResponses,
+      V2SessionMcpAttachmentExecuteErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mcp/operations/{operationID}/execute",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Inspect an existing attachment operation without starting work
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      operationID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "operationID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      V2SessionMcpAttachmentStatusResponses,
+      V2SessionMcpAttachmentStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mcp/operations/{operationID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel and join one Session-owned attachment operation
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      operationID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "operationID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SessionMcpAttachmentCancelResponses,
+      V2SessionMcpAttachmentCancelErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mcp/operations/{operationID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Lsp2 extends HeyApiClient {
+  /**
+   * Inspect active project language servers
+   *
+   * Read connection state and supported operations without retrying servers or starting model work. Initial Location creation may initialize trusted configured servers.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2LspStatusResponses, V2LspStatusErrors, ThrowOnError>({
+      url: "/api/lsp",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Workflow extends HeyApiClient {
+  public related<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2WorkflowRelatedResponses, V2WorkflowRelatedErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/related",
+      ...options,
+      ...params,
+    })
+  }
+
+  public launch<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workflowLaunch: WorkflowLaunch
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "workflowLaunch", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkflowLaunchResponses, V2WorkflowLaunchErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/launch",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public sources<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2WorkflowSourcesResponses, V2WorkflowSourcesErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/sources",
+      ...options,
+      ...params,
+    })
+  }
+
+  public validate<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      source?: WorkflowSource
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "source" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkflowValidateResponses, V2WorkflowValidateErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/validate",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2WorkflowListResponses, V2WorkflowListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow",
+      ...options,
+      ...params,
+    })
+  }
+
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workflowStart: WorkflowStart
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "workflowStart", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkflowStartResponses, V2WorkflowStartErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workflowID: WorkflowId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workflowID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2WorkflowGetResponses, V2WorkflowGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/{workflowID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workflowID: WorkflowId
+      agentBudget?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workflowID" },
+            { in: "body", key: "agentBudget" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkflowResumeResponses, V2WorkflowResumeErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/{workflowID}/resume",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workflowID: WorkflowId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workflowID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkflowPauseResponses, V2WorkflowPauseErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/{workflowID}/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workflowID: WorkflowId
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workflowID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2WorkflowStopResponses, V2WorkflowStopErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/workflow/{workflowID}/stop",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class SideQuestion2 extends HeyApiClient {
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SideQuestionListResponses, V2SideQuestionListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/side-question",
+      ...options,
+      ...params,
+    })
+  }
+
+  public ask<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      sideQuestionInput: SideQuestionInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "sideQuestionInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SideQuestionAskResponses, V2SideQuestionAskErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/side-question",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      questionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "questionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SideQuestionCancelResponses,
+      V2SideQuestionCancelErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/side-question/{questionID}/cancel",
+      ...options,
+      ...params,
+    })
   }
 }
 
@@ -6923,6 +11061,11 @@ export class V2 extends HeyApiClient {
     return (this._health ??= new Health({ client: this.client }))
   }
 
+  private _project?: Project2
+  get project(): Project2 {
+    return (this._project ??= new Project2({ client: this.client }))
+  }
+
   private _location?: Location
   get location(): Location {
     return (this._location ??= new Location({ client: this.client }))
@@ -6936,6 +11079,71 @@ export class V2 extends HeyApiClient {
   private _session?: Session3
   get session(): Session3 {
     return (this._session ??= new Session3({ client: this.client }))
+  }
+
+  private _goal?: Goal2
+  get goal(): Goal2 {
+    return (this._goal ??= new Goal2({ client: this.client }))
+  }
+
+  private _task?: Task2
+  get task(): Task2 {
+    return (this._task ??= new Task2({ client: this.client }))
+  }
+
+  private _process?: Process
+  get process(): Process {
+    return (this._process ??= new Process({ client: this.client }))
+  }
+
+  private _schedule?: Schedule
+  get schedule(): Schedule {
+    return (this._schedule ??= new Schedule({ client: this.client }))
+  }
+
+  private _feedback?: Feedback2
+  get feedback(): Feedback2 {
+    return (this._feedback ??= new Feedback2({ client: this.client }))
+  }
+
+  private _memory?: Memory2
+  get memory(): Memory2 {
+    return (this._memory ??= new Memory2({ client: this.client }))
+  }
+
+  private _hooks?: Hooks2
+  get hooks(): Hooks2 {
+    return (this._hooks ??= new Hooks2({ client: this.client }))
+  }
+
+  private _plugins?: Plugins2
+  get plugins(): Plugins2 {
+    return (this._plugins ??= new Plugins2({ client: this.client }))
+  }
+
+  private _mcp?: Mcp2
+  get mcp(): Mcp2 {
+    return (this._mcp ??= new Mcp2({ client: this.client }))
+  }
+
+  private _sessionMcpAttachment?: SessionMcpAttachment
+  get sessionMcpAttachment(): SessionMcpAttachment {
+    return (this._sessionMcpAttachment ??= new SessionMcpAttachment({ client: this.client }))
+  }
+
+  private _lsp?: Lsp2
+  get lsp(): Lsp2 {
+    return (this._lsp ??= new Lsp2({ client: this.client }))
+  }
+
+  private _workflow?: Workflow
+  get workflow(): Workflow {
+    return (this._workflow ??= new Workflow({ client: this.client }))
+  }
+
+  private _sideQuestion?: SideQuestion2
+  get sideQuestion(): SideQuestion2 {
+    return (this._sideQuestion ??= new SideQuestion2({ client: this.client }))
   }
 
   private _model?: Model
@@ -7050,6 +11258,31 @@ export class ApexoClient extends HeyApiClient {
   private _worktree?: Worktree
   get worktree(): Worktree {
     return (this._worktree ??= new Worktree({ client: this.client }))
+  }
+
+  private _plugins?: Plugins
+  get plugins(): Plugins {
+    return (this._plugins ??= new Plugins({ client: this.client }))
+  }
+
+  private _goal?: Goal
+  get goal(): Goal {
+    return (this._goal ??= new Goal({ client: this.client }))
+  }
+
+  private _feedback?: Feedback
+  get feedback(): Feedback {
+    return (this._feedback ??= new Feedback({ client: this.client }))
+  }
+
+  private _hooks?: Hooks
+  get hooks(): Hooks {
+    return (this._hooks ??= new Hooks({ client: this.client }))
+  }
+
+  private _sideQuestion?: SideQuestion
+  get sideQuestion(): SideQuestion {
+    return (this._sideQuestion ??= new SideQuestion({ client: this.client }))
   }
 
   private _find?: Find

@@ -1,3 +1,4 @@
+import { Scheduler } from "@apexo/core/scheduler"
 import { randomUUID } from "node:crypto"
 import { GrokBuildMedia } from "./grok-build-media"
 import { Effect, Schema } from "effect"
@@ -6,7 +7,21 @@ import { BackgroundJob } from "@/background/job"
 import { Parameters as QuestionParameters } from "./question"
 import { Parameters as TodoParameters } from "./todo"
 import { Tool } from "./tool"
+import { ToolJsonSchema } from "./json-schema"
 import { createExtensions } from "./grok-build-extensions"
+import { MemorySearch } from "@apexo/core/memory-search"
+import { MemoryWork } from "@apexo/schema/memory-work"
+import { Goal } from "@apexo/schema/goal"
+import { SessionGoal } from "@apexo/core/session/goal"
+import { SessionGoalUsage } from "@apexo/core/session/goal-usage"
+import { ConfigToolset } from "@apexo/core/config/toolset"
+import { SessionFeedback } from "@apexo/core/session/feedback"
+import { feedbackTool } from "./feedback"
+
+const DEFAULT_BLOCK_MS = 30_000
+const BACKGROUND_TIMEOUT_MS = 10 * 60 * 60 * 1000
+const MAX_WAIT_MS = 60 * 60 * 1000
+const MAX_TASK_IDS = 20
 
 /** The Grok Build names are a model-facing wire contract over Apexo tools. */
 const ReadFileParameters = Schema.Struct({
@@ -27,13 +42,19 @@ const SearchReplaceParameters = Schema.Struct({
 })
 
 // Current Grok Build advertises command, description, and block_until_ms.
-const RunTerminalParameters = Schema.Struct({
-  command: Schema.String.annotate({ description: "The command to run" }),
-  description: Schema.String.annotate({ description: "Why this command is needed" }),
-  block_until_ms: Schema.optional(NonNegativeInt).annotate({
-    description: "How long to wait in milliseconds; 0 requests background execution",
-  }),
-})
+const RunTerminalParameters = shellParameters(DEFAULT_BLOCK_MS)
+
+function shellParameters(defaultMs: number, maxMs?: number) {
+  return Schema.Struct({
+    command: Schema.String.annotate({ description: "The command to run" }),
+    description: Schema.String.annotate({ description: "Why this command is needed" }),
+    block_until_ms: Schema.optional(
+      maxMs === undefined ? NonNegativeInt : NonNegativeInt.check(Schema.isLessThanOrEqualTo(maxMs)),
+    ).annotate({
+      description: `How long to wait in milliseconds before continuing in the background; defaults to ${defaultMs}ms, 0 returns immediately, maximum ${maxMs ?? BACKGROUND_TIMEOUT_MS}ms. Includes shell startup time. This does not terminate the command.`,
+    }),
+  })
+}
 
 const WriteParameters = Schema.Struct({
   file_path: Schema.String.annotate({ description: "The absolute path to the file to write" }),
@@ -207,9 +228,14 @@ export const canonicalToolNames = [
   "enter_plan_mode",
   "exit_plan_mode",
   "todo_write",
+  "update_goal",
+  "send_feedback",
   "ask_user_question",
   "memory",
+  "memory_search",
+  "memory_get",
   "image_gen",
+  "image_edit",
   "image_to_video",
   "reference_to_video",
   "web_search",
@@ -233,15 +259,29 @@ export function canonicalToolName(id: string) {
 }
 
 type AdaptOptions = {
+  goals?: SessionGoal.Interface
+  feedback?: SessionFeedback.Interface
   directory?: string
+  projectID?: string
+  memory?: Effect.Effect<MemorySearch.Interface, MemorySearch.MemoryError>
+  memoryAccess?: (ctx: Tool.Context, operation: Effect.Effect<string>) => Effect.Effect<string>
+  dream?: (ctx: Tool.Context) => Effect.Effect<MemoryWork.Result>
   background?: BackgroundJob.Interface
+  scheduler?: Scheduler.Interface
   profileExtensions?: boolean
   shell?: Tool.Def
   task?: Tool.Def
   media?: GrokBuildMedia.Options
+  maxWaitMs?: number
+  bash?: ConfigToolset.Bash
 }
 
-function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interface): Tool.Def {
+function adapt(
+  tool: Tool.Def,
+  item: Adapter,
+  block: { default: number; maximum: number },
+  background?: BackgroundJob.Interface,
+): Tool.Def {
   return {
     ...tool,
     id: item.id,
@@ -249,16 +289,21 @@ function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interfa
     parameters: item.parameters,
     // The original jsonSchema describes Apexo's camelCase input. Clear it so
     // ToolJsonSchema derives the Grok snake_case contract above.
-    jsonSchema: undefined,
+    // Advertise the ceiling, but decode oversized waits before clamping as Grok does.
+    jsonSchema:
+      item.id === "run_terminal_cmd"
+        ? ToolJsonSchema.fromSchema(shellParameters(block.default, block.maximum))
+        : undefined,
     execute: (args, ctx) =>
       Effect.flatMap(Schema.decodeUnknownEffect(item.parameters)(args), (decoded) => {
-        if (item.id !== "run_terminal_cmd" || !background || !hasBoundedWait(decoded)) {
+        if (item.id !== "run_terminal_cmd" || !background) {
           return tool.execute(item.map(decoded), ctx)
         }
 
         const input = decoded as Schema.Schema.Type<typeof RunTerminalParameters>
+        const wait = Math.min(input.block_until_ms ?? block.default, block.maximum)
+        const id = `job_${randomUUID()}`
         return Effect.gen(function* () {
-          const id = `job_${randomUUID()}`
           const job = yield* background.start({
             id,
             type: "shell",
@@ -266,75 +311,145 @@ function adapt(tool: Tool.Def, item: Adapter, background?: BackgroundJob.Interfa
             metadata: {
               ownerSessionId: ctx.sessionID,
               command: input.command,
+              foreground: wait !== 0,
+              background: wait === 0,
             },
+            onPromote: Effect.gen(function* () {
+              yield* ctx.metadata({
+                title: input.description,
+                metadata: {
+                  task_id: id,
+                  jobId: id,
+                  background: true,
+                  command: input.command,
+                },
+              })
+              if (ctx.watchBackground) yield* ctx.watchBackground(id)
+            }),
             run: tool
               .execute(
-                { command: input.command, timeout: undefined },
+                // The foreground wait budget must never become the process kill deadline.
+                { command: input.command, timeout: BACKGROUND_TIMEOUT_MS },
                 {
                   ...ctx,
                   abort: new AbortController().signal,
                   metadata: (value) =>
-                    background.report({
-                      id,
-                      output: typeof value.metadata?.output === "string" ? value.metadata.output : undefined,
-                      metadata: value.metadata,
+                    Effect.gen(function* () {
+                      yield* background.report({
+                        id,
+                        output: typeof value.metadata?.output === "string" ? value.metadata.output : undefined,
+                        metadata: value.metadata,
+                      })
+                      const current = yield* background.get(id)
+                      if (current?.metadata?.background === true) return
+                      yield* ctx.metadata({
+                        ...value,
+                        metadata: { ...value.metadata, task_id: id, jobId: id, foreground: true, background: false },
+                      })
                     }),
                 },
               )
-              .pipe(Effect.map((result) => result.output)),
+              .pipe(
+                Effect.tap((result) => background.report({ id, metadata: result.metadata })),
+                Effect.map((result) => result.output),
+              ),
           })
-          if (input.block_until_ms === 0) return backgroundStarted(input, job)
+          if (wait === 0) {
+            if (ctx.watchBackground) yield* ctx.watchBackground(job.id)
+            return backgroundStarted(input, job)
+          }
 
-          const result = yield* background.wait({ id: job.id, timeout: input.block_until_ms })
-          if (result.timedOut || !result.info) {
-            return {
-              ...backgroundStarted(input, job),
-              metadata: { task_id: job.id, status: "running", command: input.command, timed_out: true },
+          const aborted = Effect.callback<never>((resume) => {
+            if (ctx.abort.aborted) return resume(Effect.interrupt)
+            const onAbort = () => resume(Effect.interrupt)
+            ctx.abort.addEventListener("abort", onAbort, { once: true })
+            return Effect.sync(() => ctx.abort.removeEventListener("abort", onAbort))
+          })
+          return yield* Effect.gen(function* () {
+            const result = yield* Effect.raceFirst(
+              Effect.raceFirst(
+                background.wait({
+                  id: job.id,
+                  timeout: wait,
+                }),
+                background.waitForPromotion(job.id).pipe(Effect.map((info) => ({ info, timedOut: false }))),
+              ),
+              aborted,
+            )
+            const info = result.timedOut ? yield* background.promote(job.id) : result.info
+            if (!info) return yield* Effect.die(new Error(`Command ${job.id} disappeared`))
+            if (info.status === "running") {
+              const started = backgroundStarted(input, info)
+              return {
+                ...started,
+                metadata: { ...started.metadata, timed_out: result.timedOut },
+              }
             }
-          }
-          return {
-            title: input.description,
-            metadata: { task_id: result.info.id, status: result.info.status, command: input.command },
-            output: formatTaskOutput(result.info),
-          }
-        })
+            return {
+              title: input.description,
+              metadata: { ...info.metadata, task_id: info.id, status: info.status, background: false },
+              output: formatTaskOutput(info),
+            }
+          })
+        }).pipe(
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              const current = yield* background.get(id)
+              if (current?.metadata?.background !== true) yield* background.cancel(id)
+            }),
+          ),
+        )
       }).pipe(Effect.orDie),
   }
-}
-
-function hasBoundedWait(value: unknown): value is Schema.Schema.Type<typeof RunTerminalParameters> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "block_until_ms" in value &&
-    typeof (value as { block_until_ms?: number }).block_until_ms === "number"
-  )
 }
 
 function backgroundStarted(input: Schema.Schema.Type<typeof RunTerminalParameters>, job: BackgroundJob.Info) {
   return {
     title: input.description,
-    metadata: { task_id: job.id, status: job.status, command: input.command },
+    metadata: { task_id: job.id, jobId: job.id, status: job.status, command: input.command, background: true },
     output: `<task id="${job.id}" status="running">\nBackground command started.\n</task>`,
   }
 }
 
 export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {}) {
+  const maximum = Math.min(
+    BACKGROUND_TIMEOUT_MS,
+    options.bash?.max_block_until_ms || BACKGROUND_TIMEOUT_MS,
+    (options.bash?.max_timeout_secs ?? 0) > 0
+      ? Math.max(1, Math.round(options.bash!.max_timeout_secs! * 1000))
+      : BACKGROUND_TIMEOUT_MS,
+  )
+  const block = {
+    default: Math.min(options.bash?.default_block_until_ms ?? DEFAULT_BLOCK_MS, maximum),
+    maximum,
+  }
   const adapted = tools
     .filter((tool) => !unsupportedBuiltins.has(tool.id))
     .flatMap((tool) => {
       const items = adapters[tool.id]
-      return items ? items.map((item) => adapt(tool, item, options.background)) : [tool]
+      return items ? items.map((item) => adapt(tool, item, block, options.background)) : [tool]
     })
   const withBackground = options.background
-    ? [...adapted, taskOutput(options.background), waitTasks(options.background), killTask(options.background)]
+    ? [
+        ...adapted,
+        taskOutput(options.background, options.maxWaitMs ?? MAX_WAIT_MS),
+        waitTasks(options.background, options.maxWaitMs ?? MAX_WAIT_MS),
+        killTask(options.background),
+      ]
     : adapted
   if (!options.profileExtensions || !options.background) return withBackground
   return [
     ...withBackground,
+    updateGoal(options.goals),
+    feedbackTool(options.feedback),
     ...createExtensions({
       directory: options.directory,
+      projectID: options.projectID,
+      memory: options.memory,
+      memoryAccess: options.memoryAccess,
+      dream: options.dream,
       background: options.background,
+      scheduler: options.scheduler,
       shell: options.shell,
       task: options.task,
       media: options.media,
@@ -342,31 +457,70 @@ export function adaptTools(tools: readonly Tool.Def[], options: AdaptOptions = {
   ]
 }
 
-function taskOutput(background: BackgroundJob.Interface): Tool.Def {
+function updateGoal(goals?: SessionGoal.Interface): Tool.Def {
+  return {
+    id: "update_goal",
+    description:
+      "Report progress or a blocker for the explicitly active goal. completed=true requests independent verification; it cannot directly complete the goal. Only the goal's main worker may update it. Do not create, pause, resume, or replace a goal with this tool. plan_progress.complete marks zero-based immutable Task checklist ordinals; plan_progress.deviation appends one concise advisory note. Never modify the plan or treat annotations as completion proof.",
+    parameters: Goal.Update,
+    execute: (args, ctx) =>
+      Effect.gen(function* () {
+        const attempt = yield* SessionGoalUsage.Current
+        if (!goals || !attempt || attempt.sessionID !== ctx.sessionID)
+          return yield* Effect.die(new Error("No active goal worker owns this session"))
+        const input = yield* Schema.decodeUnknownEffect(Goal.Update)(args).pipe(Effect.orDie)
+        yield* ctx.ask({
+          permission: "update_goal",
+          patterns: [attempt.goalID],
+          always: ["*"],
+          metadata: { goalID: attempt.goalID },
+        })
+        const info = yield* goals.update(attempt, input).pipe(Effect.orDie)
+        return {
+          title: "Goal progress",
+          metadata: { goalID: info.id, status: info.status },
+          output: JSON.stringify({
+            status: info.status,
+            message: info.message,
+            verification_requested: input.completed === true,
+            plan_progress: info.planProgress,
+          }),
+        }
+      }),
+  }
+}
+
+function taskOutput(background: BackgroundJob.Interface, maxWaitMs: number): Tool.Def {
+  const ids = Schema.NullOr(
+    Schema.Union([Schema.String, Schema.Finite, Schema.Array(Schema.Union([Schema.String, Schema.Finite]))]),
+  )
   const parameters = Schema.Struct({
-    task_ids: Schema.optional(Schema.Array(Schema.String)).annotate({
-      description: "One or more background task or subagent IDs; use a one-element array for one task",
-    }),
-    task_id: Schema.optional(Schema.String.annotate({ description: "Legacy single background task or subagent ID" })),
-    timeout_ms: Schema.optional(NonNegativeInt).annotate({
-      description: "How long to wait for all tasks in milliseconds; omitted or 0 returns snapshots",
-    }),
+    task_ids: Schema.optional(ids),
+    task_id: Schema.optional(ids),
+    timeout_ms: Schema.optional(Schema.NullOr(NonNegativeInt)),
   })
   return {
     id: "get_task_output",
-    description: "Get the current status and output of a background task or subagent.",
+    description: `Get status and output for up to ${MAX_TASK_IDS} background tasks or subagents. Omit timeout_ms or pass 0 for a snapshot; a positive value waits for all tasks, capped at ${maxWaitMs}ms.`,
     parameters,
+    // Compatibility decoding is deliberately broader than the model-facing contract.
+    jsonSchema: taskWaitSchema(maxWaitMs, false),
     execute: (args, ctx) =>
       Effect.gen(function* () {
         const input = yield* Schema.decodeUnknownEffect(parameters)(args)
-        const ids = input.task_ids ?? (input.task_id ? [input.task_id] : [])
-        if (ids.length === 0) {
-          return {
-            title: "get_task_output",
-            metadata: { status: "invalid_request" },
-            output: "Provide at least one task ID in task_ids.",
-          }
-        }
+        if (input.task_ids !== undefined && input.task_id !== undefined)
+          return invalidTaskRequest("get_task_output", "Provide task_ids or its legacy task_id alias, not both.")
+        const value = input.task_ids === undefined ? input.task_id : input.task_ids
+        const ids = [
+          ...new Set(
+            (typeof value === "string" || typeof value === "number" ? [value] : (value ?? []))
+              .map((id) => String(id).trim())
+              .filter(Boolean),
+          ),
+        ]
+        if (ids.length === 0) return invalidTaskRequest("get_task_output", "Provide a non-empty task_ids list.")
+        if (ids.length > MAX_TASK_IDS)
+          return invalidTaskRequest("get_task_output", `task_ids exceeds maximum of ${MAX_TASK_IDS} entries.`)
         const results = yield* Effect.all(
           ids.map((id) =>
             Effect.gen(function* () {
@@ -374,7 +528,7 @@ function taskOutput(background: BackgroundJob.Interface): Tool.Def {
               if (!job || !owns(job, ctx.sessionID)) {
                 return { id, status: "not_found" as const, output: `Task or subagent ${id} not found.` }
               }
-              const result = yield* background.wait({ id, timeout: input.timeout_ms ?? 0 })
+              const result = yield* background.wait({ id, timeout: Math.min(input.timeout_ms ?? 0, maxWaitMs) })
               const info = result.info ?? job
               return {
                 id,
@@ -435,11 +589,11 @@ function killTask(background: BackgroundJob.Interface): Tool.Def {
   }
 }
 
-function waitTasks(background: BackgroundJob.Interface): Tool.Def {
+function waitTasks(background: BackgroundJob.Interface, maxWaitMs: number): Tool.Def {
   const parameters = Schema.Struct({
     task_ids: Schema.Array(Schema.String).annotate({ description: "One or more background task or subagent IDs" }),
-    timeout_ms: Schema.optional(NonNegativeInt).annotate({
-      description: "Maximum wait in milliseconds; defaults to 30 seconds",
+    timeout_ms: Schema.optional(Schema.NullOr(NonNegativeInt)).annotate({
+      description: `Maximum wait in milliseconds; defaults to 30 seconds, capped at ${maxWaitMs}`,
     }),
     mode: Schema.optional(Schema.Literals(["wait_all", "wait_any"])).annotate({
       description: "Wait for all tasks or return when any task completes",
@@ -447,26 +601,38 @@ function waitTasks(background: BackgroundJob.Interface): Tool.Def {
   })
   return {
     id: "wait_tasks",
-    description: "Wait for multiple background tasks or subagents to complete.",
+    description: `Wait for up to ${MAX_TASK_IDS} background tasks or subagents. Prefer get_task_output with a positive timeout_ms. Defaults to 30 seconds, capped at ${maxWaitMs}ms; wait_all also uses the default when timeout_ms is 0. Returns snapshots for every requested task.`,
     parameters,
+    jsonSchema: taskWaitSchema(maxWaitMs, true),
     execute: (args, ctx) =>
       Effect.gen(function* () {
         const input = yield* Schema.decodeUnknownEffect(parameters)(args)
-        if (input.task_ids.length === 0) {
-          return {
-            title: "wait_tasks",
-            metadata: { status: "invalid_request" },
-            output: "Provide at least one task ID in task_ids.",
-          }
-        }
+        if (input.task_ids.length === 0) return invalidTaskRequest("wait_tasks", "task_ids must not be empty.")
+        // Unlike get_task_output, the legacy contract counts and looks up raw IDs.
+        if (input.task_ids.length > MAX_TASK_IDS)
+          return invalidTaskRequest("wait_tasks", `task_ids exceeds maximum of ${MAX_TASK_IDS} entries.`)
 
+        const timeout = Math.min(
+          input.mode === "wait_any" ? (input.timeout_ms ?? DEFAULT_BLOCK_MS) : input.timeout_ms || DEFAULT_BLOCK_MS,
+          maxWaitMs,
+        )
+        if (input.mode === "wait_any" && timeout > 0) {
+          const jobs = yield* Effect.all(input.task_ids.map((id) => background.get(id)))
+          const pending = [
+            ...new Set(jobs.flatMap((job) => (job?.status === "running" && owns(job, ctx.sessionID) ? [job.id] : []))),
+          ]
+          if (pending.length) yield* Effect.raceAll(pending.map((id) => background.wait({ id, timeout })))
+        }
         const wait = (id: string) =>
           Effect.gen(function* () {
             const job = yield* background.get(id)
             if (!job || !owns(job, ctx.sessionID)) {
               return { id, status: "not_found" as const, output: `Task or subagent ${id} not found.` }
             }
-            const result = yield* background.wait({ id, timeout: input.timeout_ms ?? 30_000 })
+            const result = yield* background.wait({
+              id,
+              timeout: input.mode === "wait_any" ? 0 : timeout,
+            })
             const info = result.info ?? job
             return {
               id,
@@ -475,10 +641,7 @@ function waitTasks(background: BackgroundJob.Interface): Tool.Def {
               output: formatTaskOutput(info),
             }
           })
-        const results =
-          input.mode === "wait_any"
-            ? [yield* Effect.raceAll(input.task_ids.map(wait))]
-            : yield* Effect.all(input.task_ids.map(wait), { concurrency: "unbounded" })
+        const results = yield* Effect.all(input.task_ids.map(wait), { concurrency: "unbounded" })
         return {
           title: results.map((result) => result.id).join(", "),
           metadata: {
@@ -490,6 +653,24 @@ function waitTasks(background: BackgroundJob.Interface): Tool.Def {
         }
       }).pipe(Effect.orDie),
   }
+}
+
+function taskWaitSchema(maxWaitMs: number, legacy: boolean) {
+  return ToolJsonSchema.fromSchema(
+    Schema.Struct({
+      task_ids: Schema.Array(Schema.String)
+        .check(Schema.isMinLength(1), Schema.isMaxLength(MAX_TASK_IDS))
+        .annotate({ description: "Background task or subagent IDs; use a one-element array for one task" }),
+      timeout_ms: Schema.optional(NonNegativeInt.check(Schema.isLessThanOrEqualTo(maxWaitMs))).annotate({
+        description: `Wait in milliseconds, at most ${maxWaitMs}`,
+      }),
+      ...(legacy ? { mode: Schema.Literals(["wait_all", "wait_any"]) } : {}),
+    }),
+  )
+}
+
+function invalidTaskRequest(title: string, output: string) {
+  return { title, metadata: { status: "invalid_request" }, output }
 }
 
 function owns(job: BackgroundJob.Info, sessionID: string) {

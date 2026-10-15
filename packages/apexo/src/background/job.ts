@@ -1,7 +1,10 @@
+import { SessionLifecycle } from "@apexo/core/session/lifecycle"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { BackgroundJob as CoreBackgroundJob } from "@apexo/core/background-job"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect, Layer } from "effect"
+import type { SessionID } from "@/session/schema"
+import { BackgroundTask } from "@apexo/schema/background-task"
 
 export {
   Service,
@@ -18,7 +21,10 @@ export {
 const layer = Layer.effect(
   CoreBackgroundJob.Service,
   Effect.gen(function* () {
-    const state = yield* InstanceState.make(() => CoreBackgroundJob.make)
+    const lifecycle = yield* SessionLifecycle.Service
+    const state = yield* InstanceState.make(() =>
+      CoreBackgroundJob.makeOwned.pipe(Effect.provideService(SessionLifecycle.Service, lifecycle)),
+    )
     return CoreBackgroundJob.Service.of({
       list: () => InstanceState.useEffect(state, (jobs) => jobs.list()),
       get: (id) => InstanceState.useEffect(state, (jobs) => jobs.get(id)),
@@ -33,6 +39,42 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: CoreBackgroundJob.Service, layer, deps: [] })
+export const node = LayerNode.make({ service: CoreBackgroundJob.Service, layer, deps: [SessionLifecycle.node] })
+
+export function owns(job: CoreBackgroundJob.Info, sessionID: string) {
+  return job.metadata?.ownerSessionId === sessionID || job.metadata?.parentSessionId === sessionID
+}
+
+/** Only expose task presentation fields, never saved provider or recovery context. */
+export function summary(job: CoreBackgroundJob.Info, sessionID: string): BackgroundTask.Summary {
+  return {
+    id: job.id,
+    type: job.type,
+    title: job.title,
+    status: job.status,
+    started_at: job.started_at,
+    completed_at: job.completed_at,
+    sessionID,
+    childSessionID: typeof job.metadata?.sessionId === "string" ? job.metadata.sessionId : undefined,
+    nextFireAt: typeof job.metadata?.nextFireAt === "number" ? job.metadata.nextFireAt : undefined,
+    background: job.metadata?.background === true || job.type === "monitor" || job.type === "scheduler",
+  }
+}
+
+export const promoteSession = Effect.fn("BackgroundJob.promoteSession")(function* (
+  background: CoreBackgroundJob.Interface,
+  sessionID: SessionID,
+  subagents: boolean,
+) {
+  const jobs = (yield* background.list()).filter(
+    (job) =>
+      job.status === "running" &&
+      job.metadata?.background !== true &&
+      ((job.type === "shell" && job.metadata?.ownerSessionId === sessionID && job.metadata.foreground === true) ||
+        (subagents && job.type === "task" && job.metadata?.parentSessionId === sessionID)),
+  )
+  const promoted = yield* Effect.forEach(jobs, (job) => background.promote(job.id), { concurrency: "unbounded" })
+  return promoted.some((job) => job?.status === "running" && job.metadata?.background === true)
+})
 
 export * as BackgroundJob from "./job"

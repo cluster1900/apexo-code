@@ -1,3 +1,12 @@
+import { McpAttachmentsButton, createSessionMcpAttachments } from "./session-mcp-attachments"
+import { appendMcpAttachments } from "./prompt-input/mcp-attachments"
+import { CommandSandboxButton, createSessionCommandSandbox } from "./session-command-sandbox"
+import { WorkflowButton, createSessionWorkflow } from "./session-workflow"
+import { SideQuestionButton, createSessionSideQuestion } from "./session-side-question"
+import { HooksButton, createSessionHooks } from "./session-hooks"
+import { FeedbackButton, createSessionFeedback } from "./session-feedback"
+import { GoalButton, createSessionGoal } from "./session-goal"
+import { MemoryButton, createSessionMemory } from "./memory-browser"
 import { useFilteredList } from "@apexo/ui/hooks"
 import { useSpring } from "@apexo/ui/motion-spring"
 import {
@@ -13,6 +22,8 @@ import {
   Match,
   type JSX,
 } from "solid-js"
+import { createForegroundShellBackground } from "./prompt-input/background"
+import { BackgroundTasksButton, createSessionTasks } from "./background-tasks"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
 import {
   ContentPart,
@@ -253,6 +264,50 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
+  const background = createForegroundShellBackground(() => props.controls.session.id)
+  const tasks = props.tasks ?? createSessionTasks(() => props.controls.session.id)
+  const sideQuestion = createSessionSideQuestion(() => props.controls.session.id)
+  const workflow = createSessionWorkflow(
+    () => props.controls.session.id,
+    () => {
+      const model = props.controls.model.selection.current()
+      if (!model) return
+      return {
+        agent: props.controls.agents.current,
+        model: {
+          id: model.id,
+          providerID: model.provider.id,
+          variant: props.controls.model.selection.variant.current(),
+        },
+      }
+    },
+  )
+  const feedback = createSessionFeedback(() => props.controls.session.id)
+  const sandbox = createSessionCommandSandbox(() => props.controls.session.id)
+  const hooks = createSessionHooks(() => props.controls.session.id)
+  const mcpAttachments = createSessionMcpAttachments(
+    () => props.controls.session.id,
+    (prepared) => {
+      const next = appendMcpAttachments(prompt.current(), prepared)
+      prompt.set(next, promptLength(next))
+    },
+  )
+  const memory = createSessionMemory(() => props.controls.session.id)
+  const goal = createSessionGoal(
+    () => props.controls.session.id,
+    () => {
+      const model = props.controls.model.selection.current()
+      if (!model) return
+      return {
+        agent: props.controls.agents.current,
+        model: {
+          id: model.id,
+          providerID: model.provider.id,
+          variant: props.controls.model.selection.variant.current(),
+        },
+      }
+    },
+  )
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
@@ -703,14 +758,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "builtin" as const,
       }))
 
-    const custom = sync().data.command.map((cmd) => ({
-      id: `custom.${cmd.name}`,
-      trigger: cmd.name,
-      title: cmd.name,
-      description: cmd.description,
-      type: "custom" as const,
-      // source: cmd.source,
-    }))
+    const custom = sync()
+      .data.command.filter((cmd) => !["memory", "remember", "flush", "dream"].includes(cmd.name) || !memory.available())
+      .map((cmd) => ({
+        id: `custom.${cmd.name}`,
+        trigger: cmd.name,
+        title: cmd.name,
+        description: cmd.description,
+        type: "custom" as const,
+        // source: cmd.source,
+      }))
 
     return [...custom, ...builtin]
   })
@@ -1206,6 +1263,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       imageAttachments,
       commentCount,
       autoAccept: () => accepting(),
+      commandSandbox: sandbox.profile,
       mode: () => store.mode,
       working,
       editor: () => editorRef,
@@ -1226,10 +1284,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onQueue: props.onQueue,
       onAbort: props.onAbort,
       onSubmit: props.onSubmit,
+      onBtw: sideQuestion.open,
+      onWorkflow: workflow.open,
+      onGoal: goal.show,
+      onMemoryCommand: memory.command,
+      onRemember: memory.review,
+      onMemoryWork: memory.work,
       model: props.controls.model.selection,
     })
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (background.onKeyDown(event)) return
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault()
       if (store.mode !== "normal") return
@@ -1595,6 +1660,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
 
             <div class="flex items-center gap-1 pointer-events-auto">
+              <GoalButton goal={goal} />
+              <MemoryButton memory={memory} />
+              <SideQuestionButton sideQuestion={sideQuestion} />
+              <WorkflowButton workflow={workflow} />
+              <FeedbackButton feedback={feedback} />
+              <HooksButton hooks={hooks} />
+              <McpAttachmentsButton attachments={mcpAttachments} />
+              <CommandSandboxButton sandbox={sandbox} />
+              <BackgroundTasksButton tasks={tasks} />
+              <Show when={background.available()}>
+                <TooltipKeybind placement="top" title={language.t("prompt.action.background")} keybind="ctrl+b">
+                  <IconButton
+                    data-action="prompt-background"
+                    type="button"
+                    icon="arrow-down-to-line"
+                    variant="ghost"
+                    class="size-8"
+                    disabled={background.pending()}
+                    aria-label={language.t("prompt.action.background")}
+                    onClick={() => void background.run()}
+                  />
+                </TooltipKeybind>
+              </Show>
               <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                 <IconButton
                   data-action="prompt-submit"

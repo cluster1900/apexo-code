@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { describe, expect } from "bun:test"
 import { ConfigV1 } from "@apexo/core/v1/config/config"
 import { SessionV1 } from "@apexo/core/v1/session"
@@ -164,7 +165,7 @@ function makeHttp() {
     [MCP.node, makeMcp()],
     [RuntimeFlags.node, runtimeFlags],
   ] as const
-  return LayerNode.compile(root, replacements)
+  return AppNodeBuilderV1.build(root, replacements)
 }
 
 const it = testEffect(makeHttp())

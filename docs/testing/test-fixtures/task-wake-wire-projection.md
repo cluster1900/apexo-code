@@ -1,0 +1,10 @@
+# BUG-20261015-346: Task wake fixture assumed different message and provider projections
+
+- **Scope:** New `grok-native-task-wake.mjs` CLI/Desktop acceptance fixture; no production decoder change.
+- **Observed:** After correcting its query URL, the first transcript poll accessed `message.parts.some` on a native assistant, whose canonical field is `content`. A later provider callback decoded only Chat Completions tool-role messages; the real XAI fixture used Responses `function_call_output.output`, so the callback parsed an empty string and failed with `Unexpected EOF`. The parent completion poll then timed out.
+- **Expected:** Select the declared native assistant content field and decode the actual provider protocol's tool-output field before asserting completed Task output. Historical tool arguments must not count as output evidence.
+- **Reproduction:** From `packages/apexo`, run the original `bun script/grok-native-task-wake.mjs cli` with `parts` or the Chat-only last-tool selector.
+- **Root cause:** The new script copied assumptions from different message boundaries instead of matching the actual native transcript and Responses wire contracts. Both corrections belong to one fixture-authoring episode, not two recurring product bugs.
+- **Fix:** Read native assistant `content`; select either Chat tool-role `content` or Responses function-call `output` by its explicit discriminator, then parse that returned content. Keep same-child, exact receipt, full chronological user transcript and provider-call assertions.
+- **Verification:** With pinned Bun 1.3.14, `bun script/grok-native-task-wake.mjs cli` passes all three delivery modes, each with two child calls and four parent calls. Core and Apexo typechecks pass. Rebuilt Desktop acceptance remains an integration gate.
+- **Related:** [RULE-20261015-016](../../rules/fixture-evidence-projection.md) requires authoritative result projection. This episode does not increase its source occurrence count because the demonstrated errors are different wire shapes, not historical-marker false positives. The earlier malformed query is separately [BUG112](native-media-query-delimiter.md).

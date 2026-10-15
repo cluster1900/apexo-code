@@ -28,7 +28,14 @@ export type RunPromptPart = NonNullable<PromptInput["parts"]>[number]
 
 export type RunCommand = NonNullable<Awaited<ReturnType<ApexoClient["command"]["list"]>>["data"]>[number]
 
-export type RunProvider = NonNullable<Awaited<ReturnType<ApexoClient["provider"]["list"]>>["data"]>["all"][number]
+type LegacyProvider = NonNullable<Awaited<ReturnType<ApexoClient["provider"]["list"]>>["data"]>["all"][number]
+export type RunProvider =
+  | LegacyProvider
+  | {
+      id: string
+      name: string
+      models: Record<string, Pick<LegacyProvider["models"][string], "id" | "name" | "status" | "variants" | "limit">>
+    }
 
 export type RunPrompt = {
   messageID?: string
@@ -48,17 +55,20 @@ export type FooterQueuedPrompt = {
   prompt: RunPrompt
 }
 
-export type RunAgent = NonNullable<Awaited<ReturnType<ApexoClient["app"]["agents"]>>["data"]>[number]
+type LegacyAgent = NonNullable<Awaited<ReturnType<ApexoClient["app"]["agents"]>>["data"]>[number]
+export type RunAgent = LegacyAgent | Pick<LegacyAgent, "name" | "description" | "mode" | "hidden" | "color" | "model">
 
 type RunResourceMap = NonNullable<Awaited<ReturnType<ApexoClient["experimental"]["resource"]["list"]>>["data"]>
 
 export type RunResource = RunResourceMap[string]
 
 export type RunInput = {
+  native?: import("@apexo/tui/transport/native-session").NativeSessionTransport
   sdk: ApexoClient
   directory: string
   sessionID: string
   sessionTitle?: string
+  startupNotice?: string
   resume?: boolean
   replay?: boolean
   replayLimit?: number
@@ -81,6 +91,7 @@ export type FooterPhase = "idle" | "running"
 // Full snapshot of footer status bar state. Every update replaces the whole
 // object in the SolidJS signal so the view re-renders atomically.
 export type FooterState = {
+  agent?: string
   phase: FooterPhase
   status: string
   queue: number
@@ -90,6 +101,31 @@ export type FooterState = {
   first: boolean
   interrupt: number
   exit: number
+  foregroundShells?: number
+  tasks?: import("@apexo/tui/util/session-tasks").TaskItem[]
+  taskNative?: boolean
+  taskError?: string
+  taskIssues?: ("tasks" | "processes" | "schedules")[]
+}
+
+export type RunTaskActions = {
+  messageDraft?: (
+    target: import("@apexo/tui/util/session-tasks").TaskItem,
+  ) => ReturnType<typeof import("@apexo/sdk/v2/task-message").taskMessageDraft>
+  changeSchedule: (
+    target: import("@apexo/tui/util/session-tasks").TaskTarget,
+    action: "pause" | "resume" | "delete",
+    signal: AbortSignal,
+  ) => Promise<import("@apexo/tui/util/session-tasks").TaskOutput>
+  wait: (
+    target: import("@apexo/tui/util/session-tasks").TaskTarget,
+    signal: AbortSignal,
+  ) => Promise<{ detail: import("@apexo/tui/util/session-tasks").TaskOutput; timedOut: boolean }>
+  get: (
+    target: import("@apexo/tui/util/session-tasks").TaskTarget,
+    signal: AbortSignal,
+  ) => Promise<import("@apexo/tui/util/session-tasks").TaskOutput>
+  cancel: (target: import("@apexo/tui/util/session-tasks").TaskTarget, signal: AbortSignal) => Promise<unknown>
 }
 
 // A partial update to FooterState. The footer merges this onto the current state.
@@ -179,6 +215,18 @@ export type FooterPromptRoute =
   | { type: "composer" }
   | { type: "queued-menu" }
   | { type: "subagent-menu" }
+  | { type: "tasks" }
+  | { type: "memory" }
+  | { type: "remember"; content: string }
+  | { type: "workflow"; command: string }
+  | { type: "btw"; question: string; images: import("@apexo/sdk/v2/client").SideQuestionInput["images"] }
+  | { type: "feedback" }
+  | { type: "hooks" }
+  | { type: "command-sandbox" }
+  | { type: "goal"; objective?: string }
+  | { type: "memory-work"; kind?: "flush" | "dream" }
+  | { type: "plugins" }
+  | { type: "mcp" }
   | { type: "subagent"; sessionID: string }
   | { type: "command" }
   | { type: "skill" }
@@ -280,11 +328,11 @@ export type FooterEvent =
       state: FooterSubagentState
     }
 
-export type PermissionReply = Parameters<ApexoClient["permission"]["reply"]>[0]
+export type PermissionReply = Parameters<ApexoClient["permission"]["reply"]>[0] & { sessionID?: string }
 
-export type QuestionReply = Parameters<ApexoClient["question"]["reply"]>[0]
+export type QuestionReply = Parameters<ApexoClient["question"]["reply"]>[0] & { sessionID?: string }
 
-export type QuestionReject = Parameters<ApexoClient["question"]["reject"]>[0]
+export type QuestionReject = Parameters<ApexoClient["question"]["reject"]>[0] & { sessionID?: string }
 
 export type RunTuiConfig = Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout" | "diff_style">
 

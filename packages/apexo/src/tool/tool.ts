@@ -7,6 +7,7 @@ import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
+import type { Scheduler } from "@apexo/core/scheduler"
 
 interface Metadata {
   [key: string]: any
@@ -41,8 +42,21 @@ export type Context<M extends Metadata = Metadata> = {
   callID?: string
   extra?: { [key: string]: unknown }
   messages: SessionV1.WithParts[]
+  watchBackground?: (taskID: string) => Effect.Effect<void>
+  notifyBackground?: (event: BackgroundNotification) => Effect.Effect<void>
+  runScheduledTask?: (schedule: Scheduler.Schedule) => Effect.Effect<string, unknown>
+  onOutput?: (chunk: string) => Effect.Effect<void>
   metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
   ask(input: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
+}
+
+export type BackgroundNotification = {
+  taskID: string
+  title: string
+  type: "shell" | "monitor" | "scheduler"
+  status: "completed" | "error" | "event"
+  output: string
+  exit?: number
 }
 
 export interface ExecuteResult<M extends Metadata = Metadata> {

@@ -1,0 +1,9 @@
+# BUG-20261015-291: Pending-header cancellation fixture observed the response instead of the socket
+
+- Scope: Native Memory operation adapter HTTP tests under the pinned Bun runtime.
+- Observed: Both owner-abort and per-call-abort tests exceeded their 30-second budgets while awaiting `ServerResponse.close`. Moving the test into a native child also reached its bounded eight-second cleanup deadline.
+- Expected: Both cancellation directions reject the actual generated-client request and close its held TCP connection; the fixture must observe that connection directly.
+- Reproduction: Hold a real `node:http` GET before response headers, invoke the production Memory operation adapter with separate owner and call signals, abort either signal after the server receives the request, and await the response object's close event.
+- Cause: A native-child phase trace showed request rejection and actual `request.socket.close`, but no `ServerResponse.close` before headers. The response event was not a reliable socket-lifetime observation at this boundary. This is distinct from the earlier SSE request-versus-response bookkeeping defect and from the reference deletion case whose physical transport behavior remained unknown.
+- Fix: Observe the actual socket and retain both request rejection and socket-close assertions. Run the adapter in a native child with matching Request/fetch/abort primitives, bounded cleanup, and joined child exit. No production transport or timeout change was made to satisfy the test; no DOM/native-realm recurrence is claimed.
+- Verification: From `packages/app`, `bun test --timeout 30000 src/utils/memory-operations.test.ts src/utils/session-memory.test.ts` passes 13 tests and 56 assertions, including both real cancellation directions. Original failed results remain recorded above.

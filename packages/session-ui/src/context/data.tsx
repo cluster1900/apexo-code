@@ -1,4 +1,4 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@apexo/sdk/v2"
+import type { Message, Session, Part, FilePart, SnapshotFileDiff, SessionStatus, Provider } from "@apexo/sdk/v2"
 import type { FileDiffInfo } from "@apexo/client/promise"
 import { createSimpleContext } from "@apexo/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
@@ -53,6 +53,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     directory: string
     sessionID?: string
     onNavigateToSession?: NavigateToSessionFn
+    onReadMedia?: (file: FilePart, signal: AbortSignal) => Promise<Blob>
     onSessionHref?: SessionHrefFn
   }) => {
     return {
@@ -67,6 +68,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
+      readMedia: props.onReadMedia,
     }
   },
 })

@@ -1,0 +1,9 @@
+# BUG-20261015-288: Nested Task fixture confused catalog visibility with inherited authorization
+
+- **Scope:** New native nested foreground/headless HTTP fixture; no demonstrated product authorization defect.
+- **Observed:** The broader private gate passed 25 tests and failed the new nested headless case at its 20-second final-parent-reply poll. A diagnostic run captured the grandchild's selected-agent catalog with Bash present; the callback asserted Bash was absent and threw before returning its forced tool call. Provider retries then consumed later queued fixture responses, and the root finished with a different default reply instead of the expected marker.
+- **Expected:** Catalog visibility follows the selected agent's definition filtering. The canonical Bash leaf must enforce captured parent hard denies even when a descendant's agent allows Bash and headless consent is automatic.
+- **Cause:** The fixture incorrectly treated inherited authority as a promise that every descendant catalog would hide the tool. Its callback assertion, not a denied command being executed, caused the downstream marker timeout.
+- **Correction:** Assert the actual catalog, emit the forced Bash request, then inspect the authoritative tool result and verify the forbidden file does not exist. Keep the exact six-provider-request assertion. No product permission widening or frontend-only filtering was added.
+- **Verification:** The corrected native headless case passed with six provider calls, an authoritative denied tool result and no forbidden file. The final nine-file gate passed 29 tests and 321 assertions after the independent Goal status fixture correction. Original broad and diagnostic failures are retained.
+- **Occurrences:** One fixture-authoring episode; the diagnostic rerun is not another occurrence.

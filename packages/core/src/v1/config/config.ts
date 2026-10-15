@@ -1,9 +1,15 @@
 export * as ConfigV1 from "./config"
 
+import { ConfigTask } from "../../config/task"
+import { ConfigGoal } from "../../config/goal"
+import { ConfigToolset } from "../../config/toolset"
+import { ConfigMedia } from "../../config/media"
+import { ConfigGrokMedia } from "../../config/grok-media"
 import { Schema } from "effect"
 import { NonNegativeInt, PositiveInt, type DeepMutable } from "../../schema"
 import { ConfigExperimental } from "../../config/experimental"
 import { ConfigReference } from "../../config/reference"
+import { ConfigMemory } from "../../config/memory"
 import { ConfigAgentV1 } from "./agent"
 import { ConfigAttachmentV1 } from "./attachment"
 import { ConfigCommandV1 } from "./command"
@@ -113,6 +119,13 @@ export const Info = Schema.Struct({
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",
   }),
+  memory: Schema.optional(ConfigMemory.Info),
+  memory_v2: Schema.optional(ConfigMemory.V2),
+  goal: Schema.optional(ConfigGoal.Info),
+  task: Schema.optional(ConfigTask.Info),
+  toolset: Schema.optional(ConfigToolset.Info),
+  grok_media: Schema.optional(ConfigGrokMedia.Info),
+  media: Schema.optional(ConfigMedia.Info),
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
@@ -134,6 +147,7 @@ export const Info = Schema.Struct({
   }),
   compaction: Schema.optional(
     Schema.Struct({
+      memory_flush: Schema.optional(ConfigMemory.Flush),
       auto: Schema.optional(Schema.Boolean).annotate({
         description: "Enable automatic compaction when context is full (default: true)",
       }),

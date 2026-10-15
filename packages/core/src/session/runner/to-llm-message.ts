@@ -1,4 +1,6 @@
 import {
+  InvalidRequestReason,
+  LLMError,
   Message,
   ToolCallPart,
   ToolOutput,
@@ -7,8 +9,45 @@ import {
   type Model,
   type ProviderMetadata,
 } from "@apexo/llm"
+import { Buffer } from "node:buffer"
+import { Result } from "effect"
 import { SessionMessage } from "../message"
 import type { FileAttachment } from "../prompt"
+
+const TEXT_FILE_LIMIT = 10 * 1024 * 1024
+const TEXT_HISTORY_LIMIT = 20 * 1024 * 1024
+const invalidText = (message: string) =>
+  new LLMError({
+    module: "SessionHistory",
+    method: "textAttachment",
+    reason: new InvalidRequestReason({ message, parameter: "messages.files" }),
+  })
+
+// This is lowering of already-admitted bytes, never an authority to read a URI.
+const textAttachment = (file: FileAttachment) =>
+  Result.gen(function* () {
+    if (file.uri.length > Math.ceil(TEXT_FILE_LIMIT / 3) * 4 + 64)
+      return yield* Result.fail(invalidText("Text attachment exceeds the 10 MiB decoded limit"))
+    const match = /^data:text\/plain(?:;charset=utf-8)?;base64,([A-Za-z0-9+/]*={0,2})$/.exec(file.uri)
+    if (!match)
+      return yield* Result.fail(invalidText("Text attachments require a canonical text/plain base64 data URI"))
+    const bytes = Buffer.from(match[1], "base64")
+    if (bytes.toString("base64") !== match[1])
+      return yield* Result.fail(invalidText("Text attachment base64 is not canonical"))
+    if (bytes.byteLength > TEXT_FILE_LIMIT)
+      return yield* Result.fail(invalidText("Text attachment exceeds the 10 MiB decoded limit"))
+    const text = yield* Result.try({
+      try: () => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes),
+      catch: () => invalidText("Text attachment is not valid UTF-8"),
+    })
+    return {
+      bytes: bytes.byteLength,
+      part: {
+        type: "text" as const,
+        text: `Attached text file ${JSON.stringify({ name: file.name, description: file.description })}\n${text}`,
+      },
+    }
+  })
 
 const media = (file: FileAttachment): ContentPart => ({
   type: "media",
@@ -112,7 +151,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   ]
 }
 
-function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] {
+function toLLMMessage(message: SessionMessage.Message, model: Model, files: ContentPart[] = []): Message[] {
   switch (message.type) {
     case "agent-switched":
     case "model-switched":
@@ -122,7 +161,7 @@ function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] 
         Message.make({
           id: message.id,
           role: "user",
-          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map(media)],
+          content: [{ type: "text", text: message.text }, ...files],
           metadata: {
             ...message.metadata,
             ...(message.agents?.length ? { agents: message.agents } : {}),
@@ -168,4 +207,23 @@ ${message.recent}
 
 /** Translate projected V2 Session history into canonical @apexo/llm context. */
 export const toLLMMessages = (messages: readonly SessionMessage.Message[], model: Model) =>
-  messages.flatMap((message) => toLLMMessage(message, model))
+  Result.gen(function* () {
+    const output: Message[] = []
+    let bytes = 0
+    for (const message of messages) {
+      const files: ContentPart[] = []
+      for (const file of message.type === "user" ? (message.files ?? []) : []) {
+        if (file.mime !== "text/plain") {
+          files.push(media(file))
+          continue
+        }
+        const text = yield* textAttachment(file)
+        bytes += text.bytes
+        if (bytes > TEXT_HISTORY_LIMIT)
+          return yield* Result.fail(invalidText("Selected text attachment history exceeds the 20 MiB decoded limit"))
+        files.push(text.part)
+      }
+      output.push(...toLLMMessage(message, model, files))
+    }
+    return output
+  })

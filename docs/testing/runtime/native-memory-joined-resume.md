@@ -1,0 +1,9 @@
+# BUG-20261015-341: Joining an active resume invalidated its automatic Memory epoch
+
+- Scope: explicit same-Session resume joining the process-local native drain.
+- Observed: an already-running ordinary turn was joined through `SessionV2.resume`. The provider finished normally, but no idle automatic receipt was admitted and the five-second regression poll expired.
+- Expected: joining an existing drain preserves that drain's automatic epoch. Actual new activity, queued control execution and newly admitted prompts still cancel older automatic work.
+- Reproduction: hold an ordinary provider reply, start an explicit resume joining that active Session, release the reply, and wait for the configured one-second idle flush. The pre-fix run failed one test at the receipt poll.
+- Root cause: the shared prepare helper invalidated automatic activity before asking the coordinator to run. The coordinator correctly joined the existing drain, whose captured epoch was now stale; no replacement drain existed to arm the timer.
+- Fix: remove invalidation from generic registration/preparation. Actual drain entry creates its own epoch, and actual control execution cancels older work at its start. Durable prompt admission continues to invalidate synchronously under its independent fence.
+- Verification: from `packages/apexo`, pinned Bun 1.3.14, the pre-fix `bun test test/v2/memory-legacy-native.test.ts --test-name-pattern 'joining an active explicit resume' --timeout 30000` failed one test. The corrected four-case ownership gate passed four tests / sixteen assertions: joined resume, caller cancellation after durable admission, the final publication fence, and accepted Stop of compaction plus automatic flush. The final full legacy/V2 lifecycle gate passed 56 tests / 277 assertions; Core and Apexo typechecks passed. No timeout or assertion was relaxed. This is one demonstrated occurrence; no recurring constraint is promoted.

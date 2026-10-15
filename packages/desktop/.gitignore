@@ -25,5 +25,6 @@ dist-ssr
 out/
 
 resources/apexo-cli*
+resources/apexo-workflow-script*
 resources/icons
 resources/*.metainfo.xml

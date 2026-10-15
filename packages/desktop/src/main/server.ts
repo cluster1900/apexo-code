@@ -216,6 +216,10 @@ function createSidecarEnv(): Record<string, string> {
   )
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
+  env.APEXO_WORKFLOW_SCRIPT ??= join(
+    app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"),
+    `apexo-workflow-script${process.platform === "win32" ? ".exe" : ""}`,
+  )
   return env
 }
 

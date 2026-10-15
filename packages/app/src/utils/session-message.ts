@@ -1,3 +1,4 @@
+import { mediaMetadata, mediaVideoAttachment } from "./media-output"
 import type {
   SessionMessageAssistant,
   SessionMessageAssistantTool,
@@ -5,8 +6,12 @@ import type {
   SessionMessageShell,
   SessionMessageUser,
 } from "@apexo/client/promise"
+import type { SessionMessage } from "@apexo/schema/session-message"
 import type { AssistantMessage, FilePart, Message, Part, ToolPart, UserMessage } from "@apexo/sdk/v2"
 import { Option, Schema } from "effect"
+
+type NativeUser = Omit<SessionMessageUser, "files" | "agents"> & Pick<SessionMessage.User, "files" | "agents">
+type User = SessionMessageUser | NativeUser
 
 const emptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 const emptyModel: { id: string; providerID: string; variant?: string } = { id: "", providerID: "" }
@@ -45,7 +50,7 @@ function normalizeToolMetadata(name: string, metadata: Record<string, unknown>) 
   }
 }
 
-export function normalizeSessionMessages(sessionID: string, source: readonly SessionMessageInfo[]) {
+export function normalizeSessionMessages(sessionID: string, source: readonly (SessionMessageInfo | NativeUser)[]) {
   const messages: Message[] = []
   const parts = new Map<string, Part[]>()
   let agent = ""
@@ -188,7 +193,7 @@ export function sessionMessagePartID(messageID: string, type: "text" | "reasonin
 
 function userMessage(
   sessionID: string,
-  message: SessionMessageUser,
+  message: User,
   agent: string,
   model: { id: string; providerID: string; variant?: string },
 ): UserMessage {
@@ -202,7 +207,7 @@ function userMessage(
   }
 }
 
-function userParts(sessionID: string, message: SessionMessageUser): Part[] {
+function userParts(sessionID: string, message: User): Part[] {
   return [
     textPart(sessionID, message.id, 0, message.text),
     ...(message.files ?? []).map(
@@ -213,14 +218,13 @@ function userParts(sessionID: string, message: SessionMessageUser): Part[] {
         type: "file",
         mime: file.mime,
         filename: file.name,
-        url: file.source.type === "uri" ? file.source.uri : `data:${file.mime};base64,${file.data}`,
-        source: file.mention
-          ? {
-              type: "file",
-              text: { value: file.mention.text, start: file.mention.start, end: file.mention.end },
-              path: file.mention.text.startsWith("@") ? file.mention.text.slice(1) : (file.name ?? file.mention.text),
-            }
-          : undefined,
+        url:
+          "uri" in file
+            ? file.uri
+            : file.source.type === "uri"
+              ? file.source.uri
+              : `data:${file.mime};base64,${file.data}`,
+        source: fileMention(file),
       }),
     ),
     ...(message.agents ?? []).map(
@@ -230,9 +234,7 @@ function userParts(sessionID: string, message: SessionMessageUser): Part[] {
         messageID: message.id,
         type: "agent",
         name: item.name,
-        source: item.mention
-          ? { value: item.mention.text, start: item.mention.start, end: item.mention.end }
-          : undefined,
+        source: agentMention(item),
       }),
     ),
   ]
@@ -261,6 +263,22 @@ function assistantMessage(sessionID: string, parentID: string, message: SessionM
     tokens: message.tokens ?? emptyTokens,
     finish: message.finish,
   }
+}
+
+function fileMention(file: NonNullable<User["files"]>[number]): FilePart["source"] {
+  const mention = "uri" in file ? file.source : file.mention
+  if (!mention) return
+  return {
+    type: "file",
+    text: { value: mention.text, start: mention.start, end: mention.end },
+    path: mention.text.startsWith("@") ? mention.text.slice(1) : (file.name ?? mention.text),
+  }
+}
+
+function agentMention(item: NonNullable<User["agents"]>[number]) {
+  const mention = "source" in item ? item.source : "mention" in item ? item.mention : undefined
+  if (!mention) return
+  return { value: mention.text, start: mention.start, end: mention.end }
 }
 
 function assistantParts(sessionID: string, message: SessionMessageAssistant): Part[] {
@@ -313,7 +331,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
         status: "running" as const,
         input: normalizeToolInput(tool.name, tool.state.input),
         // metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        metadata: normalizeToolMetadata(tool.name, tool.state.metadata ?? {}),
+        metadata: normalizeToolMetadata(tool.name, mediaMetadata(tool.name, tool.state) ?? tool.state.metadata ?? {}),
         time: { start },
       }
     }
@@ -323,7 +341,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
         input: normalizeToolInput(tool.name, tool.state.input),
         error: tool.state.error.message,
         // metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        metadata: normalizeToolMetadata(tool.name, tool.state.metadata ?? {}),
+        metadata: normalizeToolMetadata(tool.name, mediaMetadata(tool.name, tool.state) ?? tool.state.metadata ?? {}),
         time: { start, end: tool.time.completed ?? start },
       }
     }
@@ -342,13 +360,15 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
           ]
         : [],
     )
+    const saved = mediaVideoAttachment({ name: tool.name, state: tool.state, id: tool.id, sessionID, messageID })
+    if (saved) attachments.push(saved)
     return {
       status: "completed" as const,
       input: normalizeToolInput(tool.name, tool.state.input),
       output: tool.state.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n"),
       title: tool.name,
       // metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-      metadata: normalizeToolMetadata(tool.name, tool.state.metadata ?? {}),
+      metadata: normalizeToolMetadata(tool.name, mediaMetadata(tool.name, tool.state) ?? tool.state.metadata ?? {}),
       time: { start, end: tool.time.completed ?? start },
       attachments: attachments.length ? attachments : undefined,
     }

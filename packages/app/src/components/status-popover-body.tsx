@@ -16,6 +16,7 @@ import { type ServerHealth } from "@/utils/server-health"
 import { useGlobal } from "@/context/global"
 import { useSettings } from "@/context/settings"
 import { useMcpToggle } from "@/context/mcp"
+import { NativeMcpManager } from "./native-mcp-manager"
 import { useServerProtocol } from "@/context/server-sdk"
 
 const pluginEmptyMessage = (value: string, file: string): JSXElement => {
@@ -398,65 +399,74 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
         )}
 
         <Tabs.Content value="mcp">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <Show
-                when={mcpNames().length > 0}
-                fallback={
-                  <div class="text-14-regular text-text-base text-center my-auto">{language.t("dialog.mcp.empty")}</div>
-                }
-              >
-                <For each={mcpNames()}>
-                  {(name) => {
-                    const status = () => mcpStatus(name)
-                    const enabled = () => status() === "connected"
-                    return (
-                      <button
-                        type="button"
-                        class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
-                        onClick={() => {
-                          if (toggleMcp.isPending) return
-                          toggleMcp.mutate(name)
-                        }}
-                        disabled={toggleMcp.isPending && toggleMcp.variables === name}
-                      >
-                        <div
-                          classList={{
-                            "size-1.5 rounded-full shrink-0": true,
-                            "bg-icon-success-base": status() === "connected",
-                            "bg-icon-critical-base": status() === "failed",
-                            "bg-border-weak-base": status() === "disabled",
-                            "bg-icon-warning-base":
-                              status() === "needs_auth" || status() === "needs_client_registration",
-                          }}
-                        />
-                        <span class="flex flex-col min-w-0 flex-1">
-                          <span class="flex items-center gap-2 min-w-0">
-                            <span class="text-14-regular text-text-base truncate">{name}</span>
-                          </span>
-                          <Show when={status() === "needs_auth"}>
-                            <span class="text-11-regular text-text-weaker truncate">
-                              {language.t("mcp.auth.clickToAuthenticate")}
-                            </span>
-                          </Show>
-                        </span>
-                        <div onClick={(event) => event.stopPropagation()}>
-                          <Switch
-                            checked={enabled()}
-                            disabled={toggleMcp.isPending && toggleMcp.variables === name}
-                            onChange={() => {
+          <Show
+            when={protocol() === "v2"}
+            fallback={
+              <div class="flex flex-col px-2 pb-2">
+                <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
+                  <Show
+                    when={mcpNames().length > 0}
+                    fallback={
+                      <div class="text-14-regular text-text-base text-center my-auto">
+                        {language.t("dialog.mcp.empty")}
+                      </div>
+                    }
+                  >
+                    <For each={mcpNames()}>
+                      {(name) => {
+                        const status = () => mcpStatus(name)
+                        const enabled = () => status() === "connected"
+                        return (
+                          <button
+                            type="button"
+                            class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
+                            onClick={() => {
                               if (toggleMcp.isPending) return
                               toggleMcp.mutate(name)
                             }}
-                          />
-                        </div>
-                      </button>
-                    )
-                  }}
-                </For>
-              </Show>
-            </div>
-          </div>
+                            disabled={toggleMcp.isPending && toggleMcp.variables === name}
+                          >
+                            <div
+                              classList={{
+                                "size-1.5 rounded-full shrink-0": true,
+                                "bg-icon-success-base": status() === "connected",
+                                "bg-icon-critical-base": status() === "failed",
+                                "bg-border-weak-base": status() === "disabled",
+                                "bg-icon-warning-base":
+                                  status() === "needs_auth" || status() === "needs_client_registration",
+                              }}
+                            />
+                            <span class="flex flex-col min-w-0 flex-1">
+                              <span class="flex items-center gap-2 min-w-0">
+                                <span class="text-14-regular text-text-base truncate">{name}</span>
+                              </span>
+                              <Show when={status() === "needs_auth"}>
+                                <span class="text-11-regular text-text-weaker truncate">
+                                  {language.t("mcp.auth.clickToAuthenticate")}
+                                </span>
+                              </Show>
+                            </span>
+                            <div onClick={(event) => event.stopPropagation()}>
+                              <Switch
+                                checked={enabled()}
+                                disabled={toggleMcp.isPending && toggleMcp.variables === name}
+                                onChange={() => {
+                                  if (toggleMcp.isPending) return
+                                  toggleMcp.mutate(name)
+                                }}
+                              />
+                            </div>
+                          </button>
+                        )
+                      }}
+                    </For>
+                  </Show>
+                </div>
+              </div>
+            }
+          >
+            <NativeMcpManager />
+          </Show>
         </Tabs.Content>
 
         <Tabs.Content value="lsp">
@@ -465,20 +475,50 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
               <Show
                 when={lspItems().length > 0}
                 fallback={
-                  <div class="text-14-regular text-text-base text-center my-auto">{language.t("dialog.lsp.empty")}</div>
+                  <div class="text-14-regular text-text-base text-center my-auto">
+                    {language.t(protocol() === "v2" ? "lsp.native.empty" : "dialog.lsp.empty")}
+                  </div>
                 }
               >
                 <For each={lspItems()}>
                   {(item) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div
-                        classList={{
-                          "size-1.5 rounded-full shrink-0": true,
-                          "bg-icon-success-base": item.status === "connected",
-                          "bg-icon-critical-base": item.status === "error",
-                        }}
-                      />
-                      <span class="text-14-regular text-text-base truncate">{item.name || item.id}</span>
+                    <div data-lsp-server={item.id} class="flex flex-col gap-1 w-full min-w-0 px-2 py-1">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <div
+                          classList={{
+                            "size-1.5 rounded-full shrink-0": true,
+                            "bg-icon-success-base": item.status === "connected",
+                            "bg-icon-critical-base": item.status === "error" || item.status === "failed",
+                            "bg-border-weak-base": item.status === "disabled" || item.status === "pending",
+                          }}
+                        />
+                        <span class="text-14-regular text-text-base truncate" dir="ltr">
+                          {item.name || item.id}
+                        </span>
+                        <span class="text-12-regular text-text-weak">
+                          {language.t(
+                            item.status === "connected"
+                              ? "mcp.status.connected"
+                              : item.status === "disabled"
+                                ? "mcp.status.disabled"
+                                : item.status === "pending"
+                                  ? "provider.connect.status.waiting"
+                                  : "mcp.status.failed",
+                          )}
+                        </span>
+                      </div>
+                      <Show when={"operations" in item && item.operations.length > 0}>
+                        <div data-lsp-operations class="text-12-regular text-text-weak break-words">
+                          {language.t("lsp.native.operations", {
+                            operations: "operations" in item ? item.operations.join(", ") : "",
+                          })}
+                        </div>
+                      </Show>
+                      <Show when={item.status === "failed" || item.status === "error"}>
+                        <div data-lsp-error class="text-12-regular text-text-critical-base">
+                          {language.t("lsp.native.failed")}
+                        </div>
+                      </Show>
                     </div>
                   )}
                 </For>

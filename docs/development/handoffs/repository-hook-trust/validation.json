@@ -1,0 +1,50 @@
+{
+  "status": "Integrated and verified across CLI, TUI, and Desktop",
+  "featureFiles": 23,
+  "localeFiles": 62,
+  "baselineHashMismatches": [],
+  "checks": [
+    {
+      "command": "bun test --timeout 30000 test/plugin/hook-repository-trust.test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "bun test test/cli/hooks-browser.test.tsx",
+      "exitCode": 0
+    },
+    {
+      "command": "bun script/grok-hook-repository-trust.mjs cli",
+      "exitCode": 0
+    },
+    {
+      "command": "bun script/grok-hook-repository-trust.mjs desktop",
+      "exitCode": 0
+    },
+    {
+      "command": "bun script/grok-hook-repository-trust-ui.mjs browser --locales",
+      "exitCode": 0
+    },
+    {
+      "command": "bun script/grok-hook-repository-trust-ui.mjs native --locales",
+      "exitCode": 0
+    }
+  ],
+  "productValidation": {
+    "focused": {
+      "passed": 13,
+      "failed": 0,
+      "assertions": 39
+    },
+    "tui": {
+      "passed": 3,
+      "failed": 0,
+      "assertions": 19
+    },
+    "generation": "passed",
+    "typechecks": "passed",
+    "cli": "passed (7/7 checks)",
+    "desktop": "passed (7/7 checks)",
+    "ui": "passed (5/5 browser --locales, 5/5 native --locales)",
+    "baselineNegative": "passed (failed before fix as expected)"
+  }
+}

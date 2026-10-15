@@ -1,0 +1,684 @@
+[
+  {
+    "path": "packages/app/src/i18n/am.ts",
+    "baseline": "73d93b559e1021c01489f294fc76267aa5dc1502a1d2815337080c2dad440769",
+    "final": "e4ef477c9a751db0f6f00748af57205ce28656145cc2076922b08bb624f5dbce",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ar.ts",
+    "baseline": "28a1f51b830541c3e0a24b256921ad9e82b55aec312cf0884fd694cf85ccc740",
+    "final": "4e2768fa750b1b233b8221c4c47c8b48c26985153c3ed4a218e0d5d8fb5b540d",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/az.ts",
+    "baseline": "c9c53b779f9d09daa54b1959b86ccf1dd3fa0bf568c7b14287751c625592b8b8",
+    "final": "9061d50ea5f2f4cee8631bcb69bf72d81a22501a4b73f1ce046c632d6753668b",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/bg.ts",
+    "baseline": "f57a624a7a630d31074dd45ac286d9593e923e75dfb00022a26d7affa19c18b7",
+    "final": "7a99178e1ef37a08cc03a63639293dfc854946fc0444a845da5066e0cb7fd4cc",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/bn.ts",
+    "baseline": "0225e0ab6cb0f636e573b3f7181d82f546d0f0d2419c236378b35003e35ba952",
+    "final": "077ba2d4c0deb20451683034124d3067db12387781658179544af3bb326e5b4a",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/br.ts",
+    "baseline": "014f954f451bf2456a22a249eaadebb034fec66961f7029dff5ade1bc2eff9b5",
+    "final": "8bbd42510e7f23efde60901dce56e518728dccbe76504af919804a4e1af83e24",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/bs.ts",
+    "baseline": "3f26150141690606808510b6068859b7ac6fc83fde690a73353f1c9142cea99f",
+    "final": "3e091567a88deab859fbc89ec82efd1d3f80bdfc80ab042d6b14f7b035500927",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ca.ts",
+    "baseline": "68b5a313878e64dda9cfca0bf0c1ea89298c0d0f0399a127d1cbf2dde696fcce",
+    "final": "e93d77254c100ec5174a751a99e8023adec1e5a5ab7551e1fb0b52684bab5699",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/cs.ts",
+    "baseline": "416189441333d6a084b5f119ba29c57a097067ba3377861e2c50d3462f015ec3",
+    "final": "57b5ef60462190683cfdeeaca9fa78977ff6c6a6efbbb8763f7f7dd6eaa85c83",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/da.ts",
+    "baseline": "a9a6fb4617fc51fe48e4c3591d2a52319d19171b0170e21d4994ca9f9e8b5f00",
+    "final": "4ed2a29af56702eba3d12b793e2286899eefb0408da4e5fbcf14736c5ca892a7",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/de.ts",
+    "baseline": "19b42ce6c4fd2bed93445675f6d32e7828962e128b5c21531648098b7d57b294",
+    "final": "7f94e8da9dbaf147481eec1e6673f87623c84acc010c719967e309465e4b80ad",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/dv.ts",
+    "baseline": "074c8bcdc1913da64c0e50f9d803029941033befc0d98a6a4fe6247aecb70b0c",
+    "final": "ddeeb998063dd75e6937346fca000882ac2507f8e7b4c8ba8a8ed88dd40056d8",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/dz.ts",
+    "baseline": "2db46e7431ec780ecb70e8cf20f5ce2c477dd0721049748976105394d0c7fe93",
+    "final": "8a2212e26799e61181be450357a5f49bb9ecb36ab9269d531c1d22e4b0b5f758",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/el.ts",
+    "baseline": "7acaa2845ab92ead0bf7c1aa7cf8bd7f663fdf9c8f6f9d66ebfa0af2806dc627",
+    "final": "990696f2352ff2a168bce8d79060e15a5278260e31e0975037f619784b34312f",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/en.ts",
+    "baseline": "28cea197c9679786ba75ab61054724f0248eb39b3c3beb1c867caa49da5a4148",
+    "final": "e299755d6bc6fc13ed3281b92460362ce4b5638e9df51163473363226816b4e7",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/es.ts",
+    "baseline": "9682e050f90d84e0892096d3cf8401339f2eccc074897f471ec706eeb0b7b929",
+    "final": "6dbf0e650db729a4bdc002250fd681588c42bf29d885882ce4cc99144b6b4069",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/et.ts",
+    "baseline": "284396fe7a7de0d45013b91d33e04b47407b943e00019f42e5a15840174c4633",
+    "final": "6fbc5f539f4a1e3fe572ae419043747d38c81268007eb456eaaa987ef778a83e",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/fa.ts",
+    "baseline": "fa2734c16accf907c8947a8e1b36a693365c3b561d064c17b9f2eda02357ce2c",
+    "final": "4cfcf70870fb3583ab283dc4a4de86148183989204d956a4c88200b7cac39b8c",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/fi.ts",
+    "baseline": "9be582eb20359591b084b3640785a0b91fa87b50679cdb54e1568efa383bdf6e",
+    "final": "3469853fe8a14613d70708a47057bb4d08653bca9522ebf8e5a3627d06ecfb5b",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/fo.ts",
+    "baseline": "2e69d2084ddeb959854fa7101025f1d3130bed8c55daefaabe41e10587243aa8",
+    "final": "bfcb9e63c077ccc7880fe69cac07950368e2ec65cff4b0535a8ae943b829de61",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/fr.ts",
+    "baseline": "ce101e8bc489709a0eab3cac6d0944150230f5e27ef624879aa8822411fbef75",
+    "final": "af0af35ee64d7968d9096c243237bea25f7acfa9f3a5d0ba1be4484f4b66e34a",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/hi.ts",
+    "baseline": "9b192d5c9591db19048f84a880b0521c2afaaa856ee5525b3ac3862ea97d2370",
+    "final": "49ef2576f0e864c86fe62d3508c42cb52b9334a13367527f436bf0142ad6a4d0",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/hr.ts",
+    "baseline": "af148f920ce11022b6d3536a5169ba34bee3698c38fc0d5f3e96fa5c86125ce6",
+    "final": "b1c3c8bc130fe2e24704c17c5a43a691b99d6706ab3dd9a43f916b4609688459",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/hu.ts",
+    "baseline": "be800e850a6a3fc9e05e50955717eb7614c31a0f068e59ac6eb33b8896566510",
+    "final": "55d58eaca9c88c05a7aec590b3590ab4b8e65873eac96126d465cb573eca8e85",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/hy.ts",
+    "baseline": "833d466669fa1811e556d0fc37eba965df4388b8bce7bc068599df43b87565e5",
+    "final": "abd417a81890b908f34538f6999bc67b9e0732b5715e972ea8f9bc5fa9a4b736",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/id.ts",
+    "baseline": "fdd18d8403682f96abc5bd5ac0158d65b11e54090abbfcc302a1b5c06e29419d",
+    "final": "2db24f4c26dce1b14d52e20933fbe31e7c023974f11581ab3d27b8e2b433a231",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/is.ts",
+    "baseline": "b925a80aa7f9d6b11900c48de96e5debf6a0ec76cefbe16bf5ca68876e656904",
+    "final": "81f0eff8b33cfbf1e64a79551a70909c791be7ebb461cbea4315c81ca08d885b",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/it.ts",
+    "baseline": "fffcdfd8849b7a420e4a53384df5f50fc9b1b7632ad7e533aeabadcf60fd41f7",
+    "final": "807e1fdea390dcf7bc00490e2cb3d47a9c6f2eced4a367559c9c111a22ad7d6f",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ja.ts",
+    "baseline": "d3b0d7fb450c683acd7a05e87a405cd2e4adf077e45973d91075468b98a308cf",
+    "final": "68b37f3b2d83458c15c671f18ccaa43bc1ed8e7f7059dc65a60a9227107b3682",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ka.ts",
+    "baseline": "d7bfb90311f6ca514aadb97f216c04d6f55f5b01644516cdbd3644ac393adc84",
+    "final": "f96002163d9377c4b75754d8da1d924da93c15120bcbecfc06b591bdce418ffc",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/km.ts",
+    "baseline": "eae746e232d0b46b3badf7ebc2d39dac055e4819139fa1478d1e24225bfacaa4",
+    "final": "70a17a5aeff336c3c07311e7aa259505fb40706175d86a0e325618968b04ee95",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ko.ts",
+    "baseline": "5dfe53b48ef11453dd554bef26b516146cf8168f6839cb82dcdac9608a265075",
+    "final": "8620457f157370720e467115f06a831ccb899cb36cf859307f6c3fde9d2d5e43",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/lo.ts",
+    "baseline": "532ef6b686c9269fea9c6ceb25d02344d6bec7067f3eab3781ce2bfdc6b3e371",
+    "final": "fa330e4bb175e23b49159f0229cc5143cc0b67b2a5b7694738b5f586b5214a48",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/lt.ts",
+    "baseline": "25385da6f2c9fbaab1d21df6060ca664f402e4605907969dcdad360743d60ed6",
+    "final": "af3e3aeb237e4e3baad099767e0277d97f1f04e39aaa009e74da1f99d61fccb2",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/lv.ts",
+    "baseline": "06da144cabbbf8729a6e336df070e7bb1478328907b3b14b6db5665898c4b02a",
+    "final": "d07746c1be28d1f3cfb646d81e67c1d88778512aa5dbf08f874ad61f82e578fb",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/mk.ts",
+    "baseline": "d9285917f4e375c686995480f6eb7bfa3ff868acc2defebdaa0818d644d51431",
+    "final": "e834946817b94935ebf6dc1b142daa676865fcebc470bed119a7a529a35dd9ff",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/mn.ts",
+    "baseline": "f35e307d897035839168e6a77500b3435627a8dfa8bf22b1aa69511e1941c594",
+    "final": "753b10a2832fcbf21d28baa1dd9fbbc042c16bbdf5f3b023b14874c0d2c356e6",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ms.ts",
+    "baseline": "f2bba957bf76753ea67e481c2114b3bd59ff1936646bf243006de974a009172b",
+    "final": "a21a0842567f3d8bf3e3127caa6bfb6344f2e481ad205a5038c97e8d5b0460da",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/my.ts",
+    "baseline": "dea0ff75a4911bd66c02b7c53e45a82753018f16e5a9cbdc659e1f2f4ca64885",
+    "final": "20ff7af3d75b5ce90b862de8c56d39c589c47d423a0457c083b9866cce8f0612",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ne.ts",
+    "baseline": "7d8eb94f1912915c0ffeae22d95599e277d67450f525ed63837fd5b5f7815ed3",
+    "final": "8dfa10436f9a8ce26323ce2a18bf4e491e5435c95cfa12510510aca28bb4346a",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/nl.ts",
+    "baseline": "430ba60ba661f5b1f87b445260b84f810aa18771c959d97f7c8ca70c803d802b",
+    "final": "034ed07f00cb82f6235ac87ca2b4d45da2f79d04996b4fb4e823bc63cad67c0b",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/no.ts",
+    "baseline": "30132f73254f45744e19400ebd182db639647cfab2ab4df5357e1ba984ad2320",
+    "final": "ff763aaa3ae26b509262fa798aaa49384b5998b5e3db96018ebd0971ec6657c8",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/pa.ts",
+    "baseline": "0c1c34722bd41a6e2a0da72cc29dae92cdc3142c3d09c97e44108e1c9d9f5d7b",
+    "final": "7352f49b80584345c3579e5bf791ceec171a55db1edce10ef01c25ab056a0412",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/pl.ts",
+    "baseline": "e19150cd03528a92d01e6ac8dbcd53736f7203fa3ed902dad4e1957c62b373c6",
+    "final": "34538af99503b09e4f0444427d2fcb273d078c50756e7d9738546da331902de3",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ro.ts",
+    "baseline": "81ab82b6b28bed16b3818c6451f53fad8abd43e1d5699f18c8161d9a1f0a2752",
+    "final": "e99a03e27fe2ded1cbd42b385a5890c01d191538f97fb7139667636983f9c2ab",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ru.ts",
+    "baseline": "1771ad702526719472c30cadcb54bd4cf30f41ee028be1ba5115cee35f510dfd",
+    "final": "933ef1695355677802f472416d358bbfe03a265b3a56a5e252b8c121fd6ef85a",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/si.ts",
+    "baseline": "57e2710c854fd69580b396e2d4377978abef580e5da794b12dad361e8b316797",
+    "final": "d92cc8263d813c136c0b98ac02a90db7d42284ca96f31205cc35e190397670ef",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/sk.ts",
+    "baseline": "aca889c9bfc069a0c9f4d9433a8100d07be2afdb26c41f09da3ecfebe1c8176e",
+    "final": "70d22a8c27a072160fdf49a82303d829bb0d09c84f5d4d27aa449aa0b31a918c",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/sl.ts",
+    "baseline": "7f6a3c0c67118787c86020013add44764009a28016f3b5e0480c0358e9b70113",
+    "final": "b071b4733ce6b9f9c031c3110f088c253aaa6f9ba09c8f1f58aa2daa3e228151",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/sq.ts",
+    "baseline": "b7f2f231add49788f717307bf08fe8c622bccd7911590b6fc6a78e1a9f968abf",
+    "final": "ed0be8b2ccf3f9ab2c8aaf395c66815a3377ae627a238ebd43a8a7aa7ef3bf56",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/sr.ts",
+    "baseline": "c29742c4e0276ba11e171158f191c21cacf84bd17ffb080d2a49967192d03ea2",
+    "final": "96a21a64ba46ea9655d39d6737cde4b25f33c187e5b2e836a4642b4a6cf240d8",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/sv.ts",
+    "baseline": "eafca685ae9b690ccef628f7575e08854e62f084d0f0c323310d7f391e357c1e",
+    "final": "6f356b9675db32c86e78b3ff6bf8af614e0e970093b6d078cabaea420cb95461",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/tg.ts",
+    "baseline": "f0943cf14ba5abb3557d04c1913a878e115f8b4a548b8c7f21dc5e637dde2761",
+    "final": "9d711f385df871b0ab966d68388e97f310990daea62ba6e69b5ca0ae14bcac6c",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/th.ts",
+    "baseline": "34a0a4d6134e42c57d41afcbb059930a768159aea320117f128e2465cac2befa",
+    "final": "446b5edb9e027998f26808690138c83d77649e0b41ce9891b747be8bcf835497",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/tk.ts",
+    "baseline": "e0cff15c4f00b2c1b67a6afd4f9c275ac1959179b2b879eb59d832cc5e50b64a",
+    "final": "20906c62088fb18f1cd46d1bcd107c06cb827401ab5f1c74ecfc2f58e73b5b75",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/tr.ts",
+    "baseline": "fc85a8e9fe24143ed35278529be7ed32c20ee6742b0760d15eab34ee95811976",
+    "final": "84d25966eae6d7491318b7f222ed96221aec680b0ae04b6f9b3ec64f27e7967f",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/uk.ts",
+    "baseline": "6262a3c34678ce4731e0f0755945b922c848449a9ae3dbe67e95e436d264804d",
+    "final": "2e4458f531827e62b41c07da3e415948a0be6a316cfa35f9e50ff275990783a3",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/ur.ts",
+    "baseline": "558b69246d3a22f250f070e2b03cf61a508c170717c1a99d7e41d16bb9d4c747",
+    "final": "8c34ce470242296a6d7656129b12133e6d57a0ad8d6c1e383f9ca62bb34d892d",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/uz.ts",
+    "baseline": "0f99c4f2a5ef1b920f917c220c8959ee569a898a37bea9d658db6a2ccea882fc",
+    "final": "bcb2d024c35d32a116427c5748a7b3e45128741ec298064ce93543eda4404719",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/vi.ts",
+    "baseline": "8d1c81e93e4c0f0f3a899ceab02d362d4fd0abf0446c8d8ee4112a0b6ab1830c",
+    "final": "b5f69c838996b9423012a88201eed28a9da531e08c039cffcdb666361c2080ef",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/zh.ts",
+    "baseline": "8b20dead6c1ce181e0ec5e1da3e20fd150d6fad105d3f961a0bc10bd3d36969c",
+    "final": "e219ffd9083d26cacdd59f9d4c174521c7dfddfdcd0d76d48291052f5b41596e",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  },
+  {
+    "path": "packages/app/src/i18n/zht.ts",
+    "baseline": "e1f596cc1537df43db8d0d546638510c67a1cc0fee680c5650e7d8f1478716b7",
+    "final": "5d5080aabc2770641811b7506423ac65958fba8233ce8c81dadf0ab3312350f2",
+    "addedKeys": [
+      "hooks.repository.title",
+      "hooks.repository.hint",
+      "hooks.repository.grant",
+      "hooks.repository.revoke"
+    ]
+  }
+]

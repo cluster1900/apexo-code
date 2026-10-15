@@ -21,6 +21,78 @@ const context: Tool.Context = {
 }
 const it = testEffect(Layer.empty)
 
+;[0, 7].forEach((exit) => {
+  it.effect(`monitor flushes its final partial line with exit status ${exit}`, () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.make
+      const notifications: Tool.BackgroundNotification[] = []
+      const shell: Tool.Def = {
+        id: "bash",
+        description: "final output source",
+        parameters: Schema.Unknown,
+        execute: (_, ctx) =>
+          Effect.gen(function* () {
+            if (ctx.onOutput) yield* ctx.onOutput("final partial line")
+            return { title: "exit", metadata: { exit }, output: "final partial line" }
+          }),
+      }
+      const monitor = createExtensions({ shell, background: jobs }).find((tool) => tool.id === "monitor")!
+      const started = yield* monitor.execute(
+        { command: "final", description: "final output" },
+        {
+          ...context,
+          notifyBackground: (event) =>
+            Effect.sync(() => {
+              notifications.push(event)
+            }),
+        },
+      )
+      yield* jobs.wait({ id: String(started.metadata.task_id) })
+      expect(notifications).toHaveLength(1)
+      expect(notifications[0]?.status).toBe(exit ? "error" : "completed")
+      expect(notifications[0]?.output).toBe("final partial line")
+      expect(notifications[0]?.exit).toBe(exit)
+    }),
+  )
+})
+
+it.effect("monitor pipeline aborts sustained overload and reports why it stopped", () =>
+  Effect.gen(function* () {
+    const jobs = yield* BackgroundJob.make
+    const notifications: Tool.BackgroundNotification[] = []
+    const shell: Tool.Def = {
+      id: "bash",
+      description: "continuous output source",
+      parameters: Schema.Unknown,
+      execute: (_, ctx) =>
+        Effect.gen(function* () {
+          while (!ctx.abort.aborted) {
+            if (ctx.onOutput) yield* ctx.onOutput("noisy event\n".repeat(20))
+            if (!ctx.abort.aborted) yield* Effect.sleep(1_000)
+          }
+          return { title: "stopped", metadata: { exit: null }, output: "stopped" }
+        }),
+    }
+    const monitor = createExtensions({ shell, background: jobs }).find((tool) => tool.id === "monitor")!
+    const started = yield* monitor.execute(
+      { command: "continuous", description: "overload", persistent: true },
+      {
+        ...context,
+        notifyBackground: (event) =>
+          Effect.sync(() => {
+            notifications.push(event)
+          }),
+      },
+    )
+    yield* TestClock.adjust(31_000)
+    const result = yield* jobs.wait({ id: String(started.metadata.task_id) })
+    expect(result.info?.status).toBe("completed")
+    expect(result.info?.metadata?.rateLimited).toBe(true)
+    expect(notifications.at(-1)?.status).toBe("error")
+    expect(notifications.at(-1)?.output).toContain("Monitor stopped")
+  }),
+)
+
 it.effect("one-shot scheduler settles and is absent from the active list", () =>
   Effect.gen(function* () {
     const jobs = yield* BackgroundJob.make
@@ -67,7 +139,7 @@ test("media checks external-directory and read permissions before uploading loca
   expect(permissions).toEqual(["image_to_video", "edit", "external_directory", "read"])
 })
 
-it.effect("scheduler permits the first fire at the maximum seven-day interval", () =>
+it.effect("scheduler permits the first fire at the seven-day expiry boundary", () =>
   Effect.gen(function* () {
     const jobs = yield* BackgroundJob.make
     const task: Tool.Def = {
@@ -91,6 +163,34 @@ it.effect("scheduler permits the first fire at the maximum seven-day interval", 
   }),
 )
 
+it.effect("scheduler clamps short positive intervals, rejects zero and expires intervals beyond its lifetime", () =>
+  Effect.gen(function* () {
+    const jobs = yield* BackgroundJob.make
+    const fired: string[] = []
+    const task: Tool.Def = {
+      id: "task",
+      description: "check",
+      parameters: Schema.Unknown,
+      execute: () =>
+        Effect.sync(() => {
+          fired.push("fire")
+          return { title: "done", metadata: {}, output: "done" }
+        }),
+    }
+    const create = createExtensions({ background: jobs, task }).find((tool) => tool.id === "scheduler_create")!
+    const short = yield* create.execute({ interval: "1s", prompt: "short" }, context)
+    expect(short.metadata.interval).toBe("60s")
+    yield* jobs.cancel(String(short.metadata.task_id))
+    const invalid = yield* create.execute({ interval: "0m", prompt: "zero" }, context)
+    expect(invalid.metadata.status).toBe("invalid_request")
+    const long = yield* create.execute({ interval: "8d", prompt: "long" }, context)
+    expect(long.metadata.interval).toBe("691200s")
+    yield* TestClock.adjust("7 days")
+    expect((yield* jobs.get(String(long.metadata.task_id)))?.status).toBe("completed")
+    expect(fired).toEqual([])
+  }),
+)
+
 test("workspace memory retains concurrent notes, deduplicates and survives reload", async () => {
   await using home = await tmpdir()
   await using dir = await tmpdir()
@@ -99,8 +199,7 @@ test("workspace memory retains concurrent notes, deduplicates and survives reloa
       WorkspaceMemory.update(dir.path, { operation: "remember", content: `note ${index}` }, home.path),
     ),
   )
-  await WorkspaceMemory.update(dir.path, { operation: "remember", content: "note 0" }, home.path)
-  const saved = await WorkspaceMemory.update(dir.path, { operation: "dream" }, home.path)
+  const saved = await WorkspaceMemory.update(dir.path, { operation: "remember", content: "note 0" }, home.path)
   expect(saved.match(/note 0/g)).toHaveLength(1)
   expect(saved.match(/note /g)).toHaveLength(8)
   expect(await WorkspaceMemory.read(dir.path, home.path)).toBe(saved)
@@ -128,6 +227,43 @@ it.effect("scheduler fires repeatedly with current next-fire metadata and cancel
     expect(running?.status).toBe("running")
     yield* tools.find((tool) => tool.id === "scheduler_delete")!.execute({ task_id: id }, context)
     expect((yield* jobs.get(id))?.status).toBe("cancelled")
+  }),
+)
+
+it.effect("scheduler delivers each fire result, including failures, without polling", () =>
+  Effect.gen(function* () {
+    const jobs = yield* BackgroundJob.make
+    const notices: Tool.BackgroundNotification[] = []
+    const task: Tool.Def = {
+      id: "task",
+      description: "scheduled check",
+      parameters: Schema.Unknown,
+      execute: () =>
+        Effect.suspend(() =>
+          notices.length === 0
+            ? Effect.die(new Error("first check failed"))
+            : Effect.succeed({ title: "done", metadata: {}, output: "recovered" }),
+        ),
+    }
+    const create = createExtensions({ background: jobs, task }).find((tool) => tool.id === "scheduler_create")!
+    const started = yield* create.execute(
+      { interval: "1m", prompt: "check" },
+      {
+        ...context,
+        notifyBackground: (notice) =>
+          Effect.sync(() => {
+            notices.push(notice)
+          }),
+      },
+    )
+    yield* TestClock.adjust(120_000)
+    expect(notices.map((notice) => notice.status)).toEqual(["error", "completed"])
+    expect(notices[0]?.output).toContain("first check failed")
+    expect(notices[1]?.output).toBe("recovered")
+    expect(notices.every((notice) => notice.taskID === started.metadata.task_id && notice.type === "scheduler")).toBe(
+      true,
+    )
+    yield* jobs.cancel(String(started.metadata.task_id))
   }),
 )
 
@@ -219,6 +355,7 @@ test("image/video tools use the xAI wire schema, save files and return preview a
     const ctx = { ...context, extra: { directory: dir.path } }
     const image = await Effect.runPromise(tools[0].execute({ prompt: "small test" }, ctx))
     expect(image.metadata.status).toBe("completed")
+    expect(calls[0]?.body).toMatchObject({ aspect_ratio: "auto", resolution: "1k" })
     expect(image.attachments?.[0].mime).toBe("image/png")
     expect(await Bun.file(String(image.metadata.path)).exists()).toBe(true)
     const video = await Effect.runPromise(tools[1].execute({ image: String(image.metadata.path), duration: 6 }, ctx))

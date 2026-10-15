@@ -1,0 +1,18 @@
+# BUG-20261015-059: Sandbox comparison fixture assumed isolated HOME preserved every startup capability
+
+- **Scope:** New installed-runtime sandbox audit fixture only; no Apexo product failure.
+- **Observed:** The first local provider returned Chat Completions events for the installed runtime's ancillary Responses title request, causing a deserialize error while the actual filesystem audit completed. After correcting the protocol and isolating HOME as well as GROK_HOME, the fixture's unconditional assertion that read-only must reach a tool failed. The runtime exited before any provider work.
+- **Expected:** Serve each actual provider protocol correctly, and distinguish successful policy execution from an explicit fail-closed startup refusal caused by the fixture's host-path view.
+- **Root cause:** The title request uses Responses function-call events. Separately, this macOS host's `/var/run/docker.sock` is a symlink to a per-user socket under the real HOME. Replacing HOME with the fixture home removes that target from the runtime's automatic socket deny set, so reference read-only setup refuses to start rather than leave the endpoint unprotected. This is not evidence that the reference accepted an unenforced profile.
+- **Fix:** Supply valid title Responses events. Keep full home isolation and explicitly assert the observed socket-resolution refusal, nonzero exit and zero tool/provider work for that case. Do not change the host socket, Docker configuration or sandbox protection to force startup. Workspace and custom read-deny profiles still execute real commands and retain exact filesystem assertions.
+- **Reproduction:** On a macOS host with a Docker Desktop socket symlink into the real HOME, run the isolated installed audit with a different HOME and request the read-only profile. The uncorrected fixture expects a completed tool result despite the explicit startup error.
+- **Verification:** The corrected scoped comparison completed and reaped all processes. Two real command cases confirmed workspace write allowance, outside/protected-config write denial and custom secret read denial; the isolated read-only case confirmed startup refusal without model execution. Four model-turn requests plus separate valid title requests were served. A subsequent real hardlink comparison confirmed that both executing profiles can modify an outside inode through an existing writable-workspace alias, matching the path-based boundary rather than claiming inode isolation.
+- **Limits:** An earlier run with normal HOME and isolated GROK_HOME observed successful read-only write denial, but it is kept separate from the fully isolated comparison. No Linux enforcement or Apexo implementation verification follows from these reference runs.
+- **Occurrences:** One new fixture-construction episode with two setup assumptions. No recurring constraint is promoted.
+
+
+## Task child title protocol observation (2026-10-15)
+
+A separate installed Task comparison correctly classified `session_title` as ancillary but asserted that every such request used Responses. The root title did; a child title arrived over Chat Completions, producing the fixture assertion before its parent-only output assertion also failed. The correction selects the actual request protocol and emits a matching title tool result. Final isolated Task comparison passed three scenarios with eleven conversation and seventeen auxiliary requests, all owned processes/listeners reaped.
+
+This is additional verified evidence of the protocol-assumption boundary already documented here. It does not add an occurrence to the unrelated HOME/socket startup assumption or promote a recurring rule. The parent-only text aggregation expectation is tracked separately as BUG-20261015-283.

@@ -31,6 +31,7 @@ import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
 import { Vcs } from "@/project/vcs"
 import { InstanceStore } from "@/project/instance-store"
+import { Worktree } from "@/worktree"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
 import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { WorkspaceEvent } from "@apexo/schema/workspace-event"
@@ -153,6 +154,7 @@ export const use = serviceUse(Service)
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const worktree = yield* Worktree.Service
     const auth = yield* Auth.Service
     const session = yield* Session.Service
     const prompt = yield* SessionPrompt.Service
@@ -492,7 +494,7 @@ const layer = Layer.effect(
     const create = Effect.fn("Workspace.create")(function* (input: CreateInput) {
       const id = WorkspaceV2.ID.ascending(input.id)
       const adapter = getAdapter(input.projectID, input.type)
-      const config = yield* WorkspaceAdapterRuntime.configure(adapter, {
+      const config = yield* WorkspaceAdapterRuntime.configure(worktree, adapter, {
         ...input,
         id,
         name: Slug.create(),
@@ -535,7 +537,7 @@ const layer = Layer.effect(
         OTEL_RESOURCE_ATTRIBUTES: process.env.OTEL_RESOURCE_ATTRIBUTES,
       }
 
-      yield* WorkspaceAdapterRuntime.create(adapter, config, env)
+      yield* WorkspaceAdapterRuntime.create(worktree, adapter, config, env)
       yield* Effect.all(
         [
           waitEvent({
@@ -730,7 +732,7 @@ const layer = Layer.effect(
       const discovered = yield* Effect.forEach(
         registeredAdapters(project.id),
         ([type, adapter]) =>
-          WorkspaceAdapterRuntime.list(adapter).pipe(
+          WorkspaceAdapterRuntime.list(worktree, adapter).pipe(
             Effect.catchCause((error) =>
               Effect.logWarning("workspace adapter list failed", { type, error }).pipe(Effect.as([])),
             ),
@@ -806,7 +808,7 @@ const layer = Layer.effect(
       const info = fromRow(row)
       yield* Effect.catchCause(
         Effect.gen(function* () {
-          yield* WorkspaceAdapterRuntime.remove(info)
+          yield* WorkspaceAdapterRuntime.remove(worktree, info)
         }),
         () => Effect.logError("adapter not available when removing workspace", { type: row.type }),
       )
@@ -951,6 +953,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    Worktree.node,
     Auth.node,
     Session.node,
     SessionPrompt.node,

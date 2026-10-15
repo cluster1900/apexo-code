@@ -3,7 +3,7 @@ import os from "os"
 import { randomBytes, randomUUID } from "crypto"
 import { mkdir, readFile, rm, stat, utimes, writeFile } from "fs/promises"
 import { Hash } from "./hash"
-import { Effect } from "effect"
+import { Effect, Exit, Fiber, Schema } from "effect"
 
 export type FlockGlobal = {
   state: string
@@ -46,6 +46,9 @@ export namespace Flock {
     baseDelayMs?: number
     maxDelayMs?: number
     onWait?: Wait
+    reclaimDeadOwner?: boolean
+    /** Require positive local PID-death evidence; elapsed age never revokes an unknown owner. */
+    deadOwnerOnly?: boolean
   }
 
   type Opts = {
@@ -53,6 +56,8 @@ export namespace Flock {
     timeoutMs: number
     baseDelayMs: number
     maxDelayMs: number
+    reclaimDeadOwner: boolean
+    deadOwnerOnly: boolean
   }
 
   type Owned = {
@@ -124,7 +129,39 @@ export namespace Flock {
     }
   }
 
-  async function stale(lockDir: string, heartbeatPath: string, metaPath: string, staleMs: number) {
+  async function stale(
+    lockDir: string,
+    heartbeatPath: string,
+    metaPath: string,
+    staleMs: number,
+    reclaimDeadOwner: boolean,
+    deadOwnerOnly: boolean,
+  ) {
+    if (reclaimDeadOwner || deadOwnerOnly) {
+      const owner = await readFile(metaPath, "utf8")
+        .then(
+          Schema.decodeUnknownOption(
+            Schema.fromJsonString(Schema.Struct({ pid: Schema.Number, hostname: Schema.String })),
+          ),
+        )
+        .catch(() => undefined)
+      if (
+        owner?._tag === "Some" &&
+        owner.value.hostname === os.hostname() &&
+        Number.isInteger(owner.value.pid) &&
+        owner.value.pid > 0
+      ) {
+        const exited = await Promise.resolve()
+          .then(() => process.kill(owner.value.pid, 0))
+          .then(
+            () => false,
+            (error: unknown) => code(error) === "ESRCH",
+          )
+        // A live local owner must not lose its lease just because its heartbeat was delayed.
+        return exited
+      }
+    }
+    if (deadOwnerOnly) return false
     // Stale detection allows automatic recovery after crashed owners.
     const now = wall()
     const heartbeat = await stats(heartbeatPath)
@@ -157,7 +194,7 @@ export namespace Flock {
         throw err
       }
 
-      if (!(await stale(lockDir, heartbeatPath, metaPath, opts.staleMs))) {
+      if (!(await stale(lockDir, heartbeatPath, metaPath, opts.staleMs, opts.reclaimDeadOwner, opts.deadOwnerOnly))) {
         return { acquired: false }
       }
 
@@ -168,7 +205,7 @@ export namespace Flock {
         const errCode = code(claimErr)
         if (errCode === "EEXIST") {
           const breaker = await stats(breakerPath)
-          if (breaker && wall() - breaker.mtimeMs > opts.staleMs) {
+          if (!opts.deadOwnerOnly && breaker && wall() - breaker.mtimeMs > opts.staleMs) {
             await rm(breakerPath, { recursive: true, force: true }).catch(() => undefined)
           }
           return { acquired: false }
@@ -183,7 +220,7 @@ export namespace Flock {
 
       try {
         // Breaker ownership ensures only one contender performs stale cleanup.
-        if (!(await stale(lockDir, heartbeatPath, metaPath, opts.staleMs))) {
+        if (!(await stale(lockDir, heartbeatPath, metaPath, opts.staleMs, opts.reclaimDeadOwner, opts.deadOwnerOnly))) {
           return { acquired: false }
         }
 
@@ -314,6 +351,8 @@ export namespace Flock {
       timeoutMs: input.timeoutMs ?? defaultOpts.timeoutMs,
       baseDelayMs: input.baseDelayMs ?? defaultOpts.baseDelayMs,
       maxDelayMs: input.maxDelayMs ?? defaultOpts.maxDelayMs,
+      reclaimDeadOwner: input.reclaimDeadOwner ?? false,
+      deadOwnerOnly: input.deadOwnerOnly ?? false,
     }
     const dir = input.dir ?? root()
 
@@ -346,13 +385,35 @@ export namespace Flock {
   }
 
   export const effect = Effect.fn("Flock.effect")(function* (key: string, input: Options = {}) {
-    return yield* Effect.acquireRelease(
-      Effect.promise((signal) => Flock.acquire(key, { ...input, signal })).pipe(
-        Effect.withSpan("Flock.acquire", {
-          attributes: { key },
-        }),
-      ),
-      (lock) => Effect.promise(() => lock.release()).pipe(Effect.withSpan("Flock.release")),
-    ).pipe(Effect.asVoid)
+    return yield* Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const controller = new AbortController()
+        const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal
+        // This child owns the real Promise to settlement, including when its parent is interrupted.
+        const waiting = yield* Effect.promise(async () => {
+          const lease = await Flock.acquire(key, { ...input, signal })
+          if (signal.aborted) {
+            await lease.release()
+            signal.throwIfAborted()
+          }
+          return lease
+        }).pipe(Effect.uninterruptible, Effect.forkChild)
+        const acquired = yield* restore(Fiber.await(waiting)).pipe(
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              controller.abort()
+              const result = yield* Fiber.await(waiting)
+              if (Exit.isSuccess(result)) yield* Effect.promise(() => result.value.release())
+            }),
+          ),
+        )
+        if (Exit.isFailure(acquired)) return yield* Effect.failCause(acquired.cause)
+        // The mask closes the successful acquire-to-finalizer gap. Exactly one branch releases the lease.
+        yield* Effect.acquireRelease(Effect.succeed(acquired.value), (lock) =>
+          Effect.promise(() => lock.release()).pipe(Effect.withSpan("Flock.release")),
+        )
+        yield* Effect.sync(() => signal.throwIfAborted())
+      }),
+    ).pipe(Effect.withSpan("Flock.acquire", { attributes: { key } }), Effect.asVoid)
   })
 }

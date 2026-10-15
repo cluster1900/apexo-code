@@ -1,8 +1,8 @@
 import type { SessionApi, SessionInfo, SessionListInput } from "@apexo/client/promise"
-import type { Session } from "@apexo/sdk/v2/client"
+import type { Session, SessionV2Info } from "@apexo/sdk/v2/client"
 import { withTimestampedFallback } from "./session-title"
 
-export function normalizeSessionInfo(input: SessionInfo | Session): Session {
+export function normalizeSessionInfo(input: SessionInfo | SessionV2Info | Session): Session {
   if (!("location" in input)) return input
   return {
     id: input.id,

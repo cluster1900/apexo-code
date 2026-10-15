@@ -1,3 +1,4 @@
+import { Plugins } from "./plugins"
 import { Component, createSignal, startTransition } from "solid-js"
 import { Dialog } from "@apexo/ui/dialog"
 import { Tabs } from "@apexo/ui/tabs"
@@ -59,6 +60,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="providers" />
                       {language.t("settings.providers.title")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="plugins">
+                      <Icon name="dot-grid" />
+                      {language.t("plugins.title")}
+                    </Tabs.Trigger>
                     <Tabs.Trigger value="models">
                       <Icon name="models" />
                       {language.t("settings.models.title")}
@@ -84,6 +89,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="providers" class="no-scrollbar">
           <SettingsProviders onBack={showProviders} />
+        </Tabs.Content>
+        <Tabs.Content value="plugins">
+          <Plugins />
         </Tabs.Content>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />

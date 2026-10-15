@@ -88,6 +88,7 @@ export interface Strategy {
   readonly create: (input: {
     sourceDirectory: AbsolutePath
     directory: AbsolutePath
+    preserveWorkingTree?: boolean
   }) => Effect.Effect<Copy, Git.WorktreeError | DirectoryUnavailableError>
   readonly remove: (input: {
     directory: AbsolutePath
@@ -100,7 +101,7 @@ export { Event }
 
 export interface Interface {
   readonly register: (strategy: Strategy) => Effect.Effect<void, DuplicateStrategyError>
-  readonly create: (input: CreateInput) => Effect.Effect<Copy, Error>
+  readonly create: (input: CreateInput & { preserveWorkingTree?: boolean }) => Effect.Effect<Copy, Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<void, Error>
   readonly refresh: (input: RefreshInput) => Effect.Effect<RefreshResult, Error>
 }
@@ -169,7 +170,9 @@ const layer = Layer.effect(
       return found
     })
 
-    const create = Effect.fn("ProjectCopy.create")(function* (input: CreateInput) {
+    const create = Effect.fn("ProjectCopy.create")(function* (input: CreateInput & { preserveWorkingTree?: boolean }) {
+      if (input.preserveWorkingTree && input.strategy !== "git_worktree")
+        return yield* new StrategyUnavailableError({ strategy: input.strategy })
       const selected = yield* getStrategy(input.strategy)
       const sourceDirectory = yield* source(input.sourceDirectory, input.projectID)
       yield* fs.makeDirectory(input.directory, { recursive: true }).pipe(Effect.orDie)
@@ -185,6 +188,7 @@ const layer = Layer.effect(
       const result = yield* selected.create({
         directory: copyDirectory,
         sourceDirectory,
+        preserveWorkingTree: input.preserveWorkingTree,
       })
       yield* changed(
         input.projectID,

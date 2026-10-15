@@ -162,6 +162,11 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
           })
           break
         }
+        case "session.next.history.copy.message":
+          message.update(event.data.sessionID, (draft) => message.prepend(draft, event.data.message))
+          break
+        case "session.next.history.copy.started":
+        case "session.next.history.copy.completed":
         case "session.next.prompt.admitted":
           break
         case "session.next.context.updated":

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { BackgroundJob } from "@apexo/core/background-job"
 import { Effect, Schema } from "effect"
 import { GrokBuildTools } from "@/tool/grok-build"
 import { createExtensions } from "@/tool/grok-build-extensions"
@@ -150,42 +151,29 @@ describe("grok-build tool profile", () => {
   })
 
   test("waits for bounded shell commands without killing the background job", async () => {
-    const captured: Record<string, unknown> = {}
-    const job = {
-      id: "job_bounded_shell",
-      type: "shell",
-      status: "running" as const,
-      started_at: Date.now(),
-      metadata: { ownerSessionId: context.sessionID },
-    }
-    const completed = { ...job, status: "completed" as const, output: "done" }
-    const background = {
-      start: (input: { run: Effect.Effect<string, unknown> }) => {
-        void Effect.runPromise(input.run)
-        return Effect.succeed(job)
-      },
-      wait: () => Effect.succeed({ info: completed, timedOut: false }),
-    } as never
-    const shell = GrokBuildTools.adaptTools(
-      [
-        {
-          ...fakeTool("bash", (value) => Object.assign(captured, value as object)),
-          execute: (args) => {
-            Object.assign(captured, args as object)
-            return Effect.succeed({ title: "shell", metadata: {}, output: "done" })
-          },
-        },
-      ],
-      { background },
-    ).find((tool) => tool.id === "run_terminal_cmd")
-    if (!shell) throw new Error("expected run_terminal_cmd")
-
-    const result = await Effect.runPromise(
-      shell.execute({ command: "sleep 1", description: "bounded", block_until_ms: 25 }, context),
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const captured: Record<string, unknown> = {}
+        const background = yield* BackgroundJob.make
+        const shell = GrokBuildTools.adaptTools(
+          [
+            {
+              ...fakeTool("bash", () => {}),
+              execute: (args) => {
+                Object.assign(captured, args as object)
+                return Effect.succeed({ title: "shell", metadata: { exit: 0 }, output: "done" })
+              },
+            },
+          ],
+          { background },
+        ).find((tool) => tool.id === "run_terminal_cmd")!
+        const result = yield* shell.execute({ command: "sleep 1", description: "bounded", block_until_ms: 25 }, context)
+        expect(captured).toEqual({ command: "sleep 1", timeout: 36_000_000 })
+        expect(result.metadata).toMatchObject({ status: "completed", command: "sleep 1", background: false, exit: 0 })
+        expect((yield* background.get(String(result.metadata.task_id)))?.status).toBe("completed")
+        expect(result.output).toContain(`<task id="${result.metadata.task_id}" status="completed">`)
+      }).pipe(Effect.scoped),
     )
-    expect(captured).toEqual({ command: "sleep 1", timeout: undefined })
-    expect(result.metadata).toEqual({ task_id: job.id, status: "completed", command: "sleep 1" })
-    expect(result.output).toContain(`<task id="${job.id}" status="completed">`)
   })
 
   test("reads multiple background tasks with the canonical task_ids input", async () => {
@@ -270,9 +258,9 @@ describe("grok-build tool profile", () => {
 
   test("maps the canonical task background and resume fields", async () => {
     const captured: Record<string, unknown> = {}
-    const task = GrokBuildTools.adaptTools([fakeTool("task", (value) => Object.assign(captured, value as object))]).find(
-      (tool) => tool.id === "task",
-    )
+    const task = GrokBuildTools.adaptTools([
+      fakeTool("task", (value) => Object.assign(captured, value as object)),
+    ]).find((tool) => tool.id === "task")
     if (!task) throw new Error("expected task")
 
     await Effect.runPromise(task.execute({ description: "inspect", prompt: "check it" }, context))
@@ -354,40 +342,51 @@ describe("grok-build tool profile", () => {
     })
     expect(extensions.map((tool) => tool.id)).toEqual([
       "memory",
+      "memory_search",
+      "memory_get",
       "image_gen",
       "image_to_video",
       "reference_to_video",
+      "image_edit",
       "monitor",
       "scheduler_create",
       "scheduler_delete",
       "scheduler_list",
     ])
     expect(GrokBuildTools.advertisedToolNames()).toEqual(
-      expect.arrayContaining(["memory", "monitor", "scheduler_create", "scheduler_delete", "scheduler_list", "image_gen", "image_to_video", "reference_to_video"]),
+      expect.arrayContaining([
+        "memory",
+        "monitor",
+        "scheduler_create",
+        "scheduler_delete",
+        "scheduler_list",
+        "image_gen",
+        "image_to_video",
+        "reference_to_video",
+      ]),
     )
   })
 
   test("creates a scheduled task with the official interval and prompt fields", async () => {
-    const job = {
-      id: "job_schedule",
-      type: "scheduler",
-      status: "running" as const,
-      started_at: Date.now(),
-      metadata: { ownerSessionId: context.sessionID, scheduler: true },
-    }
-    const background = {
-      start: () => Effect.succeed(job),
-      get: () => Effect.succeed(undefined),
-      cancel: () => Effect.succeed(undefined),
-    } as never
-    const task = fakeTool("task", () => {})
-    const create = createExtensions({ background, task }).find((tool) => tool.id === "scheduler_create")
-    if (!create) throw new Error("expected scheduler_create")
-
-    const result = await Effect.runPromise(
-      create.execute({ interval: "5m", prompt: "check the deployment", fire_immediately: true }, context),
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const background = yield* BackgroundJob.make
+          const create = createExtensions({ background, task: fakeTool("task", () => {}) }).find(
+            (tool) => tool.id === "scheduler_create",
+          )!
+          const result = yield* create.execute(
+            { interval: "5m", prompt: "check the deployment", fire_immediately: true },
+            context,
+          )
+          expect(result.metadata).toMatchObject({ status: "running", interval: "300s", updated: false })
+          expect(result.metadata.next_fire_at).toBeLessThanOrEqual(Date.now())
+          expect((yield* background.get(String(result.metadata.task_id)))?.metadata?.prompt).toBe(
+            "check the deployment",
+          )
+          expect(result.output).toContain("first run starts now")
+        }),
+      ),
     )
-    expect(result.metadata).toEqual({ task_id: job.id, status: "running", interval: "300s", updated: false })
-    expect(result.output).toContain("first run starts now")
   })
 })

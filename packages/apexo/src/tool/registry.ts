@@ -1,3 +1,5 @@
+import { SessionLifecycle } from "@apexo/core/session/lifecycle"
+import { SessionSchedulerOwner } from "@apexo/core/session/scheduler-owner"
 import { Auth } from "@/auth"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { httpClient } from "@apexo/core/effect/app-node-platform"
@@ -13,6 +15,8 @@ import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { Database } from "@apexo/core/database/database"
+import { SessionGoal } from "@apexo/core/session/goal"
+import { SessionFeedback } from "@apexo/core/session/feedback"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -34,7 +38,7 @@ import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@apexo/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Scope, Exit } from "effect"
 import { CrossSpawnSpawner } from "@apexo/core/cross-spawn-spawner"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
@@ -50,11 +54,19 @@ import { Skill } from "../skill"
 import { Permission } from "@/permission"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { MemorySearch } from "@apexo/core/memory-search"
+import { MemoryIndex } from "@/session/memory-index"
+import { SessionMemoryDream } from "@/session/memory-dream"
+import { SessionMemoryMode } from "@/session/memory-mode"
+import { SessionMemoryBackend } from "@/session/memory-backend"
+import { SessionID } from "@/session/schema"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { Scheduler } from "@apexo/core/scheduler"
+import { SchedulerStore } from "@apexo/core/scheduler-store"
 import { GrokBuildTools } from "./grok-build"
 
 export function webSearchEnabled(flags = { exa: false, parallel: false }) {
@@ -65,6 +77,8 @@ type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
 
 type State = {
+  memory?: Effect.Effect<MemorySearch.Interface, MemorySearch.MemoryError>
+  scheduler: Scheduler.Interface
   custom: Tool.Def[]
   builtin: Tool.Def[]
   task: TaskDef
@@ -72,6 +86,7 @@ type State = {
 }
 
 export interface Interface {
+  readonly scheduler: () => Effect.Effect<Scheduler.Interface>
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
@@ -80,6 +95,7 @@ export interface Interface {
     modelID: ModelV2.ID
     agent: Agent.Info
     permission?: PermissionV1.Ruleset
+    sessionID?: SessionID
   }) => Effect.Effect<Tool.Def[]>
 }
 
@@ -93,10 +109,18 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const database = yield* Database.Service
+    const lifecycle = yield* SessionLifecycle.Service
+    const goals = SessionGoal.make(database.db)
+    const feedback = SessionFeedback.make(database.db)
     const auth = yield* Auth.Service
     const provider = yield* Provider.Service
     const mcp = yield* MCP.Service
     const background = yield* BackgroundJob.Service
+    const dream = yield* SessionMemoryDream.Service
+    const memoryIndex = yield* MemoryIndex.Service
+    const memoryMode = yield* SessionMemoryMode.Service
+    const memoryBackend = yield* SessionMemoryBackend.Service
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
@@ -121,6 +145,15 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
+        const storageScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+        const store =
+          flags.runtimeProfile === "grok-build"
+            ? yield* SchedulerStore.make(ctx.directory).pipe(Effect.provideService(Scope.Scope, storageScope))
+            : undefined
+        const scheduler = Scheduler.make(background, store, SessionSchedulerOwner.make(database.db, lifecycle))
+        const memory = flags.runtimeProfile === "grok-build" ? memoryIndex.get() : undefined
+        // Stop workers before releasing their cross-process ownership leases.
+        yield* Effect.addFinalizer(() => scheduler.shutdown)
         const custom: Tool.Def[] = []
 
         function fromPlugin(id: string, def: ToolDefinition): Tool.Def {
@@ -229,6 +262,7 @@ const layer = Layer.effect(
         })
 
         return {
+          memory,
           custom,
           builtin: [
             tool.invalid,
@@ -251,6 +285,7 @@ const layer = Layer.effect(
               ? [tool.planEnter, tool.plan]
               : []),
           ],
+          scheduler,
           task: tool.task,
           read: tool.read,
         }
@@ -342,35 +377,81 @@ const layer = Layer.effect(
         { concurrency: "unbounded" },
       )
 
-      return flags.runtimeProfile === "grok-build"
-        ? GrokBuildTools.adaptTools(result, {
-            directory: yield* InstanceState.directory,
-            background,
-            profileExtensions: true,
-            media: {
-              transport: Effect.gen(function* () {
-                const env = process.env.XAI_API_KEY ?? process.env.GROK_API_KEY
-                if (env) return { key: env }
-                const xai = yield* provider.getProvider(ProviderV2.ID.make("xai"))
-                const value = yield* auth.get("xai").pipe(Effect.orDie)
-                const key =
-                  value?.type === "api"
-                    ? value.key
-                    : typeof xai?.options.apiKey === "string"
-                      ? xai.options.apiKey
-                      : xai?.key
-                if (!key) return undefined
-                return {
-                  key,
-                  ...(typeof xai?.options.fetch === "function" ? { fetch: xai.options.fetch as typeof fetch } : {}),
-                  ...(typeof xai?.options.baseURL === "string" ? { baseURL: xai.options.baseURL } : {}),
-                }
-              }),
-            },
-            shell: result.find((tool) => tool.id === "bash"),
-            task: result.find((tool) => tool.id === "task"),
-          })
-        : result
+      const adapted =
+        flags.runtimeProfile === "grok-build"
+          ? GrokBuildTools.adaptTools(result, {
+              bash: (yield* config.get()).toolset?.bash,
+              goals,
+              feedback,
+              directory: yield* InstanceState.directory,
+              projectID: (yield* InstanceState.context).project.id,
+              memory: (yield* InstanceState.get(state)).memory,
+              memoryAccess: (ctx, operation) => {
+                const revision = ctx.extra?.memoryRevision
+                if (typeof revision !== "string") return Effect.die(new Error("Memory requires an active session"))
+                return memoryMode.commit(ctx.sessionID, revision, operation).pipe(Effect.orDie)
+              },
+              dream: (ctx) =>
+                Effect.gen(function* () {
+                  return yield* dream.run(ctx.sessionID, {
+                    signal: ctx.abort,
+                    authorize: (paths) =>
+                      Effect.forEach(["read", "edit"], (permission) =>
+                        ctx.ask({
+                          permission,
+                          patterns: paths,
+                          always: paths,
+                          metadata: { operation: "dream" },
+                        }),
+                      ).pipe(Effect.asVoid),
+                  })
+                }),
+              background,
+              maxWaitMs: flags.grokMaxWaitBlockMs,
+              profileExtensions: true,
+              scheduler: (yield* InstanceState.get(state)).scheduler,
+              media: {
+                outputS3: (yield* config.get()).grok_media?.zdr_video_output_s3,
+                transport: Effect.gen(function* () {
+                  const env = process.env.XAI_API_KEY ?? process.env.GROK_API_KEY
+                  if (env) return { key: env }
+                  const xai = yield* provider.getProvider(ProviderV2.ID.make("xai"))
+                  const value = yield* auth.get("xai").pipe(Effect.orDie)
+                  const key =
+                    value?.type === "api"
+                      ? value.key
+                      : typeof xai?.options.apiKey === "string"
+                        ? xai.options.apiKey
+                        : xai?.key
+                  if (!key) return undefined
+                  return {
+                    key,
+                    ...(typeof xai?.options.fetch === "function" ? { fetch: xai.options.fetch as typeof fetch } : {}),
+                    ...(typeof xai?.options.baseURL === "string" ? { baseURL: xai.options.baseURL } : {}),
+                  }
+                }),
+              },
+              shell: result.find((tool) => tool.id === "bash"),
+              task: result.find((tool) => tool.id === "task"),
+            })
+          : result
+      const enabled =
+        (yield* memoryMode.get(input.sessionID)).enabled &&
+        (yield* memoryBackend.get(input.sessionID)).backend === "legacy"
+      return adapted
+        .filter((item) => enabled || !["memory", "memory_search", "memory_get"].includes(item.id))
+        .map((item) => {
+          if (!["memory", "memory_search", "memory_get"].includes(item.id)) return item
+          return {
+            ...item,
+            execute: (args: unknown, ctx: Tool.Context) =>
+              memoryMode
+                .run(ctx.sessionID, (revision) =>
+                  item.execute(args, { ...ctx, extra: { ...ctx.extra, memoryRevision: revision } }),
+                )
+                .pipe(Effect.orDie),
+          }
+        })
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
@@ -378,7 +459,7 @@ const layer = Layer.effect(
       return { task: s.task, read: s.read }
     })
 
-    return Service.of({ ids, all, named, tools })
+    return Service.of({ ids, all, named, tools, scheduler: () => InstanceState.use(state, (value) => value.scheduler) })
   }),
 )
 
@@ -483,7 +564,12 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     MCP.node,
     Database.node,
+    SessionLifecycle.node,
     Ripgrep.node,
+    SessionMemoryDream.node,
+    MemoryIndex.node,
+    SessionMemoryMode.node,
+    SessionMemoryBackend.node,
   ],
 })
 

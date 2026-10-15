@@ -111,6 +111,25 @@ function reasoning(text: string, phase: StreamCommit["phase"] = "progress"): Str
   }
 }
 
+for (const entry of [assistant, reasoning]) {
+  test(`new ${entry("").kind} group measures its first line after the pending spacer`, async () => {
+    const out = await setup({ width: 40 })
+    try {
+      await out.scrollback.append(user("x".repeat(36)))
+      await out.scrollback.append(entry("FIRST_WORD_SECOND_WORD"))
+      await out.scrollback.complete()
+      const commits = claim(out.renderer)
+      try {
+        expect(renderRows(commits.at(-1)!, 40)).toEqual(["FIRST_WORD_SECOND_WORD"])
+      } finally {
+        destroy(commits)
+      }
+    } finally {
+      out.scrollback.destroy()
+    }
+  })
+}
+
 test("turn summary starts at the left edge", async () => {
   const out = await setup()
 

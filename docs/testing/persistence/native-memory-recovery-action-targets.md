@@ -1,0 +1,15 @@
+# BUG-20261015-278: A retried clear settled unrelated Memory work
+
+- **Scope:** Private native Memory recovery draft; not shipped/shared at discovery.
+- **Observed:** An old committed clear retry deleted a later action's file and published a separately pending note.
+- **Expected:** Retry settles only the exact original action's durable target journal. It must not publish new notes or complete another action's deletion.
+- **Root cause:** The action called the broad canonical `MemoryV2Notes.recover`, which settles all pending tombstones and note publications in the scope. The receipt retained request identity and counts but not its exact target inventory.
+- **Fix:** Persist the bounded private path/hash inventory atomically with the action. Use canonical `settleTombstones` for only those targets, checking each exact tombstone hash. Ordinary recovery reuses this helper and retains its broad behavior. No private paths are exposed on the wire.
+- **Reproduction:** The real-store fixture commits an initial clear, stops before settlement, then uses canonical `prepareClear` and `remember` writers to stage a later deletion and unpublished note. Running its `old clear retry` case against the broad-recover branch produced `{laterTargetExists:false,pendingNoteExists:true}` instead of `{laterTargetExists:true,pendingNoteExists:false}`.
+- **Verification:** The review concern was first static, then independently reproduced in that focused case. The corrected ten-file Memory store/controller/crash gate (`bun test --timeout 30000` with the recovery, Dream, migration, lifecycle and operation files) passed 82 tests / 525 assertions. Final Core and Apexo package typechecks passed. The final two focused review regressions passed 2 tests / 11 assertions; real CLI recovery passed six checks with zero provider calls. Shared integration and Desktop verification are pending. Repeated diagnostic execution of the same unrepaired case is one occurrence.
+
+## Shared integration verification
+
+The reviewed recovery implementation is integrated. Shared `bun test --timeout 30000` over the ten Memory store/lifecycle/controller files passed82 tests/525 assertions; the subsequent retry/recovery two-file gate passed24/162. Core and Apexo typechecks passed. Actual corrected-placement recovery CLI passed six checks with zero provider calls; server-derived retry CLI passed nine checks with zero calls. Both processes exited zero and were reaped. Client and legacy SDK generation passed. Rebuilt Desktop and management UI acceptance remain pending; these results do not close the unrelated timing investigations.
+
+The rebuilt Electron/Node backend now passes recovery six checks and exact retry nine checks, each with zero provider calls, after the independent portable-probe correction [BUG290](../runtime/native-memory-recovery-node-file-probe.md). Both source CLI commands pass again. The corrected shared Dream/recovery gate remains24/162, and Core types pass. Native operation UI is separate work.

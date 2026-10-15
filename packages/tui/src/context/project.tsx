@@ -36,6 +36,23 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
     })
 
     async function sync() {
+      const selected = await sdk.transport()
+      if (selected.kind === "native") {
+        const catalog = await selected.catalog()
+        batch(() => {
+          setStore("instance", "path", {
+            ...defaultPath,
+            directory: catalog.location.directory,
+            worktree: catalog.project.directory,
+          })
+          setStore("project", {
+            id: catalog.project.id,
+            worktree: catalog.project.directory,
+            mainDir: catalog.project.directory,
+          })
+        })
+        return
+      }
       const workspace = store.workspace.current
       const [instancePath, project] = await Promise.all([
         sdk.client.path.get({ workspace }),

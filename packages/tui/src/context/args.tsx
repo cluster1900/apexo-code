@@ -6,6 +6,7 @@ export interface Args {
   prompt?: string
   continue?: boolean
   sessionID?: string
+  sessionProtocol?: "auto" | "native" | "compatibility"
   fork?: boolean
   auto?: boolean
 }

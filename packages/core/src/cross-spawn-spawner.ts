@@ -241,7 +241,7 @@ export const make = Effect.gen(function* () {
 
   const setupOutput = (
     command: ChildProcess.StandardCommand,
-    proc: NodeChildProcess.ChildProcess,
+    proc: Pick<NodeChildProcess.ChildProcess, "stdout" | "stderr">,
     out: ChildProcess.StdoutConfig,
     err: ChildProcess.StderrConfig,
   ) => {
@@ -265,9 +265,19 @@ export const make = Effect.gen(function* () {
   }
 
   const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
-    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError.PlatformError>((resume) => {
+    Effect.callback<
+      readonly [NodeChildProcess.ChildProcess, ExitSignal, { stdout: PassThrough | null; stderr: PassThrough | null }],
+      PlatformError.PlatformError
+    >((resume) => {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
       const proc = launch(command.command, command.args, opts)
+      // Node/Bun drain unread stdio when the child exits. Subscribe synchronously, before
+      // yielding to Effect, so fast output survives even if its eventual consumer starts late.
+      // PassThrough keeps stream backpressure instead of accumulating an unbounded array.
+      const buffered = {
+        stdout: proc.stdout?.pipe(new PassThrough()) ?? null,
+        stderr: proc.stderr?.pipe(new PassThrough()) ?? null,
+      }
       let end = false
       let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
       proc.on("error", (err) => {
@@ -282,10 +292,12 @@ export const make = Effect.gen(function* () {
         Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
       })
       proc.on("spawn", () => {
-        resume(Effect.succeed([proc, signal]))
+        resume(Effect.succeed([proc, signal, buffered]))
       })
       return Effect.sync(() => {
         proc.kill("SIGTERM")
+        buffered.stdout?.destroy()
+        buffered.stderr?.destroy()
       })
     })
 
@@ -370,7 +382,7 @@ export const make = Effect.gen(function* () {
           const extra = fds(command.options)
           const dir = yield* cwd(command.options)
 
-          const [proc, signal] = yield* Effect.acquireRelease(
+          const [proc, signal, buffered] = yield* Effect.acquireRelease(
             spawn(command, {
               cwd: dir,
               env: env(command.options),
@@ -401,9 +413,15 @@ export const make = Effect.gen(function* () {
               return yield* Effect.ignore(escalated)
             }),
           )
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              buffered.stdout?.destroy()
+              buffered.stderr?.destroy()
+            }),
+          )
 
           const fd = yield* setupFds(command, proc, extra)
-          const out = setupOutput(command, proc, sout, serr)
+          const out = setupOutput(command, buffered, sout, serr)
           let ref = true
           return makeHandle({
             pid: ProcessId(proc.pid!),

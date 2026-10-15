@@ -1,3 +1,4 @@
+import { loopPrompt } from "@apexo/sdk/v2/command-prompt"
 import type { ServerApi } from "./server"
 import type { ServerProtocol } from "./server-protocol"
 import type { AgentPartInput, FilePartInput, ApexoClient, Session, TextPartInput } from "@apexo/sdk/v2/client"
@@ -120,6 +121,52 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
             )
           return { data: result.data?.data ?? false }
         },
+      },
+    },
+    session: {
+      ...input.current.session,
+      async command(value: SessionCommandInput): Promise<SessionCommandOutput> {
+        if (value.command !== "loop") return input.current.session.command(value)
+        const text = await loopPrompt(input.legacy(input.directory), {
+          arguments: value.arguments ?? "",
+          directory: input.directory,
+        })
+        return current.session.prompt({ sessionID: value.sessionID, id: value.id, text, files: value.files })
+      },
+      async prompt(value: SessionPromptInput & LegacyPrompt): Promise<SessionPromptOutput> {
+        const match = /^\/loop(?:[ \t]+|\r?\n|$)([\s\S]*)/u.exec(value.text ?? "")
+        const text = match
+          ? await loopPrompt(input.legacy(input.directory), { arguments: match[1], directory: input.directory })
+          : value.text
+        const result = await input.legacy(input.directory).v2.session.prompt(
+          {
+            sessionID: value.sessionID,
+            id: value.id ?? undefined,
+            prompt: {
+              text,
+              files: value.files?.map((file) => ({
+                uri: file.uri,
+                name: file.name,
+                description: file.description,
+                source: file.mention,
+              })),
+              agents: value.agents?.map((agent) => ({ name: agent.name, source: agent.mention })),
+            },
+            delivery: value.delivery ?? undefined,
+            resume: value.resume ?? undefined,
+          },
+          { throwOnError: true },
+        )
+        const admitted = result.data.data
+        return {
+          admittedSeq: admitted.admittedSeq,
+          id: admitted.id,
+          sessionID: admitted.sessionID,
+          timeCreated: admitted.timeCreated,
+          delivery: admitted.delivery,
+          type: "user",
+          data: { text: admitted.prompt.text },
+        }
       },
     },
     skill: {

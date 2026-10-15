@@ -94,9 +94,31 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const input = createMemo(() => store.custom[store.tab] ?? "")
   const on = createMemo(() => store.customOn[store.tab] === true)
   const multi = createMemo(() => question()?.multiple === true)
-  const count = createMemo(() => options().length + 1)
+  const allowCustom = createMemo(() => question()?.custom !== false)
+  const planApproval = createMemo(() => {
+    const item = question()
+    return item && "purpose" in item && item.purpose === "plan_approval"
+  })
+  const count = createMemo(() => options().length + (allowCustom() ? 1 : 0))
+  const optionLabel = (label: string) =>
+    !planApproval()
+      ? label
+      : label === "Approve"
+        ? language.t("session.plan.approve")
+        : label === "Keep planning"
+          ? language.t("session.plan.keepPlanning")
+          : label
+  const optionDescription = (label: string, description?: string) =>
+    !planApproval()
+      ? description
+      : label === "Approve"
+        ? language.t("session.plan.approveDescription")
+        : label === "Keep planning"
+          ? language.t("session.plan.keepPlanningDescription")
+          : description
 
   const summary = createMemo(() => {
+    if (planApproval()) return language.t("session.plan.approval")
     const n = Math.min(store.tab + 1, total())
     return language.t("session.question.progress", { current: n, total: total() })
   })
@@ -154,7 +176,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const pickFocus = (tab: number = store.tab) => {
     const list = questions()[tab]?.options ?? []
-    if (store.customOn[tab] === true) return list.length
+    if (questions()[tab]?.custom !== false && store.customOn[tab] === true) return list.length
     return Math.max(
       0,
       list.findIndex((item) => store.answers[tab]?.includes(item.label) ?? false),
@@ -259,7 +281,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     await rejectMutation.mutateAsync()
   }
 
-  const submit = () => void reply(questions().map((_, i) => store.answers[i] ?? []))
+  const submit = () =>
+    void reply(
+      questions().map((item, i) =>
+        (store.answers[i] ?? []).filter(
+          (answer) => item.custom !== false || item.options.some((option) => option.label === answer),
+        ),
+      ),
+    )
 
   const answered = (i: number) => {
     if ((store.answers[i]?.length ?? 0) > 0) return true
@@ -283,7 +312,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   }
 
   const customToggle = () => {
-    if (sending()) return
+    if (sending() || !allowCustom()) return
     setStore("focus", options().length)
 
     if (!multi()) {
@@ -308,7 +337,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   }
 
   const customOpen = () => {
-    if (sending()) return
+    if (sending() || !allowCustom()) return
     setStore("focus", options().length)
     if (!on()) setStore("customOn", store.tab, true)
     setStore("editing", true)
@@ -520,11 +549,16 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       >
         <div
           data-slot="question-text"
+          tabIndex={planApproval() ? 0 : undefined}
+          aria-label={planApproval() ? language.t("session.plan.approval") : undefined}
           style={{
             display: store.minimized ? "-webkit-box" : undefined,
             "-webkit-line-clamp": store.minimized ? "3" : undefined,
             "-webkit-box-orient": store.minimized ? "vertical" : undefined,
-            overflow: store.minimized ? "hidden" : undefined,
+            overflow: store.minimized ? "hidden" : planApproval() ? "auto" : undefined,
+            "white-space": planApproval() ? "pre-wrap" : undefined,
+            "overflow-wrap": planApproval() ? "anywhere" : undefined,
+            "max-height": planApproval() && !store.minimized ? "min(36vh, 24rem)" : undefined,
           }}
         >
           {question()?.question}
@@ -550,8 +584,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               <Option
                 multi={multi()}
                 picked={picked(opt.label)}
-                label={opt.label}
-                description={opt.description}
+                label={optionLabel(opt.label)}
+                description={optionDescription(opt.label, opt.description)}
                 disabled={sending()}
                 ref={(el) => (optsRef[i()] = el)}
                 onFocus={() => setStore("focus", i())}
@@ -560,78 +594,80 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
             )}
           </For>
 
-          <Show
-            when={store.editing}
-            fallback={
-              <button
-                type="button"
-                ref={customRef}
+          <Show when={allowCustom()}>
+            <Show
+              when={store.editing}
+              fallback={
+                <button
+                  type="button"
+                  ref={customRef}
+                  data-slot="question-option"
+                  data-custom="true"
+                  data-picked={on()}
+                  role={multi() ? "checkbox" : "radio"}
+                  aria-checked={on()}
+                  disabled={sending()}
+                  onFocus={() => setStore("focus", options().length)}
+                  onClick={customOpen}
+                >
+                  <Mark multi={multi()} picked={on()} onClick={toggleCustomMark} />
+                  <span data-slot="question-option-main">
+                    <span data-slot="option-label">{customLabel()}</span>
+                    <span data-slot="option-description">{input() || customPlaceholder()}</span>
+                  </span>
+                </button>
+              }
+            >
+              <form
                 data-slot="question-option"
                 data-custom="true"
                 data-picked={on()}
                 role={multi() ? "checkbox" : "radio"}
                 aria-checked={on()}
-                disabled={sending()}
-                onFocus={() => setStore("focus", options().length)}
-                onClick={customOpen}
+                onMouseDown={(e) => {
+                  if (sending()) {
+                    e.preventDefault()
+                    return
+                  }
+                  if (e.target instanceof HTMLTextAreaElement) return
+                  const input = e.currentTarget.querySelector('[data-slot="question-custom-input"]')
+                  if (input instanceof HTMLTextAreaElement) input.focus()
+                }}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  commitCustom()
+                }}
               >
                 <Mark multi={multi()} picked={on()} onClick={toggleCustomMark} />
                 <span data-slot="question-option-main">
                   <span data-slot="option-label">{customLabel()}</span>
-                  <span data-slot="option-description">{input() || customPlaceholder()}</span>
-                </span>
-              </button>
-            }
-          >
-            <form
-              data-slot="question-option"
-              data-custom="true"
-              data-picked={on()}
-              role={multi() ? "checkbox" : "radio"}
-              aria-checked={on()}
-              onMouseDown={(e) => {
-                if (sending()) {
-                  e.preventDefault()
-                  return
-                }
-                if (e.target instanceof HTMLTextAreaElement) return
-                const input = e.currentTarget.querySelector('[data-slot="question-custom-input"]')
-                if (input instanceof HTMLTextAreaElement) input.focus()
-              }}
-              onSubmit={(e) => {
-                e.preventDefault()
-                commitCustom()
-              }}
-            >
-              <Mark multi={multi()} picked={on()} onClick={toggleCustomMark} />
-              <span data-slot="question-option-main">
-                <span data-slot="option-label">{customLabel()}</span>
-                <textarea
-                  ref={focusCustom}
-                  data-slot="question-custom-input"
-                  placeholder={customPlaceholder()}
-                  value={input()}
-                  rows={1}
-                  disabled={sending()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
+                  <textarea
+                    ref={focusCustom}
+                    data-slot="question-custom-input"
+                    placeholder={customPlaceholder()}
+                    value={input()}
+                    rows={1}
+                    disabled={sending()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault()
+                        setStore("editing", false)
+                        focus(options().length)
+                        return
+                      }
+                      if ((e.metaKey || e.ctrlKey) && !e.altKey) return
+                      if (e.key !== "Enter" || e.shiftKey) return
                       e.preventDefault()
-                      setStore("editing", false)
-                      focus(options().length)
-                      return
-                    }
-                    if ((e.metaKey || e.ctrlKey) && !e.altKey) return
-                    if (e.key !== "Enter" || e.shiftKey) return
-                    e.preventDefault()
-                    commitCustom()
-                  }}
-                  onInput={(e) => {
-                    customUpdate(e.currentTarget.value)
-                    resizeInput(e.currentTarget)
-                  }}
-                />
-              </span>
-            </form>
+                      commitCustom()
+                    }}
+                    onInput={(e) => {
+                      customUpdate(e.currentTarget.value)
+                      resizeInput(e.currentTarget)
+                    }}
+                  />
+                </span>
+              </form>
+            </Show>
           </Show>
         </div>
       </DockPrompt>

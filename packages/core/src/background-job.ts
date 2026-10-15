@@ -1,6 +1,8 @@
+import { SessionLifecycle } from "./session/lifecycle"
+import { SessionSchema } from "./session/schema"
 export * as BackgroundJob from "./background-job"
 
-import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Scope, SynchronizedRef } from "effect"
+import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Scope, Schema, SynchronizedRef } from "effect"
 import { Identifier } from "./id/id"
 import { makeGlobalNode } from "./effect/app-node"
 
@@ -29,6 +31,7 @@ type Active = {
   tail: Deferred.Deferred<void>
   promoted: Deferred.Deferred<Info>
   onPromote?: Effect.Effect<void>
+  onCancel?: Effect.Effect<void>
 }
 
 type State = {
@@ -67,6 +70,7 @@ export type StartInput = {
   title?: string
   metadata?: Record<string, unknown>
   onPromote?: Effect.Effect<void>
+  onCancel?: Effect.Effect<void>
   run: Effect.Effect<string, unknown>
 }
 
@@ -236,6 +240,7 @@ export const make = Effect.gen(function* () {
               tail,
               promoted,
               onPromote: input.onPromote,
+              onCancel: input.onCancel,
             }
             return [{ info: snapshot(job), scope, token }, new Map(jobs).set(id, job)] as readonly [
               StartResult,
@@ -312,8 +317,15 @@ export const make = Effect.gen(function* () {
     if (job.info.status !== "running") return { info: snapshot(job), timedOut: false }
     if (input.timeout === undefined) return { info: yield* Deferred.await(job.done), timedOut: false }
     if (input.timeout <= 0) return { info: snapshot(job), timedOut: true }
-    const info = yield* Deferred.await(job.done).pipe(Effect.timeoutOption(input.timeout))
-    if (info._tag === "Some") return { info: info.value, timedOut: false }
+    // Effect's live clock cannot schedule a timer above the platform's signed-32-bit limit.
+    // A host may raise the Grok wait ceiling, so split long waits instead of silently waiting forever.
+    let remaining = input.timeout
+    while (remaining > 0) {
+      const duration = Math.min(remaining, 2 ** 31 - 1)
+      const info = yield* Deferred.await(job.done).pipe(Effect.timeoutOption(duration))
+      if (info._tag === "Some") return { info: info.value, timedOut: false }
+      remaining -= duration
+    }
     return { info: yield* get(input.id), timedOut: true }
   })
 
@@ -352,10 +364,13 @@ export const make = Effect.gen(function* () {
   })
 
   const cancel: Interface["cancel"] = Effect.fn("BackgroundJob.cancel")(function* (id) {
+    const active = (yield* SynchronizedRef.get(state.jobs)).get(id)
+    // Durable owners must acknowledge deletion before cancellation can be reported.
+    if (active?.info.status === "running" && active.onCancel) yield* active.onCancel
     const completed_at = yield* Clock.currentTimeMillis
     const result = yield* SynchronizedRef.modify(state.jobs, (jobs): readonly [FinishResult, Map<string, Active>] => {
       const job = jobs.get(id)
-      if (!job) return [{}, jobs]
+      if (!job || job.token !== active?.token) return [{}, jobs]
       if (job.info.status !== "running") return [{ info: snapshot(job) }, jobs]
       const next = {
         ...job,
@@ -372,11 +387,101 @@ export const make = Effect.gen(function* () {
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) yield* Scope.close(result.scope, Exit.void)
     return result.info
-  })
+  }, Effect.uninterruptible)
 
   return Service.of({ list, get, start, report, extend, wait, waitForPromotion, promote, cancel })
 })
 
-const layer = Layer.effect(Service, make)
+/** Application registries bind concrete jobs to Session incarnations. The standalone engine remains generic. */
+export const makeOwned = Effect.gen(function* () {
+  const lifecycle = yield* SessionLifecycle.Service
+  const jobs = yield* make
+  const owners = new Map<string, { claims: SessionLifecycle.Claim[]; releases: (() => void)[] }>()
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      for (const owner of owners.values()) for (const release of owner.releases) release()
+      owners.clear()
+    }),
+  )
+  const owned = <A, E, R>(claims: SessionLifecycle.Claim[], effect: Effect.Effect<A, E, R>) =>
+    claims.reduce((effect, claim) => lifecycle.owned(claim, effect), effect)
+  const admitted = <A, E, R>(claims: SessionLifecycle.Claim[], effect: Effect.Effect<A, E, R>) =>
+    owned(
+      claims,
+      claims.reduce<Effect.Effect<A, E | SessionLifecycle.Closed, R>>(
+        (effect, claim) => lifecycle.use(claim.sessionID, effect),
+        effect,
+      ),
+    ).pipe(Effect.orDie)
+  const work = (claims: SessionLifecycle.Claim[], effect: Effect.Effect<string, unknown>) =>
+    Effect.interruptible(
+      owned(
+        claims,
+        Effect.suspend(() => (claims.every(lifecycle.available) ? effect : Effect.interrupt)),
+      ),
+    )
+  return Service.of({
+    ...jobs,
+    cancel: (id) =>
+      Effect.gen(function* () {
+        const owner = owners.get(id)
+        if (owner) {
+          for (const claim of owner.claims) if ((yield* lifecycle.find(claim.sessionID)) !== claim) return undefined
+          if (owners.get(id) !== owner) return undefined
+        }
+        return yield* jobs.cancel(id)
+      }),
+    start: (input) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const previous = input.id ? yield* jobs.get(input.id) : undefined
+          if (previous?.status === "running") return previous
+          const ids = [
+            ...new Set(
+              [input.metadata?.ownerSessionId, input.metadata?.parentSessionId, input.metadata?.sessionId].filter(
+                Schema.is(SessionSchema.ID),
+              ),
+            ),
+          ]
+          const claims = yield* Effect.forEach(ids, lifecycle.capture).pipe(Effect.orDie)
+          return yield* admitted(
+            claims,
+            Effect.gen(function* () {
+              const result = yield* jobs.start({
+                ...input,
+                run: work(claims, input.run),
+                ...(input.onPromote ? { onPromote: owned(claims, input.onPromote) } : {}),
+                ...(input.onCancel ? { onCancel: owned(claims, input.onCancel) } : {}),
+              })
+              const owner = { claims, releases: [] as (() => void)[] }
+              for (const release of owners.get(result.id)?.releases ?? []) release()
+              owners.set(result.id, owner)
+              for (const claim of claims)
+                owner.releases.push(
+                  yield* lifecycle
+                    .register(
+                      claim,
+                      owner,
+                      Effect.suspend(() =>
+                        owners.get(result.id) === owner ? jobs.cancel(result.id).pipe(Effect.asVoid) : Effect.void,
+                      ),
+                    )
+                    .pipe(Effect.orDie),
+                )
+              return result
+            }),
+          )
+        }),
+      ),
+    extend: (input) =>
+      Effect.suspend(() => {
+        const owner = owners.get(input.id)
+        return owner
+          ? admitted(owner.claims, jobs.extend({ ...input, run: work(owner.claims, input.run) }))
+          : jobs.extend(input)
+      }),
+  })
+})
+const layer = Layer.effect(Service, makeOwned)
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [SessionLifecycle.node] })

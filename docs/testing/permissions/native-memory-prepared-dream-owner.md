@@ -1,0 +1,8 @@
+# BUG-20261015-260: Joined release transferred a prepared Dream without its receipt
+
+- **Scope:** Private native Dream domain recovery; compatibility unmarked plans keep their existing semantics.
+- **Observed:** A regression prepared and released a native plan, reopened the real store, then asked an unrelated caller to claim it without the original lease. The call succeeded instead of failing.
+- **Cause:** The draft treated `released` as sufficient authority to rebind an existing prepared plan. Release proves execution ended; it does not transfer the originating Session's captured authority.
+- **Fix:** Any active native prepared plan requires its exact recorded lease to recover, even after release. Compatibility callers cannot adopt it. Completed receipt lookup also requires exact ID/owner/token/shadow. Unknown or foreign proofs remain unavailable; elapsed lease time never grants native ownership.
+- **Verification:** The red Success-versus-Failure assertion passes after the correction. Native ownership plus unchanged compatibility consolidation coverage passed 15 tests / 106 assertions. Real CLI crashes after prepared COMMIT and completed COMMIT each recovered with the original receipt and no additional inference (ten checks total). Run `bun test test/tool/memory-dream-ownership.test.ts test/tool/memory-consolidation.test.ts` and `bun script/grok-memory-dream-crash.mjs` from `packages/apexo`.
+- **Remaining boundary:** Deleting the sole management receipt for an orphaned prepared plan does not authorize another Session to finish it. Explicit native discard/clear recovery remains a separate required deliverable; fail-closed refusal is not complete recovery parity.

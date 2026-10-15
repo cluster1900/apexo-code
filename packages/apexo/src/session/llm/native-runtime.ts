@@ -34,6 +34,7 @@ type StreamInput = {
   readonly messages: ModelMessage[]
   readonly tools: Record<string, Tool>
   readonly toolChoice?: "auto" | "required" | "none"
+  readonly outputSchema?: Record<string, unknown>
   readonly temperature?: number
   readonly topP?: number
   readonly topK?: number
@@ -93,6 +94,7 @@ export function stream(input: StreamInput): StreamResult {
     baseURL: current.baseURL,
     messages: ProviderTransform.message(input.messages, input.model, input.providerOptions ?? {}),
     toolChoice: input.toolChoice,
+    outputSchema: input.outputSchema,
     temperature: input.temperature,
     topP: input.topP,
     topK: input.topK,

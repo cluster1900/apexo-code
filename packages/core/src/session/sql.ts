@@ -147,8 +147,17 @@ export const SessionInputTable = sqliteTable(
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     prompt: text({ mode: "json" }).notNull().$type<Prompt>(),
     delivery: text().$type<SessionInput.Delivery>().notNull(),
+    execution_policy: text({ mode: "json" }).$type<SessionInput.ExecutionPolicy>(),
+    execution_status: text().$type<SessionInput.ExecutionStatus>(),
+    execution_owner: text(),
+    execution_started_seq: integer(),
+    execution_ended_seq: integer(),
+    execution_reason: text().$type<SessionInput.ExecutionReason>(),
+    execution_finish: text(),
+    execution_usage_incomplete: integer({ mode: "boolean" }),
     admitted_seq: integer().notNull(),
     promoted_seq: integer(),
+    withdrawn_seq: integer(),
     time_created: integer()
       .notNull()
       .$default(() => Date.now()),
@@ -174,3 +183,37 @@ export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   snapshot: text({ mode: "json" }).notNull().$type<SystemContext.Snapshot>(),
   baseline_seq: integer().notNull(),
 })
+
+// Grok profile memory state is separate from the V2 Session SystemContext epoch.
+export const SessionMemoryBackendTable = sqliteTable("session_memory_backend", {
+  session_id: text()
+    .$type<SessionSchema.ID>()
+    .primaryKey()
+    .references(() => SessionTable.id, { onDelete: "cascade" }),
+  backend: text({ enum: ["legacy", "v2"] }).notNull(),
+  rollout: text({ enum: ["off", "record_only", "shadow", "active"] }).notNull(),
+  skip_through: text(),
+})
+
+export const SessionMemoryModeTable = sqliteTable("session_memory_mode", {
+  session_id: text()
+    .$type<SessionSchema.ID>()
+    .primaryKey()
+    .references(() => SessionTable.id, { onDelete: "cascade" }),
+  enabled: integer({ mode: "boolean" }).notNull(),
+  revision: text().notNull(),
+})
+
+export const SessionMemoryContextTable = sqliteTable(
+  "session_memory_context",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    epoch: text().notNull(),
+    content: text().notNull(),
+    access_paths: text({ mode: "json" }).notNull().$type<string[]>(),
+  },
+  (table) => [primaryKey({ columns: [table.session_id, table.epoch] })],
+)

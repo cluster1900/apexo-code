@@ -16,6 +16,7 @@
 // We also re-check live session status before resolving an idle event so a
 // delayed idle from an older turn cannot complete a newer busy turn.
 import type { Event, GlobalEvent, ApexoClient } from "@apexo/sdk/v2"
+import { memoryCaptureText } from "@apexo/tui/util/memory-capture"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { makeRuntime } from "@/effect/run-service"
 import {
@@ -66,7 +67,11 @@ type Trace = {
 
 const StreamClosed = undefined as never
 
-type StreamInput = {
+export type StreamInput = {
+  onSelection?: (
+    session: Awaited<ReturnType<import("@apexo/tui/transport/native-session").NativeSessionTransport["get"]>>,
+  ) => void
+  native?: import("@apexo/tui/transport/native-session").NativeSessionTransport
   sdk: ApexoClient
   directory?: string
   sessionID: string
@@ -154,7 +159,8 @@ function sid(event: Event): string | undefined {
     event.type === "question.replied" ||
     event.type === "question.rejected" ||
     event.type === "session.error" ||
-    event.type === "session.status"
+    event.type === "session.status" ||
+    event.type === "memory.capture.activity"
   ) {
     return event.properties.sessionID
   }
@@ -207,6 +213,7 @@ function isMatchingDisposeEvent(value: unknown, directory: string | undefined): 
 }
 
 function active(event: Event, sessionID: string): boolean {
+  if (event.type === "memory.capture.activity") return false
   if (sid(event) !== sessionID) {
     return false
   }
@@ -780,7 +787,7 @@ function createLayer(input: StreamInput) {
 
           const snapshot = currentSubagentState()
           traceTabs(input.trace, [], snapshot.tabs)
-          syncFooter([], replay?.patch, snapshot)
+          syncFooter([], { ...replay?.patch, foregroundShells: state.data.foregroundShells.size }, snapshot)
           if (replay) {
             yield* Effect.promise(() => input.footer.idle()).pipe(Effect.orElseSucceed(() => undefined))
           }
@@ -881,6 +888,16 @@ function createLayer(input: StreamInput) {
         }
 
         const applyEvent = Effect.fn("RunStreamTransport.applyEvent")(function* (event: Event) {
+          if (event.type === "memory.capture.activity") {
+            if (event.properties.sessionID === input.sessionID)
+              input.footer.append({
+                kind: "system",
+                source: "system",
+                phase: "final",
+                text: memoryCaptureText(event.properties),
+              })
+            return
+          }
           if (event.type === "message.part.delta" && event.properties.sessionID === input.sessionID) {
             if (replayedParts.has(event.properties.partID)) {
               const seen = state.data.text.get(event.properties.partID) ?? ""
@@ -1450,6 +1467,10 @@ function createLayer(input: StreamInput) {
 // The transport is single-turn: only one runPromptTurn() call can be active
 // at a time. The prompt queue enforces this from above.
 export async function createSessionTransport(input: StreamInput): Promise<SessionTransport> {
+  if (input.native) {
+    const { createNativeSessionTransport } = await import("./stream.native")
+    return createNativeSessionTransport(input, input.native)
+  }
   const runtime = makeRuntime(Service, createLayer(input))
   await runtime.runPromise(() => Effect.void)
 

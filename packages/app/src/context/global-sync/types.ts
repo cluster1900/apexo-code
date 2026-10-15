@@ -15,9 +15,15 @@ import type {
 } from "@apexo/sdk/v2/client"
 import type { FileDiffInfo } from "@apexo/client/promise"
 import { NormalizedProviderListResponse } from "@apexo/session-ui/context"
-import type { CommandInfo, McpResource, McpServer, SessionMessageInfo } from "@apexo/client/promise"
+import type { CommandInfo, McpResource, SessionMessageInfo } from "@apexo/client/promise"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
+
+import type { Lsp } from "@apexo/schema/lsp"
+
+export type LspConnectionStatus = LspStatus | Lsp.Status
+
+import type { McpConnectionStatus } from "./mcp"
 
 export type ProjectMeta = {
   name?: string
@@ -61,14 +67,15 @@ export type State = {
     [sessionID: string]: QuestionRequest[]
   }
   mcp_ready: boolean
+  mcp_error?: boolean
   mcp: {
-    [name: string]: McpServer["status"]
+    [name: string]: McpConnectionStatus
   }
   mcp_resource: {
     [key: string]: McpResource
   }
   lsp_ready: boolean
-  lsp: LspStatus[]
+  lsp: LspConnectionStatus[]
   vcs: VcsInfo | undefined
   limit: number
   message: {

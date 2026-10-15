@@ -2,7 +2,7 @@ export * as SkillV2 from "./skill"
 
 import { makeLocationNode } from "./effect/app-node"
 import path from "path"
-import { Context, Effect, Layer, Schema, Types } from "effect"
+import { Context, Effect, Layer, Schema, Scope, Types } from "effect"
 import { Skill } from "@apexo/schema/skill"
 import { AgentV2 } from "./agent"
 import { ConfigMarkdown } from "./config/markdown"
@@ -47,6 +47,7 @@ export type Draft = {
 }
 
 export interface Interface extends State.Transformable<Draft> {
+  readonly prepareReload: Effect.Effect<() => void, never, Scope.Scope>
   readonly sources: () => Effect.Effect<Source[]>
   readonly list: () => Effect.Effect<Info[]>
 }
@@ -115,6 +116,7 @@ const layer = Layer.effect(
     return Service.of({
       transform: state.transform,
       reload: state.reload,
+      prepareReload: state.prepareReload,
       sources: Effect.fn("SkillV2.sources")(function* () {
         return state.get().sources
       }),

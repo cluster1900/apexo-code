@@ -413,7 +413,7 @@ describe("session HttpApi", () => {
         },
       )
 
-      expect(response.status).toBe(200)
+      expect(response.status, response.status === 200 ? undefined : yield* response.text).toBe(200)
       yield* responseJson(response)
 
       const messages = yield* Session.use
@@ -637,28 +637,23 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
-    "returns v2 public unavailable errors for unfinished session mutations",
+    "settles idle v2 controls without adding transcript messages",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         const headers = { "x-apexo-directory": test.directory }
-        const session = yield* createSession({ title: "v2 unavailable" })
+        const session = yield* createSession({ title: "v2 idle controls" })
 
         const compact = yield* request(`/api/session/${session.id}/compact`, { method: "POST", headers })
-        expect(compact.status).toBe(503)
-        expect(yield* responseJson(compact)).toEqual({
-          _tag: "ServiceUnavailableError",
-          message: "Session compact is not available yet",
-          service: "session.compact",
-        })
+        expect(compact.status).toBe(204)
 
         const wait = yield* request(`/api/session/${session.id}/wait`, { method: "POST", headers })
-        expect(wait.status).toBe(503)
-        expect(yield* responseJson(wait)).toEqual({
-          _tag: "ServiceUnavailableError",
-          message: "Session wait is not available yet",
-          service: "session.wait",
-        })
+        expect(wait.status).toBe(204)
+        const messages = yield* requestJson<{ data: SessionMessage.Message[] }>(
+          `/api/session/${session.id}/message`,
+          { headers },
+        )
+        expect(messages.data).toEqual([])
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

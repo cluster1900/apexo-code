@@ -1,0 +1,12 @@
+# INVESTIGATION-20261014-004: Repeated Feedback HTTP Fixture Teardown Timeout
+
+- **Status:** Investigating; root cause and fix are not yet established.
+- **Scope:** Repeated compatibility HTTP test scopes during native Goal V2 runtime integration.
+- **Observed:** In a four-file run, the second feedback HTTP test and the following first registry test hit the existing five-second deadline. Timing diagnostics showed the second feedback test body completed successfully in 24 ms, before the timeout during scope teardown. A standalone run of the same corrected case passed in 1185 ms with four assertions.
+- **Expected:** Repeated test scopes close reliably without increasing deadlines or dropping assertions.
+- **Reproduction:** From `packages/apexo`, run `GITHUB_ACTIONS=false APEXO_TEST_FEEDBACK_TIMING=1 bun test test/server/httpapi-feedback.test.ts test/session/feedback.test.ts test/tool/grok-build.test.ts test/tool/registry.test.ts`.
+- **Investigation:** The native Goal integration temporarily introduced Location-to-global execution dependencies and a map self-binding. The owner is replacing that composition to preserve one process-global coordinator and avoid a circular service graph. This is a hypothesis for the teardown symptom, not a verified attribution. HTTP response disposal is another boundary to inspect if the symptom persists.
+- **Separate fixture mistakes:** Incorrect temporary-directory return shape and Session-routing expectations were corrected in [BUG-20261014-075](../test-fixtures/feedback-directory-return-type.md) and [BUG-20261014-076](../test-fixtures/feedback-session-routing-contract.md). Correcting their assertions did not remove the repeated-scope timeout.
+- **Verification:** Pending a fresh stable-source repeated-scope run. The passing isolated case is diagnostic evidence only. No recurrence count or constraint is assigned to an unconfirmed root cause.
+
+After restoring the original Location map construction and passing child execution through the existing process-global coordinator, the same four-file run passed **43 tests, zero failures and 120 assertions in 7.00 seconds**, with unchanged five-second deadlines. The successful run includes the two added draft-capacity cases. This removes the immediate regression gate at this checkpoint. Attribution of the earlier teardown hang has not been independently isolated, so retain this investigation and do not infer that the older Goal timeout investigation shares the same root cause.

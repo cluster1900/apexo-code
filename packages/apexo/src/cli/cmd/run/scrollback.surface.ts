@@ -147,8 +147,10 @@ export class RunScrollbackStream {
   }
 
   private createEntry(commit: StreamCommit, body: ActiveBody): ActiveEntry {
+    const rows = separatorRows(this.rendered, commit, body) || (!this.rendered && this.wrote ? 1 : 0)
     const surface = this.renderer.createScrollbackSurface({
-      startOnNewLine: entryFlags(commit).startOnNewLine,
+      // The surface captures its first-line column before the deferred spacer is written.
+      startOnNewLine: rows > 0 || entryFlags(commit).startOnNewLine,
     })
     const style = entryLook(commit, this.theme.entry)
     const renderable =
@@ -185,8 +187,6 @@ export class RunScrollbackStream {
 
     surface.root.add(renderable)
 
-    const rows = separatorRows(this.rendered, commit, body)
-
     return {
       body,
       commit,
@@ -195,7 +195,7 @@ export class RunScrollbackStream {
       content: "",
       committedRows: 0,
       committedBlocks: 0,
-      pendingSpacerRows: rows || (!this.rendered && this.wrote ? 1 : 0),
+      pendingSpacerRows: rows,
       rendered: false,
     }
   }

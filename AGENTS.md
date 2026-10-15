@@ -160,6 +160,23 @@ const table = sqliteTable("session", {
 
 - Always run `bun typecheck` from package directories (e.g., `packages/apexo`), never `tsc` directly.
 
+## Bug Records and Recurring Constraints
+
+- Write all documentation (`docs/`), bug records (`docs/testing/`), and constraints (`docs/rules/`) in English.
+- **Before changing code**: Read `docs/rules/README.md` and any applicable constraints in `docs/rules/`, and follow them during implementation and verification. Do **not** read `docs/testing/` before coding (to avoid context bloat); only inspect `docs/testing/` during testing or when recording a bug fix.
+- **When fixing a bug or test failure**: Create or update a record under `docs/testing/` before declaring the fix complete. Organize records by bug type (for example, runtime, permissions, persistence, UI, types, or test fixtures); reuse an existing record for the same root-cause bug instead of duplicating it.
+- Record the bug ID, affected scope, observed and expected behavior, reproduction steps, root cause, fix, and verification commands/results. Temp logs under `/tmp` may be used freely during runs, but do not record `/tmp` paths or ephemeral directory names in the docs. Keep unresolved symptoms and unknown root causes explicitly marked; a passing rerun alone does not prove a fix.
+- **Promote to `docs/rules/` only when genuinely recurring (3–5 times)**: When the exact same bug or root-cause mistake has occurred 3 to 5 times across independent runs, fix it and write an actionable constraint under `docs/rules/`, linked in both directions to its bug record. Do not count duplicate references to one failure or unrelated bugs with similar symptoms as separate occurrences.
+- Maintain the active constraint index (including a one-line `MUST / NEVER` summary per rule) and count in `docs/rules/README.md`. If the active count exceeds 300, consolidate similar constraints until there are at most 300 active constraints. Preserve their effective requirements, applicability, source bug links, and an old-ID-to-new-ID mapping; do not silently discard constraints to reduce the count.
+- Never invent historical occurrences or mark an unverified fix as verified.
+
+## Grok Build Feature Parity Scope
+
+- Implement missing user-facing capabilities inside Apexo's own architecture. Apexo remains authoritative for Sessions, model execution, permissions, tools, persistence, CLI, and Desktop.
+- Use Grok Build source and isolated installed-runtime runs as behavioral references and comparison evidence. Do not embed the Grok Build runtime, vendor its orchestration engine, or make migrated product features depend on its executable.
+- Generic libraries may support an implementation, but feature orchestration and lifecycle must remain Apexo-owned. Do not count upstream tests as verification of Apexo's implementation.
+- Direct official-runtime integration and a Desktop adapter for official Grok sessions are not deliverables of this feature-parity task. Existing optional integrations remain separate from the migrated features.
+
 ## V2 Session Core
 
 - Keep durable prompt admission separate from model execution. `SessionV2.prompt(...)` admits one durable `session_input` row before scheduling advisory `SessionExecution.wake(sessionID)` unless `resume: false` requests admit-only behavior. The serialized runner promotes admitted inputs into visible user messages at safe boundaries.

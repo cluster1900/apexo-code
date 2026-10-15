@@ -1,0 +1,826 @@
+--- a/packages/app/src/i18n/am.ts
++++ b/packages/app/src/i18n/am.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "የማከማቻ Hook እምነት",
++  "hooks.repository.hint":
++    "በማከማቻው ዋና ማውጫ ያሉ Hook-ዎች በዚህ ማከማቻ ውስጥ ባሉ ክፍለ ጊዜዎች እንዲሰሩ ፍቀድ። ፈቃድ ከተሰጠ በኋላ Hook-ዎቹን እንደገና ጫን። ፈቃዱን መሻር አዲስ የHook ጥሪዎችን ይከለክላል።",
++  "hooks.repository.grant": "የማከማቻ Hook-ዎችን ፍቀድ",
++  "hooks.repository.revoke": "የማከማቻ Hook እምነትን ሻር",
++
+   "plugins.activation.title": "በዚህ ፕሮጀክት ውስጥ ማግበር",
+   "plugins.activation.hint": "የነቁ ፕለጊኖች በዚህ ፕሮጀክት ላይ ከተተገበሩ በኋላ ንቁ ይሆናሉ። በሂደት ላይ ያሉ ሥራዎች የአሁኑን የሁኔታ ቅጂ ይዘው ይቀጥላሉ።",
+   "plugins.activation.projectRequired": "ፕለጊኖችን ለመመርመር እና ለመተግበር ፕሮጀክት ይክፈቱ።",
+--- a/packages/app/src/i18n/ar.ts
++++ b/packages/app/src/i18n/ar.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "الثقة بخطافات المستودع",
++  "hooks.repository.hint":
++    "اسمح بتشغيل الخطافات الموجودة في جذر المستودع في الجلسات داخل هذا المستودع. أعد تحميل الخطافات بعد السماح بها. يؤدي سحب الثقة إلى منع استدعاءات الخطافات الجديدة.",
++  "hooks.repository.grant": "السماح بخطافات المستودع",
++  "hooks.repository.revoke": "سحب الثقة من خطافات المستودع",
++
+   "plugins.title": "الملحقات",
+   "plugins.description": "اكتشف مهارات وأدوات جديدة. ثبّت ما تحتاج إليه وأدِر كل شيء من مكان واحد.",
+   "plugins.discover": "استكشاف",
+--- a/packages/app/src/i18n/az.ts
++++ b/packages/app/src/i18n/az.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Repozitoriya hook-larına etibar",
++  "hooks.repository.hint":
++    "Repozitoriyanın kök qovluğundakı hook-ların bu repozitoriyadakı sessiyalarda işləməsinə icazə verin. İcazə verdikdən sonra hook-ları yenidən yükləyin. Etibarın ləğvi yeni hook çağırışlarının qarşısını alır.",
++  "hooks.repository.grant": "Repozitoriya hook-larına icazə ver",
++  "hooks.repository.revoke": "Repozitoriya hook-larına etibarı ləğv et",
++
+   "plugins.title": "Qoşmalar",
+   "plugins.description":
+     "Yeni bacarıq və alətlər kəşf edin. Lazım olanları quraşdırın və hamısını bir yerdən idarə edin.",
+--- a/packages/app/src/i18n/bg.ts
++++ b/packages/app/src/i18n/bg.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Доверие в hook-овете на хранилището",
++  "hooks.repository.hint":
++    "Разрешете hook-овете от основната директория на хранилището да се изпълняват в сесиите в него. След разрешаването презаредете hook-овете. Оттеглянето на доверието спира новите им извиквания.",
++  "hooks.repository.grant": "Разрешаване на hook-овете на хранилището",
++  "hooks.repository.revoke": "Оттегляне на доверието в hook-овете на хранилището",
++
+   "plugins.title": "Приставки",
+   "plugins.description":
+     "Откривайте нови умения и инструменти. Инсталирайте нужното и управлявайте всичко на едно място.",
+--- a/packages/app/src/i18n/bn.ts
++++ b/packages/app/src/i18n/bn.ts
+@@ -1,4 +1,10 @@
+ export const dict: Record<string, string> = {
++  "hooks.repository.title": "রিপোজিটরির হুকের প্রতি আস্থা",
++  "hooks.repository.hint":
++    "রিপোজিটরির রুট ডিরেক্টরির হুকগুলোকে এই রিপোজিটরির সেশনে চলার অনুমতি দিন। অনুমতি দেওয়ার পর হুকগুলো আবার লোড করুন। আস্থা প্রত্যাহার করলে নতুন হুক কল বন্ধ হবে।",
++  "hooks.repository.grant": "রিপোজিটরির হুক অনুমোদন করুন",
++  "hooks.repository.revoke": "রিপোজিটরির হুকের প্রতি আস্থা প্রত্যাহার করুন",
++
+   "plugins.title": "প্লাগইন",
+   "plugins.description": "নতুন দক্ষতা ও টুল খুঁজুন। প্রয়োজনীয়গুলো ইনস্টল করুন এবং এক জায়গায় সব পরিচালনা করুন।",
+   "plugins.discover": "খুঁজুন",
+--- a/packages/app/src/i18n/br.ts
++++ b/packages/app/src/i18n/br.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Fiziañs e hooks ar mirlec'h",
++  "hooks.repository.hint":
++    "Aotren hooks gwrizienn ar mirlec'h da vezañ erounezet en estezioù er mirlec'h-mañ. Adkargit ar hooks goude bezañ roet an aotre. Lemel ar fiziañs a vir ouzh galvoù hook nevez.",
++  "hooks.repository.grant": "Aotren hooks ar mirlec'h",
++  "hooks.repository.revoke": "Lemel ar fiziañs e hooks ar mirlec'h",
++
+   "plugins.title": "Plugins",
+   "plugins.description":
+     "Descubra novas habilidades e ferramentas. Instale o que precisa e gerencie tudo em um só lugar.",
+--- a/packages/app/src/i18n/bs.ts
++++ b/packages/app/src/i18n/bs.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Povjerenje u hookove repozitorija",
++  "hooks.repository.hint":
++    "Dozvolite pokretanje hookova iz korijenskog direktorija repozitorija u sesijama unutar ovog repozitorija. Nakon odobravanja ponovo učitajte hookove. Opoziv povjerenja sprečava nove pozive hookova.",
++  "hooks.repository.grant": "Dozvoli hookove repozitorija",
++  "hooks.repository.revoke": "Opozovi povjerenje u hookove repozitorija",
++
+   "plugins.title": "Plugini",
+   "plugins.description":
+     "Otkrijte nove vještine i alate. Instalirajte ono što vam treba i upravljajte svime na jednom mjestu.",
+--- a/packages/app/src/i18n/ca.ts
++++ b/packages/app/src/i18n/ca.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Confiança en els hooks del repositori",
++  "hooks.repository.hint":
++    "Permet que els hooks de l'arrel del repositori s'executin a les sessions d'aquest repositori. Torna a carregar els hooks després de donar-hi permís. Revocar la confiança impedeix noves crides als hooks.",
++  "hooks.repository.grant": "Permet els hooks del repositori",
++  "hooks.repository.revoke": "Revoca la confiança en els hooks del repositori",
++
+   "plugins.title": "Connectors",
+   "plugins.description":
+     "Descobriu habilitats i eines noves. Instal·leu el que necessiteu i gestioneu-ho tot en un sol lloc.",
+--- a/packages/app/src/i18n/cs.ts
++++ b/packages/app/src/i18n/cs.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Důvěra v hooky repozitáře",
++  "hooks.repository.hint":
++    "Povolte spouštění hooků z kořenového adresáře repozitáře v relacích uvnitř tohoto repozitáře. Po povolení hooky znovu načtěte. Odvolání důvěry zabrání jejich novým voláním.",
++  "hooks.repository.grant": "Povolit hooky repozitáře",
++  "hooks.repository.revoke": "Odvolat důvěru v hooky repozitáře",
++
+   "plugins.title": "Zásuvné moduly",
+   "plugins.description":
+     "Objevujte nové dovednosti a nástroje. Nainstalujte si potřebné funkce a spravujte je na jednom místě.",
+--- a/packages/app/src/i18n/da.ts
++++ b/packages/app/src/i18n/da.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Tillid til repository-hooks",
++  "hooks.repository.hint":
++    "Tillad hooks fra repositoryets rodmappe at køre i sessioner i dette repository. Genindlæs hooks, når du har givet tilladelse. Tilbagekaldelse forhindrer nye hook-kald.",
++  "hooks.repository.grant": "Tillad repository-hooks",
++  "hooks.repository.revoke": "Tilbagekald tillid til repository-hooks",
++
+   "plugins.title": "Plugins",
+   "plugins.description":
+     "Find nye færdigheder og værktøjer. Installer det, du har brug for, og administrer det hele ét sted.",
+--- a/packages/app/src/i18n/de.ts
++++ b/packages/app/src/i18n/de.ts
+@@ -3,6 +3,12 @@
+ type Keys = keyof typeof en
+ 
+ export const dict = {
++  "hooks.repository.title": "Vertrauen in Repository-Hooks",
++  "hooks.repository.hint":
++    "Erlaube Hooks aus dem Stammverzeichnis des Repositorys, in Sitzungen innerhalb dieses Repositorys ausgeführt zu werden. Lade die Hooks nach der Freigabe neu. Ein Widerruf verhindert neue Hook-Aufrufe.",
++  "hooks.repository.grant": "Repository-Hooks erlauben",
++  "hooks.repository.revoke": "Vertrauen in Repository-Hooks widerrufen",
++
+   "plugins.title": "Plugins",
+   "plugins.description":
+     "Entdecke neue Skills und Werkzeuge. Installiere, was du brauchst, und verwalte alles an einem Ort.",
+--- a/packages/app/src/i18n/dv.ts
++++ b/packages/app/src/i18n/dv.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "ރިޕޮޒިޓަރީ ހުކްތަކަށް އިތުބާރުކުރުން",
++  "hooks.repository.hint":
++    "ރިޕޮޒިޓަރީގެ ރޫޓް ފޯލްޑަރުގައި ހުރި ހުކްތައް މި ރިޕޮޒިޓަރީގެ ތެރޭގައި ހުރި ސެޝަންތަކުގައި ހިންގުމަށް ހުއްދަ ދޭށެވެ. ހުއްދަ ދިނުމަށްފަހު ހުކްތައް އަލުން ލޯޑް ކުރާށެވެ. އިތުބާރު އަނބުރާ ނަގާނަމަ އައު ހުކް ކޯލްތައް ހުއްޓާލެވޭނެއެވެ.",
++  "hooks.repository.grant": "ރިޕޮޒިޓަރީ ހުކްތަކަށް ހުއްދަ ދޭ",
++  "hooks.repository.revoke": "ރިޕޮޒިޓަރީ ހުކްތަކުގެ އިތުބާރު އަނބުރާ ނަގާ",
++
+   "plugins.activation.title": "މި ޕްރޮޖެކްޓްގައި އެކްޓިވް ކުރުން",
+   "plugins.activation.hint":
+     "އެނޭބަލް ކުރެވިފައިވާ ޕްލަގިންތައް އެކްޓިވް ވާނީ މި ޕްރޮޖެކްޓްއަށް އެޕްލައި ކުރުމަށް ފަހުއެވެ. ކުރިއަށްދާ މަސައްކަތްތަކުގައި މިހާރުގެ ސްނެޕްޝޮޓް ބޭނުންކުރަމުން ދާނެއެވެ.",
+--- a/packages/app/src/i18n/dz.ts
++++ b/packages/app/src/i18n/dz.ts
+@@ -1,4 +1,10 @@
+ export const dict: Record<string, string> = {
++  "hooks.repository.title": "ཀོཌ་མཛོད་ཀྱི་ Hook ལུ་བློ་གཏད།",
++  "hooks.repository.hint":
++    "ཀོཌ་མཛོད་ཀྱི་རྩ་བའི་སྣོད་འཛིན་ནང་ཡོད་པའི་ Hook ཚུ་ ཀོཌ་མཛོད་འདི་ནང་གི་ལཱ་ཡུན་ཚུ་ནང་གཡོག་བཀོལ་བཅུག། གནང་བ་བྱིན་ཚར་བའི་ཤུལ་ལུ་ Hook ཚུ་ལོག་མངོན་གསལ་འབད། བློ་གཏད་ཆ་མེད་བཏང་པ་ཅིན་ Hook གསརཔ་འབོད་ནི་བཀགཔ་ཨིན།",
++  "hooks.repository.grant": "ཀོཌ་མཛོད་ཀྱི་ Hook ཚུ་ལུ་གནང་བ་བྱིན།",
++  "hooks.repository.revoke": "ཀོཌ་མཛོད་ཀྱི་ Hook ལུ་བློ་གཏད་ཆ་མེད་གཏང་།",
++
+   "plugins.activation.title": "ལས་གཞི་འདི་ནང་ཤུགས་ལྡན་བཟོ་ནི།",
+   "plugins.activation.hint":
+     "ལྕོགས་ཅན་བཟོ་ཡོད་པའི་པ་ལག་ཨིན་ཚུ་ ལས་གཞི་འདི་ནང་འཇུག་སྤྱོད་འབད་བའི་ཤུལ་ལས་ ཤུགས་ལྡན་འགྱོ་འོང་། འགྲོ་བཞིན་ཡོད་པའི་ལཱ་ཚུ་གིས་ ད་ལྟོའི་གནས་སྟངས་འདྲ་བཤུས་འདི་རང་བཞག་འོང་།",
+--- a/packages/app/src/i18n/el.ts
++++ b/packages/app/src/i18n/el.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Εμπιστοσύνη στα hooks του αποθετηρίου",
++  "hooks.repository.hint":
++    "Επιτρέψτε στα hooks από τον ριζικό κατάλογο του αποθετηρίου να εκτελούνται στις συνεδρίες μέσα σε αυτό το αποθετήριο. Φορτώστε ξανά τα hooks μετά την έγκριση. Η ανάκληση αποτρέπει νέες κλήσεις hooks.",
++  "hooks.repository.grant": "Να επιτρέπονται τα hooks του αποθετηρίου",
++  "hooks.repository.revoke": "Ανάκληση εμπιστοσύνης στα hooks του αποθετηρίου",
++
+   "plugins.title": "Πρόσθετα",
+   "plugins.description":
+     "Ανακαλύψτε νέες δεξιότητες και εργαλεία. Εγκαταστήστε ό,τι χρειάζεστε και διαχειριστείτε τα όλα σε ένα μέρος.",
+--- a/packages/app/src/i18n/en.ts
++++ b/packages/app/src/i18n/en.ts
+@@ -1,6 +1,12 @@
+ import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
+ 
+ export const dict = {
++  "hooks.repository.title": "Repository hook trust",
++  "hooks.repository.hint":
++    "Allow hooks from the repository root to run in sessions inside this repository. Reload hooks after allowing. Revoking prevents new hook invocations.",
++  "hooks.repository.grant": "Allow repository hooks",
++  "hooks.repository.revoke": "Revoke repository hook trust",
++
+   "feedback.images.unnamed": "Clipboard image",
+   "feedback.images.manual":
+     "Images stay local. Export the report, download its images, and attach them to the GitHub issue yourself.",
+--- a/packages/app/src/i18n/es.ts
++++ b/packages/app/src/i18n/es.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Confianza en los hooks del repositorio",
++  "hooks.repository.hint":
++    "Permite que los hooks de la raíz del repositorio se ejecuten en las sesiones de este repositorio. Vuelve a cargar los hooks después de permitirlos. Revocar la confianza impide nuevas llamadas a los hooks.",
++  "hooks.repository.grant": "Permitir hooks del repositorio",
++  "hooks.repository.revoke": "Revocar la confianza en los hooks del repositorio",
++
+   "plugins.title": "Plugins",
+   "plugins.description":
+     "Descubre nuevas habilidades y herramientas. Instala lo que necesites y gestiónalo todo en un solo lugar.",
+--- a/packages/app/src/i18n/et.ts
++++ b/packages/app/src/i18n/et.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Hoidla hook'ide usaldamine",
++  "hooks.repository.hint":
++    "Luba hoidla juurkataloogis olevatel hook'idel töötada selle hoidla seanssides. Pärast lubamist laadi hook'id uuesti. Usalduse tühistamine takistab uusi hook'ide väljakutseid.",
++  "hooks.repository.grant": "Luba hoidla hook'id",
++  "hooks.repository.revoke": "Tühista hoidla hook'ide usaldus",
++
+   "plugins.title": "Pluginad",
+   "plugins.description": "Avasta uusi oskusi ja tööriistu. Paigalda vajalik ning halda kõike ühes kohas.",
+   "plugins.discover": "Avasta",
+--- a/packages/app/src/i18n/fa.ts
++++ b/packages/app/src/i18n/fa.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "اعتماد به هوک‌های مخزن",
++  "hooks.repository.hint":
++    "به هوک‌های ریشهٔ مخزن اجازه دهید در نشست‌های داخل این مخزن اجرا شوند. پس از دادن اجازه، هوک‌ها را دوباره بارگذاری کنید. لغو اعتماد از فراخوانی‌های جدید هوک‌ها جلوگیری می‌کند.",
++  "hooks.repository.grant": "اجازه دادن به هوک‌های مخزن",
++  "hooks.repository.revoke": "لغو اعتماد به هوک‌های مخزن",
++
+   "plugins.title": "افزونه‌ها",
+   "plugins.description": "مهارت‌ها و ابزارهای تازه را پیدا کنید. موارد موردنیاز را نصب و همه را در یک جا مدیریت کنید.",
+   "plugins.discover": "کاوش",
+--- a/packages/app/src/i18n/fi.ts
++++ b/packages/app/src/i18n/fi.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Luottamus tietovaraston hookeihin",
++  "hooks.repository.hint":
++    "Salli tietovaraston juurihakemiston hookien suorittaminen tämän tietovaraston istunnoissa. Lataa hookit uudelleen luvan antamisen jälkeen. Luottamuksen peruuttaminen estää uudet hook-kutsut.",
++  "hooks.repository.grant": "Salli tietovaraston hookit",
++  "hooks.repository.revoke": "Peruuta luottamus tietovaraston hookeihin",
++
+   "plugins.title": "Liitännäiset",
+   "plugins.description": "Löydä uusia taitoja ja työkaluja. Asenna tarvitsemasi ja hallitse kaikkea yhdessä paikassa.",
+   "plugins.discover": "Tutustu",
+--- a/packages/app/src/i18n/fo.ts
++++ b/packages/app/src/i18n/fo.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Álit á hooks í keldusavninum",
++  "hooks.repository.hint":
++    "Loyv hooks úr rótarmappuni í keldusavninum at koyra í setum í hesum keldusavni. Endurles hooks, tá ið loyvi er givið. Afturtøka av áliti forðar fyri nýggjum hook-kallum.",
++  "hooks.repository.grant": "Loyv hooks í keldusavninum",
++  "hooks.repository.revoke": "Tak álit á hooks í keldusavninum aftur",
++
+   "plugins.activation.title": "Virkjan í hesi verkætlan",
+   "plugins.activation.hint":
+     "Tilskot, sum eru sligin til, verða virkin, tá ið tú tekur tey í nýtslu í hesi verkætlan. Arbeiði, sum er í gongd, varðveitir sína verandi støðumynd.",
+--- a/packages/app/src/i18n/fr.ts
++++ b/packages/app/src/i18n/fr.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Confiance accordée aux hooks du dépôt",
++  "hooks.repository.hint":
++    "Autorisez les hooks à la racine du dépôt à s’exécuter dans les sessions de ce dépôt. Rechargez les hooks après les avoir autorisés. Révoquer la confiance empêche de nouveaux appels aux hooks.",
++  "hooks.repository.grant": "Autoriser les hooks du dépôt",
++  "hooks.repository.revoke": "Révoquer la confiance accordée aux hooks du dépôt",
++
+   "plugins.title": "Plugins",
+   "plugins.description":
+     "Découvrez de nouvelles compétences et de nouveaux outils. Installez ce dont vous avez besoin et gérez tout au même endroit.",
+--- a/packages/app/src/i18n/hi.ts
++++ b/packages/app/src/i18n/hi.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "रिपॉज़िटरी हुक पर भरोसा",
++  "hooks.repository.hint":
++    "रिपॉज़िटरी के रूट में मौजूद हुक को इस रिपॉज़िटरी के सत्रों में चलने की अनुमति दें। अनुमति देने के बाद हुक फिर से लोड करें। भरोसा वापस लेने पर नए हुक कॉल रोक दिए जाएंगे।",
++  "hooks.repository.grant": "रिपॉज़िटरी हुक की अनुमति दें",
++  "hooks.repository.revoke": "रिपॉज़िटरी हुक पर भरोसा वापस लें",
++
+   "plugins.title": "प्लगइन",
+   "plugins.description": "नए कौशल और टूल खोजें। अपनी ज़रूरत के अनुसार इंस्टॉल करें और सब कुछ एक ही जगह प्रबंधित करें।",
+   "plugins.discover": "खोजें",
+--- a/packages/app/src/i18n/hr.ts
++++ b/packages/app/src/i18n/hr.ts
+@@ -84,6 +84,12 @@
+ ]
+ 
+ export const dict = {
++  "hooks.repository.title": "Povjerenje u hookove repozitorija",
++  "hooks.repository.hint":
++    "Dopustite pokretanje hookova iz korijenske mape repozitorija u sesijama unutar ovog repozitorija. Nakon odobravanja ponovno učitajte hookove. Opoziv povjerenja sprječava nove pozive hookova.",
++  "hooks.repository.grant": "Dopusti hookove repozitorija",
++  "hooks.repository.revoke": "Opozovi povjerenje u hookove repozitorija",
++
+   "plugins.title": "Priključci",
+   "plugins.description":
+     "Otkrijte nove vještine i alate. Instalirajte što vam treba i upravljajte svime na jednom mjestu.",
+--- a/packages/app/src/i18n/hu.ts
++++ b/packages/app/src/i18n/hu.ts
+@@ -84,6 +84,12 @@
+ ]
+ 
+ export const dict = {
++  "hooks.repository.title": "Bizalom a tároló hookjaiban",
++  "hooks.repository.hint":
++    "Engedélyezze a tároló gyökérkönyvtárában lévő hookok futtatását a tárolón belüli munkamenetekben. Az engedélyezés után töltse újra a hookokat. A bizalom visszavonása megakadályozza az új hookhívásokat.",
++  "hooks.repository.grant": "Tároló hookjainak engedélyezése",
++  "hooks.repository.revoke": "A tároló hookjaihoz adott bizalom visszavonása",
++
+   "plugins.title": "Bővítmények",
+   "plugins.description":
+     "Fedezzen fel új készségeket és eszközöket. Telepítse, amire szüksége van, és kezeljen mindent egy helyen.",
+--- a/packages/app/src/i18n/hy.ts
++++ b/packages/app/src/i18n/hy.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Պահոցի hook-երի վստահություն",
++  "hooks.repository.hint":
++    "Թույլատրեք պահոցի արմատային պանակի hook-երին գործարկվել այս պահոցի ներսի աշխատաշրջաններում։ Թույլատրելուց հետո վերաբեռնեք hook-երը։ Վստահության հետկանչը կանխում է hook-երի նոր կանչերը։",
++  "hooks.repository.grant": "Թույլատրել պահոցի hook-երը",
++  "hooks.repository.revoke": "Հետ կանչել պահոցի hook-երի վստահությունը",
++
+   "plugins.title": "Բաղադրիչներ",
+   "plugins.description":
+     "Բացահայտեք նոր հմտություններ և գործիքներ։ Տեղադրեք անհրաժեշտը և կառավարեք ամեն ինչ մեկ տեղում։",
+--- a/packages/app/src/i18n/id.ts
++++ b/packages/app/src/i18n/id.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Kepercayaan hook repositori",
++  "hooks.repository.hint":
++    "Izinkan hook dari direktori akar repositori berjalan dalam sesi di repositori ini. Muat ulang hook setelah memberikan izin. Mencabut kepercayaan mencegah pemanggilan hook baru.",
++  "hooks.repository.grant": "Izinkan hook repositori",
++  "hooks.repository.revoke": "Cabut kepercayaan hook repositori",
++
+   "plugins.title": "Plugin",
+   "plugins.description":
+     "Temukan keterampilan dan alat baru. Pasang yang Anda perlukan dan kelola semuanya di satu tempat.",
+--- a/packages/app/src/i18n/is.ts
++++ b/packages/app/src/i18n/is.ts
+@@ -84,6 +84,12 @@
+ ]
+ 
+ export const dict = {
++  "hooks.repository.title": "Traust til króka kóðasafns",
++  "hooks.repository.hint":
++    "Leyfðu krókum úr rótarmöppu kóðasafnsins að keyra í setum innan þessa kóðasafns. Endurhladdu krókunum eftir að leyfi hefur verið veitt. Afturköllun kemur í veg fyrir ný köll á króka.",
++  "hooks.repository.grant": "Leyfa króka kóðasafns",
++  "hooks.repository.revoke": "Afturkalla traust til króka kóðasafns",
++
+   "plugins.title": "Tengiforrit",
+   "plugins.description": "Finndu nýja færni og verkfæri. Settu upp það sem þú þarft og stjórnaðu öllu á einum stað.",
+   "plugins.discover": "Kanna",
+--- a/packages/app/src/i18n/it.ts
++++ b/packages/app/src/i18n/it.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Attendibilità degli hook del repository",
++  "hooks.repository.hint":
++    "Consenti agli hook nella radice del repository di essere eseguiti nelle sessioni di questo repository. Ricarica gli hook dopo averli autorizzati. La revoca dell’attendibilità impedisce nuove chiamate agli hook.",
++  "hooks.repository.grant": "Consenti gli hook del repository",
++  "hooks.repository.revoke": "Revoca l’attendibilità degli hook del repository",
++
+   "plugins.title": "Plugin",
+   "plugins.description":
+     "Scopri nuove competenze e strumenti. Installa ciò che ti serve e gestisci tutto in un unico posto.",
+--- a/packages/app/src/i18n/ja.ts
++++ b/packages/app/src/i18n/ja.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "リポジトリのフックの信頼",
++  "hooks.repository.hint":
++    "リポジトリのルートにあるフックを、このリポジトリ内のセッションで実行できるようにします。許可した後にフックを再読み込みしてください。信頼を取り消すと、新たなフックの呼び出しが禁止されます。",
++  "hooks.repository.grant": "リポジトリのフックを許可",
++  "hooks.repository.revoke": "リポジトリのフックの信頼を取り消す",
++
+   "plugins.title": "プラグイン",
+   "plugins.description": "新しいスキルやツールを見つけて、必要なものをインストールできます。",
+   "plugins.discover": "見つける",
+--- a/packages/app/src/i18n/ka.ts
++++ b/packages/app/src/i18n/ka.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "რეპოზიტორიის hook-ების ნდობა",
++  "hooks.repository.hint":
++    "დაუშვით რეპოზიტორიის ძირეულ საქაღალდეში არსებული hook-ების გაშვება ამ რეპოზიტორიის სესიებში. ნებართვის გაცემის შემდეგ ხელახლა ჩატვირთეთ hook-ები. ნდობის გაუქმება მათ ახალ გამოძახებებს დაბლოკავს.",
++  "hooks.repository.grant": "რეპოზიტორიის hook-ების დაშვება",
++  "hooks.repository.revoke": "რეპოზიტორიის hook-ების ნდობის გაუქმება",
++
+   "plugins.title": "მოდულები",
+   "plugins.description":
+     "აღმოაჩინეთ ახალი უნარები და ხელსაწყოები. დააყენეთ საჭირო მოდულები და მართეთ ყველაფერი ერთ ადგილას.",
+--- a/packages/app/src/i18n/km.ts
++++ b/packages/app/src/i18n/km.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "ការទុកចិត្តលើ hook របស់ឃ្លាំងកូដ",
++  "hooks.repository.hint":
++    "អនុញ្ញាតឱ្យ hook នៅថតឫសរបស់ឃ្លាំងកូដដំណើរការក្នុងសម័យនៅក្នុងឃ្លាំងកូដនេះ។ ផ្ទុក hook ឡើងវិញបន្ទាប់ពីអនុញ្ញាត។ ការដកការទុកចិត្តនឹងរារាំងការហៅ hook ថ្មី។",
++  "hooks.repository.grant": "អនុញ្ញាត hook របស់ឃ្លាំងកូដ",
++  "hooks.repository.revoke": "ដកការទុកចិត្តលើ hook របស់ឃ្លាំងកូដ",
++
+   "plugins.title": "កម្មវិធី​ជំនួយ",
+   "plugins.description":
+     "ស្វែងរក​ជំនាញ និង​ឧបករណ៍​ថ្មី។ ដំឡើង​អ្វី​ដែល​អ្នក​ត្រូវការ ហើយ​គ្រប់គ្រង​ទាំងអស់​នៅ​កន្លែង​តែមួយ។",
+--- a/packages/app/src/i18n/ko.ts
++++ b/packages/app/src/i18n/ko.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "저장소 훅 신뢰",
++  "hooks.repository.hint":
++    "저장소 루트에 있는 훅이 이 저장소 내 세션에서 실행되도록 허용합니다. 허용한 후 훅을 다시 불러오세요. 신뢰를 철회하면 새로운 훅 호출이 차단됩니다.",
++  "hooks.repository.grant": "저장소 훅 허용",
++  "hooks.repository.revoke": "저장소 훅 신뢰 철회",
++
+   "plugins.title": "플러그인",
+   "plugins.description": "새로운 스킬과 도구를 찾아 필요한 기능을 설치하고 한곳에서 관리하세요.",
+   "plugins.discover": "둘러보기",
+--- a/packages/app/src/i18n/lo.ts
++++ b/packages/app/src/i18n/lo.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "ຄວາມໄວ້ວາງໃຈ hook ຂອງຄັງລະຫັດ",
++  "hooks.repository.hint":
++    "ອະນຸຍາດໃຫ້ hook ໃນໂຟນເດີຮາກຂອງຄັງລະຫັດເຮັດວຽກໃນເຊດຊັນພາຍໃນຄັງລະຫັດນີ້. ໂຫຼດ hook ຄືນໃໝ່ຫຼັງຈາກອະນຸຍາດ. ການຖອນຄວາມໄວ້ວາງໃຈຈະຂັດຂວາງການເອີ້ນໃຊ້ hook ໃໝ່.",
++  "hooks.repository.grant": "ອະນຸຍາດ hook ຂອງຄັງລະຫັດ",
++  "hooks.repository.revoke": "ຖອນຄວາມໄວ້ວາງໃຈ hook ຂອງຄັງລະຫັດ",
++
+   "plugins.title": "ປັກອິນ",
+   "plugins.description": "ຄົ້ນພົບທັກສະ ແລະ ເຄື່ອງມືໃໝ່. ຕິດຕັ້ງສິ່ງທີ່ຕ້ອງການ ແລະ ຈັດການທັງໝົດໃນບ່ອນດຽວ.",
+   "plugins.discover": "ຄົ້ນພົບ",
+--- a/packages/app/src/i18n/lt.ts
++++ b/packages/app/src/i18n/lt.ts
+@@ -84,6 +84,12 @@
+ ]
+ 
+ export const dict = {
++  "hooks.repository.title": "Pasitikėjimas saugyklos kabliais",
++  "hooks.repository.hint":
++    "Leiskite saugyklos šakniniame kataloge esantiems kabliams veikti šios saugyklos sesijose. Suteikę leidimą, iš naujo įkelkite kablius. Atšaukus pasitikėjimą, nauji kablių iškvietimai bus blokuojami.",
++  "hooks.repository.grant": "Leisti saugyklos kablius",
++  "hooks.repository.revoke": "Atšaukti pasitikėjimą saugyklos kabliais",
++
+   "plugins.title": "Papildiniai",
+   "plugins.description":
+     "Atraskite naujų įgūdžių ir įrankių. Įdiekite tai, ko reikia, ir viską tvarkykite vienoje vietoje.",
+--- a/packages/app/src/i18n/lv.ts
++++ b/packages/app/src/i18n/lv.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Uzticēšanās repozitorija āķiem",
++  "hooks.repository.hint":
++    "Atļaut repozitorija saknes mapē esošajiem āķiem darboties šī repozitorija sesijās. Pēc atļaujas piešķiršanas pārlādējiet āķus. Atsaucot uzticēšanos, jauni āķu izsaukumi tiks bloķēti.",
++  "hooks.repository.grant": "Atļaut repozitorija āķus",
++  "hooks.repository.revoke": "Atsaukt uzticēšanos repozitorija āķiem",
++
+   "plugins.title": "Spraudņi",
+   "plugins.description": "Atklājiet jaunas prasmes un rīkus. Instalējiet vajadzīgo un pārvaldiet visu vienuviet.",
+   "plugins.discover": "Atklāt",
+--- a/packages/app/src/i18n/mk.ts
++++ b/packages/app/src/i18n/mk.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Доверба во hook-овите на репозиториумот",
++  "hooks.repository.hint":
++    "Дозволете hook-овите од коренскиот директориум на репозиториумот да се извршуваат во сесиите во овој репозиториум. По давањето дозвола, вчитајте ги hook-овите повторно. Повлекувањето на довербата спречува нови повикувања на hook-овите.",
++  "hooks.repository.grant": "Дозволи hook-ови на репозиториумот",
++  "hooks.repository.revoke": "Повлечи ја довербата во hook-овите на репозиториумот",
++
+   "plugins.title": "Приклучоци",
+   "plugins.description":
+     "Откријте нови вештини и алатки. Инсталирајте го потребното и управувајте со сè на едно место.",
+--- a/packages/app/src/i18n/mn.ts
++++ b/packages/app/src/i18n/mn.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Репозиторийн hook-д итгэх",
++  "hooks.repository.hint":
++    "Репозиторийн үндсэн хавтас дахь hook-уудыг энэ репозиторийн сешнүүдэд ажиллуулахыг зөвшөөрнө. Зөвшөөрсний дараа hook-уудыг дахин ачаална уу. Итгэлийг цуцалснаар hook-ийн шинэ дуудлагуудыг хориглоно.",
++  "hooks.repository.grant": "Репозиторийн hook-уудыг зөвшөөрөх",
++  "hooks.repository.revoke": "Репозиторийн hook-д итгэхийг цуцлах",
++
+   "plugins.title": "Залгаасууд",
+   "plugins.description": "Шинэ ур чадвар, хэрэгсэл олоорой. Хэрэгтэйгээ суулгаж, бүгдийг нэг дор удирдаарай.",
+   "plugins.discover": "Судлах",
+--- a/packages/app/src/i18n/ms.ts
++++ b/packages/app/src/i18n/ms.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Kepercayaan hook repositori",
++  "hooks.repository.hint":
++    "Benarkan hook daripada direktori akar repositori dijalankan dalam sesi di dalam repositori ini. Muat semula hook selepas memberikan kebenaran. Pembatalan kepercayaan menghalang panggilan hook baharu.",
++  "hooks.repository.grant": "Benarkan hook repositori",
++  "hooks.repository.revoke": "Batalkan kepercayaan hook repositori",
++
+   "plugins.title": "Plugin",
+   "plugins.description": "Temui kemahiran dan alat baharu. Pasang yang anda perlukan dan urus semuanya di satu tempat.",
+   "plugins.discover": "Terokai",
+--- a/packages/app/src/i18n/my.ts
++++ b/packages/app/src/i18n/my.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Repository hook များကို ယုံကြည်ခြင်း",
++  "hooks.repository.hint":
++    "ဤ repository အတွင်းရှိ session များတွင် repository ၏ မူလဖိုင်တွဲမှ hook များကို လုပ်ဆောင်ခွင့်ပြုပါ။ ခွင့်ပြုပြီးနောက် hook များကို ပြန်လည်ဖွင့်တင်ပါ။ ယုံကြည်မှုကို ရုပ်သိမ်းလိုက်ပါက hook များကို အသစ်ခေါ်ဆိုခြင်းအား တားဆီးပါမည်။",
++  "hooks.repository.grant": "Repository hook များကို ခွင့်ပြုရန်",
++  "hooks.repository.revoke": "Repository hook များအပေါ် ယုံကြည်မှုကို ရုပ်သိမ်းရန်",
++
+   "plugins.title": "ပလပ်အင်များ",
+   "plugins.description":
+     "ကျွမ်းကျင်မှုနှင့် ကိရိယာအသစ်များကို ရှာဖွေပါ။ လိုအပ်သည်များကို ထည့်သွင်းပြီး တစ်နေရာတည်းမှ စီမံပါ။",
+--- a/packages/app/src/i18n/ne.ts
++++ b/packages/app/src/i18n/ne.ts
+@@ -1,4 +1,10 @@
+ export const dict: Record<string, string> = {
++  "hooks.repository.title": "रिपोजिटरी हुकप्रतिको विश्वास",
++  "hooks.repository.hint":
++    "रिपोजिटरीको मूल फोल्डरमा रहेका हुकहरूलाई यस रिपोजिटरीभित्रका सत्रहरूमा चल्न दिनुहोस्। अनुमति दिएपछि हुकहरू पुनः लोड गर्नुहोस्। विश्वास फिर्ता लिँदा नयाँ हुक आह्वानहरू रोकिन्छन्।",
++  "hooks.repository.grant": "रिपोजिटरी हुकहरूलाई अनुमति दिनुहोस्",
++  "hooks.repository.revoke": "रिपोजिटरी हुकप्रतिको विश्वास फिर्ता लिनुहोस्",
++
+   "plugins.title": "प्लगइनहरू",
+   "plugins.description":
+     "नयाँ सीप र उपकरणहरू खोज्नुहोस्। आवश्यक कुरा स्थापना गरेर सबै एकै ठाउँमा व्यवस्थापन गर्नुहोस्।",
+--- a/packages/app/src/i18n/nl.ts
++++ b/packages/app/src/i18n/nl.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Vertrouwen in repository-hooks",
++  "hooks.repository.hint":
++    "Sta toe dat hooks uit de hoofdmap van de repository worden uitgevoerd in sessies binnen deze repository. Laad de hooks opnieuw nadat je toestemming hebt gegeven. Als je het vertrouwen intrekt, worden nieuwe hook-aanroepen geblokkeerd.",
++  "hooks.repository.grant": "Repository-hooks toestaan",
++  "hooks.repository.revoke": "Vertrouwen in repository-hooks intrekken",
++
+   "plugins.title": "Plug-ins",
+   "plugins.description":
+     "Ontdek nieuwe vaardigheden en hulpmiddelen. Installeer wat u nodig hebt en beheer alles op één plek.",
+--- a/packages/app/src/i18n/no.ts
++++ b/packages/app/src/i18n/no.ts
+@@ -2,6 +2,12 @@
+ type Keys = keyof typeof en
+ 
+ export const dict = {
++  "hooks.repository.title": "Tillit til repository-hooks",
++  "hooks.repository.hint":
++    "Tillat at hooks fra rotmappen i repositoriet kjøres i økter i dette repositoriet. Last inn hookene på nytt etter at du har gitt tillatelse. Tilbakekalling av tilliten blokkerer nye hook-kall.",
++  "hooks.repository.grant": "Tillat repository-hooks",
++  "hooks.repository.revoke": "Trekk tilbake tillit til repository-hooks",
++
+   "plugins.title": "Programtillegg",
+   "plugins.description": "Oppdag nye ferdigheter og verktøy. Installer det du trenger, og administrer alt på ett sted.",
+   "plugins.discover": "Oppdag",
+--- a/packages/app/src/i18n/pa.ts
++++ b/packages/app/src/i18n/pa.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "ਰਿਪੋਜ਼ਟਰੀ ਹੁੱਕਾਂ ਉੱਤੇ ਭਰੋਸਾ",
++  "hooks.repository.hint":
++    "ਰਿਪੋਜ਼ਟਰੀ ਦੇ ਰੂਟ ਫੋਲਡਰ ਵਿੱਚ ਮੌਜੂਦ ਹੁੱਕਾਂ ਨੂੰ ਇਸ ਰਿਪੋਜ਼ਟਰੀ ਦੇ ਸੈਸ਼ਨਾਂ ਵਿੱਚ ਚੱਲਣ ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ। ਇਜਾਜ਼ਤ ਦੇਣ ਤੋਂ ਬਾਅਦ ਹੁੱਕਾਂ ਨੂੰ ਮੁੜ ਲੋਡ ਕਰੋ। ਭਰੋਸਾ ਵਾਪਸ ਲੈਣ ਨਾਲ ਨਵੀਆਂ ਹੁੱਕ ਕਾਲਾਂ ਰੁਕ ਜਾਣਗੀਆਂ।",
++  "hooks.repository.grant": "ਰਿਪੋਜ਼ਟਰੀ ਹੁੱਕਾਂ ਨੂੰ ਇਜਾਜ਼ਤ ਦਿਓ",
++  "hooks.repository.revoke": "ਰਿਪੋਜ਼ਟਰੀ ਹੁੱਕਾਂ ਉੱਤੇ ਭਰੋਸਾ ਵਾਪਸ ਲਓ",
++
+   "plugins.title": "ਪਲੱਗਇਨ",
+   "plugins.description": "ਨਵੇਂ ਹੁਨਰ ਅਤੇ ਟੂਲ ਲੱਭੋ। ਲੋੜ ਅਨੁਸਾਰ ਇੰਸਟਾਲ ਕਰੋ ਅਤੇ ਸਭ ਕੁਝ ਇੱਕ ਥਾਂ ਤੋਂ ਸੰਭਾਲੋ।",
+   "plugins.discover": "ਖੋਜੋ",
+--- a/packages/app/src/i18n/pl.ts
++++ b/packages/app/src/i18n/pl.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Zaufanie do hooków repozytorium",
++  "hooks.repository.hint":
++    "Zezwól na uruchamianie hooków z katalogu głównego repozytorium w sesjach w tym repozytorium. Po udzieleniu zgody przeładuj hooki. Cofnięcie zaufania blokuje nowe wywołania hooków.",
++  "hooks.repository.grant": "Zezwól na hooki repozytorium",
++  "hooks.repository.revoke": "Cofnij zaufanie do hooków repozytorium",
++
+   "plugins.title": "Wtyczki",
+   "plugins.description":
+     "Odkrywaj nowe umiejętności i narzędzia. Instaluj potrzebne funkcje i zarządzaj nimi w jednym miejscu.",
+--- a/packages/app/src/i18n/ro.ts
++++ b/packages/app/src/i18n/ro.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Încredere în hook-urile depozitului",
++  "hooks.repository.hint":
++    "Permite rularea hook-urilor din directorul rădăcină al depozitului în sesiunile din acest depozit. Reîncarcă hook-urile după acordarea permisiunii. Revocarea încrederii împiedică noi invocări ale hook-urilor.",
++  "hooks.repository.grant": "Permite hook-urile depozitului",
++  "hooks.repository.revoke": "Revocă încrederea în hook-urile depozitului",
++
+   "plugins.title": "Pluginuri",
+   "plugins.description":
+     "Descoperă abilități și instrumente noi. Instalează ce îți trebuie și gestionează totul într-un singur loc.",
+--- a/packages/app/src/i18n/ru.ts
++++ b/packages/app/src/i18n/ru.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Доверие хукам репозитория",
++  "hooks.repository.hint":
++    "Разрешить запуск хуков из корневой папки репозитория в сеансах внутри этого репозитория. После выдачи разрешения перезагрузите хуки. Отзыв доверия блокирует новые вызовы хуков.",
++  "hooks.repository.grant": "Разрешить хуки репозитория",
++  "hooks.repository.revoke": "Отозвать доверие хукам репозитория",
++
+   "plugins.title": "Плагины",
+   "plugins.description": "Находите новые навыки и инструменты. Устанавливайте нужное и управляйте всем в одном месте.",
+   "plugins.discover": "Обзор",
+--- a/packages/app/src/i18n/si.ts
++++ b/packages/app/src/i18n/si.ts
+@@ -1,4 +1,10 @@
+ export const dict: Record<string, string> = {
++  "hooks.repository.title": "ගබඩාවේ hook කෙරෙහි විශ්වාසය",
++  "hooks.repository.hint":
++    "ගබඩාවේ මූල ෆෝල්ඩරයේ ඇති hook මෙම ගබඩාව තුළ ඇති සැසිවල ක්‍රියාත්මක වීමට ඉඩ දෙන්න. අවසර දීමෙන් පසු hook නැවත පූරණය කරන්න. විශ්වාසය අවලංගු කිරීමෙන් නව hook ඇමතුම් වළක්වයි.",
++  "hooks.repository.grant": "ගබඩාවේ hook සඳහා අවසර දෙන්න",
++  "hooks.repository.revoke": "ගබඩාවේ hook කෙරෙහි විශ්වාසය අවලංගු කරන්න",
++
+   "plugins.title": "ප්ලගීන",
+   "plugins.description": "නව කුසලතා සහ මෙවලම් සොයන්න. අවශ්‍ය දේ ස්ථාපනය කර සියල්ල එකම තැනකින් කළමනාකරණය කරන්න.",
+   "plugins.discover": "සොයන්න",
+--- a/packages/app/src/i18n/sk.ts
++++ b/packages/app/src/i18n/sk.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Dôvera v hooky repozitára",
++  "hooks.repository.hint":
++    "Povoľte spúšťanie hookov z koreňového adresára repozitára v reláciách v tomto repozitári. Po udelení povolenia hooky znova načítajte. Odvolanie dôvery zabráni novým volaniam hookov.",
++  "hooks.repository.grant": "Povoliť hooky repozitára",
++  "hooks.repository.revoke": "Odvolať dôveru v hooky repozitára",
++
+   "plugins.title": "Zásuvné moduly",
+   "plugins.description":
+     "Objavujte nové zručnosti a nástroje. Nainštalujte si potrebné funkcie a spravujte ich na jednom mieste.",
+--- a/packages/app/src/i18n/sl.ts
++++ b/packages/app/src/i18n/sl.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Zaupanje hookom repozitorija",
++  "hooks.repository.hint":
++    "Dovolite izvajanje hookov iz korenskega imenika repozitorija v sejah znotraj tega repozitorija. Po odobritvi hooke znova naložite. Preklic zaupanja prepreči nove klice hookov.",
++  "hooks.repository.grant": "Dovoli hooke repozitorija",
++  "hooks.repository.revoke": "Prekliči zaupanje hookom repozitorija",
++
+   "plugins.title": "Vtičniki",
+   "plugins.description":
+     "Odkrijte nove spretnosti in orodja. Namestite, kar potrebujete, in vse upravljajte na enem mestu.",
+--- a/packages/app/src/i18n/sq.ts
++++ b/packages/app/src/i18n/sq.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Besimi te hook-et e depos",
++  "hooks.repository.hint":
++    "Lejoni që hook-et nga dosja rrënjë e depos të ekzekutohen në seancat brenda kësaj depoje. Ringarkoni hook-et pasi të jepni lejen. Revokimi i besimit pengon thirrjet e reja të hook-eve.",
++  "hooks.repository.grant": "Lejo hook-et e depos",
++  "hooks.repository.revoke": "Revoko besimin te hook-et e depos",
++
+   "plugins.title": "Shtojca",
+   "plugins.description":
+     "Zbuloni aftësi dhe mjete të reja. Instaloni çfarë ju duhet dhe administrojeni gjithçka në një vend.",
+--- a/packages/app/src/i18n/sr.ts
++++ b/packages/app/src/i18n/sr.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Поверење у hook-ове репозиторијума",
++  "hooks.repository.hint":
++    "Дозволите да се hook-ови из коренског директоријума репозиторијума извршавају у сесијама унутар овог репозиторијума. Након давања дозволе, поново учитајте hook-ове. Опозив поверења спречава нове позиве hook-ова.",
++  "hooks.repository.grant": "Дозволи hook-ове репозиторијума",
++  "hooks.repository.revoke": "Опозови поверење у hook-ове репозиторијума",
++
+   "plugins.title": "Додатне компоненте",
+   "plugins.description":
+     "Откријте нове вештине и алате. Инсталирајте оно што вам треба и управљајте свиме на једном месту.",
+--- a/packages/app/src/i18n/sv.ts
++++ b/packages/app/src/i18n/sv.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Förtroende för repository-hooks",
++  "hooks.repository.hint":
++    "Tillåt att hooks från repositoryts rotmapp körs i sessioner i detta repository. Läs in hookarna igen när du har gett tillstånd. Om förtroendet återkallas blockeras nya hook-anrop.",
++  "hooks.repository.grant": "Tillåt repository-hooks",
++  "hooks.repository.revoke": "Återkalla förtroende för repository-hooks",
++
+   "plugins.title": "Insticksmoduler",
+   "plugins.description":
+     "Upptäck nya färdigheter och verktyg. Installera det du behöver och hantera allt på ett ställe.",
+--- a/packages/app/src/i18n/tg.ts
++++ b/packages/app/src/i18n/tg.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Эътимод ба hook-ҳои анбор",
++  "hooks.repository.hint":
++    "Ба hook-ҳои ҷузвдони решавии анбор иҷозат диҳед, ки дар ҷаласаҳои дохили ин анбор иҷро шаванд. Пас аз додани иҷозат hook-ҳоро аз нав бор кунед. Лағви эътимод даъватҳои нави hook-ҳоро манъ мекунад.",
++  "hooks.repository.grant": "Иҷозат додан ба hook-ҳои анбор",
++  "hooks.repository.revoke": "Лағви эътимод ба hook-ҳои анбор",
++
+   "plugins.title": "Плагинҳо",
+   "plugins.description":
+     "Маҳоратҳо ва абзорҳои навро пайдо кунед. Чизҳои заруриро насб кунед ва ҳамаро дар як ҷо идора кунед.",
+--- a/packages/app/src/i18n/th.ts
++++ b/packages/app/src/i18n/th.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "ความเชื่อถือฮุกของรีโพซิทอรี",
++  "hooks.repository.hint":
++    "อนุญาตให้ฮุกจากโฟลเดอร์รากของรีโพซิทอรีทำงานในเซสชันภายในรีโพซิทอรีนี้ โหลดฮุกใหม่หลังจากอนุญาต การเพิกถอนความเชื่อถือจะป้องกันการเรียกใช้ฮุกครั้งใหม่",
++  "hooks.repository.grant": "อนุญาตฮุกของรีโพซิทอรี",
++  "hooks.repository.revoke": "เพิกถอนความเชื่อถือฮุกของรีโพซิทอรี",
++
+   "plugins.title": "ปลั๊กอิน",
+   "plugins.description": "ค้นพบทักษะและเครื่องมือใหม่ ติดตั้งสิ่งที่ต้องการและจัดการทุกอย่างในที่เดียว",
+   "plugins.discover": "ค้นพบ",
+--- a/packages/app/src/i18n/tk.ts
++++ b/packages/app/src/i18n/tk.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Ammaryň hook-laryna ynam",
++  "hooks.repository.hint":
++    "Ammaryň kök bukjasyndaky hook-laryň bu ammaryň içindäki sessiýalarda işlemegine rugsat beriň. Rugsat bereniňizden soň hook-lary täzeden ýükläň. Ynamyň yzyna alynmagy täze hook çagyryşlarynyň öňüni alýar.",
++  "hooks.repository.grant": "Ammaryň hook-laryna rugsat ber",
++  "hooks.repository.revoke": "Ammaryň hook-laryna bolan ynamy yzyna al",
++
+   "plugins.activation.title": "Bu taslamada işjeňleşdirmek",
+   "plugins.activation.hint":
+     "Işledilen pluginler bu taslama ulanylandan soň işjeň bolýar. Dowam edýän işler häzirki ýagdaý nusgasyny saklaýar.",
+--- a/packages/app/src/i18n/tr.ts
++++ b/packages/app/src/i18n/tr.ts
+@@ -3,6 +3,12 @@
+ type Keys = keyof typeof en
+ 
+ export const dict = {
++  "hooks.repository.title": "Depo hook'larına güven",
++  "hooks.repository.hint":
++    "Deponun kök dizinindeki hook'ların bu depodaki oturumlarda çalışmasına izin verin. İzin verdikten sonra hook'ları yeniden yükleyin. Güvenin geri alınması yeni hook çağrılarını engeller.",
++  "hooks.repository.grant": "Depo hook'larına izin ver",
++  "hooks.repository.revoke": "Depo hook'larına duyulan güveni geri al",
++
+   "plugins.title": "Eklentiler",
+   "plugins.description": "Yeni beceriler ve araçlar keşfedin. İhtiyacınız olanları yükleyip tek bir yerden yönetin.",
+   "plugins.discover": "Keşfet",
+--- a/packages/app/src/i18n/uk.ts
++++ b/packages/app/src/i18n/uk.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Довіра до хуків репозиторію",
++  "hooks.repository.hint":
++    "Дозволити запуск хуків із кореневої папки репозиторію в сеансах у цьому репозиторії. Після надання дозволу перезавантажте хуки. Відкликання довіри блокує нові виклики хуків.",
++  "hooks.repository.grant": "Дозволити хуки репозиторію",
++  "hooks.repository.revoke": "Відкликати довіру до хуків репозиторію",
++
+   "plugins.title": "Плагіни",
+   "plugins.description": "Знаходьте нові навички й інструменти. Установлюйте потрібне та керуйте всім в одному місці.",
+   "plugins.discover": "Огляд",
+--- a/packages/app/src/i18n/ur.ts
++++ b/packages/app/src/i18n/ur.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "ریپوزٹری کے ہُکس پر اعتماد",
++  "hooks.repository.hint":
++    "ریپوزٹری کے روٹ فولڈر میں موجود ہُکس کو اس ریپوزٹری کے اندر سیشنز میں چلنے کی اجازت دیں۔ اجازت دینے کے بعد ہُکس دوبارہ لوڈ کریں۔ اعتماد واپس لینے سے ہُکس کی نئی کالز رک جائیں گی۔",
++  "hooks.repository.grant": "ریپوزٹری کے ہُکس کی اجازت دیں",
++  "hooks.repository.revoke": "ریپوزٹری کے ہُکس پر اعتماد واپس لیں",
++
+   "plugins.title": "پلگ ان",
+   "plugins.description": "نئی مہارتیں اور ٹولز تلاش کریں۔ اپنی ضرورت کے مطابق انسٹال کریں اور سب کچھ ایک جگہ سنبھالیں۔",
+   "plugins.discover": "دریافت کریں",
+--- a/packages/app/src/i18n/uz.ts
++++ b/packages/app/src/i18n/uz.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Repozitoriy hooklariga ishonch",
++  "hooks.repository.hint":
++    "Repozitoriyning ildiz papkasidagi hooklarning ushbu repozitoriy ichidagi seanslarda ishlashiga ruxsat bering. Ruxsat berganingizdan keyin hooklarni qayta yuklang. Ishonchni bekor qilish yangi hook chaqiruvlarini toʻxtatadi.",
++  "hooks.repository.grant": "Repozitoriy hooklariga ruxsat berish",
++  "hooks.repository.revoke": "Repozitoriy hooklariga ishonchni bekor qilish",
++
+   "plugins.title": "Plaginlar",
+   "plugins.description":
+     "Yangi ko‘nikma va vositalarni toping. Keraklilarini o‘rnating va barchasini bir joyda boshqaring.",
+--- a/packages/app/src/i18n/vi.ts
++++ b/packages/app/src/i18n/vi.ts
+@@ -1,4 +1,10 @@
+ export const dict = {
++  "hooks.repository.title": "Tin cậy hook của kho mã",
++  "hooks.repository.hint":
++    "Cho phép hook từ thư mục gốc của kho mã chạy trong các phiên thuộc kho mã này. Tải lại hook sau khi cấp quyền. Việc thu hồi sự tin cậy sẽ chặn các lần gọi hook mới.",
++  "hooks.repository.grant": "Cho phép hook của kho mã",
++  "hooks.repository.revoke": "Thu hồi sự tin cậy đối với hook của kho mã",
++
+   "plugins.title": "Phần bổ trợ",
+   "plugins.description": "Khám phá kỹ năng và công cụ mới. Cài đặt những gì bạn cần và quản lý tại một nơi.",
+   "plugins.discover": "Khám phá",
+--- a/packages/app/src/i18n/zh.ts
++++ b/packages/app/src/i18n/zh.ts
+@@ -3,6 +3,12 @@
+ type Keys = keyof typeof en
+ 
+ export const dict = {
++  "hooks.repository.title": "仓库钩子信任",
++  "hooks.repository.hint":
++    "允许仓库根目录中的钩子在此仓库内的会话中运行。允许后请重新加载钩子。撤销后将阻止新的钩子调用。",
++  "hooks.repository.grant": "允许仓库钩子",
++  "hooks.repository.revoke": "撤销仓库钩子信任",
++
+   "feedback.images.unnamed": "剪贴板图像",
+   "feedback.images.manual": "图像保留在本地。请导出报告、下载其中的图像，然后自行将其添加到 GitHub 问题中。",
+   "feedback.images.download": "下载图像",
+--- a/packages/app/src/i18n/zht.ts
++++ b/packages/app/src/i18n/zht.ts
+@@ -3,6 +3,12 @@
+ type Keys = keyof typeof en
+ 
+ export const dict = {
++  "hooks.repository.title": "儲存庫 Hook 信任",
++  "hooks.repository.hint":
++    "允許儲存庫根目錄中的 Hook 在此儲存庫內的工作階段中執行。允許後請重新載入 Hook。撤銷後將阻止新的 Hook 呼叫。",
++  "hooks.repository.grant": "允許儲存庫 Hook",
++  "hooks.repository.revoke": "撤銷儲存庫 Hook 信任",
++
+   "feedback.images.unnamed": "剪貼簿圖片",
+   "feedback.images.manual": "圖片保留在本機。請匯出報告、下載其中的圖片，再自行將圖片附加至 GitHub 議題。",
+   "feedback.images.download": "下載圖片",

@@ -1,8 +1,12 @@
+import { MemoryManagement } from "@/session/memory-management"
+import { SessionMemoryWork } from "@/session/memory-work"
 import { Config as EffectConfig, Context, Effect, Layer } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@apexo/core/fs-util"
+import { AppProcess } from "@apexo/core/process"
+import { Global } from "@apexo/core/global"
 import * as Observability from "@apexo/core/observability"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
@@ -20,6 +24,7 @@ import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
+import { CompatHookSnapshotLocation } from "@/plugin/hook-snapshot-location"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
@@ -57,10 +62,23 @@ import { Npm } from "@apexo/core/npm"
 import { PermissionSaved } from "@apexo/core/permission/saved"
 import { ProjectV2 } from "@apexo/core/project"
 import { ProjectCopy } from "@apexo/core/project/copy"
+import { ProjectCatalog } from "@apexo/core/project/catalog"
 import { PtyTicket } from "@apexo/core/pty/ticket"
 import { Ripgrep } from "@apexo/core/ripgrep"
 import { SessionProjector } from "@apexo/core/session/projector"
+import { SessionCommandSandbox } from "@apexo/core/session/command-sandbox"
+import { SessionScheduleStore } from "@apexo/core/session/schedule-store"
+import { SessionProcessControl } from "@apexo/core/session/process-control"
+import { SessionProcessCompletion } from "@apexo/core/session/process-completion"
+import { SessionTaskControl } from "@apexo/core/session/task-control"
+import { SessionGoalControl } from "@apexo/core/session/goal-control"
+import { WorkflowControl } from "@apexo/core/workflow/control"
+import { SessionSideQuestionNative } from "@apexo/core/session/side-question-native"
 import { SessionV2 } from "@apexo/core/session"
+import { SessionLifecycle } from "@apexo/core/session/lifecycle"
+import { SessionMcpAttachmentOperation } from "@apexo/core/session/mcp-attachment-operation"
+import { SessionMemoryOperation } from "@apexo/core/session/memory-operation"
+import { SessionMemoryModeNative } from "@apexo/core/session/memory-mode-native"
 import { SessionExecution } from "@apexo/core/session/execution"
 import * as SessionExecutionLocal from "@apexo/core/session/execution/local"
 import { lazy } from "@/util/lazy"
@@ -82,6 +100,13 @@ import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
+import { pluginsHandlers } from "./handlers/plugins"
+import { SessionGoalCleanup } from "@apexo/core/session/goal-cleanup"
+import { goalHandlers } from "./handlers/goal"
+import { feedbackHandlers } from "./handlers/feedback"
+import { hooksHandlers } from "./handlers/hooks"
+import { sideQuestionHandlers } from "./handlers/side-question"
+import { SideQuestionManagement } from "@/session/side-question"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -97,7 +122,7 @@ import { sessionHandlers } from "./handlers/session"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@apexo/server/handlers"
-import { buildLocationServiceMap, LocationServiceMap } from "@apexo/core/location-services"
+import { LocationServiceMap } from "@apexo/core/location-services"
 import { layer as locationLayer } from "@apexo/server/location"
 import { sessionLocationLayer } from "@apexo/server/middleware/session-location"
 import { PtyEnvironment } from "@apexo/server/pty-environment"
@@ -152,6 +177,11 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     configHandlers,
     experimentalHandlers,
+    pluginsHandlers,
+    goalHandlers,
+    feedbackHandlers,
+    hooksHandlers,
+    sideQuestionHandlers,
     fileHandlers,
     instanceHandlers,
     mcpHandlers,
@@ -206,6 +236,10 @@ type RouteRequirements =
   | HttpRouter.Request<"GlobalRequires", never>
 
 const app = LayerNode.group([
+  Global.node,
+  SessionGoalCleanup.node,
+  SideQuestionManagement.node,
+  AppProcess.node,
   Npm.node,
   FSUtil.node,
   Database.node,
@@ -217,6 +251,7 @@ const app = LayerNode.group([
   Storage.node,
   Snapshot.node,
   Plugin.node,
+  CompatHookSnapshotLocation.node,
   ModelsDev.node,
   Provider.node,
   ProviderAuth.node,
@@ -231,6 +266,8 @@ const app = LayerNode.group([
   SessionProjector.node,
   SessionStatus.node,
   BackgroundJob.node,
+  MemoryManagement.node,
+  SessionMemoryWork.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
   SessionRunState.node,
@@ -264,7 +301,7 @@ const app = LayerNode.group([
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  const locationServiceMapV2 = buildLocationServiceMap()
+  const locationServiceMapV2 = AppNodeBuilderV1.locationServiceMap
 
   return Layer.mergeAll(
     rootApiRoutes,
@@ -289,14 +326,36 @@ export function createRoutes(
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
     Layer.provide(
-      AppNodeBuilderV1.build(SessionV2.node, [
-        [LocationServiceMap.node, locationServiceMapV2],
-        [SessionExecution.node, SessionExecutionLocal.node],
-      ]),
+      AppNodeBuilderV1.build(
+        LayerNode.group([
+          Global.node,
+          ProjectCatalog.node,
+          SessionV2.node,
+          SessionLifecycle.node,
+          SessionExecution.node,
+          SessionMemoryModeNative.node,
+          SessionMemoryOperation.node,
+          SessionMcpAttachmentOperation.node,
+          SessionGoalControl.node,
+          SessionTaskControl.node,
+          SessionProcessControl.node,
+          SessionScheduleStore.node,
+          SessionProcessCompletion.node,
+          SessionCommandSandbox.node,
+          WorkflowControl.node,
+          SessionSideQuestionNative.node,
+        ]),
+        [
+          [LocationServiceMap.node, locationServiceMapV2],
+          [SessionExecution.node, SessionExecutionLocal.node],
+        ],
+      ),
     ),
     Layer.provide(locationServiceMapV2),
 
-    Layer.provide(AppNodeBuilderV1.build(app)),
+    // Session execution is process-global and may be reached through either graph.
+    // Every consumer must capture the same Location map as native reload handlers.
+    Layer.provide(AppNodeBuilderV1.build(app, [[LocationServiceMap.node, locationServiceMapV2]])),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,
     // so Observability must come after every service graph. Otherwise eagerly forked
     // fibers (e.g. the ModelsDev background refresh) capture Effect's default stdout

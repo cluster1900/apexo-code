@@ -1,8 +1,11 @@
+import { SessionHookSnapshot } from "@apexo/core/session/hook-snapshot"
+import { SessionSchema } from "@apexo/core/session/schema"
+import { HookObserver } from "@apexo/core/hook-observer"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { ConfigPermissionV1 } from "@apexo/core/v1/config/permission"
 import { InstanceState } from "@/effect/instance-state"
 import { Wildcard } from "@apexo/core/util/wildcard"
-import { Deferred, Effect, Layer, Context } from "effect"
+import { Deferred, Effect, Layer, Context, Scope } from "effect"
 import os from "os"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -13,17 +16,22 @@ import { eq } from "drizzle-orm"
 export const Event = PermissionV1.Event
 
 export interface Interface {
-  readonly ask: (input: PermissionV1.AskInput) => Effect.Effect<void, PermissionV1.Error>
+  readonly ask: (
+    input: PermissionV1.AskInput & { force?: boolean; hook?: HookObserver.Invocation },
+  ) => Effect.Effect<void, PermissionV1.Error>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
 }
 
 interface PendingEntry {
+  hook?: HookObserver.Invocation
+  force?: boolean
   info: PermissionV1.Request
   deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
 }
 
 interface State {
+  scope: Scope.Scope
   pending: Map<PermissionV1.ID, PendingEntry>
   approved: Map<string, PermissionV1.Rule[]>
 }
@@ -38,10 +46,10 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
           Wildcard.match(canonical, PermissionV1.canonicalPermission(rule.permission)) &&
           Wildcard.match(pattern, rule.pattern),
       ) ?? {
-        action: "ask",
-        permission: canonical,
-        pattern: "*",
-      }
+      action: "ask",
+      permission: canonical,
+      pattern: "*",
+    }
   )
 }
 
@@ -50,12 +58,14 @@ export class Service extends Context.Service<Service, Interface>()("@apexo/Permi
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const hookSnapshots = yield* SessionHookSnapshot.Service
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
         const state = {
+          scope: yield* Scope.Scope,
           pending: new Map<PermissionV1.ID, PendingEntry>(),
           approved: new Map<string, PermissionV1.Rule[]>(),
         }
@@ -73,9 +83,26 @@ const layer = Layer.effect(
       }),
     )
 
-    const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
-      const { ruleset, ...request } = input
+    const reportDenied = Effect.fnUntraced(function* (hook: HookObserver.Invocation | undefined) {
+      if (!hook) return
+      const ctx = yield* InstanceState.context
+      const snapshot = yield* hookSnapshots.get(SessionSchema.ID.make(hook.sessionID))
+      yield* HookObserver.observe({
+        directory: ctx.directory,
+        sessionID: hook.sessionID,
+        registry: snapshot?.registry,
+        selection: snapshot?.selection,
+        event: "PermissionDenied",
+        matcher: hook.toolName,
+        payload: HookObserver.deniedPayload(hook),
+      })
+    })
+
+    const ask = Effect.fn("Permission.ask")(function* (
+      input: PermissionV1.AskInput & { force?: boolean; hook?: HookObserver.Invocation },
+    ) {
+      const { approved, pending, scope } = yield* InstanceState.get(state)
+      const { ruleset, force, hook, ...request } = input
       const sessionKey = String(request.sessionID)
       const persisted = yield* db
         .select({ permission: SessionTable.permission })
@@ -92,16 +119,20 @@ const layer = Layer.effect(
       let needsAsk = false
 
       for (const pattern of request.patterns) {
-        const rule = evaluate(permission, pattern, ruleset, sessionRules, sessionApproved)
+        const rule = evaluate(permission, pattern, ruleset, sessionRules, ...(force ? [] : [sessionApproved]))
         yield* Effect.logInfo("evaluated", { permission, pattern, action: rule })
-        if (rule.action === "deny") {
+        if (
+          rule.action === "deny" ||
+          (force && [ruleset, sessionRules].some((rules) => evaluate(permission, pattern, rules).action === "deny"))
+        ) {
+          yield* reportDenied(hook)
           return yield* new PermissionV1.DeniedError({
             ruleset: ruleset.filter((rule) =>
               Wildcard.match(permission, PermissionV1.canonicalPermission(rule.permission)),
             ),
           })
         }
-        if (rule.action === "allow") continue
+        if (rule.action === "allow" && !force) continue
         needsAsk = true
       }
 
@@ -120,8 +151,25 @@ const layer = Layer.effect(
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
-      pending.set(id, { info, deferred })
+      pending.set(id, { info, deferred, force, hook })
       yield* events.publish(Event.Asked, info)
+      const ctx = yield* InstanceState.context
+      const snapshot = yield* hookSnapshots.get(info.sessionID)
+      yield* HookObserver.observe({
+        directory: ctx.directory,
+        sessionID: info.sessionID,
+        registry: snapshot?.registry,
+        selection: snapshot?.selection,
+        event: "Notification",
+        matcher: "permission_prompt",
+        payload: {
+          notificationType: "permission_prompt",
+          notification_type: "permission_prompt",
+          message: `Approval required for ${info.permission}`,
+          title: "Permission required",
+          level: "info",
+        },
+      }).pipe(Effect.forkIn(scope))
       return yield* Effect.ensuring(
         Deferred.await(deferred),
         Effect.sync(() => {
@@ -143,6 +191,7 @@ const layer = Layer.effect(
       })
 
       if (input.reply === "reject") {
+        yield* reportDenied(existing.hook)
         yield* Deferred.fail(
           existing.deferred,
           input.message
@@ -158,6 +207,7 @@ const layer = Layer.effect(
             requestID: item.info.id,
             reply: "reject",
           })
+          yield* reportDenied(item.hook)
           yield* Deferred.fail(item.deferred, new PermissionV1.RejectedError())
         }
         return
@@ -204,7 +254,7 @@ const layer = Layer.effect(
       }
 
       for (const [id, item] of pending.entries()) {
-        if (item.info.sessionID !== existing.info.sessionID) continue
+        if (item.info.sessionID !== existing.info.sessionID || item.force) continue
         const ok = item.info.patterns.every(
           (pattern) => evaluate(item.info.permission, pattern, sessionApproved).action === "allow",
         )
@@ -279,6 +329,10 @@ export function visibleTools<T>(tools: Record<string, T>, ruleset: PermissionV1.
   return Object.fromEntries(Object.entries(tools).filter(([name]) => !hidden.has(name)))
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node, Database.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [SessionHookSnapshot.node, EventV2Bridge.node, Database.node],
+})
 
 export * as Permission from "."

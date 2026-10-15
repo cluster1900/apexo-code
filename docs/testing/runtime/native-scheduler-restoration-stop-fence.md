@@ -1,0 +1,18 @@
+# Accepted Stop must persist the exact restoration candidates
+
+- Bug ID: BUG-20261015-274.
+- Status: Integrated; shared focused/types, CLI/Desktop and UI/terminal acceptance pass.
+- Scope: Accepted active Stop while explicit Session restoration is resolving a model.
+- Independent occurrences: 1; current-process and foreign-owner rows are two cases of the same cause.
+
+A real model-resolution barrier held the explicit restoration control after it had captured an eligible intent. Accepted Stop interrupted and joined that control, with zero child/provider work, but the intent remained `paused/restart_required`. A later owner could therefore restore it even though the user had stopped the active restoration operation.
+
+The actual race run from `packages/apexo`, `bun test test/v2/schedule-restore-races.test.ts`, passed 7 cases and failed these 2 cases (69 assertions): expected `stopped`, received `restart_required`. The other cases verified late Goal, Plan, permission, headless input, pause/delete and Session deletion boundaries. A preceding fixture interruption-observation error is separately recorded in [BUG-20261015-275](../test-fixtures/scheduler-restore-interruption-observation.md).
+
+The draft repair tracks bounded candidate snapshots under the exact owner incarnation and epoch while restoration runs. Accepted Stop captures those snapshots before revoking the epoch and joins the operation. It then saves `stopped` only if Created identity, owner, generation and revision still match and the intent remains eligible. A newer manual pause, deletion or update wins. The private store operation changes only future intent; it does not invalidate or rewrite a foreign occurrence or Task receipt, adopt a foreign child, or infer that an old process has died. Normal host/Location retirement never takes this explicit-Stop path.
+
+This is distinct from [BUG-20261015-269](native-scheduler-retirement-stop.md), where ordinary teardown incorrectly recorded a user Stop. The corrected combined suite passed 18 tests and 167 assertions across five files: `bun test test/v2/schedule-restore-store.test.ts test/v2/schedule-restore-owner.test.ts test/v2/schedule-restore-runtime.test.ts test/v2/schedule-restore-races.test.ts test/e2e/v2-session-restore.e2e.test.ts` from `packages/apexo`. Both held Stop cases passed, as did late authority changes, joined Session deletion, manual-pause precedence and the cold native HTTP path. Core, Apexo, Protocol, Server, App and TUI package typechecks passed. The expanded empty-Session regression also passed 18 tests / 181 assertions. Shared integration remains pending.
+
+## Shared verification
+
+The reviewed correction is integrated. From `packages/apexo`, `bun test --timeout 30000 test/v2/schedule-restore-store.test.ts test/v2/schedule-restore-owner.test.ts test/v2/schedule-restore-runtime.test.ts test/v2/schedule-restore-races.test.ts test/e2e/v2-session-restore.e2e.test.ts` passes18 tests/181 assertions. The refreshed repository `bun turbo typecheck --concurrency=2` passes all21 tasks. Shared source CLI passes four checks/eleven provider calls, including actual restart and future recurrence. Its first startup attempt is retained under [BUG163](../test-stability/native-terminal-backend-readiness.md); that separate delay has no established fix. Shared rebuilt Desktop acceptance also passes four checks/eleven provider calls. Production browser and actual native window each pass four checks in both eligible and permission-required branches across en/zh/zht; mini/fullscreen at80×24 each pass five ordinary checks and one permission-consent check.

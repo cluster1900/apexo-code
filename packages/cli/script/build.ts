@@ -7,6 +7,7 @@ import { Script } from "@apexo/script"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 import pkg from "../package.json"
 import { modelsData } from "./generate"
+import { stageWorkflowInterpreter } from "../../workflow-script/script/artifact"
 
 const dir = path.resolve(import.meta.dirname, "..")
 const binary = "lildax"
@@ -62,6 +63,7 @@ for (const item of targets) {
     .join("-")
   const name = target.replace(binary, "cli")
   console.log(`building ${name}`)
+  await stageWorkflowInterpreter(`./dist/${name}/bin`, item)
   const result = await Bun.build({
     entrypoints: ["./src/index.ts"],
     tsconfig: "./tsconfig.json",

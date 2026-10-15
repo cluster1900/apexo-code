@@ -22,7 +22,7 @@ import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
 import { estimateRootSessionTotal, loadRootSessions, loadRootSessionsV1 } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
-import type { ProjectMeta } from "./global-sync/types"
+import type { LspConnectionStatus, ProjectMeta } from "./global-sync/types"
 import { SESSION_RECENT_LIMIT } from "./global-sync/types"
 import { formatServerError } from "@/utils/server-errors"
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
@@ -47,10 +47,9 @@ import type {
   McpResource,
   McpResourceCatalogInput,
   McpResourceCatalogOutput,
-  McpServer,
   SessionActiveOutput,
 } from "@apexo/client/promise"
-import { toggleMcp } from "./global-sync/mcp"
+import { toggleMcp, type McpAction, type McpConnectionStatus } from "./global-sync/mcp"
 import { createServerSession, type ServerSession } from "./server-session"
 
 type GlobalStore = {
@@ -89,16 +88,18 @@ export const loadMcpQuery = (
   api: McpListApi,
   legacy?: ApexoClient,
   protocol?: Promise<"v1" | "v2">,
-): ApiQueryOptions<Record<string, McpServer["status"]>, readonly [ServerScope, string, "mcp"]> =>
+): ApiQueryOptions<Record<string, McpConnectionStatus>, readonly [ServerScope, string, "mcp"]> =>
   queryOptions<
-    Record<string, McpServer["status"]>,
+    Record<string, McpConnectionStatus>,
     Error,
-    Record<string, McpServer["status"]>,
+    Record<string, McpConnectionStatus>,
     readonly [ServerScope, string, "mcp"]
   >({
     queryKey: [scope, directory, "mcp"] as const,
-    queryFn: async () => {
-      if ((await protocol) === "v1" && legacy) return (await legacy.mcp.status()).data ?? {}
+    queryFn: async ({ signal }) => {
+      if ((await protocol) === "v2" && legacy)
+        return (await legacy.v2.mcp.status({ location: { directory } }, { signal, throwOnError: true })).data
+      if ((await protocol) === "v1" && legacy) return (await legacy.mcp.status({}, { signal, throwOnError: true })).data
       return api
         .list({ location: { directory } })
         .then((result) => Object.fromEntries(result.data.map((server) => [server.name, server.status])))
@@ -120,6 +121,8 @@ export const loadMcpResourcesQuery = (
   >({
     queryKey: [scope, directory, "mcpResources"] as const,
     queryFn: async () => {
+      // Native resource browsing is not available yet; never call an archived route.
+      if ((await protocol) === "v2") return {}
       if ((await protocol) === "v1" && legacy) {
         return Object.fromEntries(
           Object.entries((await legacy.experimental.resource.list()).data ?? {}).map(([key, resource]) => [
@@ -137,10 +140,18 @@ export const loadMcpResourcesQuery = (
     placeholderData: {},
   })
 
-export const loadLspQuery = (scope: ServerScope, directory: string, sdk: ApexoClient) =>
-  queryOptions({
+export const loadLspQuery = (
+  scope: ServerScope,
+  directory: string,
+  sdk: ApexoClient,
+  protocol?: Promise<"v1" | "v2">,
+) =>
+  queryOptions<LspConnectionStatus[]>({
     queryKey: [scope, directory, "lsp"] as const,
-    queryFn: () => sdk.lsp.status().then((r) => r.data ?? []),
+    queryFn: async ({ signal }) =>
+      (await protocol) === "v2"
+        ? (await sdk.v2.lsp.status({ location: { directory } }, { signal, throwOnError: true })).data
+        : (await sdk.lsp.status({}, { signal, throwOnError: true })).data,
   })
 
 export const loadActiveSessionsQuery = (
@@ -189,8 +200,10 @@ function makeQueryOptionsApi(
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, serverAPI.mcp, sdkFor(directory), protocol),
     mcpResources: (directory: PathKey) =>
       loadMcpResourcesQuery(scope, directory, serverAPI.mcp, sdkFor(directory), protocol),
-    lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
-    sessions: (directory: PathKey) => ({ queryKey: [scope, directory, "loadSessions"] as const }),
+    lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory), protocol),
+    sessions: (directory: PathKey) => ({
+      queryKey: [scope, directory, "loadSessions"] as const,
+    }),
   }
 }
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>
@@ -263,7 +276,13 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     project: [],
     provider_auth: {},
     get path() {
-      const EMPTY = { state: "", config: "", worktree: "", directory: "", home: "" }
+      const EMPTY = {
+        state: "",
+        config: "",
+        worktree: "",
+        directory: "",
+        home: "",
+      }
       if (pathQuery.isLoading) return EMPTY
       return pathQuery.data ?? EMPTY
     },
@@ -361,7 +380,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         .catch((err) => {
           showToast({
             variant: "error",
-            title: language.t("toast.project.reloadFailed.title", { project: getFilename(directory) }),
+            title: language.t("toast.project.reloadFailed.title", {
+              project: getFilename(directory),
+            }),
             description: formatServerError(err, language.t),
           })
         })
@@ -412,8 +433,16 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
           serverSDK.protocol
             .then((protocol) =>
               protocol === "v1"
-                ? loadRootSessionsV1({ client: sdkFor(directory), directory, limit })
-                : loadRootSessions({ api: serverSDK.api.session, directory, limit }),
+                ? loadRootSessionsV1({
+                    client: sdkFor(directory),
+                    directory,
+                    limit,
+                  })
+                : loadRootSessions({
+                    api: serverSDK.api.session,
+                    directory,
+                    limit,
+                  }),
             )
             .then((x) => {
               const nonArchived = (x.data ?? [])
@@ -445,7 +474,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
               const project = getFilename(directory)
               showToast({
                 variant: "error",
-                title: language.t("toast.session.listFailed.title", { project }),
+                title: language.t("toast.session.listFailed.title", {
+                  project,
+                }),
                 description: formatServerError(err, language.t),
               })
             })
@@ -656,7 +687,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       bootstrap.refetch()
       // Invalidate all provider queries so newly configured custom providers
       // appear immediately in the available provider list across all directories.
-      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
+      queryClient.invalidateQueries({
+        queryKey: [serverSDK.scope, null, "providers"],
+      })
       queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === serverSDK.scope && query.queryKey[2] === "providers",
       })
@@ -683,11 +716,62 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     session,
     homeSessions,
     mcp: {
+      authStart: async (directory: string, name: string) => {
+        const key = directoryKey(directory)
+        if ((await serverSDK.protocol) !== "v2") throw new Error(language.t("mcp.runtime.authUnavailable"))
+        const result = await sdkFor(key).v2.mcp.authStart(
+          { server: name, location: { directory: key } },
+          { throwOnError: false },
+        )
+        await queryClient.refetchQueries(queryOptionsApi.mcp(key))
+        if (!result.response.ok || !result.data)
+          throw new Error(language.t(result.response.status === 409 ? "mcp.runtime.busy" : "mcp.auth.failed"))
+        return result.data
+      },
+      authCancel: async (directory: string, name: string, flowID: string) => {
+        const key = directoryKey(directory)
+        if ((await serverSDK.protocol) !== "v2") return
+        const result = await sdkFor(key).v2.mcp.authCancel(
+          { server: name, flowID, location: { directory: key } },
+          { throwOnError: false },
+        )
+        await queryClient.refetchQueries(queryOptionsApi.mcp(key))
+        if (!result.response.ok) throw new Error(language.t("mcp.auth.failed"))
+      },
+      refresh: async (directory: string) => {
+        const key = directoryKey(directory)
+        await queryClient.refetchQueries(queryOptionsApi.mcp(key), {
+          throwOnError: true,
+        })
+      },
+      manage: async (directory: string, name: string, action: McpAction) => {
+        const key = directoryKey(directory)
+        const sdk = sdkFor(key)
+        if ((await serverSDK.protocol) !== "v2") return
+        const result = await sdk.v2.mcp[action]({ server: name, location: { directory: key } }, { throwOnError: false })
+        await queryClient.refetchQueries(queryOptionsApi.mcp(key))
+        if (!result.response.ok)
+          throw new Error(language.t(result.response.status === 409 ? "mcp.runtime.busy" : "common.requestFailed"))
+      },
       toggle: async (directory: string, name: string) => {
         const key = directoryKey(directory)
         const sdk = sdkFor(key)
-        const status = children.child(key, { bootstrap: false })[0].mcp[name]?.status
+        const connection = children.child(key, { bootstrap: false })[0].mcp[name]
+        const status = connection?.status
         if (!status) return
+        if ((await serverSDK.protocol) === "v2") {
+          const action =
+            status === "connected"
+              ? "disconnect"
+              : status === "disabled" || ("preference" in connection && connection.preference === false)
+                ? "connect"
+                : "retry"
+          await sdk.v2.mcp[action]({ server: name, location: { directory: key } }, { throwOnError: true })
+          await queryClient.refetchQueries(queryOptionsApi.mcp(key), {
+            throwOnError: true,
+          })
+          return
+        }
         await toggleMcp({
           status,
           connect: async () => {
@@ -695,14 +779,20 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
               await sdk.mcp.connect({ name })
               return
             }
-            await serverSDK.api.mcp.connect({ server: name, location: { directory: key } })
+            await serverSDK.api.mcp.connect({
+              server: name,
+              location: { directory: key },
+            })
           },
           disconnect: async () => {
             if ((await serverSDK.protocol) === "v1") {
               await sdk.mcp.disconnect({ name })
               return
             }
-            await serverSDK.api.mcp.disconnect({ server: name, location: { directory: key } })
+            await serverSDK.api.mcp.disconnect({
+              server: name,
+              location: { directory: key },
+            })
           },
           authenticate: async () => {
             await sdk.mcp.auth.authenticate({ name })

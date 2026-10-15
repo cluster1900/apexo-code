@@ -19,8 +19,17 @@ export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()(
   }
 }
 
+export interface OutputChunk {
+  readonly channel: "stdout" | "stderr" | "combined"
+  readonly data: Uint8Array
+}
+
 export interface RunOptions {
   readonly combineOutput?: boolean
+  /** Scoped, backpressured observation before capture truncation; never starts a second reader. */
+  readonly onOutput?: (chunk: OutputChunk) => Effect.Effect<void>
+  /** Runs inside the spawned process scope before its result can be published. */
+  readonly onStart?: (pid: number) => Effect.Effect<void>
   readonly maxOutputBytes?: number
   readonly maxErrorBytes?: number
   readonly signal?: AbortSignal
@@ -143,12 +152,22 @@ const layer = Layer.effect(
 
     const runCommand = (command: ChildProcess.Command, options?: RunOptions) => {
       const description = describeCommand(command)
+      const observer = options?.onOutput
       const collect = Effect.scoped(
         Effect.gen(function* () {
           const handle = yield* spawner.spawn(command)
+          if (options?.onStart) yield* options.onStart(handle.pid)
           if (options?.combineOutput) {
             const [output, exitCode] = yield* Effect.all(
-              [collectStream(handle.all, options.maxOutputBytes), handle.exitCode],
+              [
+                collectStream(
+                  observer
+                    ? handle.all.pipe(Stream.tap((data) => observer({ channel: "combined", data })))
+                    : handle.all,
+                  options.maxOutputBytes,
+                ),
+                handle.exitCode,
+              ],
               { concurrency: "unbounded" },
             )
             return {
@@ -164,8 +183,18 @@ const layer = Layer.effect(
           }
           const [stdout, stderr, exitCode] = yield* Effect.all(
             [
-              collectStream(handle.stdout, options?.maxOutputBytes),
-              collectStream(handle.stderr, options?.maxErrorBytes),
+              collectStream(
+                observer
+                  ? handle.stdout.pipe(Stream.tap((data) => observer({ channel: "stdout", data })))
+                  : handle.stdout,
+                options?.maxOutputBytes,
+              ),
+              collectStream(
+                observer
+                  ? handle.stderr.pipe(Stream.tap((data) => observer({ channel: "stderr", data })))
+                  : handle.stderr,
+                options?.maxErrorBytes,
+              ),
               handle.exitCode,
             ],
             { concurrency: "unbounded" },

@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { Database } from "@apexo/core/database/database"
 import { LayerNode } from "@apexo/core/effect/layer-node"
@@ -179,7 +180,7 @@ const replacements = [
   [SessionSummary.node, summary],
   [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
 ] as const
-const env = LayerNode.compile(
+const env = AppNodeBuilderV1.build(
   LayerNode.group([root, LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })]),
   replacements,
 )
@@ -206,7 +207,7 @@ const providerErrorLLM = Layer.succeed(
       ),
   }),
 )
-const providerErrorEnv = LayerNode.compile(root, [...replacements, [LLM.node, providerErrorLLM]])
+const providerErrorEnv = AppNodeBuilderV1.build(root, [...replacements, [LLM.node, providerErrorLLM]])
 const itProviderError = testEffect(providerErrorEnv)
 
 const fragmentFailureLLM = Layer.succeed(
@@ -223,7 +224,7 @@ const fragmentFailureLLM = Layer.succeed(
       ),
   }),
 )
-const fragmentFailureEnv = LayerNode.compile(root, [...replacements, [LLM.node, fragmentFailureLLM]])
+const fragmentFailureEnv = AppNodeBuilderV1.build(root, [...replacements, [LLM.node, fragmentFailureLLM]])
 const itFragmentFailure = testEffect(fragmentFailureEnv)
 
 const boot = Effect.fn("test.boot")(function* () {
@@ -723,9 +724,11 @@ it.live("session.processor effect tests publish retry status updates", () =>
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
         const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
         const states: number[] = []
+        const statuses: (typeof SessionStatus.Event.Status.data.Type)["status"][] = []
         const off = yield* events.listen((evt) => {
           if (evt.type !== SessionStatus.Event.Status.type) return Effect.void
           const data = evt.data as typeof SessionStatus.Event.Status.data.Type
+          if (data.sessionID === chat.id) statuses.push(data.status)
           if (data.sessionID === chat.id && data.status.type === "retry") states.push(data.status.attempt)
           return Effect.void
         })
@@ -754,6 +757,14 @@ it.live("session.processor effect tests publish retry status updates", () =>
 
         yield* off
 
+        if (value !== "continue")
+          console.error("Retry status failure evidence", {
+            value,
+            error: handle.message.error,
+            calls: yield* llm.calls,
+            inputs: yield* llm.inputs,
+            statuses,
+          })
         expect(value).toBe("continue")
         expect(yield* llm.calls).toBe(2)
         expect(states).toStrictEqual([1])
@@ -853,6 +864,14 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         const parts = yield* MessageV2.parts(msg.id)
         const call = parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
 
+        if (value !== "continue")
+          console.error("AI SDK tool completion failure evidence", {
+            value,
+            error: handle.message.error,
+            calls: yield* llm.calls,
+            inputs: yield* llm.inputs,
+            parts,
+          })
         expect(value).toBe("continue")
         expect(yield* llm.calls).toBe(1)
         expect(call?.callID).toBe("call_1")

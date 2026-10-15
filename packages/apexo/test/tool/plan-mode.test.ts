@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { expect } from "bun:test"
 import { Effect, Fiber, Queue } from "effect"
 import { LayerNode } from "@apexo/core/effect/layer-node"
@@ -19,7 +20,7 @@ import { Agent } from "@/agent/agent"
 import { SessionProjector } from "@apexo/core/session/projector"
 
 const it = testEffect(
-  LayerNode.compile(
+  AppNodeBuilderV1.build(
     LayerNode.group([
       ToolRegistry.node,
       Session.node,

@@ -1,3 +1,6 @@
+import { SessionCommandSandbox } from "@apexo/core/session/command-sandbox"
+import { Database } from "@apexo/core/database/database"
+import { SessionManagedChild } from "@apexo/core/session/managed-child"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@apexo/core/v1/session"
@@ -46,6 +49,8 @@ const tryParseJson = (text: string) =>
 
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
+    const database = yield* Database.Service
+    const policies = yield* SessionCommandSandbox.Service
     const session = yield* Session.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
@@ -78,6 +83,19 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const requireSession = Effect.fn("SessionHttpApi.requireSession")(function* (sessionID: SessionID) {
       return yield* SessionError.mapStorageNotFound(session.get(sessionID))
+    })
+
+    const requireLegacy = Effect.fn("SessionHttpApi.requireLegacy")(function* (sessionID: SessionID) {
+      const current = yield* requireSession(sessionID)
+      yield* policies.assertLegacy(sessionID).pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      if (
+        yield* SessionManagedChild.managed(database.db, sessionID).pipe(
+          Effect.mapError(() => new HttpApiError.BadRequest({})),
+        )
+      )
+        return yield* new HttpApiError.BadRequest({})
+      if (SessionPrompt.isWorkflowOwned(current.metadata)) return yield* new HttpApiError.BadRequest({})
+      return current
     })
 
     const get = Effect.fn("SessionHttpApi.get")(function* (ctx: { params: { sessionID: SessionID } }) {
@@ -174,6 +192,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
       return true
     })
@@ -205,6 +224,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
+      yield* requireLegacy(ctx.params.sessionID)
       return yield* SessionError.mapStorageNotFound(
         session.fork({
           sessionID: ctx.params.sessionID,
@@ -236,7 +256,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof InitPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacy(ctx.params.sessionID)
       yield* promptSvc
         .command({
           sessionID: ctx.params.sessionID,
@@ -253,7 +273,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof SummarizePayload.Type
     }) {
-      yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
+      yield* revertSvc.cleanup(yield* requireLegacy(ctx.params.sessionID))
       const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       const defaultAgent = yield* agentSvc.defaultAgent()
       const currentAgent = messages.findLast((message) => message.info.role === "user")?.info.agent ?? defaultAgent
@@ -275,7 +295,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacy(ctx.params.sessionID)
       const message = yield* promptSvc
         .prompt({
           ...ctx.payload,
@@ -291,7 +311,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacy(ctx.params.sessionID)
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
@@ -311,7 +331,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof CommandPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacy(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
         .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
@@ -321,7 +341,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof ShellPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacy(ctx.params.sessionID)
       return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
     })
 

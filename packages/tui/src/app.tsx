@@ -1,3 +1,4 @@
+import { mcpAttachmentParts } from "@apexo/sdk/v2/mcp-attachment"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerApexoSpinner } from "./component/register-spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
@@ -281,6 +282,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                         <SDKProvider
                                           url={input.url}
                                           local={input.local}
+                                          sessionProtocol={input.args.sessionProtocol}
                                           directory={input.directory}
                                           fetch={input.fetch}
                                           headers={input.headers}
@@ -463,6 +465,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     }
   })
 
+  const restoreSelectedSession = (sessionID: string) => {
+    void sdk
+      .restoreSession(sessionID)
+      .then((notice) => {
+        if (notice) toast.show({ message: notice, variant: "warning" })
+      })
+      .catch(() =>
+        toast.show({ message: "Could not restore schedules. Check the connection and try again.", variant: "error" }),
+      )
+  }
   const args = useArgs()
   onMount(() => {
     batch(() => {
@@ -478,6 +490,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         local.model.set({ providerID, modelID }, { recent: true })
       }
       if (args.sessionID && !args.fork) {
+        restoreSelectedSession(args.sessionID)
         route.navigate({
           type: "session",
           sessionID: args.sessionID,
@@ -496,7 +509,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (match) {
       continued = true
       if (args.fork) {
-        void sdk.client.session.fork({ sessionID: match }).then((result) => {
+        void sdk.forkSession(match).then((result) => {
           if (result.data?.id) {
             route.navigate({ type: "session", sessionID: result.data.id })
           } else {
@@ -504,6 +517,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
           }
         })
       } else {
+        restoreSelectedSession(match)
         route.navigate({ type: "session", sessionID: match })
       }
     }
@@ -516,7 +530,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   createEffect(() => {
     if (forked || sync.status !== "complete" || !args.sessionID || !args.fork) return
     forked = true
-    void sdk.client.session.fork({ sessionID: args.sessionID }).then((result) => {
+    void sdk.forkSession(args.sessionID).then((result) => {
       if (result.data?.id) {
         route.navigate({ type: "session", sessionID: result.data.id })
       } else {
@@ -677,7 +691,21 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Agent",
         slashName: "mcps",
         run: () => {
-          dialog.replace(() => <DialogMcp />)
+          dialog.replace(() => (
+            <DialogMcp
+              sessionID={() => (route.data.type === "session" ? route.data.sessionID : undefined)}
+              onAttach={(prepared) => {
+                const current = promptRef.current
+                if (!current || route.data.type !== "session") return
+                const added = mcpAttachmentParts(current.current.input, prepared)
+                current.set({
+                  ...current.current,
+                  input: added.text,
+                  parts: [...current.current.parts, ...added.parts],
+                })
+              }}
+            />
+          ))
         },
       },
       {
@@ -1024,9 +1052,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         evt.stopPropagation()
       }}
       onMouseUp={
-        !Flag.APEXO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT
-          ? () => Selection.copy(renderer, toast, clipboard)
-          : undefined
+        !Flag.APEXO_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? () => Selection.copy(renderer, toast, clipboard) : undefined
       }
     >
       <Show when={Flag.APEXO_SHOW_TTFD}>

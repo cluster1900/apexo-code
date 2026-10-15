@@ -1,0 +1,16 @@
+# BUG-20261014-125: Missing optional model default discarded the native catalog
+
+- Scope: native App provider bootstrap and Goal model selection.
+- Observed: the actual native-only browser returned 200 for provider/model catalogs and 404 for `/api/model/default`. Goal creation remained disabled with the select-model message. The instrumented rerun captured those HTTP statuses; no provider execution occurred.
+- Expected: a native server without the optional default endpoint still exposes available models and retains normal configured or user selection precedence.
+- Root cause: catalog bootstrap used `Promise.all` including an older client's default-model endpoint. Its 404 rejected the entire catalog request. Current Protocol exposes the model list but no separate default endpoint.
+- Fix: tolerate only the optional default endpoint's 404, passing an absent default to existing normalization and selection logic. Provider/model failures and other default failures remain errors. Generated clients are unchanged.
+- Verification: focused protocol/default compatibility tests passed 6 tests and 9 assertions; App typecheck initially caught a test fetch signature and incomplete response Location shape; the test was given a complete typed model/default response and a compatible fetch signature. Final App typecheck exited successfully. The default checks preserve a successful configured default, tolerate only 404, and propagate 503. The subsequent production browser acceptance is recorded below. Initial native-only browser runs failed honestly at model readiness; they do not count as Goal lifecycle acceptance.
+
+The first bootstrap-level test imported the full Solid UI graph and failed before execution because the default server export lacks `use`. It passed with browser conditions, but that would break ordinary package test discovery. The final regression targets the extracted optional-default compatibility boundary through the actual client, avoiding the UI import graph; ordinary package test invocation passes. This was a test-design failure, not a product runtime failure.
+
+- Production browser acceptance: `bun ./script/grok-native-goal-ui.mjs desktop` (from `packages/apexo`, pinned Bun 1.3.14) passed all 7 checks against the actual native-only Core server: passive empty panel, create/start, pause/resume, independent verification, report preview/download, confirmed cleanup, and clear preserving transcript. The fixture verified legacy health returns 404 and native health succeeds. Browser, server, and fixture processes were cleaned up. Native macOS window acceptance is tracked separately pending the refreshed Desktop artifact.
+
+## Native macOS window follow-up
+
+`bun script/grok-native-goal-ui.mjs native` from `packages/apexo` passed all seven checks using the shared built Electron renderer and actual native-only source server after the independent fixture-registration and CORS fixes (BUG-20261014-158 and BUG-20261014-159). The flow covered passive open, create/start, pause/resume, independent verification, report preview/download and confirmed removal, and Goal clear preserving the transcript. The report screenshot was inspected and owned processes were reaped.

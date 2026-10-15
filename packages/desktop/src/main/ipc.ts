@@ -1,3 +1,4 @@
+import type { RuntimeProfileState } from "../preload/types"
 import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
 import { basename, join } from "node:path"
@@ -31,6 +32,8 @@ const pickerFilters = (ext?: string[]) => {
 const pickedFiles = createPickedFileAuthorizations()
 
 type Deps = {
+  getRuntimeProfile: () => RuntimeProfileState
+  setRuntimeProfile: (value: unknown) => RuntimeProfileState
   killSidecar: () => Promise<void> | void
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
@@ -56,6 +59,8 @@ export function registerIpcHandlers(deps: Deps) {
   app.once("will-quit", () => drafts.close())
   app.on("browser-window-created", (_event, win) => win.on("session-end", () => drafts.flush()))
 
+  ipcMain.handle("get-runtime-profile", () => deps.getRuntimeProfile())
+  ipcMain.handle("set-runtime-profile", (_event: IpcMainInvokeEvent, value: unknown) => deps.setRuntimeProfile(value))
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())

@@ -1,4 +1,5 @@
-import { Effect, Layer, LayerMap } from "effect"
+import { CommandSandbox } from "./command-sandbox"
+import { Context, Effect, Layer, LayerMap } from "effect"
 import { AgentV2 } from "./agent"
 import { AISDK } from "./aisdk"
 import { Catalog } from "./catalog"
@@ -11,6 +12,10 @@ import { FileSystem } from "./filesystem"
 import { FileSystemSearch } from "./filesystem/search"
 import { Watcher } from "./filesystem/watcher"
 import { Image } from "./image"
+import { HookSnapshotLocation } from "./hook-snapshot-location"
+import { MemoryLifecycleNative } from "./memory-lifecycle-native"
+import { MemoryNative } from "./memory-native"
+import { MemoryContextNative } from "./memory-context-native"
 import { Integration } from "./integration"
 import { Location } from "./location"
 import { LocationMutation } from "./location-mutation"
@@ -18,6 +23,9 @@ import { LocationServiceMap } from "./location-service-map"
 import { PermissionV2 } from "./permission"
 import { PluginV2 } from "./plugin"
 import { PluginInternal } from "./plugin/internal"
+import { PluginBundleRuntime } from "./plugin-bundle-runtime"
+import { MCP } from "./mcp"
+import { LSP } from "./lsp"
 import { Policy } from "./policy"
 import { ProjectCopy } from "./project/copy"
 import { Pty } from "./pty"
@@ -26,6 +34,9 @@ import { Reference } from "./reference"
 import { ReferenceGuidance } from "./reference/guidance"
 import * as SessionRunnerLLM from "./session/runner/llm"
 import { SessionRunnerModel } from "./session/runner/model"
+import { SessionScheduleRuntime } from "./session/schedule"
+import { SessionTask } from "./session/task"
+import { SessionProcessExecution } from "./session/process-execution"
 import { SessionTodo } from "./session/todo"
 import { SkillV2 } from "./skill"
 import { SkillGuidance } from "./skill/guidance"
@@ -36,11 +47,13 @@ import { BuiltInTools } from "./tool/builtins"
 import { ReadToolFileSystem } from "./tool/read-filesystem"
 import { ToolRegistry } from "./tool/registry"
 import { ToolOutputStore } from "./tool-output-store"
+import { WorkflowSources } from "./workflow/sources"
 
 export { LocationServiceMap } from "./location-service-map"
 
 export const locationServices = LayerNode.group([
   Location.node,
+  CommandSandbox.node,
   Policy.node,
   Config.node,
   AgentV2.node,
@@ -51,6 +64,9 @@ export const locationServices = LayerNode.group([
   AISDK.node,
   PluginV2.node,
   PluginInternal.node,
+  PluginBundleRuntime.node,
+  MCP.node,
+  LSP.node,
   ProjectCopy.node,
   ProjectCopy.refreshNode,
   FileSystemSearch.node,
@@ -67,13 +83,21 @@ export const locationServices = LayerNode.group([
   ToolRegistry.node,
   ToolRegistry.toolsNode,
   Image.node,
+  HookSnapshotLocation.node,
   SkillGuidance.node,
   ReferenceGuidance.node,
+  MemoryContextNative.node,
+  MemoryNative.node,
+  MemoryLifecycleNative.node,
   SessionTodo.node,
+  SessionProcessExecution.node,
+  SessionScheduleRuntime.node,
+  SessionTask.node,
   QuestionV2.node,
   ReadToolFileSystem.node,
   BuiltInTools.node,
   SessionRunnerModel.node,
+  WorkflowSources.node,
   Snapshot.node,
   SessionRunnerLLM.node,
 ])
@@ -97,6 +121,10 @@ export function buildLocationServiceMap(
 
         return LayerNode.compile(location.node).pipe(
           Layer.fresh,
+          // Boot materializes configured agents, permissions and models asynchronously.
+          // A cold Session must never observe the empty pre-boot catalog or agent defaults.
+          Layer.tap((context) => Context.get(context, PluginInternal.Service).ready),
+          Layer.tap((context) => Context.get(context, PluginBundleRuntime.Service).ready),
           Layer.tap(() =>
             Effect.logInfo("booting location services", {
               directory: ref.directory,

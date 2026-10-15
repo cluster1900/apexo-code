@@ -1,0 +1,19 @@
+# Native Memory receipt retries
+
+Status: reviewed implementation integrated into the shared branch. Shared service, source CLI and scoped HTTP acceptance pass; rebuilt packaged Desktop acceptance passes; the native operation UI remains pending.
+
+`POST /api/session/:sessionID/memory/retry` accepts a new operation `id` and the original `retryOf` ID. The server retrieves the original private request under the current Session's exact Created identity. Clients never reconstruct migration or recovery requests from a fresh preview, and the response remains the public `MemoryOperation.Info` projection without private plans, paths or lease tokens.
+
+The command uses the existing operation admission and execution path. Exact repetition of the same retry request reconciles its receipt without launching another worker. A different Session or a replacement Session cannot use the old receipt. Original captured permissions, current permissions, mode, generation and domain ownership checks still apply; retry is not an authorization bypass. A new retry may produce `no_work`, fail, or require further recovery according to the original operation's existing rules. In particular, an already imported unchanged migration source produces `no_work` with zero processed items.
+
+Recovery retries retain the original bounded action targets. A committed clear retry may settle that exact receipt; it does not clear notes added later. `committed` describes the durable action, not a promise that every filesystem step has settled. This endpoint does not add automatic replay, orphan adoption, or provider work on status/reopen.
+
+Verification uses the actual native service and HTTP endpoints. The service cases cover cancelled Dream retry, unchanged migration source and note inventory, committed clear, cross-Session rejection and replacement rejection. `bun script/grok-memory-retry-native.mjs cli` exercises a real backend crash/reopen, server-derived committed retry with only two input IDs, exact repeat, private-field omission, foreign/replaced Session rejection, preserved later files and zero provider calls. The same script accepts `desktop` for coordinated packaged-backend acceptance; that acceptance is separate from the source CLI result.
+
+The exact eight-file handoff was integrated after checking all original/final hashes. Shared `bun test --timeout 30000 test/v2/memory-dream-native.test.ts test/tool/memory-recovery.test.ts` passes 24 tests/162 assertions; the source CLI fixture passes nine checks with zero provider calls. All 15 Memory Effect HTTP scenarios pass. Core and Apexo package typechecks, Client generation and legacy SDK generation pass. The fixture's canonical Location correction is recorded under [BUG091](testing/test-fixtures/hooks-native-permission-location.md); the already-imported source expectation is [BUG284](testing/test-fixtures/native-memory-retry-no-work.md). All owned processes were reaped.
+
+The broader native Memory management UI, historical unproven owner recovery, legacy lifecycle parity, advanced retrieval and batch capabilities remain separate work. This command closes the reopened-client retry request gap only.
+
+## Rebuilt Desktop acceptance
+
+Fresh packaged Electron/Node acceptance exposed and repaired [BUG290](testing/runtime/native-memory-recovery-node-file-probe.md): recovery preview used a Bun-only file probe. The portable correction passes the shared 24-test/162-assertion Dream/recovery gate and Core types. After rebuilding, Desktop recovery passes six checks and exact retry passes nine, each with zero provider calls. Both source CLI commands pass again with the same counts. The installed reference independently passes eight Memory observations and supported clear; it does not claim an equivalent private discard-receipt API. Native operation UI remains a separate in-progress deliverable.

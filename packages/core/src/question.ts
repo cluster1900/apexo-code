@@ -4,6 +4,8 @@ import { makeLocationNode } from "./effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { Question } from "@apexo/schema/question"
 import { EventV2 } from "./event"
+import { SessionPlan } from "./session/plan"
+import { SessionLifecycle } from "./session/lifecycle"
 import { SessionSchema } from "./session/schema"
 
 export const ID = Question.ID
@@ -55,9 +57,14 @@ export interface ReplyInput {
 
 export interface Interface {
   readonly ask: (input: AskInput) => Effect.Effect<ReadonlyArray<Answer>, RejectedError>
-  readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
-  readonly reject: (requestID: ID) => Effect.Effect<void, NotFoundError>
-  readonly list: () => Effect.Effect<ReadonlyArray<Request>>
+  /** A recovered Plan decision can return a trusted continuation claim. In-process callers must
+   * schedule SessionExecution.wake under lifecycle.owned(claim); ordinary/exact replies return undefined. */
+  readonly reply: (
+    input: ReplyInput,
+  ) => Effect.Effect<SessionLifecycle.Claim | undefined, NotFoundError | SessionPlan.Failure>
+  readonly reject: (requestID: ID) => Effect.Effect<void, NotFoundError | SessionPlan.Failure>
+  readonly list: () => Effect.Effect<ReadonlyArray<Request>, SessionPlan.Failure>
+  readonly find: (sessionID: SessionSchema.ID, requestID: ID) => Effect.Effect<Request | undefined, SessionPlan.Failure>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/Question") {}
@@ -76,6 +83,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const plans = yield* SessionPlan.Service
     const pending = new Map<ID, Pending>()
 
     yield* Effect.addFinalizer(() =>
@@ -113,7 +121,12 @@ const layer = Layer.effect(
       Effect.uninterruptible(
         Effect.gen(function* () {
           const existing = pending.get(input.requestID)
-          if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
+          if (!existing) {
+            const receipt = yield* plans.lookupForReply(input.requestID)
+            if (!receipt) return yield* new NotFoundError({ requestID: input.requestID })
+            const decision = yield* plans.decide(receipt.sessionID, input.requestID, input.answers)
+            return decision?.resume ? decision.claim : undefined
+          }
           yield* events.publish(Event.Replied, {
             sessionID: existing.request.sessionID,
             requestID: existing.request.id,
@@ -129,7 +142,12 @@ const layer = Layer.effect(
       Effect.uninterruptible(
         Effect.gen(function* () {
           const existing = pending.get(requestID)
-          if (!existing) return yield* new NotFoundError({ requestID })
+          if (!existing) {
+            const receipt = yield* plans.lookupForReply(requestID)
+            if (!receipt) return yield* new NotFoundError({ requestID })
+            yield* plans.decide(receipt.sessionID, requestID)
+            return
+          }
           yield* events.publish(Event.Rejected, {
             sessionID: existing.request.sessionID,
             requestID: existing.request.id,
@@ -141,13 +159,19 @@ const layer = Layer.effect(
     )
 
     const list = Effect.fn("QuestionV2.list")(function* () {
-      return Array.from(pending.values(), (item) => item.request)
+      return [...Array.from(pending.values(), (item) => item.request), ...(yield* plans.list())]
     })
 
-    return Service.of({ ask, reply, reject, list })
+    const find = (sessionID: SessionSchema.ID, requestID: ID) =>
+      Effect.gen(function* () {
+        const request = pending.get(requestID)?.request
+        if (request) return request.sessionID === sessionID ? request : undefined
+        return (yield* plans.lookup(sessionID, requestID))?.request
+      })
+    return Service.of({ ask, reply, reject, list, find })
   }),
 )
 
 export const locationLayer = layer
 
-export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node, SessionPlan.node] })

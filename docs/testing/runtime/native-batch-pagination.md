@@ -1,0 +1,10 @@
+# BUG-20261015-377: Batch read pagination used inconsistent cursor boundaries
+
+- **Scope:** Native V2 batch Dream search and catalog actions.
+- **Observed:** A real stdin Ripgrep probe with 137 matching UTF-8 lines repeated its first 60 results on later pages when the requested exclusive byte offset was not applied by the adapter. The draft executor instead filtered after its fixed first-page limit, which could expose only one further match and stop. A separate 90-topic catalog probe with uppercase, lowercase, punctuation and Unicode names omitted or repeated entries because locale ordering differed from its lexical cursor comparison.
+- **Expected:** Every eligible match and catalog path appears exactly once across pages, with original byte offsets and line numbers preserved.
+- **Reproduction:** From `packages/apexo`, run `bun test test/tool/memory-batch-search.test.ts test/v2/memory-batch-dream-protocol.test.ts --test-name-pattern 'pagination|catalog cursor'`. Both probes failed on the draft before the fixes.
+- **Root causes:** Search applied the cursor after the result budget rather than before it. Catalog preserved an upstream locale sort while its cursor used JavaScript lexical comparison. These are two separately evidenced mechanisms, not repeated occurrences of one root cause.
+- **Fix:** Apply the optional exclusive `afterOffset` while parsing canonical Ripgrep matches, before stream limiting; batch search supplies it for the cursor's path and retains immutable stdin input. Sort the batch catalog using the same lexical comparison as its cursor.
+- **Verification:** The corrected two-probe run passed two tests / four assertions. The final affected batch/default Dream/consolidation/grep aggregate passed 57 tests / 279 assertions. Package type checks are recorded with the feature handoff. No larger fixed search limit, live-file reread, or cursor reset is used.
+- **Occurrences:** One review episode with two independent bounded pagination defects; no recurring constraint is claimed.

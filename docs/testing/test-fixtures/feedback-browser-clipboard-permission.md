@@ -1,0 +1,10 @@
+# BUG-20261015-353: Headless Feedback clipboard probe lacked read permission
+
+- **Scope:** Production-browser Feedback attachment acceptance fixture.
+- **Observed:** After writing a fixture PNG to the isolated headless browser clipboard, the probe waited for a second thumbnail and timed out. The existing image remained selected and the UI displayed its explicit add-image error.
+- **Expected:** A positive clipboard test runs with explicitly granted clipboard read permission; denial is verified as a separate supported failure.
+- **Reproduction:** Launch the default agent-browser headless profile, write a PNG using `navigator.clipboard.write`, click Paste image, and wait for a second attachment without configuring read permission.
+- **Root cause:** Clipboard write permission did not imply read permission. Direct `navigator.clipboard.read()` returned `NotAllowedError: Read permission denied`, and the Permissions API reported `clipboard-read` as `denied`. This is a browser fixture permission setup issue, not evidence of broken snapshot persistence.
+- **Fix:** Create a dedicated test-only browser profile before launch with its clipboard content setting explicitly allowed. Continue driving the real clipboard API and UI through agent-browser. Do not alter a user's browser profile or replace clipboard methods with mocks.
+- **Verification:** `bun script/grok-native-feedback-images-ui.mjs desktop` from `packages/apexo` passed twelve production browser checks against a pure-native backend, including an actual clipboard image read, retained first image, explicit removal, safe report export and byte-for-byte browser download. After the final production App/Desktop rebuild, the pure-native browser positive and explicitly denied profiles each passed twelve checks. Denial retained the existing selection, displayed the error and released pending state. Compatibility browser passed twelve checks and native window passed eleven file/export checks; direct positive native OS clipboard input was not exercised.
+- **Occurrences:** One independent fixture setup episode. Repeated diagnostics of that same denied permission are not additional occurrences.

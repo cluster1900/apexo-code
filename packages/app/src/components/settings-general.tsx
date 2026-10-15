@@ -1,3 +1,4 @@
+import { SettingsRuntimeProfile } from "./settings-runtime-profile"
 import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
 import { Button } from "@apexo/ui/button"
 import { Icon } from "@apexo/ui/icon"
@@ -727,6 +728,8 @@ export const SettingsGeneral: Component = () => {
         </Show>
 
         <GeneralSection />
+
+        <SettingsRuntimeProfile />
 
         <AppearanceSection />
 

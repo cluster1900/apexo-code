@@ -37,6 +37,10 @@ export type Content =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "file"; readonly data: string; readonly mime: string; readonly name?: string }
 
+export interface OutputPolicy {
+  readonly firstTextCharacters: number
+}
+
 type Config<
   Input extends SchemaType<any>,
   Output extends SchemaType<any>,
@@ -54,6 +58,10 @@ type Config<
     input: Schema.Schema.Type<Input>,
     context: Context,
   ) => Effect.Effect<Schema.Schema.Type<Output>, ToolFailure>
+  readonly outputPolicy?: (input: {
+    readonly input: Schema.Schema.Type<Input>
+    readonly output: Output["Encoded"]
+  }) => OutputPolicy | undefined
   readonly toModelOutput?: (input: {
     readonly input: Schema.Schema.Type<Input>
     readonly output: Output["Encoded"]
@@ -63,10 +71,31 @@ type Config<
 type Runtime = {
   readonly permission?: string
   readonly definition: (name: string) => ToolDefinition
-  readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
+  readonly settle: (
+    call: ToolCall,
+    context: Context,
+  ) => Effect.Effect<ToolOutput & { readonly policy?: OutputPolicy }, ToolFailure>
 }
 
 const runtimes = new WeakMap<AnyTool, Runtime>()
+const importedSchemas = new WeakMap<Schema.Top, JsonSchema.JsonSchema>()
+
+/** Import an externally supplied JSON schema without weakening its validator or projection. */
+export async function jsonSchema(input: JsonSchema.JsonSchema) {
+  const { Ajv } = await import("ajv")
+  const schema = structuredClone(input)
+  const { Ajv2020 } = await import("ajv/dist/2020.js")
+  const validator =
+    typeof schema.$schema === "string" && schema.$schema.includes("draft-07")
+      ? new Ajv({ strict: false, allErrors: false, validateFormats: false })
+      : new Ajv2020({ strict: false, allErrors: false, validateFormats: false })
+  const validate = validator.compile(schema)
+  const codec = Schema.Unknown.check(
+    Schema.makeFilter((value) => validate(value) || "Value does not match the tool JSON schema"),
+  )
+  importedSchemas.set(codec, schema)
+  return codec
+}
 
 export function make<
   Input extends SchemaType<any>,
@@ -112,6 +141,7 @@ export function make<
             ),
             Effect.map(({ output, structured }) => ({
               structured,
+              ...(config.outputPolicy ? { policy: config.outputPolicy({ input, output }) } : {}),
               content:
                 config.toModelOutput?.({ input, output }).map((part) =>
                   part.type === "text"
@@ -156,6 +186,8 @@ function runtimeOf(tool: AnyTool) {
 }
 
 function toJsonSchema(schema: Schema.Top): JsonSchema.JsonSchema {
+  const imported = importedSchemas.get(schema)
+  if (imported) return structuredClone(imported)
   const document = Schema.toJsonSchemaDocument(schema)
   if (Object.keys(document.definitions).length === 0) return document.schema
   return { ...document.schema, $defs: document.definitions }

@@ -10,7 +10,14 @@ export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from
 export { useCommand } from "./context/command"
 export { loadLocaleDict, normalizeLocale, type Locale, useLanguage } from "./context/language"
 export { useWslServers } from "./wsl/context"
-export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
+export {
+  type DisplayBackend,
+  type FatalRendererErrorLog,
+  type Platform,
+  type RuntimeProfile,
+  type RuntimeProfileState,
+  PlatformProvider,
+} from "./context/platform"
 export {
   type WslDistroProbe,
   type WslInstalledDistro,

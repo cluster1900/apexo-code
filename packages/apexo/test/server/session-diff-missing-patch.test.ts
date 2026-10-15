@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 /**
  * Regression test for the same bug class as #26574 (sibling of #26566 and
  * #26553). The Desktop app calls GET /session/<id>/diff; before #26574
@@ -25,7 +26,9 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(LayerNode.group([Session.node, Storage.node])), httpApiLayer))
+const it = testEffect(
+  Layer.mergeAll(AppNodeBuilderV1.build(LayerNode.group([Session.node, Storage.node])), httpApiLayer),
+)
 
 afterEach(async () => {
   await disposeAllInstances()

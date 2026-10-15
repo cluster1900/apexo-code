@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { Event } from "@apexo/sdk/v2"
-import { createSessionData, flushInterrupted, reduceSessionData } from "@/cli/cmd/run/session-data"
+import {
+  bootstrapSessionData,
+  createSessionData,
+  flushInterrupted,
+  reduceSessionData,
+} from "@/cli/cmd/run/session-data"
 import type { StreamCommit } from "@/cli/cmd/run/types"
 
 function reduce(data: ReturnType<typeof createSessionData>, event: unknown, thinking = true) {
@@ -111,6 +116,64 @@ function tool(input: { id: string; messageID: string; tool: string; state: Recor
 }
 
 describe("run session data", () => {
+  test("recovers foreground shell controls when attaching to a running session", () => {
+    const data = createSessionData()
+    bootstrapSessionData({
+      data,
+      messages: [
+        {
+          parts: [
+            {
+              id: "shell-restored",
+              messageID: "msg-1",
+              sessionID: "session-1",
+              callID: "call-restored",
+              type: "tool",
+              tool: "run_terminal_cmd",
+              state: {
+                status: "running",
+                input: { command: "sleep 30" },
+                metadata: { foreground: true, background: false },
+                time: { start: 1 },
+              },
+            },
+          ],
+        },
+      ],
+      permissions: [],
+      questions: [],
+    })
+    expect([...data.foregroundShells]).toEqual(["shell-restored"])
+    flushInterrupted(data, [])
+    expect(data.foregroundShells.size).toBe(0)
+  })
+
+  test("tracks foreground shell controls without counting background commands", () => {
+    const data = createSessionData()
+    const update = (background: boolean, status = "running") =>
+      reduce(
+        data,
+        tool({
+          id: "shell-1",
+          messageID: "msg-1",
+          tool: "run_terminal_cmd",
+          callID: "call-shell",
+          state: {
+            status,
+            input: { command: "sleep 1" },
+            metadata: { foreground: true, background },
+            title: "command",
+            output: "",
+            time: { start: 1, end: status === "completed" ? 2 : undefined },
+          },
+        }),
+      )
+    expect(update(false).footer?.patch?.foregroundShells).toBe(1)
+    expect(update(true).footer?.patch?.foregroundShells).toBe(0)
+    update(true, "completed")
+    expect(data.foregroundShells.size).toBe(0)
+  })
+
   test("buffers delayed assistant text until the role is known", () => {
     let data = createSessionData()
     data = reduce(data, delta("msg-1", "txt-1", "hello")).data

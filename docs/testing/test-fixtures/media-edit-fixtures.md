@@ -1,0 +1,12 @@
+# BUG-20261014-030: Media parity fixtures require valid images and current tool inventories
+
+- Scope: Grok Build media integration tests and extension registry expectations.
+- Observed behavior: After registering `image_edit`, the extension inventory assertion failed because it still listed three media tools. The first CLI media parity run also failed its attachment assertion: its PNG fixture had invalid encoded image data, which the production image normalizer omitted.
+- Expected behavior: Tests enumerate the implemented tools and return a valid image that survives the real session attachment normalization path.
+- Reproduction: Run the extension inventory test with the old expected list; run the media CLI parity script with the original malformed PNG fixture.
+- Root cause: Stale registry test expectation and a malformed synthetic image fixture. These are distinct fixture defects, not evidence of a recurring production attachment bug.
+- Fix: Add `image_edit` to the expected inventory. The separate registry inventory was also updated by static inspection, without claiming an observed failure there. Replace the synthetic PNG with a valid RGB PNG whose chunk checksums and compressed scanline are correct. Keep the attachment assertion in the CLI/Desktop parity script.
+- Verification: `bun test test/tool/grok-build-media.test.ts test/tool/grok-build.test.ts` from `packages/apexo`: 19 passed. `bun script/grok-media-parity.mjs cli`: passed all three media tools, saved files, preview attachments, and both command discoveries after the PNG correction. Subsequent S3 and Desktop verification is documented in the feature record.
+- Occurrences: Two independent stale inventory failures (media addition and the later feedback addition described below), and one observed malformed PNG failure. These are separate root causes; no recurring constraint is promoted.
+
+2026-10-14 feedback stage: registering `send_feedback` caused the Desktop registry's explicit tool-contract list to fail because it still described the preceding feature set. The implementation advertised the new tool correctly. Add the expected name in its actual position without weakening the exact inventory assertion. This is the second independently observed stale-inventory failure, not a second malformed-image occurrence. The final affected four-file rerun passed 43 tests with 120 assertions; its exact Desktop registry assertion passed. Two intervening runs had unrelated scope-teardown deadlines, documented separately.

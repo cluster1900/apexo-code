@@ -93,7 +93,7 @@ export function RunQuestionBody(props: {
     setState((prev) => questionSetSubmitting(prev, true))
 
     try {
-      await props.onReply(input)
+      await props.onReply({ ...input, sessionID: props.request.sessionID })
     } catch {
       setState((prev) => questionSetSubmitting(prev, false))
     }
@@ -103,7 +103,7 @@ export function RunQuestionBody(props: {
     setState((prev) => questionSetSubmitting(prev, true))
 
     try {
-      await props.onReject(input)
+      await props.onReject({ ...input, sessionID: props.request.sessionID })
     } catch {
       setState((prev) => questionSetSubmitting(prev, false))
     }

@@ -11,6 +11,7 @@ Options:
       --print-logs   print logs to stderr                                                  [boolean]
       --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure         run without external plugins                                          [boolean]
+      --memory       enable memory; --no-memory force-disables it for this process         [boolean]
       --port         port to listen on                                         [number] [default: 0]
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
@@ -39,7 +40,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo attach --help 1`] = `
@@ -51,20 +53,24 @@ Positionals:
   url  http://localhost:4096                                                     [string] [required]
 
 Options:
-  -h, --help          show help                                                            [boolean]
-  -v, --version       show version number                                                  [boolean]
-      --print-logs    print logs to stderr                                                 [boolean]
-      --log-level     log level                 [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure          run without external plugins                                         [boolean]
-      --dir           directory to run in                                                   [string]
-  -c, --continue      continue the last session                                            [boolean]
-  -s, --session       session id to continue                                                [string]
-      --fork          fork the session when continuing (use with --continue or --session)  [boolean]
-  -p, --password      basic auth password (defaults to APEXO_SERVER_PASSWORD)               [string]
-  -u, --username      basic auth username (defaults to APEXO_SERVER_USERNAME or 'apexo')    [string]
-      --mini          start the minimal interactive interface             [boolean] [default: false]
-      --no-replay     disable mini session history replay on resume and after resize       [boolean]
-      --replay-limit  cap visible mini replay to the newest N messages                      [number]"
+  -h, --help              show help                                                        [boolean]
+  -v, --version           show version number                                              [boolean]
+      --print-logs        print logs to stderr                                             [boolean]
+      --log-level         log level             [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure              run without external plugins                                     [boolean]
+      --memory            enable memory; --no-memory force-disables it for this process    [boolean]
+      --dir               directory to run in                                               [string]
+  -c, --continue          continue the last session                                        [boolean]
+      --session-protocol  Session API transport for attach (auto preserves server detection)
+                                      [choices: "auto", "native", "compatibility"] [default: "auto"]
+  -s, --session           session id to continue                                            [string]
+      --fork              fork the session when continuing (use with --continue or --session)
+                                                                                           [boolean]
+  -p, --password          basic auth password (defaults to APEXO_SERVER_PASSWORD)           [string]
+  -u, --username          basic auth username (defaults to APEXO_SERVER_USERNAME or 'apexo')[string]
+      --mini              start the minimal interactive interface         [boolean] [default: false]
+      --no-replay         disable mini session history replay on resume and after resize   [boolean]
+      --replay-limit      cap visible mini replay to the newest N messages                  [number]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo run --help 1`] = `
@@ -76,34 +82,40 @@ Positionals:
   message  message to send                                                     [array] [default: []]
 
 Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-      --command      the command to run, use message for args                               [string]
-  -c, --continue     continue the last session                                             [boolean]
-  -s, --session      session id to continue                                                 [string]
-      --fork         fork the session before continuing (requires --continue or --session) [boolean]
-  -m, --model        model to use in the format of provider/model                           [string]
-      --agent        agent to use                                                           [string]
-      --format       format: default (formatted), json (completed events), or streaming-json (Grok
-                     Build event stream)
+  -h, --help              show help                                                        [boolean]
+  -v, --version           show version number                                              [boolean]
+      --print-logs        print logs to stderr                                             [boolean]
+      --log-level         log level             [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure              run without external plugins                                     [boolean]
+      --memory            enable memory; --no-memory force-disables it for this process    [boolean]
+      --command           the command to run, use message for args                          [string]
+  -c, --continue          continue the last session                                        [boolean]
+      --session-protocol  Session API transport (native also enables local execution)
+                                      [choices: "auto", "native", "compatibility"] [default: "auto"]
+  -s, --session           session id to continue                                            [string]
+      --input-id          exact native headless input retry (requires --session)            [string]
+      --fork              fork the session before continuing (requires --continue or --session)
+                                                                                           [boolean]
+  -m, --model             model to use in the format of provider/model                      [string]
+      --agent             agent to use                                                      [string]
+      --format            format: default (formatted), json (completed events), or streaming-json
+                          (Grok Build event stream)
                         [string] [choices: "default", "json", "streaming-json"] [default: "default"]
-      --profile      runtime profile for the local server  [string] [choices: "apexo", "grok-build"]
-  -f, --file         file(s) to attach to message                                            [array]
-      --title        title for the session (uses truncated prompt if no value provided)     [string]
-      --attach       attach to a running apexo server (e.g., http://localhost:4096)         [string]
-  -p, --password     basic auth password (defaults to APEXO_SERVER_PASSWORD)                [string]
-  -u, --username     basic auth username (defaults to APEXO_SERVER_USERNAME or 'apexo')     [string]
-      --dir          directory to run in, path on remote server if attaching                [string]
-      --port         port for the local server (defaults to random port if no value provided)
+      --profile           runtime profile for the local server
+                                                           [string] [choices: "apexo", "grok-build"]
+  -f, --file              file(s) to attach to message                                       [array]
+      --title             title for the session (uses truncated prompt if no value provided)[string]
+      --attach            attach to a running apexo server (e.g., http://localhost:4096)    [string]
+  -p, --password          basic auth password (defaults to APEXO_SERVER_PASSWORD)           [string]
+  -u, --username          basic auth username (defaults to APEXO_SERVER_USERNAME or 'apexo')[string]
+      --dir               directory to run in, path on remote server if attaching           [string]
+      --port              port for the local server (defaults to random port if no value provided)
                                                                                             [number]
-      --variant      model variant (provider-specific reasoning effort, e.g., high, max, minimal)
-                                                                                            [string]
-      --thinking     show thinking blocks                                                  [boolean]
-  -i, --interactive  run in direct interactive split-footer mode          [boolean] [default: false]
-      --auto         auto-approve permissions that are not explicitly denied (dangerous!)
+      --variant           model variant (provider-specific reasoning effort, e.g., high, max,
+                          minimal)                                                          [string]
+      --thinking          show thinking blocks                                             [boolean]
+  -i, --interactive       run in direct interactive split-footer mode     [boolean] [default: false]
+      --auto              auto-approve permissions that are not explicitly denied (dangerous!)
                                                                           [boolean] [default: false]"
 `;
 
@@ -132,7 +144,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo providers --help 1`] = `
@@ -150,7 +163,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo agent --help 1`] = `
@@ -167,7 +181,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo uninstall --help 1`] = `
@@ -181,6 +196,7 @@ Options:
       --print-logs   print logs to stderr                                                  [boolean]
       --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure         run without external plugins                                          [boolean]
+      --memory       enable memory; --no-memory force-disables it for this process         [boolean]
   -c, --keep-config  keep configuration files                             [boolean] [default: false]
   -d, --keep-data    keep session data and snapshots                      [boolean] [default: false]
       --dry-run      show what would be removed without removing          [boolean] [default: false]
@@ -198,6 +214,7 @@ Options:
       --print-logs   print logs to stderr                                                  [boolean]
       --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure         run without external plugins                                          [boolean]
+      --memory       enable memory; --no-memory force-disables it for this process         [boolean]
       --port         port to listen on                                         [number] [default: 0]
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
@@ -218,6 +235,7 @@ Options:
       --print-logs   print logs to stderr                                                  [boolean]
       --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure         run without external plugins                                          [boolean]
+      --memory       enable memory; --no-memory force-disables it for this process         [boolean]
       --port         port to listen on                                         [number] [default: 0]
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
@@ -241,6 +259,7 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
       --verbose     use more verbose model output (includes metadata like costs)           [boolean]
       --refresh     refresh the models cache from models.dev                               [boolean]"
 `;
@@ -256,6 +275,7 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
       --days        show stats for the last N days (default: all time)                      [number]
       --tools       number of tools to show (default: all)                                  [number]
       --models      show model statistics (default: hidden). Pass a number to show top N, otherwise
@@ -277,6 +297,7 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
       --sanitize    redact sensitive transcript and file data                              [boolean]"
 `;
 
@@ -293,7 +314,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo pr --help 1`] = `
@@ -309,7 +331,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo session --help 1`] = `
@@ -326,7 +349,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugin --help 1`] = `
@@ -343,8 +367,88 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
   -g, --global      install in global config                              [boolean] [default: false]
   -f, --force       replace existing plugin version                       [boolean] [default: false]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugins --help 1`] = `
+"apexo plugins
+
+browse, download and manage Plugins
+
+Commands:
+  apexo plugins list                    list available and installed plugins
+  apexo plugins details <id>            show plugin contents and source
+  apexo plugins refresh [target]        refresh plugins
+  apexo plugins add-source [target]     add-source plugins
+  apexo plugins remove-source [target]  remove-source plugins
+  apexo plugins install [target]        install plugins
+  apexo plugins download [target]       download plugins
+  apexo plugins update [target]         update plugins
+  apexo plugins enable [target]         enable plugins
+  apexo plugins disable [target]        disable plugins
+  apexo plugins uninstall [target]      uninstall plugins
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo memory --help 1`] = `
+"apexo memory
+
+manage saved memory
+
+Commands:
+  apexo memory clear   clear saved memory (current workspace by default)
+  apexo memory status  inspect Memory V2 health without running capture or maintenance
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo goal --help 1`] = `
+"apexo goal <action> [objective..]
+
+create and control a persistent goal on a running server
+
+Positionals:
+  action
+  [required] [choices: "create", "status", "start", "pause", "resume", "clear", "reports", "report",
+                                                                                  "cleanup-reports"]
+  objective                                                                    [array] [default: []]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
+      --attach      URL of the running apexo server                              [string] [required]
+  -s, --session     session ID; create makes a new session when omitted                     [string]
+      --id          goal ID for retrying creation or guarding a control operation           [string]
+  -m, --model       initial model in provider/model format                                  [string]
+      --agent                                                            [string] [default: "build"]
+      --variant                                                                             [string]
+      --budget      positive token budget; omitted means unlimited                          [number]
+      --report      report ID returned by goal reports                                      [string]
+      --file        report file to read
+         [choices: "objective", "evidence", "plan", "verdict", "details", "changes", "changedFiles"]
+      --output      save report to a new local file; use - for plain text stdout            [string]
+      --dir         project directory on the server                                         [string]
+      --password    server password (defaults to APEXO_SERVER_PASSWORD)                     [string]
+      --username    server username (defaults to APEXO_SERVER_USERNAME)                     [string]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo db --help 1`] = `
@@ -365,7 +469,25 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
       --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo memory status --help 1`] = `
+"apexo memory status
+
+inspect Memory V2 health without running capture or maintenance
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
+      --global      inspect global memory                                                  [boolean]
+      --all         inspect workspace and global memory                                    [boolean]
+      --json        print structured health data                                           [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo mcp list --help 1`] = `
@@ -378,7 +500,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo mcp add --help 1`] = `
@@ -395,6 +518,7 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
       --url         URL for a remote MCP server                                             [string]
       --env         environment variable for a local MCP server (KEY=VALUE)                  [array]
       --header      HTTP header for a remote MCP server (KEY=VALUE)                          [array]"
@@ -416,7 +540,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo mcp logout --help 1`] = `
@@ -432,7 +557,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo providers list --help 1`] = `
@@ -445,7 +571,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo providers login --help 1`] = `
@@ -462,6 +589,7 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
   -p, --provider    provider id or name to log in to (skips provider selection)             [string]
   -m, --method      login method label (skips method selection)                             [string]"
 `;
@@ -479,7 +607,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo agent create --help 1`] = `
@@ -493,6 +622,7 @@ Options:
       --print-logs            print logs to stderr                                         [boolean]
       --log-level             log level         [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure                  run without external plugins                                 [boolean]
+      --memory                enable memory; --no-memory force-disables it for this process[boolean]
       --path                  directory path to generate the agent file                     [string]
       --description           what the agent should do                                      [string]
       --mode                  agent mode            [string] [choices: "all", "primary", "subagent"]
@@ -512,7 +642,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo session list --help 1`] = `
@@ -526,6 +657,7 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
   -n, --max-count   limit to N most recent sessions                                         [number]
       --format      output format             [string] [choices: "table", "json"] [default: "table"]"
 `;
@@ -543,7 +675,8 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo db path --help 1`] = `
@@ -556,5 +689,60 @@ Options:
   -v, --version     show version number                                                    [boolean]
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugins list --help 1`] = `
+"apexo plugins list
+
+list available and installed plugins
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
+      --json                                                                               [boolean]
+      --installed                                                                          [boolean]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugins install --help 1`] = `
+"apexo plugins install [target]
+
+install plugins
+
+Positionals:
+  target                                                                                    [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
+      --trust       trust this plugin to execute code and access files                     [boolean]
+      --source      Git repository or local plugin directory                                [string]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugins add-source --help 1`] = `
+"apexo plugins add-source [target]
+
+add-source plugins
+
+Positionals:
+  target                                                                                    [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --memory      enable memory; --no-memory force-disables it for this process          [boolean]
+      --trust       trust this plugin to execute code and access files                     [boolean]
+      --source      Git repository or local plugin directory                                [string]"
 `;

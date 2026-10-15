@@ -23,7 +23,7 @@ type Hit = {
 type Match = (hit: Hit) => boolean
 
 type Queue = {
-  item: Item
+  item: Item | ((hit: Hit) => Item)
   match?: Match
 }
 
@@ -624,6 +624,7 @@ namespace TestLLMServer {
     readonly textMatch: (match: Match, value: string, opts?: { usage?: Usage }) => Effect.Effect<void>
     readonly toolMatch: (match: Match, name: string, input: unknown) => Effect.Effect<void>
     readonly text: (value: string, opts?: { usage?: Usage }) => Effect.Effect<void>
+    readonly respond: (input: (hit: Hit) => Item, match?: Match) => Effect.Effect<void>
     readonly tool: (name: string, input: unknown) => Effect.Effect<void>
     readonly toolHang: (name: string, input: unknown) => Effect.Effect<void>
     readonly reason: (value: string, opts?: { text?: string; usage?: Usage }) => Effect.Effect<void>
@@ -673,7 +674,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         if (index === -1) return
         const first = list[index]
         list = [...list.slice(0, index), ...list.slice(index + 1)]
-        return first.item
+        return typeof first.item === "function" ? first.item(hit) : first.item
       }
 
       const handle = Effect.fn("TestLLMServer.handle")(function* (mode: "chat" | "responses") {
@@ -716,6 +717,10 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
           server.address._tag === "TcpAddress"
             ? `http://127.0.0.1:${server.address.port}/v1`
             : `unix://${server.address.path}/v1`,
+        respond: (input, match) =>
+          Effect.sync(() => {
+            list = [...list, { item: input, match }]
+          }),
         push: Effect.fn("TestLLMServer.push")(function* (...input: (Item | Reply)[]) {
           queue(...input)
         }),

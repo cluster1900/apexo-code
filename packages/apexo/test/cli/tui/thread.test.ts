@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import fs from "fs/promises"
 import path from "path"
+import { fileURLToPath } from "node:url"
 import yargs from "yargs"
 import { tmpdir } from "../../fixture/fixture"
 import { TuiThreadCommand, resolveThreadDirectory } from "../../../src/cli/cmd/tui"
 import { cliIt } from "../../lib/cli-process"
+import { withTimeout } from "../../../src/util/timeout"
 
 describe("tui thread", () => {
   test("loads the TUI integration lazily", async () => {
@@ -16,11 +18,44 @@ describe("tui thread", () => {
     expect(source).not.toContain('import("./app")')
   })
 
-  test("forwards the CLI environment to the TUI worker", async () => {
-    const source = await Bun.file(new URL("../../../src/cli/cmd/tui.ts", import.meta.url)).text()
-
-    expect(source).toMatch(/new Worker\(file, \{\s*env: Object\.fromEntries\(\s*Object\.entries\(process\.env\)/)
-  })
+  for (const mode of ["compatibility", "native"] as const)
+    test(`forwards the CLI environment to the real ${mode} TUI worker`, async () => {
+      const inheritedNative = mode === "native" ? "0" : "1"
+      const child = Bun.spawn(
+        [process.execPath, fileURLToPath(new URL("../../fixture/tui-worker-environment.ts", import.meta.url)), mode],
+        {
+          env: {
+            ...process.env,
+            APEXO_WORKER_ENV_PROBE: "inherited-by-real-worker",
+            APEXO_WORKER_ENV_EMPTY: "",
+            APEXO_NATIVE_TUI_HOST: inheritedNative,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      )
+      try {
+        const [stdout, stderr, exitCode] = await withTimeout(
+          Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]),
+          8000,
+          "Worker fixture did not exit",
+        )
+        expect(stderr).toBe("")
+        expect(exitCode).toBe(0)
+        expect(JSON.parse(stdout)).toEqual({
+          environment: {
+            inherited: "inherited-by-real-worker",
+            empty: "",
+            native: mode === "native" ? "1" : "0",
+            mode,
+          },
+          parentNative: inheritedNative,
+        })
+      } finally {
+        child.kill()
+        await withTimeout(child.exited, 2000, "Worker fixture cleanup did not finish")
+      }
+    })
 
   async function check(project?: string) {
     await using tmp = await tmpdir({ git: true })

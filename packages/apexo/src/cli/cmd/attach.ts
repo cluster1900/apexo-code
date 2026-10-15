@@ -23,6 +23,11 @@ export const AttachCommand = cmd({
         describe: "continue the last session",
         type: "boolean",
       })
+      .option("session-protocol", {
+        choices: ["auto", "native", "compatibility"] as const,
+        default: "auto" as const,
+        describe: "Session API transport for attach (auto preserves server detection)",
+      })
       .option("session", {
         alias: ["s"],
         type: "string",
@@ -82,6 +87,7 @@ export const AttachCommand = cmd({
       const { runMini } = await import("./run")
       await runMini({
         attach: args.url,
+        sessionProtocol: args["session-protocol"],
         directory,
         password: args.password,
         username: args.username,
@@ -118,6 +124,7 @@ export const AttachCommand = cmd({
       await validateSession({
         url: args.url,
         sessionID: args.session,
+        sessionProtocol: args["session-protocol"],
         directory,
         headers,
       })
@@ -138,6 +145,7 @@ export const AttachCommand = cmd({
         args: {
           continue: args.continue,
           sessionID: args.session,
+          sessionProtocol: args["session-protocol"],
           fork: args.fork,
         },
         directory,

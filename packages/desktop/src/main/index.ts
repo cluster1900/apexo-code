@@ -1,3 +1,6 @@
+import { createRuntimeProfile } from "./runtime-profile"
+import { RUNTIME_PROFILE_KEY } from "./store-keys"
+import { getStore } from "./store"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { LEGACY_DESKTOP_APP_ID } from "@apexo/core/legacy-compat"
@@ -197,7 +200,8 @@ const main = Effect.gen(function* () {
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
-  if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
+  if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port"))
+    app.commandLine.appendSwitch("remote-debugging-port", "9222")
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()
@@ -205,6 +209,14 @@ const main = Effect.gen(function* () {
   }
 
   const shellEnv = preferAppEnv(app.getPath("userData"))
+  const runtimeProfile = createRuntimeProfile({
+    read: () => getStore().get(RUNTIME_PROFILE_KEY),
+    write: (profile) => getStore().set(RUNTIME_PROFILE_KEY, profile),
+    environment: process.env.APEXO_RUNTIME_PROFILE,
+    supported: SIDECAR_VERSION === "v1",
+  })
+  const activeProfile = runtimeProfile.get().active
+  if (activeProfile) process.env.APEXO_RUNTIME_PROFILE = activeProfile
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("apexo://"))
@@ -282,6 +294,8 @@ const main = Effect.gen(function* () {
     relaunch,
   }
   registerIpcHandlers({
+    getRuntimeProfile: runtimeProfile.get,
+    setRuntimeProfile: runtimeProfile.set,
     killSidecar: () => killSidecar(),
     relaunch,
     awaitInitialization: Effect.fnUntraced(

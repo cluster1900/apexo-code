@@ -8,6 +8,8 @@ const GrokBuildPermissionAliases = {
   run_terminal_command: "bash",
   run_terminal_cmd: "bash",
   read_file: "read",
+  memory_search: "read",
+  memory_get: "read",
   list_dir: "list",
   search_replace: "edit",
   spawn_subagent: "task",

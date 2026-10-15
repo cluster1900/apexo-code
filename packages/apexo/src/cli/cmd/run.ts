@@ -1,5 +1,4 @@
 import type { PermissionV1 } from "@apexo/core/v1/permission"
-import { FSUtil } from "@apexo/core/fs-util"
 // CLI entry point for `apexo run` and `apexo --mini`.
 //
 // Handles three modes:
@@ -16,13 +15,13 @@ import { FSUtil } from "@apexo/core/fs-util"
 import type { Argv } from "yargs"
 import path from "path"
 import { pathToFileURL } from "url"
-import { open } from "node:fs/promises"
 import { Effect } from "effect"
 import { UI } from "../ui"
+import { memoryCaptureText } from "@apexo/tui/util/memory-capture"
 import { effectCmd } from "../effect-cmd"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
-import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v2"
+import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v2/client"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
 import { GrokBuildTools } from "@/tool/grok-build"
@@ -115,8 +114,6 @@ type FilePart = {
   mime: string
 }
 
-const ATTACH_FILE_MAX_BYTES = 10 * 1024 * 1024
-
 type Inline = {
   icon: string
   title: string
@@ -182,8 +179,10 @@ async function toolError(part: ToolPart) {
   }
 }
 
-export const RunCommand = effectCmd({
+const CompatibilityRunCommand = effectCmd({
   prepare: (args) => {
+    if ((args["session-protocol"] ?? "auto") !== "auto" && !args.attach)
+      throw new Error("--session-protocol requires --attach; local terminal bootstrap uses compatibility")
     if (args.profile) process.env.APEXO_RUNTIME_PROFILE = args.profile
   },
   command: "run [message..]",
@@ -211,9 +210,18 @@ export const RunCommand = effectCmd({
         describe: "continue the last session",
         type: "boolean",
       })
+      .option("session-protocol", {
+        choices: ["auto", "native", "compatibility"] as const,
+        default: "auto" as const,
+        describe: "Session API transport (native also enables local execution)",
+      })
       .option("session", {
         alias: ["s"],
         describe: "session id to continue",
+        type: "string",
+      })
+      .option("input-id", {
+        describe: "exact native headless input retry (requires --session)",
         type: "string",
       })
       .option("fork", {
@@ -435,43 +443,16 @@ export const RunCommand = effectCmd({
             process.exit(1)
           }
 
-          const content = await (async () => {
-            if (!args.attach) return
-            const handle = await open(resolvedPath, "r")
-            try {
-              const opened = await handle.stat()
-              if (!opened.isFile() || Number(opened.size) > ATTACH_FILE_MAX_BYTES) {
-                UI.error(`Cannot attach local file larger than 10 MiB or a special file: ${filePath}`)
-                process.exit(1)
-              }
-              if (opened.size === 0) return Buffer.alloc(0)
-              const buffer = Buffer.alloc(Number(opened.size))
-              let offset = 0
-              while (offset < buffer.length) {
-                const read = await handle.read(buffer, offset, buffer.length - offset, offset)
-                if (read.bytesRead === 0) break
-                offset += read.bytesRead
-              }
-              return buffer.subarray(0, offset)
-            } finally {
-              await handle.close()
-            }
-          })()
-          const detected = FSUtil.mimeType(resolvedPath)
-          const text = content?.toString("utf8")
-          const mime = !args.attach
-            ? isDirectory
-              ? "application/x-directory"
-              : "text/plain"
-            : content && text !== undefined && Buffer.from(text, "utf8").equals(content)
-              ? "text/plain"
-              : detected
-
+          if (args.attach) {
+            const { readRunAttachment } = await import("../file-attachment")
+            files.push(await readRunAttachment(resolvedPath))
+            continue
+          }
           files.push({
             type: "file",
-            url: content ? `data:${mime};base64,${content.toString("base64")}` : pathToFileURL(resolvedPath).href,
+            url: pathToFileURL(resolvedPath).href,
             filename: path.basename(resolvedPath),
-            mime,
+            mime: isDirectory ? "application/x-directory" : "text/plain",
           })
         }
       }
@@ -715,6 +696,54 @@ export const RunCommand = effectCmd({
       }
 
       async function execute(sdk: ApexoClient) {
+        if (args.attach) {
+          const { sessionTransport } = await import("@apexo/tui/transport/session")
+          const native = await sessionTransport(sdk, directory, args["session-protocol"])(AbortSignal.timeout(10_000))
+          if (native.kind === "native") {
+            if (!interactive) {
+              if (args.fork || args.command || args.demo || args.profile || args.title)
+                throw new Error(
+                  "Native headless attachment does not support fork, command, demo, profile or title options",
+                )
+              if (args.format !== "default" && args.format !== "json" && args.format !== "streaming-json")
+                throw new Error("Unsupported native output format")
+              const { runNativeHeadless } = await import("../native-headless")
+              return runNativeHeadless({
+                sdk,
+                directory,
+                session: args.session,
+                continue: args.continue,
+                inputID: args["input-id"],
+                agent: args.agent,
+                model: pick(args.model),
+                variant: args.variant,
+                files,
+                text: initialInput ?? "",
+                auto,
+                thinking,
+                format: args.format,
+              })
+            }
+            if (args.fork) throw new Error("Fork is not available on the native terminal transport")
+            if (args.command) throw new Error("Native terminal command execution is not available")
+            const { runNativeInteractive } = await import("../native-interactive")
+            return runNativeInteractive({
+              sdk,
+              directory,
+              session: args.session,
+              continue: args.continue,
+              agent: args.agent,
+              model: pick(args.model),
+              variant: args.variant,
+              files,
+              initialInput,
+              thinking,
+              backgroundSubagents: flags.experimentalBackgroundSubagents,
+              replay,
+              replayLimit: args["replay-limit"],
+            })
+          }
+        }
         const sess = await session(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
@@ -830,6 +859,12 @@ export const RunCommand = effectCmd({
           let error: string | undefined
 
           for await (const event of events.stream) {
+            if (event.type === "memory.capture.activity") {
+              if (event.properties.sessionID !== sessionID) continue
+              if (!emit("memory_capture_activity", { ...event.properties }))
+                UI.println(memoryCaptureText(event.properties))
+              continue
+            }
             if (event.type === "session.created" && event.properties.info.parentID) {
               if (sessions.has(event.properties.info.parentID)) sessions.add(event.properties.info.id)
             }
@@ -1135,7 +1170,30 @@ export const RunCommand = effectCmd({
   }),
 })
 
+export const RunCommand: typeof CompatibilityRunCommand = {
+  ...CompatibilityRunCommand,
+  async handler(args) {
+    if (args["input-id"] !== undefined) {
+      if (args["session-protocol"] !== "native") throw new Error("--input-id requires --session-protocol native")
+      const { validateNativeInputID } = await import("../native-headless")
+      validateNativeInputID({
+        inputID: args["input-id"],
+        session: args.session,
+        continue: args.continue,
+        mini: args.mini,
+      })
+    }
+    if (args["session-protocol"] === "native" && !args.attach) {
+      if (args.mini && args._?.[0] !== "mini") throw new Error("--mini must be used without the run subcommand")
+      const { runNativeLocalMini } = await import("../native-local")
+      return runNativeLocalMini(args)
+    }
+    return CompatibilityRunCommand.handler(args)
+  },
+}
+
 type MiniCommandInput = {
+  sessionProtocol?: "auto" | "native" | "compatibility"
   directory?: string
   attach?: string
   password?: string
@@ -1160,6 +1218,8 @@ export async function runMini(input: MiniCommandInput) {
     command: undefined,
     continue: input.continue,
     session: input.session,
+    "input-id": undefined,
+    inputId: undefined,
     fork: input.fork,
     model: input.model,
     agent: input.agent,
@@ -1168,6 +1228,8 @@ export async function runMini(input: MiniCommandInput) {
     file: undefined,
     title: undefined,
     attach: input.attach,
+    "session-protocol": input.sessionProtocol ?? "auto",
+    sessionProtocol: input.sessionProtocol ?? "auto",
     password: input.password,
     username: input.username,
     dir: input.directory,

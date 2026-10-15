@@ -1,3 +1,4 @@
+import { optionalModelDefault } from "@/utils/optional-model-default"
 import type {
   Config,
   ApexoClient,
@@ -237,9 +238,9 @@ export const loadProvidersQuery = (
         const [providers, models, defaultModel] = await Promise.all([
           sdk.provider.list(location),
           sdk.model.list(location),
-          sdk.model.default(location),
+          optionalModelDefault(sdk.model.default(location)),
         ])
-        return normalizeProviderList(providers.data, models.data, defaultModel.data)
+        return normalizeProviderList(providers.data, models.data, defaultModel?.data)
       }),
   })
 

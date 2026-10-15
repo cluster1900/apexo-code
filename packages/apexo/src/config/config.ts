@@ -1,3 +1,4 @@
+import { PluginBundle } from "@apexo/core/plugin-bundle"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { serviceUse } from "@apexo/core/effect/service-use"
@@ -336,7 +337,7 @@ const layer = Layer.effect(
       function* (ctx: InstanceContext) {
         const auth = yield* authSvc.all().pipe(Effect.orDie)
 
-        let result: Info = {}
+        let result: Info = Flag.APEXO_PURE ? {} : yield* Effect.promise(() => PluginBundle.configuration(path.join(Global.Path.data, "plugins")))
         const authEnv: Record<string, string> = {}
 
         const pluginScopeForSource = Effect.fnUntraced(function* (source: string) {
@@ -594,14 +595,17 @@ const layer = Layer.effect(
 
     const update = Effect.fn("Config.update")(function* (config: Info) {
       const dir = yield* InstanceState.directory
-      const file = path.join(dir, "config.json")
+      const jsonc = path.join(dir, "apexo.jsonc")
+      const file = (yield* fs.existsSafe(jsonc)) ? jsonc : path.join(dir, "apexo.json")
       const existing = yield* loadFile(file)
       const text = yield* readConfigFile(file)
       const original = text ? ConfigParse.jsonc(text, file) : writable(existing)
       yield* fs
         .writeFileString(
           file,
-          JSON.stringify(mergeDeep(isRecord(original) ? original : writable(existing), writable(config)), null, 2),
+          file.endsWith(".jsonc")
+            ? patchJsonc(text ?? "{}", writable(config))
+            : JSON.stringify(mergeDeep(isRecord(original) ? original : writable(existing), writable(config)), null, 2),
         )
         .pipe(Effect.orDie)
     })

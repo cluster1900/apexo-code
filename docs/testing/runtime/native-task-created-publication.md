@@ -1,0 +1,11 @@
+# BUG-20261015-074: Created publication preceded private Task ownership
+
+- **Scope:** Isolated native Task draft; no shipped regression claimed.
+- **Status:** Atomic creation and rollback verified in the focused native runner regression; combined runtime acceptance passed; final integration acceptance pending.
+- **Observed:** A listener held the actual child Created notification. A separate native `SessionV2.prompt` with `resume: false` succeeded while the private Task record was absent, persisting one unowned inbox row.
+- **Expected:** Once Created is observable, private Task authority must already reject external prompt admission. A failed ownership commit must leave no child, sandbox policy, authority, or event.
+- **Root cause:** Child publication completed before `tasks.create`. Lifecycle admission leases fence deletion but do not serialize independent prompt admission.
+- **Fix:** Reserve the Created event ID and commit sandbox inheritance plus private Task ownership in the same durable publication transaction. The private `commitCreated` boundary checks the original parent proof, projected child parent, absence of an earlier child Created event, and conflicting Task records. EventV2 runs local commit after projectors but before the durable event append, so ordinary post-publication proof validation remains a separate path.
+- **Verification:** `bun test test/v2/task-created-admission.test.ts` reproduced absent owner, successful rogue admission, and one inbox row before the correction. The corrected sandbox-composed regression passed 1 test/13 assertions: owner visible during held notification, typed rejected admission, zero injected inbox rows, three ordinary provider calls, and a deliberately rejected commit rolling back projected Session, sandbox policy, Task authority, event, and sequence. A first correction incorrectly queried the not-yet-appended Created event; the transaction rolled back and the observer deadline expired. That intermediate failure did not verify the fix.
+
+Expanded rollback verification also forces failure after both private writes succeed. Both failure paths leave no Session, policy, Task record, event or sequence. The final boundary gate passed 2 tests/39 assertions; the composed native Task gate passed 10 tests/162 assertions.

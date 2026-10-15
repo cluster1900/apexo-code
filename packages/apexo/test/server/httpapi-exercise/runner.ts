@@ -6,7 +6,7 @@ import { TestLLMServer } from "../../lib/llm-server"
 
 import { MessageID, PartID } from "../../../src/session/schema"
 import { call, callAuthProbe, disposeApps } from "./backend"
-import { original } from "./environment"
+import { original, resetExerciseDatabase } from "./environment"
 import { runtime } from "./runtime"
 import type { ActiveScenario, Options, ProjectOptions, Result, Scenario, ScenarioContext, SeededContext } from "./types"
 import { ProviderV2 } from "@apexo/core/provider"
@@ -20,9 +20,12 @@ export function runScenario(options: Options) {
         duration: options.scenarioTimeout,
         orElse: () => Effect.die(new Error(`scenario timed out after ${Duration.format(options.scenarioTimeout)}`)),
       }),
+      Effect.ensuring(options.mode !== "auth" && scenario.reset ? Effect.promise(() => disposeApps()) : Effect.void),
+      Effect.scoped,
+      // HTTP and scenario services must release their database before its files are removed.
+      Effect.ensuring(options.mode !== "auth" && scenario.reset ? resetState : Effect.void),
       Effect.as({ status: "pass", scenario } as Result),
       Effect.catchCause((cause) => Effect.succeed({ status: "fail" as const, scenario, message: Cause.pretty(cause) })),
-      Effect.scoped,
     )
   }
 }
@@ -191,7 +194,6 @@ function withContext<A, E>(
         return result
       }).pipe(Effect.ensuring(context.llm ? context.llm.reset : Effect.void)),
     ),
-    Effect.ensuring(scenario.reset ? resetState : Effect.void),
   )
 }
 
@@ -254,12 +256,8 @@ function fakeLlmConfig(url: string): Partial<ConfigV1.Info> {
   }
 }
 
-const resetState = Effect.promise(async () => {
-  const modules = await runtime()
+const resetState = Effect.gen(function* () {
   Flag.APEXO_SERVER_PASSWORD = original.APEXO_SERVER_PASSWORD
   Flag.APEXO_SERVER_USERNAME = original.APEXO_SERVER_USERNAME
-  await disposeApps()
-  await modules.disposeAllInstances()
-  await modules.resetDatabase()
-  await Bun.sleep(25)
+  yield* resetExerciseDatabase
 })

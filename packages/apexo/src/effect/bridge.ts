@@ -45,10 +45,10 @@ export const bind = <Args extends readonly unknown[], Result>(fn: (...args: Args
  *
  * Mirrors `Effect.promise` but restores workspace ALS first.
  */
-export const fromPromise = <T>(fn: () => Promise<T> | T): Effect.Effect<T> =>
+export const fromPromise = <T>(fn: (signal: AbortSignal) => Promise<T> | T): Effect.Effect<T> =>
   Effect.gen(function* () {
     const workspace = yield* WorkspaceRef
-    return yield* Effect.promise(() => Promise.resolve(restoreWorkspace(workspace, () => fn())))
+    return yield* Effect.promise((signal) => Promise.resolve(restoreWorkspace(workspace, () => fn(signal))))
   })
 
 export function make(): Effect.Effect<Shape> {

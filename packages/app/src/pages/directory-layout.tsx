@@ -1,3 +1,6 @@
+import { readNativeMedia } from "@/utils/media-read"
+import { useServerSDK } from "@/context/server-sdk"
+import { usePlatform } from "@/context/platform"
 import { DataProvider } from "@apexo/session-ui/context"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@apexo/core/util/encode"
@@ -25,6 +28,8 @@ export function DirectoryDataProvider(
   const params = useParams()
   const sync = useSync()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
+  const platform = usePlatform()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
   const href = (sessionID: string) => {
@@ -66,6 +71,17 @@ export function DirectoryDataProvider(
           sessionID={params.id}
           onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
           onSessionHref={href}
+          onReadMedia={async (file, signal) => {
+            const sdk = serverSDK()
+            if ((await sdk.protocol) !== "v2") throw new Error("Native media reader unavailable")
+            return readNativeMedia({
+              server: sdk.server.http,
+              directory,
+              file,
+              signal,
+              fetch: platform.fetch ?? globalThis.fetch,
+            })
+          }}
         >
           <LocalProvider>{props.children}</LocalProvider>
         </DataProvider>

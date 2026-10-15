@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { describe, expect } from "bun:test"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { LayerNode } from "@apexo/core/effect/layer-node"
@@ -18,7 +19,7 @@ import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 
 const it = testEffect(
-  LayerNode.compile(
+  AppNodeBuilderV1.build(
     LayerNode.group([Session.node, SessionRevert.node, Snapshot.node, SessionProjector.node, CrossSpawnSpawner.node]),
   ),
 )

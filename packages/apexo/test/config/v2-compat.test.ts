@@ -57,6 +57,18 @@ describe("V2 compatibility read fixtures", () => {
 })
 
 describe("ConfigV2Compat.lower", () => {
+  test("keeps media generation settings distinct from the attachment alias", () => {
+    const media = { image_gen_model_override: "fixture-image", video_output: { type: "provider" as const } }
+    expect(lower({ media })).toEqual({ media })
+    expect(lower({ media: { ...media, image: { max_width: 1920 } } })).toEqual({
+      media,
+      attachment: { image: { max_width: 1920 } },
+    })
+    expect(() => lower({ media: { image: { max_width: 1920 }, image_gen_model_override: 42 } })).toThrow(
+      "ConfigInvalidError",
+    )
+  })
+
   test("returns structured invalid diagnostics while retaining supported siblings", () => {
     const result = ConfigV2Compat.lower({
       mcp: {

@@ -5,6 +5,7 @@ import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import type { createServerSdkContext } from "./server-sdk"
 import type { createServerSyncContextInner } from "./server-sync"
 import type { State } from "./global-sync/types"
+import type { McpAction } from "./global-sync/mcp"
 import { normalizeSessionInfo } from "@/utils/session"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -146,6 +147,10 @@ export const createDirSyncContext = (
       },
     },
     mcp: {
+      authStart: (name: string) => serverSync.mcp.authStart(directory, name),
+      authCancel: (name: string, flowID: string) => serverSync.mcp.authCancel(directory, name, flowID),
+      refresh: () => serverSync.mcp.refresh(directory),
+      manage: (name: string, action: McpAction) => serverSync.mcp.manage(directory, name, action),
       toggle: (name: string) => serverSync.mcp.toggle(directory, name),
     },
     absolute,

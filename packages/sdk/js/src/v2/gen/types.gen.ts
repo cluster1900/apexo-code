@@ -16,11 +16,16 @@ export type Event =
   | EventMessageRemoved
   | EventMessagePartUpdated
   | EventMessagePartRemoved
+  | EventSessionNextHistoryCopyStarted
+  | EventSessionNextHistoryCopyMessage
+  | EventSessionNextHistoryCopyCompleted
   | EventSessionNextAgentSwitched
   | EventSessionNextModelSwitched
   | EventSessionNextMoved
   | EventSessionNextPrompted
   | EventSessionNextPromptAdmitted
+  | EventSessionNextPromptWithdrawn
+  | EventSessionNextInputExecutionSettled
   | EventSessionNextContextUpdated
   | EventSessionNextSynthetic
   | EventSessionNextShellStarted
@@ -75,10 +80,12 @@ export type Event =
   | EventTuiSessionSelect2
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
+  | EventMcpStatusChanged
   | EventCommandExecuted
   | EventProjectUpdated
   | EventSessionStatus
   | EventSessionIdle
+  | EventMemoryCaptureActivity
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
@@ -641,6 +648,21 @@ export type Part =
   | RetryPart
   | CompactionPart
 
+export type Todo = {
+  /**
+   * Brief description of the task
+   */
+  content: string
+  /**
+   * Current status of the task: pending, in_progress, completed, cancelled
+   */
+  status: string
+  /**
+   * Priority level of the task: high, medium, low
+   */
+  priority: string
+}
+
 export type Prompt = {
   text: string
   files?: Array<PromptFileAttachment>
@@ -656,21 +678,6 @@ export type Pty = {
   status: "running" | "exited"
   pid: number
   exitCode?: number
-}
-
-export type Todo = {
-  /**
-   * Brief description of the task
-   */
-  content: string
-  /**
-   * Current status of the task: pending, in_progress, completed, cancelled
-   */
-  status: string
-  /**
-   * Priority level of the task: high, medium, low
-   */
-  priority: string
 }
 
 export type SessionStatus =
@@ -694,6 +701,12 @@ export type SessionStatus =
   | {
       type: "busy"
     }
+
+export type MemoryCaptureEntry = {
+  statement: string
+  body?: string
+  path: string
+}
 
 export type QuestionOption = {
   /**
@@ -823,6 +836,50 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.history.copy.started"
+        properties: {
+          timestamp: number
+          sessionID: string
+          source: {
+            sessionID: string
+            created: string
+            revision: number
+          }
+          count: number
+        }
+      }
+    | {
+        id: string
+        type: "session.next.history.copy.message"
+        properties: {
+          timestamp: number
+          sessionID: string
+          source: {
+            sessionID: string
+            created: string
+            revision: number
+          }
+          sourceMessageID: string
+          message: SessionMessage
+        }
+      }
+    | {
+        id: string
+        type: "session.next.history.copy.completed"
+        properties: {
+          timestamp: number
+          sessionID: string
+          source: {
+            sessionID: string
+            created: string
+            revision: number
+          }
+          count: number
+          todos: Array<Todo>
+        }
+      }
+    | {
+        id: string
         type: "session.next.agent.switched"
         properties: {
           timestamp: number
@@ -860,6 +917,7 @@ export type GlobalEvent = {
           messageID: string
           prompt: Prompt
           delivery: "steer" | "queue"
+          executionPolicy?: SessionInputExecutionPolicy
         }
       }
     | {
@@ -871,6 +929,37 @@ export type GlobalEvent = {
           messageID: string
           prompt: Prompt
           delivery: "steer" | "queue"
+          executionPolicy?: SessionInputExecutionPolicy
+        }
+      }
+    | {
+        id: string
+        type: "session.next.prompt.withdrawn"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+        }
+      }
+    | {
+        id: string
+        type: "session.next.input.execution.settled"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          status: "completed" | "failed" | "interrupted" | "superseded"
+          reason:
+            | "completed"
+            | "provider_error"
+            | "turn_limit"
+            | "interrupted"
+            | "process_restart"
+            | "superseded"
+            | "withdrawn"
+            | "unavailable"
+          finish?: string
+          usageIncomplete: boolean
         }
       }
     | {
@@ -1456,6 +1545,13 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "mcp.status.changed"
+        properties: {
+          server?: string
+        }
+      }
+    | {
+        id: string
         type: "command.executed"
         properties: {
           name: string
@@ -1491,6 +1587,18 @@ export type GlobalEvent = {
         type: "session.idle"
         properties: {
           sessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "memory.capture.activity"
+        properties: {
+          sessionID: string
+          activity: "queued" | "running" | "completed" | "no_op" | "retry" | "failed"
+          fromTurn: number
+          throughTurn: number
+          attempt: number
+          memories?: Array<MemoryCaptureEntry>
         }
       }
     | {
@@ -1596,11 +1704,16 @@ export type GlobalEvent = {
     | SyncEventMessageRemoved
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
+    | SyncEventSessionNextHistoryCopyStarted
+    | SyncEventSessionNextHistoryCopyMessage
+    | SyncEventSessionNextHistoryCopyCompleted
     | SyncEventSessionNextAgentSwitched
     | SyncEventSessionNextModelSwitched
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
     | SyncEventSessionNextPromptAdmitted
+    | SyncEventSessionNextPromptWithdrawn
+    | SyncEventSessionNextInputExecutionSettled
     | SyncEventSessionNextContextUpdated
     | SyncEventSessionNextSynthetic
     | SyncEventSessionNextShellStarted
@@ -1972,7 +2085,11 @@ export type Config = {
             }
           | {
               command: Array<string>
+              transport?: "stdio" | "socket"
               extensions?: Array<string>
+              languageIds?: {
+                [key: string]: string
+              }
               disabled?: boolean
               env?: {
                 [key: string]: string
@@ -1980,9 +2097,142 @@ export type Config = {
               initialization?: {
                 [key: string]: unknown
               }
+              settings?: {
+                [key: string]: unknown
+              }
+              workspaceFolder?: string
+              workspaceOpen?: {
+                solution?: string
+                projects?: Array<string>
+              }
+              restartOnCrash?: boolean
+              maxRestarts?: number
+              timeout?: {
+                startup?: number
+                shutdown?: number
+                request?: number
+              }
             }
       }
   instructions?: Array<string>
+  memory?: {
+    search?: {
+      max_results?: number
+      min_score?: number
+      recency_decay?: number
+      temporal_decay?: {
+        enabled?: boolean
+        half_life_days?: number
+      }
+      mmr?: {
+        enabled?: boolean
+        lambda?: number
+      }
+      source_weights?: {
+        global?: number
+        workspace?: number
+        session?: number
+      }
+    }
+    enabled?: boolean
+    initial_injection?: {
+      enabled?: boolean
+      min_score?: number
+    }
+    dream?: {
+      enabled?: boolean
+      min_hours?: number
+      min_sessions?: number
+      stale_lock_secs?: number
+      check_interval_secs?: number
+    }
+    session?: {
+      save_on_end?: boolean
+    }
+  }
+  memory_v2?: {
+    enabled?: boolean
+    rollout?: "off" | "record_only" | "shadow" | "active"
+    capture_enabled?: boolean
+    capture_status_enabled?: boolean
+    compact_index_enabled?: boolean
+    capture_model?: string
+    automatic_dream_enabled?: boolean
+    manual_dream_enabled?: boolean
+    batch_dream_enabled?: boolean
+    batch_dream_max_run_secs?: number
+    batch_dream_max_calls_per_batch?: number
+    batch_dream_max_batch_note_bytes?: number
+    dream_model?: string
+    archived_retention_days?: number
+    job_retention_days?: number
+    maintenance_interval_secs?: number
+    file_writes_enabled?: boolean
+  }
+  goal?: {
+    report_retention_days?: number
+    use_current_model_only?: boolean
+    planner_model?: GoalRoleModel
+    summary_enabled?: boolean
+    strategist_model?: GoalRoleModel
+    strategist_every?: number
+    skeptic_models?: Array<GoalRoleModel>
+    verifier_count?: number
+  }
+  task?: {
+    activeMessages?: boolean
+    maxDepth?: number
+  }
+  toolset?: {
+    bash?: {
+      cmd_prefix?: string
+      output_byte_limit?: number
+      default_block_until_ms?: number
+      max_block_until_ms?: number
+      max_timeout_secs?: number
+    }
+  }
+  grok_media?: {
+    zdr_video_output_s3?: {
+      bucket: string
+      endpoint: string
+      region: string
+      key_prefix?: string
+      expires_secs?: number
+      read_write: {
+        access_key_id: string
+        secret_access_key: string
+      }
+      read_only?: {
+        access_key_id: string
+        secret_access_key: string
+      }
+    }
+  }
+  media?: {
+    image_gen_model_override?: string
+    image_edit_model_override?: string
+    video_output?:
+      | {
+          type: "provider"
+        }
+      | {
+          type: "s3"
+          bucket: string
+          endpoint: string
+          region: string
+          key_prefix?: string
+          expires_secs?: number
+          read_write: {
+            access_key_id_env: string
+            secret_access_key_env: string
+          }
+          read_only?: {
+            access_key_id_env: string
+            secret_access_key_env: string
+          }
+        }
+  }
   layout?: LayoutConfig
   permission?: PermissionConfig
   tools?: {
@@ -1994,6 +2244,13 @@ export type Config = {
     max_bytes?: number
   }
   compaction?: {
+    memory_flush?: {
+      enabled?: boolean
+      soft_threshold_tokens?: number
+      max_flush_write_chars?: number
+      flush_model?: string
+      idle_timeout_secs?: number
+    }
     auto?: boolean
     prune?: boolean
     tail_turns?: number
@@ -2108,8 +2365,15 @@ export type Provider = {
   }
 }
 
+export type ServiceUnavailableError = {
+  _tag: "ServiceUnavailableError"
+  message: string
+  service?: string
+}
+
 export type ExperimentalCapabilities = {
   backgroundSubagents: boolean
+  memoryManagement: boolean
 }
 
 export type ToolListItem = {
@@ -2119,6 +2383,13 @@ export type ToolListItem = {
 }
 
 export type ToolList = Array<ToolListItem>
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
 
 export type ToolIds = Array<string>
 
@@ -2218,12 +2489,121 @@ export type GlobalSession = {
   project: ProjectSummary | null
 }
 
+export type BackgroundTaskSummary = {
+  id: string
+  type: string
+  title?: string
+  status: "running" | "completed" | "error" | "cancelled"
+  started_at: number
+  completed_at?: number
+  sessionID: string
+  childSessionID?: string
+  nextFireAt?: number
+  background: boolean
+}
+
+export type BackgroundTaskDetail = {
+  id: string
+  type: string
+  title?: string
+  status: "running" | "completed" | "error" | "cancelled"
+  started_at: number
+  completed_at?: number
+  sessionID: string
+  childSessionID?: string
+  nextFireAt?: number
+  background: boolean
+  output: string
+  error?: string
+}
+
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
 export type McpResource = {
   name: string
   uri: string
   description?: string
   mimeType?: string
   client: string
+}
+
+export type PluginStoreSource = {
+  id: string
+  name: string
+  location: string
+  official: boolean
+  updatedAt?: number
+  error?: string
+}
+
+export type PluginStoreItem = {
+  id: string
+  name: string
+  description: string
+  sourceID: string
+  source: string
+  category: string
+  author?: string
+  homepage?: string
+  version?: string
+  revision?: string
+  installedVersion?: string
+  installedRevision?: string
+  recommended: boolean
+  status: "available" | "downloaded" | "enabled" | "disabled"
+  components: Array<{
+    kind: "skills" | "commands" | "agents" | "mcpServers" | "lspServers" | "hooks"
+    name: string
+    description?: string
+  }>
+  warnings: Array<string>
+  path?: string
+}
+
+export type PluginStoreCatalog = {
+  sources: Array<PluginStoreSource>
+  items: Array<PluginStoreItem>
+  retainedData?: Array<{
+    id: string
+    reason: "readers" | "ownership"
+  }>
+}
+
+export type PluginStoreDetail = {
+  item: PluginStoreItem
+  readme: string
+}
+
+export type PluginStoreAction = {
+  action:
+    | "refresh"
+    | "add-source"
+    | "remove-source"
+    | "install"
+    | "download"
+    | "update"
+    | "enable"
+    | "disable"
+    | "uninstall"
+  id?: string
+  source?: string
+  trust?: boolean
+  keepData?: boolean
+}
+
+export type SessionBusyError = {
+  _tag: "SessionBusyError"
+  sessionID: string
+  message: string
 }
 
 export type Symbol = {
@@ -2513,13 +2893,6 @@ export type ProviderAuthAuthorization = {
   instructions: string
 }
 
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
-  }
-}
-
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -2566,12 +2939,6 @@ export type SubtaskPartInput = {
     modelID: string
   }
   command?: string
-}
-
-export type SessionBusyError = {
-  _tag: "SessionBusyError"
-  sessionID: string
-  message: string
 }
 
 export type EventTuiPromptAppend = {
@@ -2667,32 +3034,20 @@ export type InvalidCursorError = {
   message: string
 }
 
-export type SessionActive = {
-  type: "running"
-}
-
 export type SessionNotFoundError = {
   _tag: "SessionNotFoundError"
   sessionID: string
   message: string
 }
 
+export type SessionActive = {
+  type: "running"
+}
+
 export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
-}
-
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
-}
-
-export type ServiceUnavailableError = {
-  _tag: "ServiceUnavailableError"
-  message: string
-  service?: string
 }
 
 export type MessageNotFoundError = {
@@ -2709,11 +3064,16 @@ export type UnknownError1 = {
 }
 
 export type SessionDurableEvent =
+  | SessionNextHistoryCopyStarted
+  | SessionNextHistoryCopyMessage
+  | SessionNextHistoryCopyCompleted
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
+  | SessionNextPromptWithdrawn
+  | SessionNextInputExecutionSettled
   | SessionNextContextUpdated
   | SessionNextSynthetic
   | SessionNextShellStarted
@@ -2744,6 +3104,94 @@ export type SessionHistory = {
 }
 
 export type SessionDurableEventStream = string
+
+export type GoalReportNotFoundError = {
+  _tag: "GoalReportNotFoundError"
+  message: string
+}
+
+export type TaskNotFoundError = {
+  _tag: "TaskNotFoundError"
+  message: string
+}
+
+export type ProcessNotFoundError = {
+  _tag: "ProcessNotFoundError"
+  message: string
+}
+
+export type ScheduleNotFoundError = {
+  _tag: "ScheduleNotFoundError"
+  message: string
+}
+
+export type FeedbackNotFoundError = {
+  _tag: "FeedbackNotFoundError"
+  message: string
+}
+
+export type MemoryForbiddenError = {
+  _tag: "MemoryForbiddenError"
+  message: string
+}
+
+export type MemoryOperationNotFoundError = {
+  _tag: "MemoryOperationNotFoundError"
+  message: string
+}
+
+export type PluginStoreRuntimeFailure = {
+  code: "busy" | "invalid" | "load" | "unsupported"
+  message: string
+  components?: Array<"mcp" | "lsp">
+}
+
+export type PluginStoreRuntime = {
+  generation: number
+  active: Array<string>
+  failure?: PluginStoreRuntimeFailure
+}
+
+export type McpStatus2 = {
+  status: "connected" | "disabled" | "failed" | "needs_auth"
+  tools: number
+  error?: string
+  configuredEnabled?: boolean
+  preference?: boolean
+  preferenceError?: boolean
+  authentication?: McpAuthentication
+}
+
+export type McpStatusMap = {
+  [key: string]: McpStatus2
+}
+
+export type McpServerNotFoundError1 = {
+  _tag: "McpServerNotFoundError"
+  server: string
+  message: string
+}
+
+export type McpAttachmentForbidden = {
+  _tag: "McpAttachmentForbidden"
+  message: string
+}
+
+export type NativeLspStatus = {
+  id: string
+  name: string
+  root: string
+  status: "pending" | "connected" | "disabled" | "failed"
+  operations: Array<
+    "goToDefinition" | "findReferences" | "hover" | "goToImplementation" | "documentSymbol" | "workspaceSymbol"
+  >
+  error?: string
+}
+
+export type WorkflowNotFoundError = {
+  _tag: "WorkflowNotFoundError"
+  message: string
+}
 
 export type SessionMessagesResponse = {
   data: Array<SessionMessage>
@@ -2836,11 +3284,16 @@ export type V2Event =
   | MessageRemoved
   | MessagePartUpdated
   | MessagePartRemoved
+  | SessionNextHistoryCopyStarted
+  | SessionNextHistoryCopyMessage
+  | SessionNextHistoryCopyCompleted
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
+  | SessionNextPromptWithdrawn
+  | SessionNextInputExecutionSettled
   | SessionNextContextUpdated
   | SessionNextSynthetic
   | SessionNextShellStarted
@@ -2895,10 +3348,12 @@ export type V2Event =
   | TuiSessionSelect
   | McpToolsChanged
   | McpBrowserOpenFailed
+  | McpStatusChanged
   | CommandExecuted
   | ProjectUpdated
   | SessionStatus2
   | SessionIdle
+  | MemoryCaptureActivity
   | QuestionAsked
   | QuestionReplied2
   | QuestionRejected2
@@ -2913,11 +3368,6 @@ export type V2Event =
   | GlobalDisposed
 
 export type V2EventStream = string
-
-export type ForbiddenError = {
-  _tag: "ForbiddenError"
-  message: string
-}
 
 export type ProjectCopyError = {
   name: "ProjectCopyError"
@@ -3008,15 +3458,34 @@ export type MoveSessionDestination = {
   directory: string
 }
 
+export type SessionMessageAgentSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  type: "agent-switched"
+  agent: string
+}
+
 export type ModelRef = {
   id: string
   providerID: string
   variant?: string
 }
 
-export type LocationRef = {
-  directory: string
-  workspaceID?: string
+export type SessionMessageModelSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  type: "model-switched"
+  model: ModelRef
 }
 
 export type PromptSource = {
@@ -3038,15 +3507,86 @@ export type PromptAgentAttachment = {
   source?: PromptSource
 }
 
-export type SessionErrorUnknown = {
-  type: "unknown"
-  message: string
+export type SessionMessageUser = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  text: string
+  files?: Array<PromptFileAttachment>
+  agents?: Array<PromptAgentAttachment>
+  type: "user"
+}
+
+export type SessionMessageSynthetic = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  sessionID: string
+  text: string
+  type: "synthetic"
+}
+
+export type SessionMessageSystem = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  type: "system"
+  text: string
+}
+
+export type SessionMessageShell = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    completed?: number
+  }
+  type: "shell"
+  callID: string
+  command: string
+  output: string
+}
+
+export type SessionMessageAssistantText = {
+  type: "text"
+  id: string
+  text: string
 }
 
 export type LlmProviderMetadata = {
   [key: string]: {
     [key: string]: unknown
   }
+}
+
+export type SessionMessageAssistantReasoning = {
+  type: "reasoning"
+  id: string
+  text: string
+  providerMetadata?: LlmProviderMetadata
+  time?: {
+    created: number
+    completed?: number
+  }
+}
+
+export type SessionMessageToolStatePending = {
+  status: "pending"
+  input: string
 }
 
 export type ToolTextContent = {
@@ -3062,6 +3602,137 @@ export type ToolFileContent = {
 }
 
 export type LlmToolContent = ToolTextContent | ToolFileContent
+
+export type SessionMessageToolStateRunning = {
+  status: "running"
+  input: {
+    [key: string]: unknown
+  }
+  structured: {
+    [key: string]: unknown
+  }
+  content: Array<LlmToolContent>
+}
+
+export type SessionMessageToolStateCompleted = {
+  status: "completed"
+  input: {
+    [key: string]: unknown
+  }
+  attachments?: Array<PromptFileAttachment>
+  content: Array<LlmToolContent>
+  outputPaths?: Array<string>
+  structured: {
+    [key: string]: unknown
+  }
+  result?: unknown
+}
+
+export type SessionErrorUnknown = {
+  type: "unknown"
+  message: string
+}
+
+export type SessionMessageToolStateError = {
+  status: "error"
+  input: {
+    [key: string]: unknown
+  }
+  content: Array<LlmToolContent>
+  structured: {
+    [key: string]: unknown
+  }
+  error: SessionErrorUnknown
+  result?: unknown
+}
+
+export type SessionMessageAssistantTool = {
+  type: "tool"
+  id: string
+  name: string
+  provider?: {
+    executed: boolean
+    metadata?: LlmProviderMetadata
+    resultMetadata?: LlmProviderMetadata
+  }
+  state:
+    | SessionMessageToolStatePending
+    | SessionMessageToolStateRunning
+    | SessionMessageToolStateCompleted
+    | SessionMessageToolStateError
+  time: {
+    created: number
+    ran?: number
+    completed?: number
+    pruned?: number
+  }
+}
+
+export type SessionMessageAssistant = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    completed?: number
+  }
+  type: "assistant"
+  agent: string
+  model: ModelRef
+  content: Array<SessionMessageAssistantText | SessionMessageAssistantReasoning | SessionMessageAssistantTool>
+  snapshot?: {
+    start?: string
+    end?: string
+    files?: Array<string>
+  }
+  finish?: string
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  error?: SessionErrorUnknown
+}
+
+export type SessionMessageCompaction = {
+  type: "compaction"
+  reason: "auto" | "manual"
+  summary: string
+  recent: string
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+}
+
+export type SessionMessage =
+  | SessionMessageAgentSwitched
+  | SessionMessageModelSwitched
+  | SessionMessageUser
+  | SessionMessageSynthetic
+  | SessionMessageSystem
+  | SessionMessageShell
+  | SessionMessageAssistant
+  | SessionMessageCompaction
+
+export type LocationRef = {
+  directory: string
+  workspaceID?: string
+}
+
+export type SessionInputExecutionPolicy = {
+  mode: "headless"
+  permissions: "reject" | "approve_once"
+}
 
 export type SessionNextRetryError = {
   message: string
@@ -3125,6 +3796,7 @@ export type QuestionV2Info = {
    */
   options: Array<QuestionV2Option>
   multiple?: boolean
+  purpose?: "plan_approval"
   custom?: boolean
 }
 
@@ -3271,6 +3943,71 @@ export type SyncEventMessagePartRemoved = {
   }
 }
 
+export type SyncEventSessionNextHistoryCopyStarted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.history.copy.started.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      source: {
+        sessionID: string
+        created: string
+        revision: number
+      }
+      count: number
+    }
+  }
+}
+
+export type SyncEventSessionNextHistoryCopyMessage = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.history.copy.message.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      source: {
+        sessionID: string
+        created: string
+        revision: number
+      }
+      sourceMessageID: string
+      message: SessionMessage
+    }
+  }
+}
+
+export type SyncEventSessionNextHistoryCopyCompleted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.history.copy.completed.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      source: {
+        sessionID: string
+        created: string
+        revision: number
+      }
+      count: number
+      todos: Array<Todo>
+    }
+  }
+}
+
 export type SyncEventSessionNextAgentSwitched = {
   type: "sync"
   id: string
@@ -3336,6 +4073,7 @@ export type SyncEventSessionNextPrompted = {
       messageID: string
       prompt: Prompt
       delivery: "steer" | "queue"
+      executionPolicy?: SessionInputExecutionPolicy
     }
   }
 }
@@ -3354,6 +4092,51 @@ export type SyncEventSessionNextPromptAdmitted = {
       messageID: string
       prompt: Prompt
       delivery: "steer" | "queue"
+      executionPolicy?: SessionInputExecutionPolicy
+    }
+  }
+}
+
+export type SyncEventSessionNextPromptWithdrawn = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.prompt.withdrawn.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+    }
+  }
+}
+
+export type SyncEventSessionNextInputExecutionSettled = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.input.execution.settled.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      status: "completed" | "failed" | "interrupted" | "superseded"
+      reason:
+        | "completed"
+        | "provider_error"
+        | "turn_limit"
+        | "interrupted"
+        | "process_restart"
+        | "superseded"
+        | "withdrawn"
+        | "unavailable"
+      finish?: string
+      usageIncomplete: boolean
     }
   }
 }
@@ -3809,12 +4592,533 @@ export type ConfigV2ReferenceLocal = {
   hidden?: boolean
 }
 
+export type GoalRoleModel = {
+  model: string
+  agent_type: string
+}
+
 export type PolicyEffect = "allow" | "deny"
 
 export type ConfigV2ExperimentalPolicy = {
   action: "provider.use"
   effect: PolicyEffect
   resource: string
+}
+
+export type HostHooksId = string
+
+export type HostHooksInspection = {
+  projectTrusted: boolean
+  diagnostics: Array<string>
+  hooks: Array<{
+    id: HostHooksId
+    name: string
+    event: string
+    source: string
+    type: string
+    matcher?: string
+    supported: boolean
+    configurable: boolean
+    configuredEnabled: boolean
+    effectiveDisabled?: boolean
+    savedDisabled?: boolean
+    pendingChange?: boolean
+    readOnlyReason?: "managed" | "unknown_source" | "unsupported"
+  }>
+}
+
+export type MemoryHealthSnapshot = {
+  pendingCaptureJobs: number
+  runningCaptureJobs: number
+  publishingCaptureJobs: number
+  retryCaptureJobs: number
+  failedCaptureJobs: number
+  completedCaptureJobs: number
+  pendingObservations: number
+  hiddenPendingObservations: number
+  quarantinedObservations: number
+  oldestPendingAgeSecs: number
+  dreamLease: "none" | "active" | "expired"
+  dreamSnapshotSize: number
+  dreamPlanPending: boolean
+  hasCoalescedTrigger: boolean
+  lastSuccessAt: number
+  lastFailureAt: number
+  archiveCount: number
+  tombstoneCount: number
+  pendingDeletions: number
+}
+
+export type MemoryHealthScope = {
+  scope: "global" | "workspace"
+  state: "ready" | "empty" | "denied" | "unavailable"
+  reason?: "path" | "schema" | "corrupt" | "storage"
+  snapshot?: MemoryHealthSnapshot
+}
+
+export type MemoryHealthInfo = {
+  backend: "legacy" | "v2"
+  enabled: boolean
+  scopes: Array<MemoryHealthScope>
+}
+
+export type MemoryModeInfo = {
+  enabled: boolean
+  busy: boolean
+  canToggle: boolean
+  source: "process" | "profile" | "session" | "config" | "environment" | "default"
+}
+
+export type MemoryModeUpdate = {
+  enabled: boolean
+}
+
+export type MemoryNoteSummary = {
+  path: string
+  name: string
+  source: "global" | "workspace" | "session"
+  size: number
+  modified: number
+  deletable: boolean
+}
+
+export type MemoryNoteDetail = {
+  path: string
+  name: string
+  source: "global" | "workspace" | "session"
+  size: number
+  modified: number
+  deletable: boolean
+  content: string
+  hash: string
+  truncated: boolean
+}
+
+export type MemoryNoteForget = {
+  path: string
+  hash: string
+}
+
+export type MemoryReviewSave = {
+  content: string
+  scope?: "global" | "workspace"
+}
+
+export type MemoryReviewSaved = {
+  path: string
+}
+
+export type MemoryWorkResult = {
+  status:
+    | "completed"
+    | "shadow"
+    | "no_work"
+    | "disabled"
+    | "too_soon"
+    | "too_few_sessions"
+    | "busy"
+    | "denied"
+    | "conflict"
+    | "cancelled"
+    | "failed"
+    | "retry_required"
+    | "timed_out"
+  reason?: "historical_capture_ownership"
+  eligible?: number
+  processed?: number
+  deferred?: number
+  unplaceable?: number
+  topics?: number
+  cleaned?: number
+  chars?: number
+  path?: string
+}
+
+export type MemoryWorkInfo = {
+  id: string
+  kind: "flush" | "dream"
+  state: "running" | "finished"
+  startedAt: number
+  finishedAt?: number
+  result?: MemoryWorkResult
+}
+
+export type MemoryWorkStart = {
+  kind: "flush" | "dream"
+}
+
+export type MemoryWorkCancel = {
+  id: string
+}
+
+export type MemoryReviewRewrite = {
+  content: string
+}
+
+export type MemoryReviewRewritten = {
+  content: string
+}
+
+export type GoalId = string
+
+export type GoalStatus =
+  | "active"
+  | "user_paused"
+  | "back_off_paused"
+  | "no_progress_paused"
+  | "infra_paused"
+  | "blocked"
+  | "budget_limited"
+  | "complete"
+
+export type GoalLaunch = {
+  model: ModelRef
+  agent: string
+  messageID: string
+}
+
+export type GoalPhase = "idle" | "planning" | "executing" | "evaluating" | "verifying"
+
+export type GoalPlanProgress = {
+  completed: Array<number>
+  deviations: Array<string>
+}
+
+export type GoalRoleExecution = {
+  requested?: GoalRoleModel
+  model: ModelRef
+  agent: string
+  fallback?: "model_unavailable" | "agent_unavailable" | "agent_incapable" | "spawn_failed"
+}
+
+export type GoalFile = {
+  path: string
+  sha256: string
+  bytes: number
+}
+
+export type GoalReviewFiles = {
+  directory: string
+  objective: GoalFile
+  evidence: GoalFile
+  plan: GoalFile
+  verdict?: GoalFile
+  details?: GoalFile
+  strategy?: GoalFile
+  changes?: GoalFile
+  changedFiles?: GoalFile
+  workerScratch: string
+}
+
+export type GoalStrategy = {
+  round: number
+  workerRound: number
+  status: "running" | "advised" | "failed"
+  recommendation?: string
+  failure?: string
+  sessionID?: string
+  execution?: GoalRoleExecution
+  files?: GoalReviewFiles
+}
+
+export type GoalSummary = {
+  status: "running" | "completed" | "failed" | "skipped"
+  sessionID?: string
+  text?: string
+  reason?: "disabled" | "budget" | "interrupted" | "provider" | "output" | "usage" | "execution"
+  model?: ModelRef
+  tokensUsed?: number
+  startedAt?: number
+  finishedAt?: number
+}
+
+export type GoalEvaluation = {
+  decision: "continue" | "candidate_complete" | "blocked"
+  evidence: string
+  next_step: string
+  blocker_key: string
+}
+
+export type GoalReviewer = {
+  achieved: boolean
+  evidence: string
+  unmet: Array<string>
+  confidence: "high" | "medium" | "low"
+  blocking: "none" | "contradiction" | "unverifiable"
+  index: number
+  callID: string
+  sessionID?: string
+  execution?: GoalRoleExecution
+  files?: GoalReviewFiles
+  tokensUsed: number
+  elapsedMs: number
+}
+
+export type GoalPanel = {
+  count: number
+  round: number
+  evidenceSha256: string
+  results: Array<GoalReviewer>
+  previous?: GoalReviewer
+}
+
+export type GoalHistory = {
+  at: number
+  event:
+    | "created"
+    | "resumed"
+    | "paused"
+    | "recovered"
+    | "planning_started"
+    | "planning_completed"
+    | "worker_started"
+    | "worker_completed"
+    | "evaluation_started"
+    | "evaluation_completed"
+    | "progress"
+    | "completion_requested"
+    | "verification_started"
+    | "verification_rejected"
+    | "completed"
+    | "budget_exceeded"
+    | "usage_incomplete"
+  message?: string
+  tokensUsed: number
+}
+
+export type GoalInfo = {
+  id: GoalId
+  sessionID: string
+  objective: string
+  status: GoalStatus
+  launch?: GoalLaunch
+  phase: GoalPhase
+  tokenBudget?: number
+  tokensUsed: number
+  usageIncomplete?: boolean
+  elapsedMs: number
+  createdAt: number
+  updatedAt: number
+  revision: number
+  workerRounds: number
+  verificationRounds: number
+  message?: string
+  plan?: string
+  planProgress?: GoalPlanProgress
+  plannerSessionID?: string
+  plannerExecution?: GoalRoleExecution
+  plannerFiles?: GoalReviewFiles
+  strategy?: GoalStrategy
+  summary?: GoalSummary
+  changesBaselineCommit?: string
+  skepticModels?: Array<GoalRoleModel>
+  evaluation?: GoalEvaluation
+  verification?: GoalPanel
+  unmet: Array<string>
+  history: Array<GoalHistory>
+}
+
+export type GoalCreate = {
+  id: GoalId
+  objective: string
+  tokenBudget?: number
+}
+
+export type GoalStart = {
+  model: ModelRef
+  agent: string
+}
+
+export type GoalReportId = string
+
+export type GoalReportFileKey =
+  | "objective"
+  | "evidence"
+  | "plan"
+  | "verdict"
+  | "details"
+  | "strategy"
+  | "changes"
+  | "changedFiles"
+
+export type GoalReport = {
+  id: GoalReportId
+  kind: "planning" | "verifying" | "strategizing"
+  createdAt?: number
+  complete: boolean
+  files: Array<{
+    key: GoalReportFileKey
+    name: string
+    bytes: number
+    sha256: string
+  }>
+}
+
+export type GoalReportContent = {
+  name: string
+  contentType: string
+  text: string
+  bytes: number
+  sha256: string
+}
+
+export type GoalReportCleanup = {
+  removed: number
+  failed: Array<GoalReportId>
+}
+
+export type FeedbackId = string
+
+export type FeedbackImageId = string
+
+export type FeedbackImage = {
+  id: FeedbackImageId
+  mimeType: "image/png" | "image/jpeg" | "image/gif"
+  fileName: string
+  size: number
+}
+
+export type FeedbackDraft = {
+  title: string
+  details: string
+  product_area?: string
+  type: "bug" | "idea" | "missing_capability"
+  task_category?: "code_edit" | "debug" | "explain" | "plan" | "shell" | "search" | "review" | "other"
+  failure_mode?:
+    | "overeager"
+    | "stopped_early"
+    | "unwanted_scope"
+    | "didnt_ask_for_help"
+    | "excessive_questions"
+    | "subagent_overspawn"
+    | "over_correction"
+    | "ignored_instructions"
+    | "hallucinated"
+    | "sloppy_code"
+    | "destructive"
+    | "lost_context"
+    | "stuck_in_a_loop"
+    | "model_regression"
+    | "disputed"
+    | "wrong_tone"
+    | "unclear_output"
+    | "other"
+  id: FeedbackId
+  sessionID: string
+  revision: number
+  createdAt: number
+  updatedAt: number
+  images?: Array<FeedbackImage>
+}
+
+export type FeedbackImageSnapshot = {
+  data: string
+  mimeType: "image/png" | "image/jpeg" | "image/gif"
+  fileName?: string
+}
+
+export type FeedbackImageInput =
+  | {
+      id: FeedbackImageId
+    }
+  | FeedbackImageSnapshot
+
+export type FeedbackSave = {
+  title: string
+  details: string
+  product_area?: string
+  type: "bug" | "idea" | "missing_capability"
+  task_category?: "code_edit" | "debug" | "explain" | "plan" | "shell" | "search" | "review" | "other"
+  failure_mode?:
+    | "overeager"
+    | "stopped_early"
+    | "unwanted_scope"
+    | "didnt_ask_for_help"
+    | "excessive_questions"
+    | "subagent_overspawn"
+    | "over_correction"
+    | "ignored_instructions"
+    | "hallucinated"
+    | "sloppy_code"
+    | "destructive"
+    | "lost_context"
+    | "stuck_in_a_loop"
+    | "model_regression"
+    | "disputed"
+    | "wrong_tone"
+    | "unclear_output"
+    | "other"
+  draft_id?: string
+  revision?: number
+  images?: Array<FeedbackImageInput>
+}
+
+export type FeedbackReview = {
+  revision: number
+}
+
+export type FeedbackIssue = {
+  draft: FeedbackDraft
+  title: string
+  body: string
+  url: string
+}
+
+export type FeedbackImageContent = {
+  id: FeedbackImageId
+  mimeType: "image/png" | "image/jpeg" | "image/gif"
+  fileName: string
+  size: number
+  data: string
+}
+
+export type HostHooksRepository = {
+  root: string
+  token: string
+  trusted: boolean
+  allowed: boolean
+}
+
+export type HostHooksSnapshot = {
+  captured: boolean
+  repository?: HostHooksRepository
+  generation: number
+  preferenceRevision?: string
+  savedPreferenceRevision?: string
+  preferenceFailure?: "invalid" | "read" | "write" | "conflict" | "rollback"
+  inspection?: HostHooksInspection
+}
+
+export type HostHooksRepositoryTrust = {
+  root: string
+  token: string
+  trusted: boolean
+}
+
+export type HostHooksPreference = {
+  hookID: HostHooksId
+  enabled: boolean
+}
+
+export type SideQuestionEntry = {
+  id: string
+  sessionID: string
+  question: string
+  imageCount: number
+  status: "running" | "completed" | "cancelled" | "failed"
+  answer: string
+  error?: string
+  model: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type SideQuestionInput = {
+  question: string
+  images?: Array<{
+    mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+    data: string
+  }>
 }
 
 export type ProjectDirectories = Array<{
@@ -3830,6 +5134,11 @@ export type PtyTicketConnectToken = {
 export type WorkspaceEventConnectionStatus = {
   workspaceID: string
   status: "connected" | "connecting" | "disconnected" | "error"
+}
+
+export type ProjectCurrent = {
+  id: string
+  directory: string
 }
 
 export type LocationInfo = {
@@ -3902,6 +5211,42 @@ export type SessionV2Info = {
   revert?: RevertState
 }
 
+export type SandboxProfile = "off" | "workspace" | "read-only"
+
+export type SandboxReceipt = {
+  id: string
+  revision: string
+  backend: "seatbelt"
+  confirmedAt: number
+  outcome: "exited"
+  exitCode: number
+}
+
+export type SandboxFailureCode =
+  | "invalid_policy"
+  | "unsupported_platform"
+  | "unavailable"
+  | "identity_conflict"
+  | "unsafe_path"
+  | "missing_inheritance"
+
+export type SandboxStatus = {
+  scope: "native_commands"
+  stored: boolean
+  profile?: SandboxProfile
+  revision?: string
+  backend: {
+    kind: "seatbelt" | "none"
+    availability: "unchecked" | "available" | "unsupported" | "unavailable"
+  }
+  network?: "off" | "unrestricted"
+  latestExecution?: SandboxReceipt
+  failure?: {
+    code: SandboxFailureCode
+    message: string
+  }
+}
+
 export type PromptInputFileAttachment = {
   uri: string
   name?: string
@@ -3915,225 +5260,140 @@ export type SessionInputAdmitted = {
   sessionID: string
   prompt: Prompt
   delivery: "steer" | "queue"
+  executionPolicy?: SessionInputExecutionPolicy
   timeCreated: number
   promotedSeq?: number
+  withdrawnSeq?: number
 }
 
-export type SessionMessageAgentSwitched = {
+export type SessionInputExecution = {
   id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  type: "agent-switched"
-  agent: string
-}
-
-export type SessionMessageModelSwitched = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  type: "model-switched"
-  model: ModelRef
-}
-
-export type SessionMessageUser = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  text: string
-  files?: Array<PromptFileAttachment>
-  agents?: Array<PromptAgentAttachment>
-  type: "user"
-}
-
-export type SessionMessageSynthetic = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
   sessionID: string
-  text: string
-  type: "synthetic"
-}
-
-export type SessionMessageSystem = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  type: "system"
-  text: string
-}
-
-export type SessionMessageShell = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    completed?: number
-  }
-  type: "shell"
-  callID: string
-  command: string
-  output: string
-}
-
-export type SessionMessageAssistantText = {
-  type: "text"
-  id: string
-  text: string
-}
-
-export type SessionMessageAssistantReasoning = {
-  type: "reasoning"
-  id: string
-  text: string
-  providerMetadata?: LlmProviderMetadata
-  time?: {
-    created: number
-    completed?: number
-  }
-}
-
-export type SessionMessageToolStatePending = {
-  status: "pending"
-  input: string
-}
-
-export type SessionMessageToolStateRunning = {
-  status: "running"
-  input: {
-    [key: string]: unknown
-  }
-  structured: {
-    [key: string]: unknown
-  }
-  content: Array<LlmToolContent>
-}
-
-export type SessionMessageToolStateCompleted = {
-  status: "completed"
-  input: {
-    [key: string]: unknown
-  }
-  attachments?: Array<PromptFileAttachment>
-  content: Array<LlmToolContent>
-  outputPaths?: Array<string>
-  structured: {
-    [key: string]: unknown
-  }
-  result?: unknown
-}
-
-export type SessionMessageToolStateError = {
-  status: "error"
-  input: {
-    [key: string]: unknown
-  }
-  content: Array<LlmToolContent>
-  structured: {
-    [key: string]: unknown
-  }
-  error: SessionErrorUnknown
-  result?: unknown
-}
-
-export type SessionMessageAssistantTool = {
-  type: "tool"
-  id: string
-  name: string
-  provider?: {
-    executed: boolean
-    metadata?: LlmProviderMetadata
-    resultMetadata?: LlmProviderMetadata
-  }
-  state:
-    | SessionMessageToolStatePending
-    | SessionMessageToolStateRunning
-    | SessionMessageToolStateCompleted
-    | SessionMessageToolStateError
-  time: {
-    created: number
-    ran?: number
-    completed?: number
-    pruned?: number
-  }
-}
-
-export type SessionMessageAssistant = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    completed?: number
-  }
-  type: "assistant"
-  agent: string
-  model: ModelRef
-  content: Array<SessionMessageAssistantText | SessionMessageAssistantReasoning | SessionMessageAssistantTool>
-  snapshot?: {
-    start?: string
-    end?: string
-    files?: Array<string>
-  }
+  policy: SessionInputExecutionPolicy
+  status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
+  admittedSeq: number
+  promotedSeq?: number
+  startedSeq?: number
+  endedSeq?: number
+  reason?:
+    | "completed"
+    | "provider_error"
+    | "turn_limit"
+    | "interrupted"
+    | "process_restart"
+    | "superseded"
+    | "withdrawn"
+    | "unavailable"
   finish?: string
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  error?: SessionErrorUnknown
+  usageIncomplete: boolean
 }
 
-export type SessionMessageCompaction = {
-  type: "compaction"
-  reason: "auto" | "manual"
-  summary: string
-  recent: string
+export type SessionInputExecutionWait = {
+  execution: SessionInputExecution
+  timedOut: boolean
+}
+
+export type SessionScheduleId = string
+
+export type SessionScheduleRestoreReason =
+  | "restored"
+  | "already_active"
+  | "paused"
+  | "stopped"
+  | "expired"
+  | "deleted"
+  | "permission_required"
+  | "denied"
+  | "unavailable"
+  | "goal_active"
+  | "plan_pending"
+  | "headless_input"
+  | "unfinished_owner"
+  | "changed"
+
+export type SessionScheduleRestoreOutcome = {
+  id: SessionScheduleId
+  reason: SessionScheduleRestoreReason
+}
+
+export type SessionScheduleRestoration = {
+  sessionID: string
+  schedules: Array<SessionScheduleRestoreOutcome>
+}
+
+export type SessionNextHistoryCopyStarted = {
   id: string
   metadata?: {
     [key: string]: unknown
   }
-  time: {
-    created: number
+  type: "session.next.history.copy.started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    source: {
+      sessionID: string
+      created: string
+      revision: number
+    }
+    count: number
   }
 }
 
-export type SessionMessage =
-  | SessionMessageAgentSwitched
-  | SessionMessageModelSwitched
-  | SessionMessageUser
-  | SessionMessageSynthetic
-  | SessionMessageSystem
-  | SessionMessageShell
-  | SessionMessageAssistant
-  | SessionMessageCompaction
+export type SessionNextHistoryCopyMessage = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.history.copy.message"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    source: {
+      sessionID: string
+      created: string
+      revision: number
+    }
+    sourceMessageID: string
+    message: SessionMessage
+  }
+}
+
+export type SessionNextHistoryCopyCompleted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.history.copy.completed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    source: {
+      sessionID: string
+      created: string
+      revision: number
+    }
+    count: number
+    todos: Array<Todo>
+  }
+}
 
 export type SessionNextAgentSwitched = {
   id: string
@@ -4213,6 +5473,7 @@ export type SessionNextPrompted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    executionPolicy?: SessionInputExecutionPolicy
   }
 }
 
@@ -4234,6 +5495,57 @@ export type SessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    executionPolicy?: SessionInputExecutionPolicy
+  }
+}
+
+export type SessionNextPromptWithdrawn = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.prompt.withdrawn"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+  }
+}
+
+export type SessionNextInputExecutionSettled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.input.execution.settled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    status: "completed" | "failed" | "interrupted" | "superseded"
+    reason:
+      | "completed"
+      | "provider_error"
+      | "turn_limit"
+      | "interrupted"
+      | "process_restart"
+      | "superseded"
+      | "withdrawn"
+      | "unavailable"
+    finish?: string
+    usageIncomplete: boolean
   }
 }
 
@@ -4742,6 +6054,432 @@ export type SessionNextRevertCommitted = {
     sessionID: string
     messageID: string
   }
+}
+
+export type TaskMessageInput = {
+  inputID: string
+  text: string
+  delivery?: "steer" | "queue" | "interject"
+}
+
+export type TaskMessageReceipt = {
+  inputID: string
+  taskID: string
+  delivery: "steer" | "queue" | "interject"
+  status: "admitted" | "promoted" | "cancelled" | "interrupted"
+  admittedAt: number
+  promotedAt?: number
+}
+
+export type TaskStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted"
+
+export type TaskSummary = {
+  id: string
+  parentSessionID: string
+  description: string
+  status: TaskStatus
+  background?: boolean
+  startedAt: number
+  completedAt?: number
+  blockedReason?: "process_restart"
+}
+
+export type TaskDetail = {
+  id: string
+  parentSessionID: string
+  description: string
+  status: TaskStatus
+  background?: boolean
+  startedAt: number
+  completedAt?: number
+  blockedReason?: "process_restart"
+  output: string
+  worktreePath?: string
+  interruptedByMessage?: boolean
+}
+
+export type TaskWait = {
+  timeoutMs?: number
+}
+
+export type TaskWaitResult = {
+  task: TaskDetail
+  timedOut: boolean
+}
+
+export type SessionProcessId = string
+
+export type SessionProcessMonitor = {
+  persistent: boolean
+  timeoutMs: number
+  accepted: number
+  suppressed: number
+  overloaded: boolean
+}
+
+export type SessionProcessStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted"
+
+export type SessionProcessSummary = {
+  id: SessionProcessId
+  sessionID: string
+  kind: "shell" | "monitor"
+  monitor?: SessionProcessMonitor
+  description: string
+  status: SessionProcessStatus
+  background: boolean
+  startedAt: number
+  completedAt?: number
+  exitCode?: number
+  blockedReason?: "process_restart"
+  truncated: boolean
+}
+
+export type SessionProcessDetail = {
+  interruptedByMessage?: boolean
+  id: SessionProcessId
+  sessionID: string
+  kind: "shell" | "monitor"
+  monitor?: SessionProcessMonitor
+  description: string
+  status: SessionProcessStatus
+  background: boolean
+  startedAt: number
+  completedAt?: number
+  exitCode?: number
+  blockedReason?: "process_restart"
+  truncated: boolean
+  output: string
+}
+
+export type SessionProcessWait = {
+  timeoutMs?: number
+}
+
+export type SessionProcessWaitResult = {
+  process: SessionProcessDetail
+  timedOut: boolean
+}
+
+export type SessionScheduleStatus = "active" | "paused" | "deleted" | "expired"
+
+export type SessionScheduleBlockedReason =
+  | "restart_required"
+  | "stopped"
+  | "plan_pending"
+  | "goal_active"
+  | "busy"
+  | "unavailable"
+  | "denied"
+
+export type SessionScheduleSummary = {
+  id: SessionScheduleId
+  sessionID: string
+  promptPreview: string
+  intervalSeconds: number
+  durable: boolean
+  status: SessionScheduleStatus
+  blockedReason?: SessionScheduleBlockedReason
+  createdAt: number
+  expiresAt: number
+  nextFireAt: number
+  latestTaskID?: string
+  occurrenceStatus?: "claimed" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+}
+
+export type SessionScheduleDetail = {
+  id: SessionScheduleId
+  sessionID: string
+  promptPreview: string
+  intervalSeconds: number
+  durable: boolean
+  status: SessionScheduleStatus
+  blockedReason?: SessionScheduleBlockedReason
+  createdAt: number
+  expiresAt: number
+  nextFireAt: number
+  latestTaskID?: string
+  occurrenceStatus?: "claimed" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  prompt: string
+}
+
+export type NativeMemoryInfo = {
+  enabled: boolean
+  busy: boolean
+  canToggle: boolean
+  source: "process" | "profile" | "session" | "config" | "environment" | "default"
+  backend: "legacy" | "v2"
+}
+
+export type MemoryOperationRetryInput = {
+  id: string
+  retryOf: string
+}
+
+export type MemoryOperationRecoveryQuery = {
+  action: "discard" | "clear"
+  scope: "workspace" | "global"
+}
+
+export type MemoryOperationResult = {
+  status:
+    | "completed"
+    | "no_work"
+    | "disabled"
+    | "denied"
+    | "retry_required"
+    | "failed"
+    | "cancelled"
+    | "timed_out"
+    | "conflict"
+  committed?: boolean
+  topics?: number
+  shadow?: boolean
+  through?: number
+  processed?: number
+  deferred?: number
+  unplaceable?: number
+  reason?: "historical_capture_ownership" | "unsupported_source" | "mode_changed" | "scope_changed"
+}
+
+export type MemoryOperationInfo = {
+  id: string
+  sessionID: string
+  kind: "capture" | "flush" | "dream" | "migration" | "recovery"
+  backend: "legacy" | "v2"
+  recovery?: MemoryOperationRecoveryQuery
+  state: "queued" | "running" | "finished"
+  ownership: "local" | "unverified" | "settled"
+  retryOf?: string
+  createdAt: number
+  finishedAt?: number
+  result?: MemoryOperationResult
+}
+
+export type MemoryOperationRecoveryPreview = {
+  action: "discard" | "clear"
+  scope: "workspace" | "global"
+  generation: string
+  digest: string
+  files: number
+  plans: number
+  available: boolean
+  reason?:
+    | "no_plan"
+    | "unknown_owner"
+    | "live_owner"
+    | "foreign_owner"
+    | "capture_active"
+    | "partial_publication"
+    | "scope_empty"
+}
+
+export type MemoryOperationRecoveryInput = {
+  id: string
+  retryOf?: string
+  preview: MemoryOperationRecoveryPreview
+}
+
+export type MemoryOperationMigrationPreview = {
+  kind: "relocation" | "carryover"
+  scope: "workspace" | "global"
+  sourceHash: string
+  targetHash: string
+  generation: string
+  available: boolean
+}
+
+export type MemoryOperationMigrationInput = {
+  id: string
+  retryOf?: string
+  preview: MemoryOperationMigrationPreview
+}
+
+export type MemoryOperationInput = {
+  id: string
+  retryOf?: string
+}
+
+export type McpAuthenticationError =
+  | "invalid"
+  | "auth"
+  | "storage"
+  | "conflict"
+  | "not_found"
+  | "unsupported"
+  | "cancelled"
+  | "expired"
+  | "load"
+
+export type McpAuthentication = {
+  supported: boolean
+  credentials: "missing" | "available"
+  error?: McpAuthenticationError
+  flow?: {
+    id: string
+    phase: "waiting" | "exchanging" | "connected" | "credentials_ready" | "retry_required" | "failed" | "cancelled"
+    expiresAt: number
+    error?: McpAuthenticationError
+  }
+}
+
+export type McpAuthenticationStart = {
+  id: string
+  authorizationUrl: string
+  expiresAt: number
+}
+
+export type SessionMcpAttachmentInput =
+  | {
+      kind: "resource"
+      server: string
+      uri: string
+    }
+  | {
+      kind: "template"
+      server: string
+      uriTemplate: string
+      parameters: {
+        [key: string]:
+          | string
+          | Array<string>
+          | {
+              [key: string]: string
+            }
+      }
+    }
+
+export type SessionMcpAttachmentCatalog = {
+  resources: Array<{
+    server: string
+    name: string
+    title?: string
+    description?: string
+    mimeType?: string
+    uri: string
+  }>
+  templates: Array<{
+    server: string
+    name: string
+    title?: string
+    description?: string
+    mimeType?: string
+    uriTemplate: string
+    variables: Array<string>
+  }>
+  errors: Array<{
+    server: string
+    code: string
+    message: string
+  }>
+}
+
+export type SessionMcpAttachmentPrepared = {
+  server: string
+  resourceURI: string
+  files: Array<{
+    uri: string
+    name: string
+    mimeType: string
+  }>
+}
+
+export type SessionMcpAttachmentOperation = {
+  id: string
+  kind: "catalog" | "prepare"
+  status: "reserved" | "running" | "completed" | "failed" | "cancelled"
+  expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  catalog?: SessionMcpAttachmentCatalog
+  prepared?: SessionMcpAttachmentPrepared
+  error?: {
+    code: string
+    message: string
+  }
+}
+
+export type WorkflowId = string
+
+export type WorkflowPauseKind = "user" | "back_off" | "no_progress" | "verification" | "infra"
+
+export type WorkflowInfo = {
+  id: WorkflowId
+  sessionID: string
+  name: string
+  status: "pending" | "running" | "paused" | "budget_limited" | "cancelled" | "completed" | "failed"
+  phase?: string
+  agentBudget: number
+  agentsSpent: number
+  concurrency: number
+  tokens: number
+  usageIncomplete?: boolean
+  resumeBlockedReason?: "process_restart" | "schema_attempt_claimed"
+  createdAt: number
+  updatedAt: number
+  message?: string
+  pauseKind?: WorkflowPauseKind
+  result?: unknown
+  children: Array<string>
+}
+
+export type WorkflowSource =
+  | {
+      type: "saved"
+      name: string
+    }
+  | {
+      type: "script"
+      name: string
+      script: string
+    }
+  | {
+      type: "definition"
+      definition: {
+        name: string
+        description: string
+        stages: Array<{
+          name: string
+          prompt: string
+          readOnly?: boolean
+          model?: ModelRef
+          input?: string
+          foreach?: string
+          limit?: number
+          outputSchema?: {
+            [key: string]: unknown
+          }
+        }>
+      }
+    }
+  | {
+      type: "builtin"
+      name: "deep-research"
+    }
+
+export type WorkflowLaunch = {
+  source: WorkflowSource
+  args?: unknown
+  agentBudget?: number
+  concurrency?: number
+  model?: ModelRef
+  agent?: string
+}
+
+export type WorkflowSourceEntry = {
+  name: string
+  scope: "builtin" | "project" | "user"
+  description?: string
+}
+
+export type WorkflowValidation = {
+  name: string
+  valid: boolean
+  diagnostics: Array<string>
+}
+
+export type WorkflowStart = {
+  source: WorkflowSource
+  args?: unknown
+  agentBudget?: number
+  concurrency?: number
 }
 
 export type ModelApi =
@@ -5811,6 +7549,23 @@ export type McpBrowserOpenFailed = {
   }
 }
 
+export type McpStatusChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "mcp.status.changed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    server?: string
+  }
+}
+
 export type CommandExecuted = {
   id: string
   metadata?: {
@@ -5869,6 +7624,28 @@ export type SessionIdle = {
   location?: LocationRef
   data: {
     sessionID: string
+  }
+}
+
+export type MemoryCaptureActivity = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "memory.capture.activity"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    activity: "queued" | "running" | "completed" | "no_op" | "retry" | "failed"
+    fromTurn: number
+    throughTurn: number
+    attempt: number
+    memories?: Array<MemoryCaptureEntry>
   }
 }
 
@@ -6193,6 +7970,53 @@ export type EventMessagePartRemoved = {
   }
 }
 
+export type EventSessionNextHistoryCopyStarted = {
+  id: string
+  type: "session.next.history.copy.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    source: {
+      sessionID: string
+      created: string
+      revision: number
+    }
+    count: number
+  }
+}
+
+export type EventSessionNextHistoryCopyMessage = {
+  id: string
+  type: "session.next.history.copy.message"
+  properties: {
+    timestamp: number
+    sessionID: string
+    source: {
+      sessionID: string
+      created: string
+      revision: number
+    }
+    sourceMessageID: string
+    message: SessionMessage
+  }
+}
+
+export type EventSessionNextHistoryCopyCompleted = {
+  id: string
+  type: "session.next.history.copy.completed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    source: {
+      sessionID: string
+      created: string
+      revision: number
+    }
+    count: number
+    todos: Array<Todo>
+  }
+}
+
 export type EventSessionNextAgentSwitched = {
   id: string
   type: "session.next.agent.switched"
@@ -6235,6 +8059,7 @@ export type EventSessionNextPrompted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    executionPolicy?: SessionInputExecutionPolicy
   }
 }
 
@@ -6247,6 +8072,39 @@ export type EventSessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    executionPolicy?: SessionInputExecutionPolicy
+  }
+}
+
+export type EventSessionNextPromptWithdrawn = {
+  id: string
+  type: "session.next.prompt.withdrawn"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+  }
+}
+
+export type EventSessionNextInputExecutionSettled = {
+  id: string
+  type: "session.next.input.execution.settled"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    status: "completed" | "failed" | "interrupted" | "superseded"
+    reason:
+      | "completed"
+      | "provider_error"
+      | "turn_limit"
+      | "interrupted"
+      | "process_restart"
+      | "superseded"
+      | "withdrawn"
+      | "unavailable"
+    finish?: string
+    usageIncomplete: boolean
   }
 }
 
@@ -6831,6 +8689,14 @@ export type EventMcpBrowserOpenFailed = {
   }
 }
 
+export type EventMcpStatusChanged = {
+  id: string
+  type: "mcp.status.changed"
+  properties: {
+    server?: string
+  }
+}
+
 export type EventCommandExecuted = {
   id: string
   type: "command.executed"
@@ -6871,6 +8737,19 @@ export type EventSessionIdle = {
   type: "session.idle"
   properties: {
     sessionID: string
+  }
+}
+
+export type EventMemoryCaptureActivity = {
+  id: string
+  type: "memory.capture.activity"
+  properties: {
+    sessionID: string
+    activity: "queued" | "running" | "completed" | "no_op" | "retry" | "failed"
+    fromTurn: number
+    throughTurn: number
+    attempt: number
+    memories?: Array<MemoryCaptureEntry>
   }
 }
 
@@ -7393,6 +9272,38 @@ export type ConfigProvidersResponses = {
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
 
+export type ExperimentalHooksData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/hooks"
+}
+
+export type ExperimentalHooksErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalHooksError = ExperimentalHooksErrors[keyof ExperimentalHooksErrors]
+
+export type ExperimentalHooksResponses = {
+  /**
+   * HostHooks.Inspection
+   */
+  200: HostHooksInspection
+}
+
+export type ExperimentalHooksResponse = ExperimentalHooksResponses[keyof ExperimentalHooksResponses]
+
 export type ExperimentalCapabilitiesGetData = {
   body?: never
   path?: never
@@ -7431,6 +9342,7 @@ export type ToolListData = {
     workspace?: string
     provider: string
     model: string
+    sessionID?: string
   }
   url: "/experimental/tool"
 }
@@ -7440,6 +9352,10 @@ export type ToolListErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
 }
 
 export type ToolListError = ToolListErrors[keyof ToolListErrors]
@@ -7651,13 +9567,630 @@ export type ExperimentalSessionBackgroundError =
 
 export type ExperimentalSessionBackgroundResponses = {
   /**
-   * Backgrounded subagents
+   * Backgrounded foreground tasks
    */
   200: boolean
 }
 
 export type ExperimentalSessionBackgroundResponse =
   ExperimentalSessionBackgroundResponses[keyof ExperimentalSessionBackgroundResponses]
+
+export type ExperimentalTaskListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/task"
+}
+
+export type ExperimentalTaskListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalTaskListError = ExperimentalTaskListErrors[keyof ExperimentalTaskListErrors]
+
+export type ExperimentalTaskListResponses = {
+  /**
+   * Session tasks
+   */
+  200: Array<BackgroundTaskSummary>
+}
+
+export type ExperimentalTaskListResponse = ExperimentalTaskListResponses[keyof ExperimentalTaskListResponses]
+
+export type ExperimentalTaskGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    taskID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/task/{taskID}"
+}
+
+export type ExperimentalTaskGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ExperimentalTaskGetError = ExperimentalTaskGetErrors[keyof ExperimentalTaskGetErrors]
+
+export type ExperimentalTaskGetResponses = {
+  /**
+   * Task status and output
+   */
+  200: BackgroundTaskDetail
+}
+
+export type ExperimentalTaskGetResponse = ExperimentalTaskGetResponses[keyof ExperimentalTaskGetResponses]
+
+export type ExperimentalTaskCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    taskID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/task/{taskID}/cancel"
+}
+
+export type ExperimentalTaskCancelErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ExperimentalTaskCancelError = ExperimentalTaskCancelErrors[keyof ExperimentalTaskCancelErrors]
+
+export type ExperimentalTaskCancelResponses = {
+  /**
+   * Cancelled or already finished task
+   */
+  200: BackgroundTaskSummary
+}
+
+export type ExperimentalTaskCancelResponse = ExperimentalTaskCancelResponses[keyof ExperimentalTaskCancelResponses]
+
+export type ExperimentalMemoryHealthData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/health"
+}
+
+export type ExperimentalMemoryHealthErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryHealthError = ExperimentalMemoryHealthErrors[keyof ExperimentalMemoryHealthErrors]
+
+export type ExperimentalMemoryHealthResponses = {
+  /**
+   * MemoryHealth.Info
+   */
+  200: MemoryHealthInfo
+}
+
+export type ExperimentalMemoryHealthResponse =
+  ExperimentalMemoryHealthResponses[keyof ExperimentalMemoryHealthResponses]
+
+export type ExperimentalMemoryStatusData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/status"
+}
+
+export type ExperimentalMemoryStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryStatusError = ExperimentalMemoryStatusErrors[keyof ExperimentalMemoryStatusErrors]
+
+export type ExperimentalMemoryStatusResponses = {
+  /**
+   * MemoryMode.Info
+   */
+  200: MemoryModeInfo
+}
+
+export type ExperimentalMemoryStatusResponse =
+  ExperimentalMemoryStatusResponses[keyof ExperimentalMemoryStatusResponses]
+
+export type ExperimentalMemoryToggleData = {
+  body?: MemoryModeUpdate
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/toggle"
+}
+
+export type ExperimentalMemoryToggleErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryToggleError = ExperimentalMemoryToggleErrors[keyof ExperimentalMemoryToggleErrors]
+
+export type ExperimentalMemoryToggleResponses = {
+  /**
+   * MemoryMode.Info
+   */
+  200: MemoryModeInfo
+}
+
+export type ExperimentalMemoryToggleResponse =
+  ExperimentalMemoryToggleResponses[keyof ExperimentalMemoryToggleResponses]
+
+export type ExperimentalMemoryListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    search?: string
+  }
+  url: "/experimental/session/{sessionID}/memory"
+}
+
+export type ExperimentalMemoryListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryListError = ExperimentalMemoryListErrors[keyof ExperimentalMemoryListErrors]
+
+export type ExperimentalMemoryListResponses = {
+  /**
+   * Memory notes
+   */
+  200: Array<MemoryNoteSummary>
+}
+
+export type ExperimentalMemoryListResponse = ExperimentalMemoryListResponses[keyof ExperimentalMemoryListResponses]
+
+export type ExperimentalMemoryGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/experimental/session/{sessionID}/memory/note"
+}
+
+export type ExperimentalMemoryGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryGetError = ExperimentalMemoryGetErrors[keyof ExperimentalMemoryGetErrors]
+
+export type ExperimentalMemoryGetResponses = {
+  /**
+   * Memory preview and content hash
+   */
+  200: MemoryNoteDetail
+}
+
+export type ExperimentalMemoryGetResponse = ExperimentalMemoryGetResponses[keyof ExperimentalMemoryGetResponses]
+
+export type ExperimentalMemoryForgetData = {
+  body?: MemoryNoteForget
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/forget"
+}
+
+export type ExperimentalMemoryForgetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryForgetError = ExperimentalMemoryForgetErrors[keyof ExperimentalMemoryForgetErrors]
+
+export type ExperimentalMemoryForgetResponses = {
+  /**
+   * Memory note deleted
+   */
+  200: boolean
+}
+
+export type ExperimentalMemoryForgetResponse =
+  ExperimentalMemoryForgetResponses[keyof ExperimentalMemoryForgetResponses]
+
+export type ExperimentalMemoryRememberData = {
+  body?: MemoryReviewSave
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/remember"
+}
+
+export type ExperimentalMemoryRememberErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryRememberError = ExperimentalMemoryRememberErrors[keyof ExperimentalMemoryRememberErrors]
+
+export type ExperimentalMemoryRememberResponses = {
+  /**
+   * Confirmed memory note saved
+   */
+  200: MemoryReviewSaved
+}
+
+export type ExperimentalMemoryRememberResponse =
+  ExperimentalMemoryRememberResponses[keyof ExperimentalMemoryRememberResponses]
+
+export type ExperimentalMemoryOperationData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/operation"
+}
+
+export type ExperimentalMemoryOperationErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryOperationError =
+  ExperimentalMemoryOperationErrors[keyof ExperimentalMemoryOperationErrors]
+
+export type ExperimentalMemoryOperationResponses = {
+  /**
+   * Success
+   */
+  200: MemoryWorkInfo
+}
+
+export type ExperimentalMemoryOperationResponse =
+  ExperimentalMemoryOperationResponses[keyof ExperimentalMemoryOperationResponses]
+
+export type ExperimentalMemoryStartData = {
+  body?: MemoryWorkStart
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/operation"
+}
+
+export type ExperimentalMemoryStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryStartError = ExperimentalMemoryStartErrors[keyof ExperimentalMemoryStartErrors]
+
+export type ExperimentalMemoryStartResponses = {
+  /**
+   * MemoryWork.Info
+   */
+  200: MemoryWorkInfo
+}
+
+export type ExperimentalMemoryStartResponse = ExperimentalMemoryStartResponses[keyof ExperimentalMemoryStartResponses]
+
+export type ExperimentalMemoryCancelData = {
+  body?: MemoryWorkCancel
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/operation/cancel"
+}
+
+export type ExperimentalMemoryCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryCancelError = ExperimentalMemoryCancelErrors[keyof ExperimentalMemoryCancelErrors]
+
+export type ExperimentalMemoryCancelResponses = {
+  /**
+   * MemoryWork.Info
+   */
+  200: MemoryWorkInfo
+}
+
+export type ExperimentalMemoryCancelResponse =
+  ExperimentalMemoryCancelResponses[keyof ExperimentalMemoryCancelResponses]
+
+export type ExperimentalMemoryRewriteData = {
+  body?: MemoryReviewRewrite
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/memory/rewrite"
+}
+
+export type ExperimentalMemoryRewriteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type ExperimentalMemoryRewriteError = ExperimentalMemoryRewriteErrors[keyof ExperimentalMemoryRewriteErrors]
+
+export type ExperimentalMemoryRewriteResponses = {
+  /**
+   * Unsaved rewritten draft
+   */
+  200: MemoryReviewRewritten
+}
+
+export type ExperimentalMemoryRewriteResponse =
+  ExperimentalMemoryRewriteResponses[keyof ExperimentalMemoryRewriteResponses]
 
 export type ExperimentalResourceListData = {
   body?: never
@@ -7689,6 +10222,1058 @@ export type ExperimentalResourceListResponses = {
 
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
+
+export type PluginsReloadData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugins/reload"
+}
+
+export type PluginsReloadErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type PluginsReloadError = PluginsReloadErrors[keyof PluginsReloadErrors]
+
+export type PluginsReloadResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type PluginsReloadResponse = PluginsReloadResponses[keyof PluginsReloadResponses]
+
+export type PluginsListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugins"
+}
+
+export type PluginsListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type PluginsListError = PluginsListErrors[keyof PluginsListErrors]
+
+export type PluginsListResponses = {
+  /**
+   * PluginStoreCatalog
+   */
+  200: PluginStoreCatalog
+}
+
+export type PluginsListResponse = PluginsListResponses[keyof PluginsListResponses]
+
+export type PluginsDetailData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    id: string
+  }
+  url: "/plugins/detail"
+}
+
+export type PluginsDetailErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type PluginsDetailError = PluginsDetailErrors[keyof PluginsDetailErrors]
+
+export type PluginsDetailResponses = {
+  /**
+   * PluginStoreDetail
+   */
+  200: PluginStoreDetail
+}
+
+export type PluginsDetailResponse = PluginsDetailResponses[keyof PluginsDetailResponses]
+
+export type PluginsManageData = {
+  body?: PluginStoreAction
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugins/manage"
+}
+
+export type PluginsManageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type PluginsManageError = PluginsManageErrors[keyof PluginsManageErrors]
+
+export type PluginsManageResponses = {
+  /**
+   * PluginStoreCatalog
+   */
+  200: PluginStoreCatalog
+}
+
+export type PluginsManageResponse = PluginsManageResponses[keyof PluginsManageResponses]
+
+export type GoalGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal"
+}
+
+export type GoalGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalGetError = GoalGetErrors[keyof GoalGetErrors]
+
+export type GoalGetResponses = {
+  /**
+   * Success
+   */
+  200: GoalInfo
+}
+
+export type GoalGetResponse = GoalGetResponses[keyof GoalGetResponses]
+
+export type GoalCreateData = {
+  body?: GoalCreate
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal"
+}
+
+export type GoalCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalCreateError = GoalCreateErrors[keyof GoalCreateErrors]
+
+export type GoalCreateResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type GoalCreateResponse = GoalCreateResponses[keyof GoalCreateResponses]
+
+export type GoalStartData = {
+  body?: GoalStart
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/start"
+}
+
+export type GoalStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalStartError = GoalStartErrors[keyof GoalStartErrors]
+
+export type GoalStartResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type GoalStartResponse = GoalStartResponses[keyof GoalStartResponses]
+
+export type GoalRunData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/run"
+}
+
+export type GoalRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalRunError = GoalRunErrors[keyof GoalRunErrors]
+
+export type GoalRunResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type GoalRunResponse = GoalRunResponses[keyof GoalRunResponses]
+
+export type GoalPauseData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/pause"
+}
+
+export type GoalPauseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalPauseError = GoalPauseErrors[keyof GoalPauseErrors]
+
+export type GoalPauseResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type GoalPauseResponse = GoalPauseResponses[keyof GoalPauseResponses]
+
+export type GoalResumeData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/resume"
+}
+
+export type GoalResumeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalResumeError = GoalResumeErrors[keyof GoalResumeErrors]
+
+export type GoalResumeResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type GoalResumeResponse = GoalResumeResponses[keyof GoalResumeResponses]
+
+export type GoalClearData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}"
+}
+
+export type GoalClearErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalClearError = GoalClearErrors[keyof GoalClearErrors]
+
+export type GoalClearResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type GoalClearResponse = GoalClearResponses[keyof GoalClearResponses]
+
+export type GoalCleanupReportsData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/reports"
+}
+
+export type GoalCleanupReportsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalCleanupReportsError = GoalCleanupReportsErrors[keyof GoalCleanupReportsErrors]
+
+export type GoalCleanupReportsResponses = {
+  /**
+   * Goal.ReportCleanup
+   */
+  200: GoalReportCleanup
+}
+
+export type GoalCleanupReportsResponse = GoalCleanupReportsResponses[keyof GoalCleanupReportsResponses]
+
+export type GoalReportsData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/reports"
+}
+
+export type GoalReportsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalReportsError = GoalReportsErrors[keyof GoalReportsErrors]
+
+export type GoalReportsResponses = {
+  /**
+   * Success
+   */
+  200: Array<GoalReport>
+}
+
+export type GoalReportsResponse = GoalReportsResponses[keyof GoalReportsResponses]
+
+export type GoalReportData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+    reportID: GoalReportId
+    file: GoalReportFileKey
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/{goalID}/reports/{reportID}/{file}"
+}
+
+export type GoalReportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type GoalReportError = GoalReportErrors[keyof GoalReportErrors]
+
+export type GoalReportResponses = {
+  /**
+   * Goal.ReportContent
+   */
+  200: GoalReportContent
+}
+
+export type GoalReportResponse = GoalReportResponses[keyof GoalReportResponses]
+
+export type FeedbackListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/feedback"
+}
+
+export type FeedbackListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type FeedbackListError = FeedbackListErrors[keyof FeedbackListErrors]
+
+export type FeedbackListResponses = {
+  /**
+   * Success
+   */
+  200: Array<FeedbackDraft>
+}
+
+export type FeedbackListResponse = FeedbackListResponses[keyof FeedbackListResponses]
+
+export type FeedbackSaveData = {
+  body?: FeedbackSave
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/feedback"
+}
+
+export type FeedbackSaveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type FeedbackSaveError = FeedbackSaveErrors[keyof FeedbackSaveErrors]
+
+export type FeedbackSaveResponses = {
+  /**
+   * Feedback.Draft
+   */
+  200: FeedbackDraft
+}
+
+export type FeedbackSaveResponse = FeedbackSaveResponses[keyof FeedbackSaveResponses]
+
+export type FeedbackReviewData = {
+  body?: FeedbackReview
+  path: {
+    sessionID: string
+    draftID: FeedbackId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/feedback/{draftID}/review"
+}
+
+export type FeedbackReviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type FeedbackReviewError = FeedbackReviewErrors[keyof FeedbackReviewErrors]
+
+export type FeedbackReviewResponses = {
+  /**
+   * Feedback.Issue
+   */
+  200: FeedbackIssue
+}
+
+export type FeedbackReviewResponse = FeedbackReviewResponses[keyof FeedbackReviewResponses]
+
+export type FeedbackImageData = {
+  body?: FeedbackReview
+  path: {
+    sessionID: string
+    draftID: FeedbackId
+    imageID: FeedbackImageId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/feedback/{draftID}/image/{imageID}"
+}
+
+export type FeedbackImageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type FeedbackImageError = FeedbackImageErrors[keyof FeedbackImageErrors]
+
+export type FeedbackImageResponses = {
+  /**
+   * Feedback.ImageContent
+   */
+  200: FeedbackImageContent
+}
+
+export type FeedbackImageResponse = FeedbackImageResponses[keyof FeedbackImageResponses]
+
+export type FeedbackRemoveData = {
+  body?: FeedbackReview
+  path: {
+    sessionID: string
+    draftID: FeedbackId
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/feedback/{draftID}"
+}
+
+export type FeedbackRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type FeedbackRemoveError = FeedbackRemoveErrors[keyof FeedbackRemoveErrors]
+
+export type FeedbackRemoveResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type FeedbackRemoveResponse = FeedbackRemoveResponses[keyof FeedbackRemoveResponses]
+
+export type HooksGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/hooks"
+}
+
+export type HooksGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type HooksGetError = HooksGetErrors[keyof HooksGetErrors]
+
+export type HooksGetResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type HooksGetResponse = HooksGetResponses[keyof HooksGetResponses]
+
+export type HooksReloadData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/hooks/reload"
+}
+
+export type HooksReloadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type HooksReloadError = HooksReloadErrors[keyof HooksReloadErrors]
+
+export type HooksReloadResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type HooksReloadResponse = HooksReloadResponses[keyof HooksReloadResponses]
+
+export type HooksTrustData = {
+  body?: HostHooksRepositoryTrust
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/hooks/trust"
+}
+
+export type HooksTrustErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type HooksTrustError = HooksTrustErrors[keyof HooksTrustErrors]
+
+export type HooksTrustResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type HooksTrustResponse = HooksTrustResponses[keyof HooksTrustResponses]
+
+export type HooksPreferenceData = {
+  body?: HostHooksPreference
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/hooks/preference"
+}
+
+export type HooksPreferenceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type HooksPreferenceError = HooksPreferenceErrors[keyof HooksPreferenceErrors]
+
+export type HooksPreferenceResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type HooksPreferenceResponse = HooksPreferenceResponses[keyof HooksPreferenceResponses]
+
+export type SideQuestionListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/side-question"
+}
+
+export type SideQuestionListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type SideQuestionListError = SideQuestionListErrors[keyof SideQuestionListErrors]
+
+export type SideQuestionListResponses = {
+  /**
+   * Success
+   */
+  200: Array<SideQuestionEntry>
+}
+
+export type SideQuestionListResponse = SideQuestionListResponses[keyof SideQuestionListResponses]
+
+export type SideQuestionAskData = {
+  body?: SideQuestionInput
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/side-question"
+}
+
+export type SideQuestionAskErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type SideQuestionAskError = SideQuestionAskErrors[keyof SideQuestionAskErrors]
+
+export type SideQuestionAskResponses = {
+  /**
+   * SideQuestion.Entry
+   */
+  200: SideQuestionEntry
+}
+
+export type SideQuestionAskResponse = SideQuestionAskResponses[keyof SideQuestionAskResponses]
+
+export type SideQuestionCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    questionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/side-question/{questionID}/cancel"
+}
+
+export type SideQuestionCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type SideQuestionCancelError = SideQuestionCancelErrors[keyof SideQuestionCancelErrors]
+
+export type SideQuestionCancelResponses = {
+  /**
+   * SideQuestion.Entry
+   */
+  200: SideQuestionEntry
+}
+
+export type SideQuestionCancelResponse = SideQuestionCancelResponses[keyof SideQuestionCancelResponses]
 
 export type FindTextData = {
   body?: never
@@ -11043,6 +14628,73 @@ export type V2HealthGetResponses = {
 
 export type V2HealthGetResponse = V2HealthGetResponses[keyof V2HealthGetResponses]
 
+export type V2ProjectListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/project"
+}
+
+export type V2ProjectListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProjectListError = V2ProjectListErrors[keyof V2ProjectListErrors]
+
+export type V2ProjectListResponses = {
+  /**
+   * Success
+   */
+  200: Array<Project>
+}
+
+export type V2ProjectListResponse = V2ProjectListResponses[keyof V2ProjectListResponses]
+
+export type V2ProjectCurrentData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/project/current"
+}
+
+export type V2ProjectCurrentErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ProjectCurrentError = V2ProjectCurrentErrors[keyof V2ProjectCurrentErrors]
+
+export type V2ProjectCurrentResponses = {
+  /**
+   * Project.Current
+   */
+  200: ProjectCurrent
+}
+
+export type V2ProjectCurrentResponse = V2ProjectCurrentResponses[keyof V2ProjectCurrentResponses]
+
 export type V2LocationGetData = {
   body?: never
   path?: never
@@ -11161,6 +14813,7 @@ export type V2SessionCreateData = {
     agent?: string
     model?: ModelRef
     location?: LocationRef
+    commandSandbox?: SandboxProfile
   }
   path?: never
   query?: never
@@ -11176,6 +14829,18 @@ export type V2SessionCreateErrors = {
    * UnauthorizedError
    */
   401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionCreateError = V2SessionCreateErrors[keyof V2SessionCreateErrors]
@@ -11190,6 +14855,41 @@ export type V2SessionCreateResponses = {
 }
 
 export type V2SessionCreateResponse = V2SessionCreateResponses[keyof V2SessionCreateResponses]
+
+export type V2SessionSandboxData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/sandbox"
+}
+
+export type V2SessionSandboxErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionSandboxError = V2SessionSandboxErrors[keyof V2SessionSandboxErrors]
+
+export type V2SessionSandboxResponses = {
+  /**
+   * Sandbox.Status
+   */
+  200: SandboxStatus
+}
+
+export type V2SessionSandboxResponse = V2SessionSandboxResponses[keyof V2SessionSandboxResponses]
 
 export type V2SessionActiveData = {
   body?: never
@@ -11223,6 +14923,41 @@ export type V2SessionActiveResponses = {
 }
 
 export type V2SessionActiveResponse = V2SessionActiveResponses[keyof V2SessionActiveResponses]
+
+export type V2SessionRemoveData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}"
+}
+
+export type V2SessionRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionRemoveError = V2SessionRemoveErrors[keyof V2SessionRemoveErrors]
+
+export type V2SessionRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionRemoveResponse = V2SessionRemoveResponses[keyof V2SessionRemoveResponses]
 
 export type V2SessionGetData = {
   body?: never
@@ -11340,6 +15075,7 @@ export type V2SessionPromptData = {
     id?: string
     prompt: PromptInput
     delivery?: "steer" | "queue"
+    executionPolicy?: SessionInputExecutionPolicy
     resume?: boolean
   }
   path: {
@@ -11381,6 +15117,146 @@ export type V2SessionPromptResponses = {
 
 export type V2SessionPromptResponse = V2SessionPromptResponses[keyof V2SessionPromptResponses]
 
+export type V2SessionInputExecutionData = {
+  body?: never
+  path: {
+    sessionID: string
+    inputID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/input/{inputID}/execution"
+}
+
+export type V2SessionInputExecutionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError | MessageNotFoundError
+   */
+  404: MessageNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionInputExecutionError = V2SessionInputExecutionErrors[keyof V2SessionInputExecutionErrors]
+
+export type V2SessionInputExecutionResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionInputExecution
+  }
+}
+
+export type V2SessionInputExecutionResponse = V2SessionInputExecutionResponses[keyof V2SessionInputExecutionResponses]
+
+export type V2SessionInputWaitData = {
+  body: {
+    timeoutMs?: number
+  }
+  path: {
+    sessionID: string
+    inputID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/input/{inputID}/execution/wait"
+}
+
+export type V2SessionInputWaitErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError | MessageNotFoundError
+   */
+  404: MessageNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionInputWaitError = V2SessionInputWaitErrors[keyof V2SessionInputWaitErrors]
+
+export type V2SessionInputWaitResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionInputExecutionWait
+  }
+}
+
+export type V2SessionInputWaitResponse = V2SessionInputWaitResponses[keyof V2SessionInputWaitResponses]
+
+export type V2SessionInputInterruptData = {
+  body?: never
+  path: {
+    sessionID: string
+    inputID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/input/{inputID}/execution/interrupt"
+}
+
+export type V2SessionInputInterruptErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError | MessageNotFoundError
+   */
+  404: MessageNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionInputInterruptError = V2SessionInputInterruptErrors[keyof V2SessionInputInterruptErrors]
+
+export type V2SessionInputInterruptResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionInputExecution
+  }
+}
+
+export type V2SessionInputInterruptResponse = V2SessionInputInterruptResponses[keyof V2SessionInputInterruptResponses]
+
 export type V2SessionCompactData = {
   body?: never
   path: {
@@ -11419,6 +15295,49 @@ export type V2SessionCompactResponses = {
 }
 
 export type V2SessionCompactResponse = V2SessionCompactResponses[keyof V2SessionCompactResponses]
+
+export type V2SessionRestoreData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/restore"
+}
+
+export type V2SessionRestoreErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionRestoreError = V2SessionRestoreErrors[keyof V2SessionRestoreErrors]
+
+export type V2SessionRestoreResponses = {
+  /**
+   * SessionSchedule.Restoration
+   */
+  200: SessionScheduleRestoration
+}
+
+export type V2SessionRestoreResponse = V2SessionRestoreResponses[keyof V2SessionRestoreResponses]
 
 export type V2SessionWaitData = {
   body?: never
@@ -11769,6 +15688,3590 @@ export type V2SessionMessageResponses = {
 }
 
 export type V2SessionMessageResponse = V2SessionMessageResponses[keyof V2SessionMessageResponses]
+
+export type V2GoalGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal"
+}
+
+export type V2GoalGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalGetError = V2GoalGetErrors[keyof V2GoalGetErrors]
+
+export type V2GoalGetResponses = {
+  /**
+   * Success
+   */
+  200: GoalInfo
+}
+
+export type V2GoalGetResponse = V2GoalGetResponses[keyof V2GoalGetResponses]
+
+export type V2GoalCreateData = {
+  body: GoalCreate
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal"
+}
+
+export type V2GoalCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalCreateError = V2GoalCreateErrors[keyof V2GoalCreateErrors]
+
+export type V2GoalCreateResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type V2GoalCreateResponse = V2GoalCreateResponses[keyof V2GoalCreateResponses]
+
+export type V2GoalStartData = {
+  body: GoalStart
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/start"
+}
+
+export type V2GoalStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalStartError = V2GoalStartErrors[keyof V2GoalStartErrors]
+
+export type V2GoalStartResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type V2GoalStartResponse = V2GoalStartResponses[keyof V2GoalStartResponses]
+
+export type V2GoalRunData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/run"
+}
+
+export type V2GoalRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalRunError = V2GoalRunErrors[keyof V2GoalRunErrors]
+
+export type V2GoalRunResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type V2GoalRunResponse = V2GoalRunResponses[keyof V2GoalRunResponses]
+
+export type V2GoalResumeData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/resume"
+}
+
+export type V2GoalResumeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalResumeError = V2GoalResumeErrors[keyof V2GoalResumeErrors]
+
+export type V2GoalResumeResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type V2GoalResumeResponse = V2GoalResumeResponses[keyof V2GoalResumeResponses]
+
+export type V2GoalPauseData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/pause"
+}
+
+export type V2GoalPauseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalPauseError = V2GoalPauseErrors[keyof V2GoalPauseErrors]
+
+export type V2GoalPauseResponses = {
+  /**
+   * Goal.Info
+   */
+  200: GoalInfo
+}
+
+export type V2GoalPauseResponse = V2GoalPauseResponses[keyof V2GoalPauseResponses]
+
+export type V2GoalClearData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}"
+}
+
+export type V2GoalClearErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalClearError = V2GoalClearErrors[keyof V2GoalClearErrors]
+
+export type V2GoalClearResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2GoalClearResponse = V2GoalClearResponses[keyof V2GoalClearResponses]
+
+export type V2GoalCleanupReportsData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/reports"
+}
+
+export type V2GoalCleanupReportsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalCleanupReportsError = V2GoalCleanupReportsErrors[keyof V2GoalCleanupReportsErrors]
+
+export type V2GoalCleanupReportsResponses = {
+  /**
+   * Goal.ReportCleanup
+   */
+  200: GoalReportCleanup
+}
+
+export type V2GoalCleanupReportsResponse = V2GoalCleanupReportsResponses[keyof V2GoalCleanupReportsResponses]
+
+export type V2GoalReportsData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/reports"
+}
+
+export type V2GoalReportsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError | GoalReportNotFoundError
+   */
+  404: GoalReportNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalReportsError = V2GoalReportsErrors[keyof V2GoalReportsErrors]
+
+export type V2GoalReportsResponses = {
+  /**
+   * Success
+   */
+  200: Array<GoalReport>
+}
+
+export type V2GoalReportsResponse = V2GoalReportsResponses[keyof V2GoalReportsResponses]
+
+export type V2GoalReportData = {
+  body?: never
+  path: {
+    sessionID: string
+    goalID: GoalId
+    reportID: GoalReportId
+    file: GoalReportFileKey
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal/{goalID}/reports/{reportID}/{file}"
+}
+
+export type V2GoalReportErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError | GoalReportNotFoundError
+   */
+  404: GoalReportNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2GoalReportError = V2GoalReportErrors[keyof V2GoalReportErrors]
+
+export type V2GoalReportResponses = {
+  /**
+   * Goal.ReportContent
+   */
+  200: GoalReportContent
+}
+
+export type V2GoalReportResponse = V2GoalReportResponses[keyof V2GoalReportResponses]
+
+export type V2TaskMessageSendData = {
+  body: TaskMessageInput
+  path: {
+    sessionID: string
+    taskID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/task/{taskID}/message"
+}
+
+export type V2TaskMessageSendErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * TaskNotFoundError | SessionNotFoundError
+   */
+  404: TaskNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2TaskMessageSendError = V2TaskMessageSendErrors[keyof V2TaskMessageSendErrors]
+
+export type V2TaskMessageSendResponses = {
+  /**
+   * Task.MessageReceipt
+   */
+  200: TaskMessageReceipt
+}
+
+export type V2TaskMessageSendResponse = V2TaskMessageSendResponses[keyof V2TaskMessageSendResponses]
+
+export type V2TaskMessageGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    taskID: string
+    inputID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/task/{taskID}/message/{inputID}"
+}
+
+export type V2TaskMessageGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * TaskNotFoundError | SessionNotFoundError
+   */
+  404: TaskNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2TaskMessageGetError = V2TaskMessageGetErrors[keyof V2TaskMessageGetErrors]
+
+export type V2TaskMessageGetResponses = {
+  /**
+   * Task.MessageReceipt
+   */
+  200: TaskMessageReceipt
+}
+
+export type V2TaskMessageGetResponse = V2TaskMessageGetResponses[keyof V2TaskMessageGetResponses]
+
+export type V2TaskListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    limit?: string
+  }
+  url: "/api/session/{sessionID}/task"
+}
+
+export type V2TaskListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * TaskNotFoundError | SessionNotFoundError
+   */
+  404: TaskNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2TaskListError = V2TaskListErrors[keyof V2TaskListErrors]
+
+export type V2TaskListResponses = {
+  /**
+   * Success
+   */
+  200: Array<TaskSummary>
+}
+
+export type V2TaskListResponse = V2TaskListResponses[keyof V2TaskListResponses]
+
+export type V2TaskOutputData = {
+  body?: never
+  path: {
+    sessionID: string
+    taskID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/task/{taskID}"
+}
+
+export type V2TaskOutputErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * TaskNotFoundError | SessionNotFoundError
+   */
+  404: TaskNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2TaskOutputError = V2TaskOutputErrors[keyof V2TaskOutputErrors]
+
+export type V2TaskOutputResponses = {
+  /**
+   * Task.Detail
+   */
+  200: TaskDetail
+}
+
+export type V2TaskOutputResponse = V2TaskOutputResponses[keyof V2TaskOutputResponses]
+
+export type V2TaskWaitData = {
+  body: TaskWait
+  path: {
+    sessionID: string
+    taskID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/task/{taskID}/wait"
+}
+
+export type V2TaskWaitErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * TaskNotFoundError | SessionNotFoundError
+   */
+  404: TaskNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2TaskWaitError = V2TaskWaitErrors[keyof V2TaskWaitErrors]
+
+export type V2TaskWaitResponses = {
+  /**
+   * Task.WaitResult
+   */
+  200: TaskWaitResult
+}
+
+export type V2TaskWaitResponse = V2TaskWaitResponses[keyof V2TaskWaitResponses]
+
+export type V2TaskCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    taskID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/task/{taskID}/cancel"
+}
+
+export type V2TaskCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * TaskNotFoundError | SessionNotFoundError
+   */
+  404: TaskNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2TaskCancelError = V2TaskCancelErrors[keyof V2TaskCancelErrors]
+
+export type V2TaskCancelResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2TaskCancelResponse = V2TaskCancelResponses[keyof V2TaskCancelResponses]
+
+export type V2ProcessListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    limit?: string
+  }
+  url: "/api/session/{sessionID}/process"
+}
+
+export type V2ProcessListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ProcessNotFoundError | SessionNotFoundError
+   */
+  404: ProcessNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProcessListError = V2ProcessListErrors[keyof V2ProcessListErrors]
+
+export type V2ProcessListResponses = {
+  /**
+   * Success
+   */
+  200: Array<SessionProcessSummary>
+}
+
+export type V2ProcessListResponse = V2ProcessListResponses[keyof V2ProcessListResponses]
+
+export type V2ProcessOutputData = {
+  body?: never
+  path: {
+    sessionID: string
+    processID: SessionProcessId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/process/{processID}"
+}
+
+export type V2ProcessOutputErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ProcessNotFoundError | SessionNotFoundError
+   */
+  404: ProcessNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProcessOutputError = V2ProcessOutputErrors[keyof V2ProcessOutputErrors]
+
+export type V2ProcessOutputResponses = {
+  /**
+   * SessionProcess.Detail
+   */
+  200: SessionProcessDetail
+}
+
+export type V2ProcessOutputResponse = V2ProcessOutputResponses[keyof V2ProcessOutputResponses]
+
+export type V2ProcessWaitData = {
+  body: SessionProcessWait
+  path: {
+    sessionID: string
+    processID: SessionProcessId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/process/{processID}/wait"
+}
+
+export type V2ProcessWaitErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ProcessNotFoundError | SessionNotFoundError
+   */
+  404: ProcessNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProcessWaitError = V2ProcessWaitErrors[keyof V2ProcessWaitErrors]
+
+export type V2ProcessWaitResponses = {
+  /**
+   * SessionProcess.WaitResult
+   */
+  200: SessionProcessWaitResult
+}
+
+export type V2ProcessWaitResponse = V2ProcessWaitResponses[keyof V2ProcessWaitResponses]
+
+export type V2ProcessCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    processID: SessionProcessId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/process/{processID}/cancel"
+}
+
+export type V2ProcessCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ProcessNotFoundError | SessionNotFoundError
+   */
+  404: ProcessNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProcessCancelError = V2ProcessCancelErrors[keyof V2ProcessCancelErrors]
+
+export type V2ProcessCancelResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2ProcessCancelResponse = V2ProcessCancelResponses[keyof V2ProcessCancelResponses]
+
+export type V2ScheduleListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/schedule"
+}
+
+export type V2ScheduleListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ScheduleNotFoundError | SessionNotFoundError
+   */
+  404: ScheduleNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ScheduleListError = V2ScheduleListErrors[keyof V2ScheduleListErrors]
+
+export type V2ScheduleListResponses = {
+  /**
+   * Success
+   */
+  200: Array<SessionScheduleSummary>
+}
+
+export type V2ScheduleListResponse = V2ScheduleListResponses[keyof V2ScheduleListResponses]
+
+export type V2ScheduleDeleteData = {
+  body?: never
+  path: {
+    sessionID: string
+    scheduleID: SessionScheduleId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/schedule/{scheduleID}"
+}
+
+export type V2ScheduleDeleteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ScheduleNotFoundError | SessionNotFoundError
+   */
+  404: ScheduleNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ScheduleDeleteError = V2ScheduleDeleteErrors[keyof V2ScheduleDeleteErrors]
+
+export type V2ScheduleDeleteResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2ScheduleDeleteResponse = V2ScheduleDeleteResponses[keyof V2ScheduleDeleteResponses]
+
+export type V2ScheduleGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    scheduleID: SessionScheduleId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/schedule/{scheduleID}"
+}
+
+export type V2ScheduleGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ScheduleNotFoundError | SessionNotFoundError
+   */
+  404: ScheduleNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ScheduleGetError = V2ScheduleGetErrors[keyof V2ScheduleGetErrors]
+
+export type V2ScheduleGetResponses = {
+  /**
+   * SessionSchedule.Detail
+   */
+  200: SessionScheduleDetail
+}
+
+export type V2ScheduleGetResponse = V2ScheduleGetResponses[keyof V2ScheduleGetResponses]
+
+export type V2SchedulePauseData = {
+  body?: never
+  path: {
+    sessionID: string
+    scheduleID: SessionScheduleId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/schedule/{scheduleID}/pause"
+}
+
+export type V2SchedulePauseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ScheduleNotFoundError | SessionNotFoundError
+   */
+  404: ScheduleNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SchedulePauseError = V2SchedulePauseErrors[keyof V2SchedulePauseErrors]
+
+export type V2SchedulePauseResponses = {
+  /**
+   * SessionSchedule.Detail
+   */
+  200: SessionScheduleDetail
+}
+
+export type V2SchedulePauseResponse = V2SchedulePauseResponses[keyof V2SchedulePauseResponses]
+
+export type V2ScheduleResumeData = {
+  body?: never
+  path: {
+    sessionID: string
+    scheduleID: SessionScheduleId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/schedule/{scheduleID}/resume"
+}
+
+export type V2ScheduleResumeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ScheduleNotFoundError | SessionNotFoundError
+   */
+  404: ScheduleNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ScheduleResumeError = V2ScheduleResumeErrors[keyof V2ScheduleResumeErrors]
+
+export type V2ScheduleResumeResponses = {
+  /**
+   * SessionSchedule.Detail
+   */
+  200: SessionScheduleDetail
+}
+
+export type V2ScheduleResumeResponse = V2ScheduleResumeResponses[keyof V2ScheduleResumeResponses]
+
+export type V2FeedbackListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/feedback"
+}
+
+export type V2FeedbackListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * FeedbackNotFoundError | SessionNotFoundError
+   */
+  404: FeedbackNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2FeedbackListError = V2FeedbackListErrors[keyof V2FeedbackListErrors]
+
+export type V2FeedbackListResponses = {
+  /**
+   * Success
+   */
+  200: Array<FeedbackDraft>
+}
+
+export type V2FeedbackListResponse = V2FeedbackListResponses[keyof V2FeedbackListResponses]
+
+export type V2FeedbackSaveData = {
+  body: FeedbackSave
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/feedback"
+}
+
+export type V2FeedbackSaveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * FeedbackNotFoundError | SessionNotFoundError
+   */
+  404: FeedbackNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2FeedbackSaveError = V2FeedbackSaveErrors[keyof V2FeedbackSaveErrors]
+
+export type V2FeedbackSaveResponses = {
+  /**
+   * Feedback.Draft
+   */
+  200: FeedbackDraft
+}
+
+export type V2FeedbackSaveResponse = V2FeedbackSaveResponses[keyof V2FeedbackSaveResponses]
+
+export type V2FeedbackReviewData = {
+  body: FeedbackReview
+  path: {
+    sessionID: string
+    draftID: FeedbackId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/feedback/{draftID}/review"
+}
+
+export type V2FeedbackReviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * FeedbackNotFoundError | SessionNotFoundError
+   */
+  404: FeedbackNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2FeedbackReviewError = V2FeedbackReviewErrors[keyof V2FeedbackReviewErrors]
+
+export type V2FeedbackReviewResponses = {
+  /**
+   * Feedback.Issue
+   */
+  200: FeedbackIssue
+}
+
+export type V2FeedbackReviewResponse = V2FeedbackReviewResponses[keyof V2FeedbackReviewResponses]
+
+export type V2FeedbackImageData = {
+  body: FeedbackReview
+  path: {
+    sessionID: string
+    draftID: FeedbackId
+    imageID: FeedbackImageId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/feedback/{draftID}/image/{imageID}"
+}
+
+export type V2FeedbackImageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * FeedbackNotFoundError | SessionNotFoundError
+   */
+  404: FeedbackNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2FeedbackImageError = V2FeedbackImageErrors[keyof V2FeedbackImageErrors]
+
+export type V2FeedbackImageResponses = {
+  /**
+   * Feedback.ImageContent
+   */
+  200: FeedbackImageContent
+}
+
+export type V2FeedbackImageResponse = V2FeedbackImageResponses[keyof V2FeedbackImageResponses]
+
+export type V2FeedbackRemoveData = {
+  body: FeedbackReview
+  path: {
+    sessionID: string
+    draftID: FeedbackId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/feedback/{draftID}"
+}
+
+export type V2FeedbackRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * FeedbackNotFoundError | SessionNotFoundError
+   */
+  404: FeedbackNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2FeedbackRemoveError = V2FeedbackRemoveErrors[keyof V2FeedbackRemoveErrors]
+
+export type V2FeedbackRemoveResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2FeedbackRemoveResponse = V2FeedbackRemoveResponses[keyof V2FeedbackRemoveResponses]
+
+export type V2MemoryStatusData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory"
+}
+
+export type V2MemoryStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryStatusError = V2MemoryStatusErrors[keyof V2MemoryStatusErrors]
+
+export type V2MemoryStatusResponses = {
+  /**
+   * NativeMemory.Info
+   */
+  200: NativeMemoryInfo
+}
+
+export type V2MemoryStatusResponse = V2MemoryStatusResponses[keyof V2MemoryStatusResponses]
+
+export type V2MemoryToggleData = {
+  body: MemoryModeUpdate
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory"
+}
+
+export type V2MemoryToggleErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryToggleError = V2MemoryToggleErrors[keyof V2MemoryToggleErrors]
+
+export type V2MemoryToggleResponses = {
+  /**
+   * NativeMemory.Info
+   */
+  200: NativeMemoryInfo
+}
+
+export type V2MemoryToggleResponse = V2MemoryToggleResponses[keyof V2MemoryToggleResponses]
+
+export type V2MemoryListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    query?: string
+  }
+  url: "/api/session/{sessionID}/memory/notes"
+}
+
+export type V2MemoryListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryListError = V2MemoryListErrors[keyof V2MemoryListErrors]
+
+export type V2MemoryListResponses = {
+  /**
+   * Success
+   */
+  200: Array<MemoryNoteSummary>
+}
+
+export type V2MemoryListResponse = V2MemoryListResponses[keyof V2MemoryListResponses]
+
+export type V2MemoryForgetData = {
+  body: MemoryNoteForget
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/note"
+}
+
+export type V2MemoryForgetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryForgetError = V2MemoryForgetErrors[keyof V2MemoryForgetErrors]
+
+export type V2MemoryForgetResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2MemoryForgetResponse = V2MemoryForgetResponses[keyof V2MemoryForgetResponses]
+
+export type V2MemoryPreviewData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    path: string
+  }
+  url: "/api/session/{sessionID}/memory/note"
+}
+
+export type V2MemoryPreviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryPreviewError = V2MemoryPreviewErrors[keyof V2MemoryPreviewErrors]
+
+export type V2MemoryPreviewResponses = {
+  /**
+   * MemoryNote.Detail
+   */
+  200: MemoryNoteDetail
+}
+
+export type V2MemoryPreviewResponse = V2MemoryPreviewResponses[keyof V2MemoryPreviewResponses]
+
+export type V2MemoryRetryData = {
+  body: MemoryOperationRetryInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/retry"
+}
+
+export type V2MemoryRetryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryRetryError = V2MemoryRetryErrors[keyof V2MemoryRetryErrors]
+
+export type V2MemoryRetryResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryRetryResponse = V2MemoryRetryResponses[keyof V2MemoryRetryResponses]
+
+export type V2MemoryRecoveryPreviewData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    action: "discard" | "clear"
+    scope: "workspace" | "global"
+  }
+  url: "/api/session/{sessionID}/memory/recovery"
+}
+
+export type V2MemoryRecoveryPreviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryRecoveryPreviewError = V2MemoryRecoveryPreviewErrors[keyof V2MemoryRecoveryPreviewErrors]
+
+export type V2MemoryRecoveryPreviewResponses = {
+  /**
+   * MemoryOperation.RecoveryPreview
+   */
+  200: MemoryOperationRecoveryPreview
+}
+
+export type V2MemoryRecoveryPreviewResponse = V2MemoryRecoveryPreviewResponses[keyof V2MemoryRecoveryPreviewResponses]
+
+export type V2MemoryRecoverData = {
+  body: MemoryOperationRecoveryInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/recovery"
+}
+
+export type V2MemoryRecoverErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryRecoverError = V2MemoryRecoverErrors[keyof V2MemoryRecoverErrors]
+
+export type V2MemoryRecoverResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryRecoverResponse = V2MemoryRecoverResponses[keyof V2MemoryRecoverResponses]
+
+export type V2MemoryMigrationPreviewData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    kind: "relocation" | "carryover"
+    scope: "workspace" | "global"
+  }
+  url: "/api/session/{sessionID}/memory/migration"
+}
+
+export type V2MemoryMigrationPreviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryMigrationPreviewError = V2MemoryMigrationPreviewErrors[keyof V2MemoryMigrationPreviewErrors]
+
+export type V2MemoryMigrationPreviewResponses = {
+  /**
+   * MemoryOperation.MigrationPreview
+   */
+  200: MemoryOperationMigrationPreview
+}
+
+export type V2MemoryMigrationPreviewResponse =
+  V2MemoryMigrationPreviewResponses[keyof V2MemoryMigrationPreviewResponses]
+
+export type V2MemoryMigrateData = {
+  body: MemoryOperationMigrationInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/migration"
+}
+
+export type V2MemoryMigrateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryMigrateError = V2MemoryMigrateErrors[keyof V2MemoryMigrateErrors]
+
+export type V2MemoryMigrateResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryMigrateResponse = V2MemoryMigrateResponses[keyof V2MemoryMigrateResponses]
+
+export type V2MemoryDreamData = {
+  body: MemoryOperationInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/dream"
+}
+
+export type V2MemoryDreamErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryDreamError = V2MemoryDreamErrors[keyof V2MemoryDreamErrors]
+
+export type V2MemoryDreamResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryDreamResponse = V2MemoryDreamResponses[keyof V2MemoryDreamResponses]
+
+export type V2MemoryFlushData = {
+  body: MemoryOperationInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/flush"
+}
+
+export type V2MemoryFlushErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryFlushError = V2MemoryFlushErrors[keyof V2MemoryFlushErrors]
+
+export type V2MemoryFlushResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryFlushResponse = V2MemoryFlushResponses[keyof V2MemoryFlushResponses]
+
+export type V2MemoryOperationsData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/operation"
+}
+
+export type V2MemoryOperationsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryOperationsError = V2MemoryOperationsErrors[keyof V2MemoryOperationsErrors]
+
+export type V2MemoryOperationsResponses = {
+  /**
+   * Success
+   */
+  200: Array<MemoryOperationInfo>
+}
+
+export type V2MemoryOperationsResponse = V2MemoryOperationsResponses[keyof V2MemoryOperationsResponses]
+
+export type V2MemoryOperationData = {
+  body?: never
+  path: {
+    sessionID: string
+    operationID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/operation/{operationID}"
+}
+
+export type V2MemoryOperationErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryOperationError = V2MemoryOperationErrors[keyof V2MemoryOperationErrors]
+
+export type V2MemoryOperationResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryOperationResponse = V2MemoryOperationResponses[keyof V2MemoryOperationResponses]
+
+export type V2MemoryCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    operationID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/memory/operation/{operationID}/cancel"
+}
+
+export type V2MemoryCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MemoryForbiddenError
+   */
+  403: MemoryForbiddenError
+  /**
+   * MemoryOperationNotFoundError | SessionNotFoundError
+   */
+  404: MemoryOperationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2MemoryCancelError = V2MemoryCancelErrors[keyof V2MemoryCancelErrors]
+
+export type V2MemoryCancelResponses = {
+  /**
+   * MemoryOperation.Info
+   */
+  200: MemoryOperationInfo
+}
+
+export type V2MemoryCancelResponse = V2MemoryCancelResponses[keyof V2MemoryCancelResponses]
+
+export type V2HooksGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/hooks"
+}
+
+export type V2HooksGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2HooksGetError = V2HooksGetErrors[keyof V2HooksGetErrors]
+
+export type V2HooksGetResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type V2HooksGetResponse = V2HooksGetResponses[keyof V2HooksGetResponses]
+
+export type V2HooksReloadData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/hooks/reload"
+}
+
+export type V2HooksReloadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2HooksReloadError = V2HooksReloadErrors[keyof V2HooksReloadErrors]
+
+export type V2HooksReloadResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type V2HooksReloadResponse = V2HooksReloadResponses[keyof V2HooksReloadResponses]
+
+export type V2HooksTrustData = {
+  body: HostHooksRepositoryTrust
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/hooks/trust"
+}
+
+export type V2HooksTrustErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2HooksTrustError = V2HooksTrustErrors[keyof V2HooksTrustErrors]
+
+export type V2HooksTrustResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type V2HooksTrustResponse = V2HooksTrustResponses[keyof V2HooksTrustResponses]
+
+export type V2HooksPreferenceData = {
+  body: HostHooksPreference
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/hooks/preference"
+}
+
+export type V2HooksPreferenceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2HooksPreferenceError = V2HooksPreferenceErrors[keyof V2HooksPreferenceErrors]
+
+export type V2HooksPreferenceResponses = {
+  /**
+   * HostHooks.Snapshot
+   */
+  200: HostHooksSnapshot
+}
+
+export type V2HooksPreferenceResponse = V2HooksPreferenceResponses[keyof V2HooksPreferenceResponses]
+
+export type V2PluginsListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/plugins"
+}
+
+export type V2PluginsListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2PluginsListError = V2PluginsListErrors[keyof V2PluginsListErrors]
+
+export type V2PluginsListResponses = {
+  /**
+   * PluginStoreCatalog
+   */
+  200: PluginStoreCatalog
+}
+
+export type V2PluginsListResponse = V2PluginsListResponses[keyof V2PluginsListResponses]
+
+export type V2PluginsDetailData = {
+  body?: never
+  path?: never
+  query: {
+    id: string
+  }
+  url: "/api/plugins/detail"
+}
+
+export type V2PluginsDetailErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2PluginsDetailError = V2PluginsDetailErrors[keyof V2PluginsDetailErrors]
+
+export type V2PluginsDetailResponses = {
+  /**
+   * PluginStoreDetail
+   */
+  200: PluginStoreDetail
+}
+
+export type V2PluginsDetailResponse = V2PluginsDetailResponses[keyof V2PluginsDetailResponses]
+
+export type V2PluginsManageData = {
+  body: PluginStoreAction
+  path?: never
+  query?: never
+  url: "/api/plugins/manage"
+}
+
+export type V2PluginsManageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2PluginsManageError = V2PluginsManageErrors[keyof V2PluginsManageErrors]
+
+export type V2PluginsManageResponses = {
+  /**
+   * PluginStoreCatalog
+   */
+  200: PluginStoreCatalog
+}
+
+export type V2PluginsManageResponse = V2PluginsManageResponses[keyof V2PluginsManageResponses]
+
+export type V2PluginsRuntimeData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/plugins/runtime"
+}
+
+export type V2PluginsRuntimeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2PluginsRuntimeError = V2PluginsRuntimeErrors[keyof V2PluginsRuntimeErrors]
+
+export type V2PluginsRuntimeResponses = {
+  /**
+   * PluginStoreRuntime
+   */
+  200: PluginStoreRuntime
+}
+
+export type V2PluginsRuntimeResponse = V2PluginsRuntimeResponses[keyof V2PluginsRuntimeResponses]
+
+export type V2PluginsReloadData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/plugins/reload"
+}
+
+export type V2PluginsReloadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2PluginsReloadError = V2PluginsReloadErrors[keyof V2PluginsReloadErrors]
+
+export type V2PluginsReloadResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2PluginsReloadResponse = V2PluginsReloadResponses[keyof V2PluginsReloadResponses]
+
+export type V2McpStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp"
+}
+
+export type V2McpStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpStatusError = V2McpStatusErrors[keyof V2McpStatusErrors]
+
+export type V2McpStatusResponses = {
+  /**
+   * McpStatusMap
+   */
+  200: McpStatusMap
+}
+
+export type V2McpStatusResponse = V2McpStatusResponses[keyof V2McpStatusResponses]
+
+export type V2McpConnectData = {
+  body?: never
+  path: {
+    server: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{server}/connect"
+}
+
+export type V2McpConnectErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpConnectError = V2McpConnectErrors[keyof V2McpConnectErrors]
+
+export type V2McpConnectResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2McpConnectResponse = V2McpConnectResponses[keyof V2McpConnectResponses]
+
+export type V2McpDisconnectData = {
+  body?: never
+  path: {
+    server: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{server}/disconnect"
+}
+
+export type V2McpDisconnectErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpDisconnectError = V2McpDisconnectErrors[keyof V2McpDisconnectErrors]
+
+export type V2McpDisconnectResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2McpDisconnectResponse = V2McpDisconnectResponses[keyof V2McpDisconnectResponses]
+
+export type V2McpRetryData = {
+  body?: never
+  path: {
+    server: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{server}/retry"
+}
+
+export type V2McpRetryErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpRetryError = V2McpRetryErrors[keyof V2McpRetryErrors]
+
+export type V2McpRetryResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2McpRetryResponse = V2McpRetryResponses[keyof V2McpRetryResponses]
+
+export type V2McpResetPreferenceData = {
+  body?: never
+  path: {
+    server: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{server}/resetPreference"
+}
+
+export type V2McpResetPreferenceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpResetPreferenceError = V2McpResetPreferenceErrors[keyof V2McpResetPreferenceErrors]
+
+export type V2McpResetPreferenceResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2McpResetPreferenceResponse = V2McpResetPreferenceResponses[keyof V2McpResetPreferenceResponses]
+
+export type V2McpAuthStartData = {
+  body?: never
+  path: {
+    server: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{server}/auth/start"
+}
+
+export type V2McpAuthStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpAuthStartError = V2McpAuthStartErrors[keyof V2McpAuthStartErrors]
+
+export type V2McpAuthStartResponses = {
+  /**
+   * Mcp.AuthenticationStart
+   */
+  200: McpAuthenticationStart
+}
+
+export type V2McpAuthStartResponse = V2McpAuthStartResponses[keyof V2McpAuthStartResponses]
+
+export type V2McpAuthCancelData = {
+  body?: never
+  path: {
+    server: string
+    flowID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/mcp/{server}/auth/{flowID}"
+}
+
+export type V2McpAuthCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError1
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpAuthCancelError = V2McpAuthCancelErrors[keyof V2McpAuthCancelErrors]
+
+export type V2McpAuthCancelResponses = {
+  /**
+   * Success
+   */
+  200: boolean
+}
+
+export type V2McpAuthCancelResponse = V2McpAuthCancelResponses[keyof V2McpAuthCancelResponses]
+
+export type V2SessionMcpAttachmentReserveData = {
+  body: {
+    request:
+      | {
+          kind: "catalog"
+          input: {
+            server?: string
+          }
+        }
+      | {
+          kind: "prepare"
+          input: SessionMcpAttachmentInput
+        }
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/mcp/operations"
+}
+
+export type V2SessionMcpAttachmentReserveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpAttachmentForbidden
+   */
+  403: McpAttachmentForbidden
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionMcpAttachmentReserveError =
+  V2SessionMcpAttachmentReserveErrors[keyof V2SessionMcpAttachmentReserveErrors]
+
+export type V2SessionMcpAttachmentReserveResponses = {
+  /**
+   * SessionMcpAttachment.Operation
+   */
+  200: SessionMcpAttachmentOperation
+}
+
+export type V2SessionMcpAttachmentReserveResponse =
+  V2SessionMcpAttachmentReserveResponses[keyof V2SessionMcpAttachmentReserveResponses]
+
+export type V2SessionMcpAttachmentExecuteData = {
+  body: {
+    request:
+      | {
+          kind: "catalog"
+          input: {
+            server?: string
+          }
+        }
+      | {
+          kind: "prepare"
+          input: SessionMcpAttachmentInput
+        }
+  }
+  path: {
+    sessionID: string
+    operationID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/mcp/operations/{operationID}/execute"
+}
+
+export type V2SessionMcpAttachmentExecuteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpAttachmentForbidden
+   */
+  403: McpAttachmentForbidden
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionMcpAttachmentExecuteError =
+  V2SessionMcpAttachmentExecuteErrors[keyof V2SessionMcpAttachmentExecuteErrors]
+
+export type V2SessionMcpAttachmentExecuteResponses = {
+  /**
+   * SessionMcpAttachment.Operation
+   */
+  200: SessionMcpAttachmentOperation
+}
+
+export type V2SessionMcpAttachmentExecuteResponse =
+  V2SessionMcpAttachmentExecuteResponses[keyof V2SessionMcpAttachmentExecuteResponses]
+
+export type V2SessionMcpAttachmentStatusData = {
+  body?: never
+  path: {
+    sessionID: string
+    operationID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/mcp/operations/{operationID}"
+}
+
+export type V2SessionMcpAttachmentStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpAttachmentForbidden
+   */
+  403: McpAttachmentForbidden
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionMcpAttachmentStatusError =
+  V2SessionMcpAttachmentStatusErrors[keyof V2SessionMcpAttachmentStatusErrors]
+
+export type V2SessionMcpAttachmentStatusResponses = {
+  /**
+   * SessionMcpAttachment.Operation
+   */
+  200: SessionMcpAttachmentOperation
+}
+
+export type V2SessionMcpAttachmentStatusResponse =
+  V2SessionMcpAttachmentStatusResponses[keyof V2SessionMcpAttachmentStatusResponses]
+
+export type V2SessionMcpAttachmentCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    operationID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/mcp/operations/{operationID}/cancel"
+}
+
+export type V2SessionMcpAttachmentCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpAttachmentForbidden
+   */
+  403: McpAttachmentForbidden
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionMcpAttachmentCancelError =
+  V2SessionMcpAttachmentCancelErrors[keyof V2SessionMcpAttachmentCancelErrors]
+
+export type V2SessionMcpAttachmentCancelResponses = {
+  /**
+   * SessionMcpAttachment.Operation
+   */
+  200: SessionMcpAttachmentOperation
+}
+
+export type V2SessionMcpAttachmentCancelResponse =
+  V2SessionMcpAttachmentCancelResponses[keyof V2SessionMcpAttachmentCancelResponses]
+
+export type V2LspStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/lsp"
+}
+
+export type V2LspStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2LspStatusError = V2LspStatusErrors[keyof V2LspStatusErrors]
+
+export type V2LspStatusResponses = {
+  /**
+   * Success
+   */
+  200: Array<NativeLspStatus>
+}
+
+export type V2LspStatusResponse = V2LspStatusResponses[keyof V2LspStatusResponses]
+
+export type V2WorkflowRelatedData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/related"
+}
+
+export type V2WorkflowRelatedErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowRelatedError = V2WorkflowRelatedErrors[keyof V2WorkflowRelatedErrors]
+
+export type V2WorkflowRelatedResponses = {
+  /**
+   * Success
+   */
+  200: Array<WorkflowInfo>
+}
+
+export type V2WorkflowRelatedResponse = V2WorkflowRelatedResponses[keyof V2WorkflowRelatedResponses]
+
+export type V2WorkflowLaunchData = {
+  body: WorkflowLaunch
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/launch"
+}
+
+export type V2WorkflowLaunchErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowLaunchError = V2WorkflowLaunchErrors[keyof V2WorkflowLaunchErrors]
+
+export type V2WorkflowLaunchResponses = {
+  /**
+   * Workflow.Info
+   */
+  200: WorkflowInfo
+}
+
+export type V2WorkflowLaunchResponse = V2WorkflowLaunchResponses[keyof V2WorkflowLaunchResponses]
+
+export type V2WorkflowSourcesData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/sources"
+}
+
+export type V2WorkflowSourcesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowSourcesError = V2WorkflowSourcesErrors[keyof V2WorkflowSourcesErrors]
+
+export type V2WorkflowSourcesResponses = {
+  /**
+   * Success
+   */
+  200: Array<WorkflowSourceEntry>
+}
+
+export type V2WorkflowSourcesResponse = V2WorkflowSourcesResponses[keyof V2WorkflowSourcesResponses]
+
+export type V2WorkflowValidateData = {
+  body: {
+    source: WorkflowSource
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/validate"
+}
+
+export type V2WorkflowValidateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowValidateError = V2WorkflowValidateErrors[keyof V2WorkflowValidateErrors]
+
+export type V2WorkflowValidateResponses = {
+  /**
+   * Workflow.Validation
+   */
+  200: WorkflowValidation
+}
+
+export type V2WorkflowValidateResponse = V2WorkflowValidateResponses[keyof V2WorkflowValidateResponses]
+
+export type V2WorkflowListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow"
+}
+
+export type V2WorkflowListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowListError = V2WorkflowListErrors[keyof V2WorkflowListErrors]
+
+export type V2WorkflowListResponses = {
+  /**
+   * Success
+   */
+  200: Array<WorkflowInfo>
+}
+
+export type V2WorkflowListResponse = V2WorkflowListResponses[keyof V2WorkflowListResponses]
+
+export type V2WorkflowStartData = {
+  body: WorkflowStart
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow"
+}
+
+export type V2WorkflowStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowStartError = V2WorkflowStartErrors[keyof V2WorkflowStartErrors]
+
+export type V2WorkflowStartResponses = {
+  /**
+   * Workflow.Info
+   */
+  200: WorkflowInfo
+}
+
+export type V2WorkflowStartResponse = V2WorkflowStartResponses[keyof V2WorkflowStartResponses]
+
+export type V2WorkflowGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    workflowID: WorkflowId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/{workflowID}"
+}
+
+export type V2WorkflowGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowGetError = V2WorkflowGetErrors[keyof V2WorkflowGetErrors]
+
+export type V2WorkflowGetResponses = {
+  /**
+   * Workflow.Info
+   */
+  200: WorkflowInfo
+}
+
+export type V2WorkflowGetResponse = V2WorkflowGetResponses[keyof V2WorkflowGetResponses]
+
+export type V2WorkflowResumeData = {
+  body: {
+    agentBudget?: number
+  }
+  path: {
+    sessionID: string
+    workflowID: WorkflowId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/{workflowID}/resume"
+}
+
+export type V2WorkflowResumeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowResumeError = V2WorkflowResumeErrors[keyof V2WorkflowResumeErrors]
+
+export type V2WorkflowResumeResponses = {
+  /**
+   * Workflow.Info
+   */
+  200: WorkflowInfo
+}
+
+export type V2WorkflowResumeResponse = V2WorkflowResumeResponses[keyof V2WorkflowResumeResponses]
+
+export type V2WorkflowPauseData = {
+  body?: never
+  path: {
+    sessionID: string
+    workflowID: WorkflowId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/{workflowID}/pause"
+}
+
+export type V2WorkflowPauseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowPauseError = V2WorkflowPauseErrors[keyof V2WorkflowPauseErrors]
+
+export type V2WorkflowPauseResponses = {
+  /**
+   * Workflow.Info
+   */
+  200: WorkflowInfo
+}
+
+export type V2WorkflowPauseResponse = V2WorkflowPauseResponses[keyof V2WorkflowPauseResponses]
+
+export type V2WorkflowStopData = {
+  body?: never
+  path: {
+    sessionID: string
+    workflowID: WorkflowId
+  }
+  query?: never
+  url: "/api/session/{sessionID}/workflow/{workflowID}/stop"
+}
+
+export type V2WorkflowStopErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkflowNotFoundError | SessionNotFoundError
+   */
+  404: WorkflowNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2WorkflowStopError = V2WorkflowStopErrors[keyof V2WorkflowStopErrors]
+
+export type V2WorkflowStopResponses = {
+  /**
+   * Workflow.Info
+   */
+  200: WorkflowInfo
+}
+
+export type V2WorkflowStopResponse = V2WorkflowStopResponses[keyof V2WorkflowStopResponses]
+
+export type V2SideQuestionListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/side-question"
+}
+
+export type V2SideQuestionListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SideQuestionListError = V2SideQuestionListErrors[keyof V2SideQuestionListErrors]
+
+export type V2SideQuestionListResponses = {
+  /**
+   * Success
+   */
+  200: Array<SideQuestionEntry>
+}
+
+export type V2SideQuestionListResponse = V2SideQuestionListResponses[keyof V2SideQuestionListResponses]
+
+export type V2SideQuestionAskData = {
+  body: SideQuestionInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/side-question"
+}
+
+export type V2SideQuestionAskErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SideQuestionAskError = V2SideQuestionAskErrors[keyof V2SideQuestionAskErrors]
+
+export type V2SideQuestionAskResponses = {
+  /**
+   * SideQuestion.Entry
+   */
+  200: SideQuestionEntry
+}
+
+export type V2SideQuestionAskResponse = V2SideQuestionAskResponses[keyof V2SideQuestionAskResponses]
+
+export type V2SideQuestionCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    questionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/side-question/{questionID}/cancel"
+}
+
+export type V2SideQuestionCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SideQuestionCancelError = V2SideQuestionCancelErrors[keyof V2SideQuestionCancelErrors]
+
+export type V2SideQuestionCancelResponses = {
+  /**
+   * SideQuestion.Entry
+   */
+  200: SideQuestionEntry
+}
+
+export type V2SideQuestionCancelResponse = V2SideQuestionCancelResponses[keyof V2SideQuestionCancelResponses]
 
 export type V2SessionMessagesData = {
   body?: never
@@ -13182,6 +20685,10 @@ export type V2QuestionRequestListErrors = {
    * UnauthorizedError
    */
   401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2QuestionRequestListError = V2QuestionRequestListErrors[keyof V2QuestionRequestListErrors]
@@ -13220,6 +20727,10 @@ export type V2SessionQuestionListErrors = {
    * SessionNotFoundError
    */
   404: SessionNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionQuestionListError = V2SessionQuestionListErrors[keyof V2SessionQuestionListErrors]
@@ -13255,9 +20766,21 @@ export type V2SessionQuestionReplyErrors = {
    */
   401: UnauthorizedError
   /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
    * SessionNotFoundError | QuestionNotFoundError
    */
   404: QuestionNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionQuestionReplyError = V2SessionQuestionReplyErrors[keyof V2SessionQuestionReplyErrors]
@@ -13291,9 +20814,21 @@ export type V2SessionQuestionRejectErrors = {
    */
   401: UnauthorizedError
   /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
    * SessionNotFoundError | QuestionNotFoundError
    */
   404: QuestionNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type V2SessionQuestionRejectError = V2SessionQuestionRejectErrors[keyof V2SessionQuestionRejectErrors]

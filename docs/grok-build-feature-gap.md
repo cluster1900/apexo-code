@@ -1,123 +1,132 @@
-# Grok Build 功能完成情况与差距
+# Grok Build Feature Gap and Delivery Scope
 
-更新：2026-10-13；工作分支：`grok-agent-roadmap`。
+Updated: 2026-10-15. **Development is paused for user review after the documentation handoff.** Start with the [developer guide](development/README.md), [review checkpoint](development/progress.md), and [remaining task board](development/task-board.md). This is the scope of the uncommitted `grok-agent-roadmap` worktree. Historical implementation and verification checkpoints are retained in [the implementation record](grok-build-implementation-progress.md). A past passing run does not prove that all later changes are complete.
 
-对照两条基线：官方源码 [2bdd1d6](https://github.com/xai-org/grok-build/tree/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8)，以及本机实际运行的 Grok CLI 1.0.52。后者部分工具仍使用旧名称，不能直接按字符串比较新版源码的清单。
+## Product boundary
 
-## 本轮范围
+Port missing **capabilities into Apexo**. Apexo owns Sessions, model execution, permissions, tools, persistence, CLI, and Desktop. Grok Build source and isolated installed-runtime runs are behavioral references and comparison evidence. The product must not embed Grok Build, vendor its orchestration engine, or depend on its executable for migrated features.
 
-本轮补齐工具清单、后台任务/Subagent、Plan/LSP、文件型 Memory、进程内 Scheduler/Monitor、图片视频生成，并执行 CLI、Desktop、官方 Grok 的回归。Marketplace 按要求不做。
+Direct official-runtime integration and a Desktop adapter for official Grok sessions are outside this task, as clarified by the user. Existing optional ACP integrations remain separate. The Grok-compatible profile selects Apexo tool contracts; it does not replace Apexo's execution engine. Generic libraries may support an Apexo implementation.
 
-Apexo CLI 和 Desktop 共用 Apexo 的会话、权限和工具执行层。`grok-build` profile 提供官方风格工具契约；`apexo acp --backend grok-build` 则运行官方 `grok agent stdio`。这两种执行循环仍然独立，Desktop 默认没有切换为官方 Rust runtime。
+The brief attempt to vendor the upstream Workflow engine was removed. Its upstream/adapter test counts are withdrawn as evidence of Apexo functionality. Workflow must use first-party orchestration and existing Apexo authority boundaries.
 
-这些工具在 `grok-build` profile 下启用：CLI 使用 `apexo run --profile grok-build`；Desktop 启动环境设置 `APEXO_RUNTIME_PROFILE=grok-build`。默认 `apexo` profile 保持原有工具集合，Desktop 暂无可视化 profile 切换入口。
+## Comparison and acceptance
 
-## 已实现和验证的能力
+The fixed source reference is Grok Build revision `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8`; installed-runtime comparisons use Grok 1.0.52. These are separate baselines: the installed release does not expose every interface present in the pinned source.
 
-| 功能              | 当前行为                                                                                | 验证方式                                                                |
-| ----------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| 工具清单          | 共用 canonical registry；CLI streaming 清单按模型能力和会话权限过滤                     | CLI 连续场景核对清单与实际模型请求；Desktop 打包后端执行同一场景        |
-| 文件操作          | read/list/grep/write/search_replace 复用真实文件实现与权限                              | 两端实际写入、读取、替换；官方 ACP 执行对应操作                         |
-| 后台 Shell        | `block_until_ms=0` 立即返回；正数限制等待时间，任务继续执行                             | 两端启动、等待完成并读取 `SHELL_OK`                                     |
-| 输出与取消        | `get_task_output`、`wait_tasks`、`kill_task`；多任务共享等待预算；运行中可读取最新输出  | ownership、超时、取消测试；两端读取运行中的 Monitor 输出后取消          |
-| Subagent          | 同步/后台任务、续聊、父 Session ownership、保留原 agent、等待结果                       | 两端创建真实子 Session 并续聊；官方创建子 agent、等待并读回结果         |
-| Plan              | 进入计划模式；拒绝退出保留 Plan；批准后写入 Build 切换消息                              | 真实 Session、Question、投影服务回归；canonical 权限别名测试            |
-| LSP               | 位置操作、无文件参数的 workspaceSymbol；真实路径归一                                    | 真实 TypeScript server 返回 hover、定义位置和工作区符号；符号链接回归   |
-| Memory            | read/remember/flush/dream；工作区隔离、原子写入、并发锁、重复笔记合并；新提示自动加载   | 并发写入与重载测试；两端保存、读取、整理                                |
-| Memory 入口       | `/memory`、`/remember`、`/flush`、`/dream` 来自共享命令表                               | 命令注册测试；CLI streaming 命令列表检查                                |
-| Monitor           | 后台 Shell、实时输出快照、独立取消、保留 Shell 权限；删除 Session 时取消所属任务        | 两端运行、查询、取消；权限测试                                          |
-| Scheduler         | 创建、列出、更新、取消、立即执行、单次/重复执行、7 天过期                               | TestClock 驱动实际 BackgroundJob；拒绝/无效更新保留旧任务；两端管理操作 |
-| 图片              | `image_gen`，xAI API key 或现有 OAuth 登录；按 Session 保存并返回附件                   | 本地协议测试；真实 OAuth 生成 JPEG                                      |
-| 视频              | `image_to_video`、`reference_to_video`；正确引用结构、轮询、下载、取消和超时            | 本地协议/取消测试；真实 OAuth 各生成一个 6 秒 MP4                       |
-| Desktop 媒体展示  | 图片预览、视频/音频播放器、附件下载                                                     | 生产组件浏览器检查，验证图片、视频 controls、下载链接                   |
-| PTY               | POSIX 使用 Bun 原生 terminal；保留退出码、快速退出输出、延迟订阅；Windows 保留原 ConPTY | 固定 Bun 1.3.14 下 PTY HTTP/WebSocket 与 30 次快速退出验证              |
-| 官方 ACP 生命周期 | 转发协议；代理中断时终止官方子进程                                                      | 真实官方 prompt、工具调用和 end_turn；代理退出测试                      |
+Each completed feature needs its own CLI, rebuilt Desktop, and official comparison. Distinguish:
 
-## 三端的一致性边界
+- Unit/integration tests of Apexo's actual implementation.
+- Real CLI and packaged Electron backend execution with isolated local provider fixtures.
+- Production browser and actual native Desktop window interactions.
+- Installed official-runtime behavior and narrowly scoped upstream source tests.
+- Real external-service acceptance, including media generation and storage.
 
-- Apexo registry 的基础集合为 25 项；`web_search` 仅在配置相应能力时出现。
-- 无交互的 `apexo run` 禁用提问和 Plan 切换，因此不会向模型或 streaming 清单宣传 `ask_user_question`、`enter_plan_mode`、`exit_plan_mode`。交互式 CLI 和 Desktop 保留这些入口。用户权限还可能进一步减少工具集合。
-- 官方 1.0.52 的实际事件使用 `run_terminal_command`、`spawn_subagent`、`get_command_or_subagent_output` 等旧名称；Apexo 的 canonical 名称分别是 `run_terminal_cmd`、`task`、`get_task_output`。名称兼容映射不代表底层 runtime 相同。
-- CLI 和 Desktop 共用同一权限规则，包括自定义默认 agent 的权限；跨父 Session 的子任务操作会拒绝。媒体读本地参考文件需要 read 权限，工作区外还需 external_directory，保存结果需要 edit 权限。
-- 媒体 API 复用 xAI provider 的 OAuth 刷新逻辑。下载 CDN 媒体不携带 xAI Authorization。
+Upstream tests establish reference behavior; they do not prove Apexo implements it. Packaged-backend tests do not replace native-window interaction. Version differences and unsupported official interfaces must be recorded instead of inventing equivalence.
 
-## 本轮修复的具体问题
+## Current checkpoint
 
-1. 后台 Shell/Monitor 只在结束后能看到输出；现在运行中更新快照，等待超时也返回最新快照。
-2. Monitor/定时子任务曾替换掉原来的权限询问；现在保留实际执行工具的权限检查。
-3. 定时任务接受 `durable=true` 却没有恢复能力；现在明确拒绝，不生成虚假的持久任务。
-4. 修改定时任务前先取消旧任务，导致无效参数或拒绝授权也丢失任务；现在先完成校验和授权。
-5. Memory 未自动进入后续提示，也没有 slash 入口；现在补齐，并避免并发写入覆盖、重复时间戳笔记无法合并。
-6. 视频请求与响应字段不符合 xAI API；修正参考图/语音/关键帧结构及 `video.url` 解析。
-7. 媒体仅支持环境变量 API key；现在复用 provider API key/OAuth，三种工具均完成真实生成。
-8. 媒体保存在通用目录且没有可展示附件；现在绑定会话工作区和 Session 目录，返回附件并渲染预览。
-9. 计划/子任务别名遗漏权限映射，CLI 清单也没有反映 Session 的禁用规则；现在共用权限过滤。
-10. LSP 遇到工作区的符号链接路径时可能找不到已存在的 server；现在先解析真实路径。
-11. ACP 代理退出后可能遗留官方进程；现在转发 SIGINT/SIGTERM 和 Effect 取消。
-12. 旧 PTY 回调注册存在快速退出丢事件的窗口；POSIX 改由 Bun 统一管理进程退出与终端 I/O。
-13. 自定义默认 agent 时，CLI 清单仍按 `build` 权限过滤；现在跟随实际默认 agent，并使用 Session 已选模型。已复现修复前多报被禁用 `grep` 的问题，并验证修复后两端一致。
-14. Scheduler 的最大合法间隔 `7d` 恰好碰到过期时间，首次执行被跳过；现在依据计划触发时间判断，允许期限内的最后一次触发，并有测试时钟回归覆盖。
+The current worktree has integrated native Sessions/tools, Workflow/research, Goal, Task/Subagent messaging and child placement, Shell/Monitor/Scheduler, Plan/LSP/MCP, Memory lifecycle/batch Dream, Plugins storefront/data/socket transport, media, Feedback and side questions. These are implemented capability slices, not complete parity in every remaining contract. The [review checkpoint](development/progress.md) is the concise current inventory; older dated acceptance remains below for traceability.
 
-## 仍未实现、不能宣称官方完整 parity 的部分
+The latest follow-on shared checks pass: Task/Workflow/Goal 34 tests / 426 assertions, persistent plugin data 19 / 98, and batch/default Memory/grep 57 / 279. Source CLI and unified rebuilt Desktop each pass Task cwd 8 checks, Task worktree 8, Workflow worktree 5, nested foreground Task 3, Plugins data 5 and batch Dream 6; socket LSP passes 5 each. All 21 workspace types, canonical generation/candidate consistency and unified builds pass at their recorded checkpoint. App/TUI types and App/Desktop builds pass again after the final Memory UI amendment.
 
-| 能力                      | 边界 / 后续条件                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 官方 runtime 驱动 Desktop | 尚无完整 backend 选择、Session 映射与事件适配；当前官方入口是 ACP 代理                                  |
-| Desktop profile 入口      | 当前通过启动环境启用 Grok profile；尚无设置页中的 profile/backend 选择器                                |
-| 后台任务跨进程恢复        | BackgroundJob/Monitor/Scheduler 仍为进程内状态；进程退出后不会自动恢复或重试模型任务                    |
-| Scheduler durable         | 明确不支持 `durable=true`；如确有跨重启需求，需要单独设计持久调度与恢复策略                             |
-| Monitor 自动唤醒          | 支持实时查询输出；尚无官方逐行通知、速率限制和主动中途唤醒语义                                          |
-| Memory 高级能力           | 文件型笔记及文本查询；`dream` 是确定性去重，不是向量检索、LLM 自动整理或后台 watcher；没有专用管理面板  |
-| 媒体高级能力              | 本轮覆盖生成、引用、取消、保存和展示；未实现 image_edit、S3/ZDR、逐段视频事件                           |
-| Marketplace               | 按要求暂缓；不混用官方和 Apexo plugin 生命周期                                                          |
-| 其他官方体验              | 会话 dashboard、全部 slash 命令、sandbox 隔离、hooks、usage/trace 未做逐项等价验收；保留 Apexo 现有实现 |
-| V2 runtime                | 本轮 Grok profile 运行在默认 Apexo兼容会话路径；不宣称已把全部工具迁移进独立 V2 SessionRunner           |
-| 跨平台                    | 本次在 macOS arm64 验证 Bun 和 Electron；尚未在 Windows/Linux 执行，需要相应 CI 验证                    |
+Final rendered acceptance is complete for these last two UI slices: Plugins actual native windows pass 8 checks each in en/zh/zht; batch Dream browser/native window pass 6 each, mini 100×40 and fullscreen 100×40/80×24 pass 4 each. BUG378 and BUG380 are verified repaired. All final Memory UI fixture processes are reaped and 3,647 source/artifact hashes are unchanged. Packaged backend and actual-window checks remain separately identified.
 
-以上为明确的产品/架构边界；它们不应在发布说明中被描述为“与官方所有功能完全一致”。
+The latest complete unit run is still **4,614 pass / 1 fail**, with 19 skips and one todo. It predates the socket/data/placement/batch follow-ons. The native Goal aggregate deadline cause remains unconfirmed; a separately proved FIFO fixture defect is repaired and its two schedules pass 2 / 87. The preceding full HTTP gate passes 339 scenarios per mode over 310 routes but also predates later integrations. Fresh complete unit and HTTP gates were not run before the review pause. Scoped Linux 117 / 876 is not full Linux/Windows acceptance. No merge, release or full-parity completion is claimed.
 
-## 可重复执行的回归
+Repository Hook trust is a private draft preserved as an unapplied patch; semantic legacy Memory and Session usage CLI are design-only. Their [portable handoffs](development/handoffs/README.md) are saved inside the repository. No new implementation is scheduled until user review. The remaining G01–G13 scope is retained below and broken into reviewable work packages in the task board.
 
-从 `packages/apexo` 执行：
+## Previous aggregate checkpoints
+
+The following checkpoints are historical. Their pending statements and green results describe those dates, not the final review state above.
+
+The previous complete aggregate checkpoint delivered three scoped capabilities: [automatic native legacy Memory](native-memory-automatic.md), [Task message operator controls](native-task-message-ui.md), and the [MCP resource/template attachment picker](native-mcp-attachment-picker.md). Three GPT-6 Astra agents worked independently; reviewed handoffs were hash-checked and combined on the current branch, preserving the existing Apexo architecture. These are completed implementation tranches, not completion of every remaining contract below.
+
+| Capability | Latest shared evidence | Remaining boundary |
+| --- | --- | --- |
+| Automatic legacy Memory | 59 tests / 411 assertions across Memory, input and Task lifecycle tests. Source CLI and unified rebuilt Desktop each pass nine checks with ten ordinary, six flush and two summary requests | Manual legacy Dream is now integrated and passes shared26/153 plus CLI/Desktop4/1. Automatic legacy Dream is now integrated with shared46/225 and source CLI acceptance; unified shared Desktop remains pending. Batch/semantic retrieval and historical unproven-owner recovery remain. Requested legacy mode in installed Grok still exposes V2 artifacts; runtime legacy equivalence is unresolved |
+| Active Task messaging and operator UI | Shared backend acceptance covers steer/queue/interject. UI focused tests pass 3 / 32. Unified browser/native window each pass all three modes, retained receipt, passive promotion, cancellation and owner navigation; source mini/fullscreen checks pass | Fresh HTTP/operator completed-child wake and receipt UI are now integrated and accepted. Remaining: descendant routing, sender attribution/quotas, nested background work, fresh-child resume_from and worktree delegation. Existing task_id follow-up of an owned completed child remains available |
+| MCP resource/template picker | Shared service, HTTP and client gates pass 18 tests / 154 assertions in their completed invocations. Mini/fullscreen each pass four checks; unified browser/native window each pass six checks. Four new HTTP endpoint scenarios pass | Paired composer timing is noisy and does not establish performance equivalence. Explicit cancel joins the local owner; it does not claim remote cancellation acknowledgement or repair pinned Bun disconnect behavior |
+| Previously integrated surfaces | Memory operations, Scheduler/headless, Plugins storefront, Monitor, Task/Process/Plan/media panels and native terminal transport retain the scoped shared acceptance in their feature documents | Remaining concrete contracts and platform/aggregate verification below |
+
+At that aggregate checkpoint, all **21 workspace typechecks** pass, the canonical Client/legacy SDK generation completes, and the unified production App and complete Desktop builds pass. A handwritten SDK NodeNext import was corrected during integration. The uncached full-test graph regenerated SDK outputs while an independent helper test was importing them; that failed invocation is retained, the unchanged helper rerun passes after generation, and the third independent occurrence is now [RULE-20261015-018](rules/generated-source-verification-order.md). The final package source checkpoint is unchanged after regeneration.
+
+The current full HTTP inventory is **308 routes / 337 scenarios**. Coverage, authorization and Effect execution each pass all 337, with zero failures/skips/missing/extra routes; the complete process exits zero. The complete unit gate now also exits zero: **4477 passes, 19 skips, one todo, zero failures**, 53 snapshots and 17052 assertions across 441 files; all six Turbo tasks pass. The subsequent serialized generated-consistency check passes and preserves the actual Git index. This supersedes the previous non-green aggregate as the current verification checkpoint. Its two stale legacy HTTP assertions were corrected; the earlier intermittent CLI deadlines and processor stop did not recur, but their unknown causes are not considered fixed merely because this rerun passed. See [HTTP fixture correction](testing/test-fixtures/native-memory-legacy-http-contract.md), [CLI deadlines](testing/test-stability/cli-process-aggregate-timeouts.md), and [processor investigation](testing/test-stability/processor-tool-unexplained-stop.md).
+
+The follow-on shared integration adds tool-owned completed-child message wake, Stop Hook cancellation/join, Workflow agent selection and Subagent lifecycle Hooks. The combined focused gate passes 76 tests / 675 assertions across 24 files; all 21 workspace typecheck tasks pass (19 valid cache hits). Task wake and Stop cancellation pass source CLI and the combined rebuilt Desktop. Workflow selection passes CLI/Desktop four checks/two calls and three isolated reference selections. Subagent Hooks pass CLI/Desktop three scenarios and two isolated reference scenarios. Its complete unit gate now finishes with **4498 passes, 19 skips, one todo and one failure**: native Plan approval timed out. The unchanged isolated13/136 pass does not establish a fix; see [BUG354](testing/test-stability/native-plan-aggregate-approval-timeout.md). A green updated aggregate is still required.
+
+The subsequent [Hook sources/imports](native-hook-sources.md), [Feedback images](feedback-images.md), [Workflow resume](native-workflow-resume.md) and [native Shell wait settings](native-shell-host-config.md) are integrated. Unified App/Desktop builds and all21 types pass. Source CLI and rebuilt Desktop each pass Hook4/6, Workflow5/3 and Shell6 checks; Feedback native/compatibility CLI and native Desktop each pass6. Shared Feedback18/130 and SDK2/16 pass. The combined Workflow/Shell gate is65pass/1Shell readiness timeout; its unchanged isolated case passes but the cause remains unknown. The subsequent Shell prefix/output integration passes33/311; its rebuilt Desktop acceptance is pending. Shared Feedback granted/denied browser checks each pass12, native window11 and both terminals7; the original reload symptom remains unexplained. Refreshed aggregate acceptance is still required.
+
+G01–G13 are scope groups, not thirteen entirely missing features. The remaining column distinguishes demonstrated implementation gaps from unverified contracts. Historical evidence stays in [the implementation record](grok-build-implementation-progress.md). No commit, push, merge or full-parity completion is claimed.
+
+## Remaining delivery scope
+
+These requirements remain active until their implementation and matching acceptance are demonstrated. Existing subfeatures are not counted again as entirely missing.
+
+| ID | Area | Implemented foundation | Remaining work |
+| --- | --- | --- | --- |
+| G01 | Workflow and Deep Research | First-party durable engine, saved Rhai scripts, bounded child orchestration, immutable receipts, private scratch, native API and research stages pass CLI/Desktop/official checks; cumulative scratch/journal limits and live ownership guards pass focused checks; [child model selection](native-workflow-models.md) and [one output-schema correction](native-workflow-schema-correction.md) pass native CLI/rebuilt Desktop/reference acceptance, with correction recovery guidance verified in App and terminals; [template/Git host operations](native-workflow-host-operations.md) have scoped permission acceptance, including configured-denial preservation; [Rhai reasoning effort](native-workflow-effort.md) passes native CLI/rebuilt Desktop/reference acceptance | Same-workspace resume_from is integrated with shared CLI/rebuilt Desktop/reference acceptance. Worktree reconstruction and remaining execution/platform contracts remain. The privileged Workflow fork_context option has no demonstrated working builtin caller in the fixed source; see the separate audit. Task fresh-child history resume and retained worktree placement are integrated and accepted; missing/deleted placement reconstruction remains active scope; the unexposed parent fork_context option is not a demonstrated Task gap. Explicit agent_type is integrated with shared focused/CLI/rebuilt Desktop/reference acceptance. Discovery/validation and the dedicated native compatibility host are implemented and backend-tested. Reference `max_output_tokens` is deprecated and ignored, so it is not a working capability to migrate |
+| G02 | OS sandbox | Application permissions/worktrees plus integrated immutable command profiles, atomic child inheritance and macOS native Bash/descendant Seatbelt implementation; focused 23/284, all 21 types and CLI/rebuilt Desktop seven-check/four-call acceptance passed | Whole-agent enforcement across file tools, Hooks, MCP and LSP; Linux/Landlock and Linux child-network controls; richer custom policies, deny globs and cross-platform acceptance. Immutable persisted command profiles, protected control paths, child inheritance and macOS command Seatbelt are already implemented and accepted; renderer sandboxing is not agent isolation. |
+| G03 | Hooks | Host TOML/JSON discovery, exact-folder trust, command/HTTP execution, matchers, sanitized inspection, deny/ask/rewrite, lifecycle observers, durable V1/V2 Stop gates and [persistent choices](native-hook-preferences.md) are implemented | SubagentStart and the SubagentStop decision gate have shared CLI/Desktop/reference acceptance. Additive user requirements/managed/global sources, duplicate precedence and opt-in trusted Claude/Cursor grouped imports are integrated with shared31/140, types and CLI passing; rebuilt shared Desktop also passes4/6. Repository-root trust is a private, unmerged draft with focused tests, preserved in the developer handoff. Administrator-enforced policy and remaining decision precedence still need implementation/audit. PreCompact/PostCompact, snapshots, serialized reload, persistent choices and App/TUI management are already accepted. |
+| G04 | Independent `/btw` | Separate native and compatibility execution, immutable parent snapshot, isolated cancellation/errors, images, persistent results and App/TUI panels; CLI/native integration, rebuilt native/browser windows, both terminals, official image comparison and isolated composer benchmark passed | Cross-platform acceptance |
+| G05 | Memory V2 and advanced retrieval | Compatibility capture/flush/Dream, topic store, maintenance, health and legacy ranking exist; native Context Source has scoped CLI/Desktop/reference acceptance; native default-off tools, permission-filtered catalog/preview, hash forget and durable toggle now pass shared CLI/rebuilt Desktop/reference checks | Native capture/flush, V2 Dream, explicit migration, clear/discard, exact retry, operation management UI, legacy metadata/configuration and automatic idle/pre-compaction flush are integrated with scoped shared acceptance. Manual legacy Dream is integrated with shared26/153 and CLI/Desktop4/1; automatic legacy Dream triggers are now integrated with shared46/225 and CLI positive/restart/publication checks, with unified rebuilt Desktop positive and failed-source checks passing. Consumed-source cleanup is integrated with shared 62-test regression and CLI/rebuilt Desktop four-check acceptance. Opt-in V2 batch Dream is integrated with shared57/279 and source CLI/rebuilt Desktop six-check acceptance; final browser/native-window checks pass six each, and mini plus both fullscreen sizes pass four each. Optional API embeddings, hybrid retrieval and semantic flush deduplication are remaining legacy Memory capabilities, not a V2 vector requirement. Historical unproven-owner recovery stays fail-closed; cross-platform acceptance and installed legacy runtime equivalence remain unverified. |
+| G06 | Goal completion and native acceptance | Persistent controls, independent evaluation/verification, budgets, reports, workspace evidence, atomic cleanup/retention and native runner are implemented | Complete aggregate/platform acceptance and individually evidenced option gaps in their owning groups. The fixed reference alternate-harness representability function returns false; unspecified proprietary harness adaptation is not a demonstrated working capability to migrate. See [the bounded contract audit](grok-build-contract-audit.md). Strategy advice, closing summaries, role-pair/model preflight, plan progress, UI and forced-compaction accounting are already implemented and accepted. Unknown historical cleanup ownership remains fail-closed; vague “native tool gaps” are not a demonstrated missing feature. |
+| G07 | Apexo native consistency | Canonical Location tools now include file/shell/search/question/skill/todo, Goal, Feedback, Workflow, LSP, MCP, foreground/background Task, Plan, image/video, basic Memory and Monitor. Native-only mini/fullscreen interaction and media-path presentation pass the shared matrix; Task/Process panels, Plan recovery and media App/Desktop presentation have scoped acceptance. Explicit mixed-server terminal selection is integrated | Active Task message backend and operator UI, automatic Memory, compiled local/headless and packaged Desktop execution have scoped shared acceptance. Tool-owned completed direct-child wake through send_subagent_message now passes CLI/rebuilt Desktop; fresh operator/HTTP wake is now integrated with shared45/322 and CLI/Desktop three-mode acceptance; operator browser/native-window receipt and remount acceptance passes all three modes. Fresh-child resume_from is integrated with shared focused and source CLI acceptance, with rebuilt Desktop four-check/seven-call acceptance also passing. Task cwd and retained worktree delegation are integrated with composed CLI/rebuilt Desktop acceptance; deleted worktree reconstruction remains unsupported. Remaining Task contracts include descendant message routing, sender attribution/quotas and nested background work. The pinned Task adapter explicitly disables parent fork_context; that unused Workflow option is not a missing Task capability. Existing task_id completed-child follow-up and nested foreground support must not be described as absent. Final consistency/platform gates remain; preserve one provider stream per turn and Apexo ownership. |
+| G08 | Feedback | Local transactional drafts, exact updates, revision-aware review/delete, native/compatibility tools and App/TUI review are implemented | Image attachments are integrated with shared native/compatibility API and CLI/Desktop backend acceptance; shared image browser/native-window/terminal acceptance also passes. Native OS clipboard positive input and cross-platform checks remain. Earlier text-only native API/routing and UI acceptance remain valid for that narrower scope. The editable project issue form versus official direct submission is a product difference to review; creating a draft does not authorize automatic external sending. |
+| G09 | Media and S3/ZDR | Image/video generation, image editing, shared commands and explicit S3 PUT/GET configuration are implemented | Automatic team ZDR policy requires appropriate auth claims; production storage/service acceptance and cross-platform checks. Native saved media paths now render in both terminal modes without provider or preview-read work. Native model overrides and S3 local-download options now pass scoped shared CLI/rebuilt Desktop acceptance. Native App/Desktop saved-video presentation has scoped shared acceptance. The official transient signing fallback is not reproduced by a static signer and must not be advertised as equivalent |
+| G10 | Plugins | Storefront, recommendations, own sources, download/install/update/enable/disable/uninstall and component loading work | Native resource/template picker is now integrated and accepted in shared browser, native Desktop and both terminals. LSP workspace overrides and deferred permission-gated activation are integrated with shared focused and pinned source CLI acceptance, with rebuilt Desktop six-check/eight-call acceptance also passing. Socket transport and persistent per-plugin data with keep-data uninstall pass shared CLI/rebuilt Desktop checks; actual en/zh/zht Plugins windows pass eight checks each. Additional manifest/organizational policy and complete supported Hook integration remain. Export/download transfer and cache-prune commands are not demonstrated capabilities in the pinned source CLI/ACP or installed1.0.52 help; existing own/recommended download and install are implemented. They must not be invented as migration requirements. Cache retention remains an internal lifecycle concern. Remote Git credential and Windows/Linux acceptance and clean-host composer performance confirmation remain. All52 storefront keys cover62 locale dictionaries, with scoped rendered locale checks recorded. Notification-driven automatic tool relisting is not a demonstrated reference gap. Keep the user-facing name Plugins, localized per language. |
+| G11 | Shell and task contracts | Default/max wait settings, task ID normalization, output/cancel, foreground-to-background and completion delivery work; trailing-preview repair and native Monitor backend pass shared141/803 | Native wait configuration forwarding and execution are repaired with shared CLI/Desktop6 checks. Host cmd_prefix/output_byte_limit passes shared33/311 and CLI/Desktop2 checks. Owned omitted/zero lifetime now uses the explicit10-hour cap and passes shared10/34 plus CLI/Desktop4 checks. Shell/Monitor manager UI already has browser/native-window/mini/fullscreen acceptance. Reference timeout-folding dialect differences, remaining contract audit and cross-platform verification remain; do not classify the existing manager as unimplemented. |
+| G12 | Existing product surfaces | Session management, dashboard, usage/trace, slash commands, permissions, MCP, Skills and configuration already exist | The [bounded audit](grok-build-contract-audit.md) confirms a narrow missing CLI Session/turn/model usage query. Desktop current-context metrics and raw usage export already exist. Exact dashboard interactions, bundled local trace export and native top-level Session fork remain separate comparisons/implementation limits; do not call the entire Session/dashboard/usage surface missing. Vendor account quota and remote upload services are not local runtime integration requirements. Native wait/control ownership, Session deletion and manual compaction are already implemented with scoped acceptance. |
+| G13 | Final verification | Many scoped macOS checks and earlier full-suite runs are recorded; refreshed all21 types and generated API consistency pass with Scheduler restoration, native Memory recovery/retry and headless backend | The previous complete shared checkpoint passes 4477 unit tests with zero failures (19 skips, one todo), all21 types, generated consistency, App/Desktop builds, and all337 HTTP scenarios in each of coverage/auth/Effect modes. Follow-on Task wake and Hook cancellation pass CLI/rebuilt Desktop. Workflow selection and Subagent Hooks pass the combined76/675 gate, all21 types, CLI/rebuilt Desktop and isolated reference comparisons. The latest complete aggregate is4614pass/1fail (native Goal lifecycle deadline), not green. The unchanged isolated Goal case passes1/39 and the cause remains unknown. Earlier inventory correction passes5/35; SOAP/CLI deadline observations did not recur but remain unresolved. All21 types and unified builds pass at the recorded checkpoint; the complete HTTP gate passes339 scenarios in each mode over310 routes but predates the latest follow-ons. Fresh complete unit and HTTP gates and failure investigation remain required. Retain unresolved historical investigations and finish Windows/Linux plus relevant installed reference acceptance. Scoped macOS passes do not prove all-platform parity. |
+
+The complete contracts in [Memory V2](memory-v2-feature.md), [Goal](goal-feature.md), [Goal durability](goal-lifecycle-durability.md), [native Goal](goal-native-v2.md), [Hooks](grok-hooks-parity.md), [media](grok-media-parity.md), [Plugins](plugins-feature.md), [feedback](feedback-drafts.md), [Shell configuration](shell-host-configuration.md), [independent side questions](side-questions.md), and [Desktop profile selection](desktop-runtime-profile.md) remain part of this scope.
+
+## Implemented capabilities and their evidence boundaries
+
+| Capability | Current behavior and recorded verification |
+| --- | --- |
+| Shared tool contracts and permissions | CLI and Desktop share Apexo's canonical compatibility registry and actual selected model/agent/session filtering. Real file write/read/replace and permission denial cases were exercised; native V2 migration remains G07 |
+| Background Shell and Monitor | Live output snapshots, completion/failure delivery, idle wakeup, stdout/stderr line events, throttling, overload stop and cancellation. Foreground commands can move to background; user-stop suppression is preserved |
+| Task management and Subagents | Owner-bound Shell/Monitor/Scheduler/Subagent list, output and cancel; real child Sessions, follow-up and completion delivery; mini/fullscreen task panels and production browser coverage |
+| Scheduler | Phase-preserving updates, 50-task limit, seven-day expiration, interval normalization, `/loop`, durable registry/ownership and real kill/restart/recovery. CLI/Desktop and installed official recovery were exercised |
+| Plan and LSP | Explicit plan entry/approval/denial with shared permission aliases; TypeScript hover, definitions and workspace symbols; real-path normalization and symlink regression coverage |
+| Memory scope and indexing | Global/repository scope, clone/worktree sharing, old-note migration, permission-filtered full-text search, line reads, persisted index and filesystem watcher. Legacy source weights/decay/access/staleness/MMR have five CLI/Desktop ranking scenarios each |
+| Memory lifecycle | Automatic checkpoints, pre-compaction/threshold/idle flush, model Dream, related-context injection, session toggles and priority rules; V2 capture/flush/topics/maintenance/health and multiple real process-recovery cases |
+| Memory management | Browse/filter/preview/delete, local clear, save-before-confirmation, independent flush/Dream progress/cancel/retry/results; mini/fullscreen, production browser and selected native-window cases |
+| Goal lifecycle | Durable objective/control state, budgets, pause/resume/blocking, independent completion evaluation and verifier panel, role permissions/model overrides, reports and downloads, cleanup intents and optional retention; native execution uses Apexo's process-local coordinator |
+| Images and video | Generation/editing, local reference permissions, correct API structures, polling/cancellation/timeouts, per-Session attachments and image/video/audio display. Real external JPEG/MP4 generation was verified in an earlier checkpoint; later local fixtures prove protocol/execution only |
+| Plugins | Desktop app-store layout, discovery/installed/sources views, recommendation downloads, own Git/local sources, explicit trust, immutable snapshots and lifecycle. Real official catalog/download and native storefront interactions were exercised; not every third-party service was authorized/tested |
+| Profile and feedback | Persistent profile preference separate from current active profile; local drafts and reviewed issue preparation shared by compatibility/native tools and App/TUI. Current counts are above |
+| PTY and process ownership | Bun POSIX terminal exit/output retention, repeated fast-exit checks and cancellation cleanup. Windows ConPTY and all platform combinations still need the final acceptance matrix |
+
+## Consistency rules
+
+- Noninteractive `apexo run` intentionally does not advertise `ask_user_question`, `enter_plan_mode`, or `exit_plan_mode`; interactive CLI/Desktop retain these controls. Compare the remaining effective tool contract exactly, including permissions and model capabilities.
+- Official aliases such as `run_terminal_command`, `spawn_subagent`, and `get_command_or_subagent_output` correspond to local canonical names. Alias mapping alone does not prove execution equivalence.
+- Session and parent-task ownership must be enforced independently of caller-supplied directory hints. Local reference media require read/external-directory permissions, generated outputs require edit permission, and CDN downloads must not receive provider authorization headers.
+- Distinguish legacy Memory from Memory V2, and distinguish the two App layouts from the two execution architectures. Installed official Memory V2 file tools are not evidence that legacy same-named search tools exist there.
+- Workflow same-process pause/resume does not imply transparent recovery after process death. Persist records and expose the truthful interrupted state; do not silently rerun child model work.
+- Preserve observed platform differences. Official child-network blocking is Linux-only; macOS comparisons must not claim otherwise. Unsupported upstream stubs are not working features to reproduce.
+- Official comparison fixtures must isolate host configuration and user home. They are not product runtime dependencies, and they must not send feedback or load unrelated user plugins.
+
+## Repeatable verification
+
+Run package tests from their package directories using pinned Bun 1.3.14. Representative current scripts from `packages/apexo` are:
 
 ```sh
-bun script/grok-parity.mjs cli
-bun script/grok-parity.mjs cli restricted
+bun script/grok-feedback-parity.mjs cli
+bun script/grok-feedback-parity.mjs desktop
+bun script/grok-feedback-official.mjs
+bun test test/e2e/v2-feedback.e2e.test.ts
+bun script/grok-goal-v2.mjs cli
+bun script/grok-goal-v2.mjs desktop
+bun script/grok-goal-official.mjs --execute --workspace
+bun script/grok-hooks-parity.mjs cli
+bun script/grok-hooks-parity.mjs desktop
+bun script/grok-hooks-official.mjs
+bun run test:httpapi
 ```
 
-从 `packages/desktop` 构建，再用 Electron 自带的 Node 运行打包后端：
+Rebuild Desktop before its backend/window checks and App before browser/composer checks. Use fixture-owned processes and data. Do not restart the user's application. The implementation record and feature documents retain the feature-specific commands and evidence; a single smoke script does not cover this whole matrix.
 
-```sh
-bun run build
-ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ../apexo/script/grok-parity.mjs desktop
-ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ../apexo/script/grok-parity.mjs desktop restricted
-```
-
-脚本使用隔离工作区和本地 provider/media fixture，执行 22 步真实工具链：文件写读改、后台命令及读取、Monitor 查询与取消、Scheduler 创建列出取消及实际触发子 agent、Memory 保存读取整理、三种媒体生成、Subagent 执行续聊与等待。断言文件内容、输出标记、工作区路径和 CLI manifest；日志保存在脚本打印的临时目录。
-
-`restricted` 场景设置自定义默认 agent 并禁用 `grep`，检查模型请求及 CLI 清单都移除该工具。两端的普通与受限场景均通过。
-
-这个脚本验证真实 CLI/打包后端与工具实现；媒体上游在脚本中是 fixture。真实 xAI 媒体调用另行使用当前 OAuth 完成，不能将两类验证混为一谈。
-
-本次额外验证：
-
-- 官方 `apexo acp --backend grok-build` 完成实际读写、替换、后台 Shell、Subagent，返回 `end_turn` 与 `OFFICIAL_PARITY_OK`。
-- 真实 TypeScript LSP 返回 `greet` 的 hover 类型、定义位置、workspaceSymbol。
-- 生产工具组件 100 行挂载：修改前中位数 9.8 ms / P95 15.2 ms；修改后 10.1 ms / P95 16.6 ms。这是局部组件基准，不是完整 Desktop 启动性能。
-- 生产组件加载真实生成的 JPEG 和 MP4：图片正常解码，视频 544×544、6.04 秒，播放时间正常推进，下载入口存在；检查了实际样式截图。
-- Bun 1.3.14：PTY 与扩展专项 22 通过；另验 256 KiB 输出完整排空及 30 次快速退出。Plan/权限/LSP/registry/扩展集中回归 114 通过；固定版本 LSP 专项 5 通过。
-- 全仓 typecheck：21/21 通过；client `check:generated` 通过。
-- HTTP API coverage/auth/effect：每组 204 通过，0 失败、0 跳过、0 缺项。
-- 前端现有单元测试：2 通过。仓库中没有脚本所引用的完整浏览器 E2E 目录，因此另行运行了生产组件浏览器检查。
-- CI 同款全量后端套件：3441 通过、0 失败、19 跳过、1 TODO，46 个快照；耗时 8 分 23 秒。跳过项包括平台限制、未配置的录制凭据和既有禁用场景，不能记作全部已覆盖。
-- 全量之后补充 Scheduler `7d` 边界修复：受影响的扩展/adapter 套件 25 通过；重新执行全仓 typecheck、Desktop 生产构建及 CLI/Electron 的 22 步受限场景，均通过。
-
-## 相关实现
-
-- `packages/apexo/src/tool/grok-build.ts`：canonical adapter 与后台任务契约。
-- `packages/apexo/src/tool/grok-build-extensions.ts`：Memory、Monitor、Scheduler。
-- `packages/apexo/src/tool/grok-build-media.ts`：媒体协议、权限、保存与附件。
-- `packages/core/src/workspace-memory.ts`：持久笔记。
-- `packages/core/src/background-job.ts`：后台状态与实时快照。
-- `packages/session-ui/src/components/tool-attachments.tsx`：共享媒体展示。
-- `packages/apexo/script/grok-parity.mjs`：CLI/Desktop 可重复回归。
+Before any push, run the repository's required typecheck/test commands, Client generated check and HTTP API gate as specified in [AGENTS.md](../AGENTS.md). Open a PR to `main`; merge only after the required GitHub checks are green. The current worktree is not a claim of a committed, merged or released feature set.

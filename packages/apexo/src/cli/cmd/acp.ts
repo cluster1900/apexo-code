@@ -2,10 +2,11 @@ import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import { ServerAuth } from "@/server/auth"
-import { createApexoClient } from "@apexo/sdk/v2"
+import { createApexoClient } from "@apexo/sdk/v2/client"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { ACPProfile } from "@/acp/profile"
 import { Process } from "@/util/process"
+import { pipeline } from "node:stream/promises"
 
 export const AcpCommand = effectCmd({
   command: "acp",
@@ -100,13 +101,25 @@ async function runGrokBuildAgent(cwd: string, signal: AbortSignal) {
   const agent = Process.spawn([command, "agent", "stdio"], {
     cwd,
     stdin: process.stdin,
-    stdout: process.stdout,
-    stderr: process.stderr,
+    // Bun's own output descriptors can be nonblocking. Inheriting them makes
+    // a native agent's large write fail with EAGAIN, corrupting NDJSON frames.
+    stdout: "pipe",
+    stderr: "pipe",
     abort,
   })
-  const code = await agent.exited.finally(() => {
-    process.removeListener("SIGINT", interrupt)
-    process.removeListener("SIGTERM", interrupt)
-  })
+  const code = await Promise.all([
+    agent.exited,
+    pipeline(agent.stdout!, process.stdout, { end: false }),
+    pipeline(agent.stderr!, process.stderr, { end: false }),
+  ])
+    .then(([code]) => code)
+    .catch((error) => {
+      stop.abort()
+      throw error
+    })
+    .finally(() => {
+      process.removeListener("SIGINT", interrupt)
+      process.removeListener("SIGTERM", interrupt)
+    })
   if (code !== 0 && !abort.aborted) throw new Error(`Grok Build ACP exited with code ${code}`)
 }

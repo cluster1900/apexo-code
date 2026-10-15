@@ -1,3 +1,4 @@
+import { SettingsRuntimeProfile } from "../settings-runtime-profile"
 import { Component, Show, createMemo, createResource } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { SelectV2 } from "@apexo/ui/v2/select-v2"
@@ -519,6 +520,8 @@ export const SettingsGeneralV2: Component<{
         </Show>
 
         <GeneralSection />
+
+        <SettingsRuntimeProfile />
 
         <AppearanceSection controller={appearance} />
 

@@ -1,3 +1,4 @@
+import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
 import { describe, expect } from "bun:test"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { ProviderV2 } from "@apexo/core/provider"
@@ -72,7 +73,7 @@ const mockInstruction = Layer.succeed(
   }),
 )
 
-const testLayer = LayerNode.compile(
+const testLayer = AppNodeBuilder.build(
   LayerNode.group([
     Agent.node,
     Config.node,

@@ -3,7 +3,13 @@ import { Location } from "@apexo/schema/location"
 import { Session } from "@apexo/schema/session"
 import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { QuestionNotFoundError, SessionNotFoundError } from "../errors"
+import {
+  QuestionNotFoundError,
+  SessionNotFoundError,
+  ConflictError,
+  ForbiddenError,
+  ServiceUnavailableError,
+} from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const makeQuestionGroup = <
@@ -20,6 +26,7 @@ export const makeQuestionGroup = <
       HttpApiEndpoint.get("question.request.list", "/api/question/request", {
         query: LocationQuery,
         success: Location.response(Schema.Array(Question.Request)),
+        error: ServiceUnavailableError,
       })
         .annotateMerge(locationQueryOpenApi)
         .annotateMerge(
@@ -37,7 +44,7 @@ export const makeQuestionGroup = <
       HttpApiEndpoint.get("session.question.list", "/api/session/:sessionID/question", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: Schema.Array(Question.Request) }),
-        error: SessionNotFoundError,
+        error: [SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -53,7 +60,7 @@ export const makeQuestionGroup = <
         params: { sessionID: Session.ID, requestID: Question.ID },
         payload: Question.Reply,
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, QuestionNotFoundError],
+        error: [SessionNotFoundError, QuestionNotFoundError, ConflictError, ForbiddenError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -68,7 +75,7 @@ export const makeQuestionGroup = <
       HttpApiEndpoint.post("session.question.reject", "/api/session/:sessionID/question/:requestID/reject", {
         params: { sessionID: Session.ID, requestID: Question.ID },
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, QuestionNotFoundError],
+        error: [SessionNotFoundError, QuestionNotFoundError, ConflictError, ForbiddenError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

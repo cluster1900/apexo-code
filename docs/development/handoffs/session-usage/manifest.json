@@ -1,0 +1,35 @@
+{
+  "status": "design-only; no product or test source authored",
+  "referenceRevision": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+  "sourceCheckpoint": {
+    "packages/core/src/tool/builtins.ts": "177b61521497b49573d31710c2708caccbd1124f26ab3ac3b9e0e2134a45fe06",
+    "packages/core/src/tool/goal.ts": "4eafbab1bb5a37a09ebcc3ceb866c65eb2805d0dd07fbb04d0dda25711e7fa94",
+    "packages/core/src/session/goal-role-selection.ts": "0840b989fbee20ac1102abbb7e1e830ca8e108238ae04722f293cf8476180cac",
+    "packages/core/src/session/goal-runner.ts": "77ba992f831f50af82956fc5f57833d61150d8e937af9f2f8a1341f2b6ab319a",
+    "packages/core/src/session/runner/llm.ts": "7271d932454446f020f2c8509642a3bec6086397d54bc280f9680ea22fdd1648",
+    "packages/core/src/mcp.ts": "8010a9bb008621b309fdd10022c3fefe73d969863a35afc20a54b53d462fa4c4",
+    "packages/apexo/src/index.ts": "6dfe1dfbfd492a8738c9d7edd0a4404ad37380ca1c7fffe9248744702bc04df9",
+    "packages/apexo/src/cli/cmd/stats.ts": "66f1af76ab1201ae13fa7d1ebea73d6ecdc3dc789582196a5c7d06faf6bb36e4",
+    "packages/apexo/src/cli/cmd/export.ts": "b8e84abcbfff74aed9f3aa4b79515f90474c598795ad229a07e161c9208f305c",
+    "packages/apexo/src/cli/cmd/session.ts": "574bf037219576e4bcb76fbe1fd694bb2417a165a9b7f5a64f368f8959522073",
+    "packages/apexo/src/cli/native-local.ts": "78768a7ad53c9df11d7924ab9769244ddebb334a4a5d5f710f99b0c56803cd0e",
+    "packages/apexo/src/cli/native-local-host.ts": "7daec4696367e14639c18d57142aed06ddd4a315584b0a7e52f10084e3c09eb4",
+    "packages/app/src/components/session/session-context-tab.tsx": "71a5d80b5681a63f7821d84f9633261be4bd426e3adc35ee0e3aacd79c05643e",
+    "packages/app/src/components/session/session-context-metrics.ts": "e8f9c6b517310d37d5e9fcd8cd21dd7ec5b157ec0d1396289d6deac4cb05ba4b",
+    "packages/tui/src/component/dialog-session-list.tsx": "0bf8d944e22c324be439080ca6fd86bed372428738d31f224632bc2deca474df",
+    "packages/protocol/src/groups/session.ts": "857af774b8a5e8a6528d761b5628e03fe73c18cd2bbdfcb9174292b640f1910e",
+    "packages/schema/src/session-event.ts": "e1ce1a681fd6198eaebc70457fffb06ca8ab2982aebf98301f64f9a2a2f1bd4f"
+  },
+  "documents": {
+    "audit.md": "029e42c2697f46a1e2f74801d9d1e5888f21820beff40d1cde5b723fc99c5efe",
+    "usage-proposal.md": "a9661a7cce3ec83f192c276f8f6fd58a4aff68c730d6c01801025dc9e00001c4"
+  },
+  "verification": {
+    "installedUsageRead": "Passed against prior isolated provider-generated Session: 10 tokens, 2 model calls, 1 turn, per-model fixture breakdown",
+    "installedUsageHelp": "Advertises Session ID and optional turn selector",
+    "installedTraceHelp": "Advertisement only; no trace export executed",
+    "apexoImplementation": "Not started",
+    "privateSnapshot": "6065 files matched captured baseline; zero edits",
+    "privateSnapshotBaselineSHA256": "301d1e1f02a3d8ef5bc089168b3ae7ff507c61b14fb1c55cd90a4b998ae53c0a"
+  }
+}

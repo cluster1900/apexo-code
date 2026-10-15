@@ -2,6 +2,76 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "hooks.repository.title": "Tillit til repository-hooks",
+  "hooks.repository.hint":
+    "Tillat at hooks fra rotmappen i repositoriet kjøres i økter i dette repositoriet. Last inn hookene på nytt etter at du har gitt tillatelse. Tilbakekalling av tilliten blokkerer nye hook-kall.",
+  "hooks.repository.grant": "Tillat repository-hooks",
+  "hooks.repository.revoke": "Trekk tilbake tillit til repository-hooks",
+
+  "plugins.title": "Programtillegg",
+  "plugins.description": "Oppdag nye ferdigheter og verktøy. Installer det du trenger, og administrer alt på ett sted.",
+  "plugins.discover": "Oppdag",
+  "plugins.installed": "Installert",
+  "plugins.sources": "Kilder",
+  "plugins.recommended": "Anbefalte programtillegg",
+  "plugins.add": "Installer ditt eget",
+  "plugins.addSource": "Legg til kilde",
+  "plugins.removeSource": "Fjern kilde",
+  "plugins.allSources": "Alle kilder",
+  "plugins.search": "Søk etter programtillegg",
+  "plugins.download": "Last ned",
+  "plugins.enable": "Aktiver",
+  "plugins.disable": "Deaktiver",
+  "plugins.update": "Oppdater",
+  "memory.operations.batchOutcome":
+    "Utsatte notater: {{deferred}} · Arkiverte notater som ikke ble innarbeidet: {{unplaceable}}",
+  "plugins.uninstall": "Avinstaller",
+  "plugins.keepData": "Behold programtilleggets data",
+  "plugins.cleanupDeferred":
+    "Programtilleggets data beholdes mens de er i bruk, eller når eierskapet ikke kan bekreftes.",
+  "plugins.version": "Versjon",
+  "plugins.files": "Nedlastede filer",
+  "plugins.contents": "Inkluderte funksjoner",
+  "plugins.readme": "Om dette programtillegget",
+  "plugins.empty": "Ingen programtillegg funnet. Prøv et annet søk eller legg til en kilde.",
+  "plugins.error": "Handlingen kunne ikke fullføres. Kontroller kilden og tilkoblingen, og prøv igjen.",
+  "plugins.sourceError": "Kilden kunne ikke oppdateres. Tidligere nedlastede resultater er fortsatt tilgjengelige.",
+  "plugins.changed":
+    "Endringene tas i bruk når prosjektet lastes inn på nytt. Pågående økter beholder sine nåværende programtillegg.",
+  "plugins.confirm": "Se gjennom endringer i programtillegg",
+  "plugins.trust":
+    "Installer bare programtillegg fra pålitelige kilder. De kan kjøre kommandoer, koble til tjenester og få tilgang til filer på datamaskinen.",
+  "plugins.removeNotice":
+    "Fjerne dette elementet? Installerte programtillegg beholdes når en kilde fjernes. Avinstallerte tillegg lastes ikke inn i fremtidige økter.",
+  "plugins.sourceInput": "Git-repositorium eller lokal mappe",
+  "plugins.sourcePlaceholder": "owner/repo, https://… eller /path/to/plugin",
+  "plugins.hooksWarning":
+    "Enkelte livssykluskroker i dette programtillegget støttes ikke ennå. Krokene som støttes og øvrige funksjoner er tilgjengelige.",
+  "plugins.status.available": "Tilgjengelig",
+  "plugins.status.downloaded": "Lastet ned",
+  "plugins.status.enabled": "Aktivert",
+  "plugins.status.disabled": "Deaktivert",
+  "plugins.component.skills": "Ferdigheter",
+  "plugins.component.commands": "Kommandoer",
+  "plugins.component.agents": "Agenter",
+  "plugins.component.mcpServers": "MCP-servere",
+  "plugins.component.lspServers": "Språkservere",
+  "plugins.component.hooks": "Kroker",
+  "plugins.reload": "Bruk i dette prosjektet",
+  "plugins.activation.title": "Aktivering i dette prosjektet",
+  "plugins.activation.hint":
+    "Aktiverte programtillegg trer i kraft etter at du bruker dem i dette prosjektet. Pågående oppgaver beholder sitt gjeldende øyeblikksbilde.",
+  "plugins.activation.projectRequired": "Åpne et prosjekt for å se gjennom og ta i bruk programtillegg.",
+  "plugins.activation.generation": "Versjon av øyeblikksbildet: {{generation}}",
+  "plugins.activation.active": "Aktiv i dette prosjektet",
+  "plugins.activation.inactive": "Ikke aktiv i dette prosjektet",
+  "plugins.activation.unavailable": "Kunne ikke lese aktiveringsstatusen for programtillegg.",
+  "plugins.activation.failure.busy": "Vent til pågående oppgaver er ferdige før du tar i bruk programtillegg.",
+  "plugins.activation.failure.invalid":
+    "Konfigurasjonen av programtillegg er ugyldig. Det forrige øyeblikksbildet forblir aktivt.",
+  "plugins.activation.failure.load": "Kunne ikke laste inn programtillegg. Det forrige øyeblikksbildet forblir aktivt.",
+  "plugins.activation.failure.unsupported":
+    "Noen funksjoner i programtilleggene støttes ikke av denne serveren. Det forrige øyeblikksbildet forblir aktivt.",
   "desktop.menu.app": "Apexo",
   "desktop.menu.file": "Arkiv",
   "desktop.menu.edit": "Rediger",

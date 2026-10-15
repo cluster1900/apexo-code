@@ -44,7 +44,12 @@ describe("config HttpApi", () => {
               "content-type": "application/json",
               "x-apexo-directory": tmp.path,
             },
-            body: JSON.stringify({ username: "patched-user", formatter: false, lsp: false }),
+            body: JSON.stringify({
+              username: "patched-user",
+              formatter: false,
+              lsp: false,
+              memory: { session: { save_on_end: false } },
+            }),
           }),
         ),
       )
@@ -56,10 +61,54 @@ describe("config HttpApi", () => {
         lsp: false,
       })
       yield* Fiber.join(disposed)
-      expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).json())).toMatchObject({
+      expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "apexo.json")).json())).toMatchObject({
         username: "patched-user",
         formatter: false,
         lsp: false,
+      })
+      const reloaded = yield* Effect.promise(() =>
+        Promise.resolve(app().request("/config", { headers: { "x-apexo-directory": tmp.path } })),
+      )
+      expect(reloaded.status).toBe(200)
+      expect(yield* Effect.promise(() => reloaded.json())).toMatchObject({
+        username: "patched-user",
+        memory: { session: { save_on_end: false } },
+      })
+    }),
+  )
+
+  it.live(
+    "updates the highest priority JSONC config without losing comments or other settings",
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirEffect({ config: { username: "lower-priority", formatter: false, lsp: false } })
+      const file = Bun.file(path.join(tmp.path, "apexo.jsonc"))
+      yield* Effect.promise(() =>
+        Bun.write(
+          file,
+          '{\n  // Keep this project note\n  "username": "original",\n  "memory": { "enabled": true, "session": { "save_on_end": true } }\n}\n',
+        ),
+      )
+      const disposed = yield* waitDisposed(tmp.path).pipe(Effect.forkScoped({ startImmediately: true }))
+      const response = yield* Effect.promise(() =>
+        Promise.resolve(
+          app().request("/config", {
+            method: "PATCH",
+            headers: { "content-type": "application/json", "x-apexo-directory": tmp.path },
+            body: JSON.stringify({ username: "updated", memory: { session: { save_on_end: false } } }),
+          }),
+        ),
+      )
+      expect(response.status).toBe(200)
+      yield* Effect.promise(() => response.json())
+      yield* Fiber.join(disposed)
+      expect(yield* Effect.promise(() => file.text())).toContain("// Keep this project note")
+      const reloaded = yield* Effect.promise(() =>
+        Promise.resolve(app().request("/config", { headers: { "x-apexo-directory": tmp.path } })),
+      )
+      expect(yield* Effect.promise(() => reloaded.json())).toMatchObject({
+        username: "updated",
+        memory: { enabled: true, session: { save_on_end: false } },
+        formatter: false,
       })
     }),
   )

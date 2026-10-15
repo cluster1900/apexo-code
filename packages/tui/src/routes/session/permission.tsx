@@ -108,7 +108,10 @@ function TextBody(props: { title: string; description?: string; icon?: string })
   )
 }
 
-export function PermissionPrompt(props: { request: PermissionRequest; directory?: string }) {
+export function PermissionPrompt(props: {
+  request: PermissionRequest & { approvalLifetime?: "saved" }
+  directory?: string
+}) {
   const sdk = useSDK()
   const project = useProject()
   const sync = useSync()
@@ -140,6 +143,16 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
           title="Always allow"
           body={
             <Switch>
+              <Match when={props.request.approvalLifetime === "saved"}>
+                <box paddingLeft={1} gap={1}>
+                  <text fg={theme.textMuted}>
+                    {props.request.always.length
+                      ? "Save approval for these resources:"
+                      : "This request does not offer a saved approval scope."}
+                  </text>
+                  <For each={props.request.always}>{(pattern) => <text fg={theme.text}>{"- " + pattern}</text>}</For>
+                </box>
+              </Match>
               <Match when={props.request.always.length === 1 && props.request.always[0] === "*"}>
                 <TextBody title={"This will allow " + props.request.permission + " until Apexo is restarted."} />
               </Match>
@@ -165,7 +178,8 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
           onSelect={(option) => {
             setStore("stage", "permission")
             if (option === "cancel") return
-            void sdk.client.permission.reply({
+            void sdk.replyPermission({
+              sessionID: props.request.sessionID,
               reply: "always",
               requestID: props.request.id,
               directory: props.directory,
@@ -177,7 +191,8 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
       <Match when={store.stage === "reject"}>
         <RejectPrompt
           onConfirm={(message) => {
-            void sdk.client.permission.reply({
+            void sdk.replyPermission({
+              sessionID: props.request.sessionID,
               reply: "reject",
               requestID: props.request.id,
               directory: props.directory,
@@ -415,7 +430,8 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                     setStore("stage", "reject")
                     return
                   }
-                  void sdk.client.permission.reply({
+                  void sdk.replyPermission({
+                    sessionID: props.request.sessionID,
                     reply: "reject",
                     requestID: props.request.id,
                     directory: props.directory,
@@ -423,7 +439,8 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                   })
                   return
                 }
-                void sdk.client.permission.reply({
+                void sdk.replyPermission({
+                  sessionID: props.request.sessionID,
                   reply: "once",
                   requestID: props.request.id,
                   directory: props.directory,

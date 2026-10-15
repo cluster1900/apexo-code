@@ -15,6 +15,8 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
+import { useServerSDK } from "@/context/server-sdk"
+import { announceSessionRestoration } from "@/utils/session-restore"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { childSessionOnPath, getProjectAvatarSource, hasProjectPermissions } from "./helpers"
 
@@ -104,6 +106,8 @@ const SessionRow = (props: {
   warmPress: () => void
   warmFocus: () => void
 }): JSX.Element => {
+  const sdk = useServerSDK()
+  const language = useLanguage()
   const title = () => sessionTitle(props.session.title)
 
   return (
@@ -113,6 +117,12 @@ const SessionRow = (props: {
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
       onClick={() => {
+        const session = props.session
+        const target = sdk().ensureDirSdkContext(session.directory)
+        void announceSessionRestoration(
+          { client: target.client, protocol: target.protocol, sessionID: session.id },
+          language.t,
+        )
         if (props.sidebarOpened()) return
         props.clearHoverProjectSoon()
       }}

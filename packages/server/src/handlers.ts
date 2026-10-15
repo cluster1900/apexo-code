@@ -2,6 +2,20 @@ import { Layer } from "effect"
 import { MessageHandler } from "./handlers/message"
 import { ModelHandler } from "./handlers/model"
 import { ProviderHandler } from "./handlers/provider"
+import { ScheduleHandler } from "./handlers/schedule"
+import { ProcessHandler } from "./handlers/process"
+import { TaskHandler } from "./handlers/task"
+import { GoalHandler } from "./handlers/goal"
+import { MemoryOperationHandler } from "./handlers/memory-operation"
+import { MemoryHandler } from "./handlers/memory"
+import { FeedbackHandler } from "./handlers/feedback"
+import { HooksHandler } from "./handlers/hooks"
+import { PluginsHandler } from "./handlers/plugins"
+import { SessionMcpAttachmentHandler } from "./handlers/session-mcp-attachment"
+import { McpHandler } from "./handlers/mcp"
+import { LspHandler } from "./handlers/lsp"
+import { WorkflowHandler } from "./handlers/workflow"
+import { SideQuestionHandler } from "./handlers/side-question"
 import { SessionHandler } from "./handlers/session"
 import { PermissionHandler } from "./handlers/permission"
 import { FileSystemHandler } from "./handlers/fs"
@@ -17,12 +31,27 @@ import { LocationHandler } from "./handlers/location"
 import { IntegrationHandler } from "./handlers/integration"
 import { CredentialHandler } from "./handlers/credential"
 import { ProjectCopyHandler } from "./handlers/project-copy"
+import { ProjectHandler } from "./handlers/project"
 
 export const handlers = Layer.mergeAll(
   HealthHandler,
   LocationHandler,
   AgentHandler,
   SessionHandler,
+  GoalHandler,
+  TaskHandler,
+  ProcessHandler,
+  ScheduleHandler,
+  FeedbackHandler,
+  MemoryHandler,
+  MemoryOperationHandler,
+  HooksHandler,
+  PluginsHandler,
+  McpHandler,
+  SessionMcpAttachmentHandler,
+  LspHandler,
+  WorkflowHandler,
+  SideQuestionHandler,
   MessageHandler,
   ModelHandler,
   ProviderHandler,
@@ -37,4 +66,5 @@ export const handlers = Layer.mergeAll(
   QuestionHandler,
   ReferenceHandler,
   ProjectCopyHandler,
+  ProjectHandler,
 )

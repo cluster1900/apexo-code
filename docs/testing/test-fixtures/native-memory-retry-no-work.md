@@ -1,0 +1,12 @@
+# BUG-20261015-284: Already-imported migration retry expectation
+
+- **Scope:** The native Memory server-derived retry service fixture.
+- **Observed:** The new fixture expected a retry of an already completed unchanged migration to return `completed`. The actual operation returned `no_work`. The initial focused file run had 11 passing tests and this one failing assertion (80 assertions reached).
+- **Expected:** An exact source already present in the canonical import journal must not be imported again. A newly admitted retry should settle with `no_work` and `processed: 0`, preserving the source and note inventory.
+- **Root cause:** The fixture conflated first publication with idempotent domain reconciliation. `MemoryLifecycleNative.executeMigration` deliberately maps `importLegacy(...).imported === false` to `no_work`. No product behavior was changed.
+- **Fix:** Assert the existing result contract, compare the complete note list before and after retry, retain the source-content assertion, and prove zero provider calls. Exact repetition of the new retry operation ID remains passive.
+- **Verification:** From `packages/apexo`, `bun test --timeout 30000 test/v2/memory-dream-native.test.ts -t 'native migration previews'` passed one test with 12 assertions. The full initial run's other 11 cases passed; the failure evidence is retained. The actual HTTP retry script passed nine checks with zero provider calls. Core and Apexo package typechecks and private Client/legacy SDK generation passed. This is one fixture-authoring occurrence, not a production migration defect or recurring-rule promotion.
+
+Shared integration verification: the combined Dream/recovery service gate passes24 tests/162 assertions, source CLI retry passes nine checks with zero provider calls, all15 scoped Memory Effect HTTP scenarios pass, and all21 refreshed workspace typechecks pass. Client/legacy SDK generation and isolated-index generated consistency also pass; the real Git index remains unchanged. Rebuilt Desktop acceptance is still pending.
+
+The rebuilt Electron/Node backend now passes recovery six checks and exact retry nine checks, each with zero provider calls, after the independent portable-probe correction [BUG290](../runtime/native-memory-recovery-node-file-probe.md). Both source CLI commands pass again. The corrected shared Dream/recovery gate remains24/162, and Core types pass. Native operation UI is separate work.

@@ -11,8 +11,9 @@ import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
+import { SessionInputExecution } from "./input-execution"
 import { WorkspaceV2 } from "../workspace"
-import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
+import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable, TodoTable } from "./sql"
 import type { DeepMutable } from "../schema"
 
 type DatabaseService = Database.Interface["db"]
@@ -353,6 +354,7 @@ const layer = Layer.effectDiscard(
           sessionID: event.data.sessionID,
           prompt: event.data.prompt,
           delivery: event.data.delivery,
+          executionPolicy: event.data.executionPolicy,
           timeCreated: event.data.timestamp,
           promotedSeq: event.durable.seq,
         })
@@ -368,8 +370,40 @@ const layer = Layer.effectDiscard(
           sessionID: event.data.sessionID,
           prompt: event.data.prompt,
           delivery: event.data.delivery,
+          executionPolicy: event.data.executionPolicy,
           timeCreated: event.data.timestamp,
         })
+      }),
+    )
+    yield* events.project(SessionEvent.PromptWithdrawn, (event) =>
+      event.durable === undefined
+        ? Effect.die("Durable Session event is missing aggregate sequence")
+        : SessionInput.projectWithdrawn(db, {
+            id: event.data.messageID,
+            sessionID: event.data.sessionID,
+            withdrawnSeq: event.durable.seq,
+          }),
+    )
+    yield* events.project(SessionEvent.InputExecutionSettled, (event) =>
+      SessionInputExecution.projectSettlement(db, event),
+    )
+    yield* events.project(SessionEvent.HistoryCopy.Started, () => Effect.void)
+    yield* events.project(SessionEvent.HistoryCopy.Message, (event) => run(db, event))
+    yield* events.project(SessionEvent.HistoryCopy.Completed, (event) =>
+      Effect.gen(function* () {
+        yield* db.delete(TodoTable).where(eq(TodoTable.session_id, event.data.sessionID)).run().pipe(Effect.orDie)
+        if (!event.data.todos.length) return
+        yield* db
+          .insert(TodoTable)
+          .values(
+            event.data.todos.map((todo, position) => ({
+              session_id: event.data.sessionID,
+              ...todo,
+              position,
+            })),
+          )
+          .run()
+          .pipe(Effect.orDie)
       }),
     )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))

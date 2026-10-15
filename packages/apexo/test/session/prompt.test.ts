@@ -1,8 +1,12 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { ConfigV1 } from "@apexo/core/v1/config/config"
 import { SessionV1 } from "@apexo/core/v1/session"
 import { Database } from "@apexo/core/database/database"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { SessionProjector } from "@apexo/core/session/projector"
+import { SessionGoal } from "@apexo/core/session/goal"
+import { Goal } from "@apexo/schema/goal"
+import { SessionGoalModel } from "@/session/goal-review"
 import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
@@ -53,6 +57,7 @@ import { Format } from "../../src/format"
 import { TestInstance } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
+import { goalReply, goalReplyMatch } from "../lib/goal-reply"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
@@ -169,6 +174,7 @@ const runtimeFlags = RuntimeFlags.layer({ experimentalEventSystem: true })
 const testLLMServerNode = LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })
 
 const promptRoot = LayerNode.group([
+  SessionGoalModel.node,
   SessionPrompt.node,
   Session.node,
   SessionProjector.node,
@@ -210,29 +216,45 @@ const promptRoot = LayerNode.group([
 
 function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
   const replacements = [
+    [LocationServiceMap.node, locationServiceMapLayer],
     [SessionSummary.node, summary],
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
   ] as const
   if (input?.processor === "blocking") {
-    return LayerNode.compile(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
+    return AppNodeBuilderV1.build(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
   }
-  return LayerNode.compile(promptRoot, replacements)
+  return AppNodeBuilderV1.build(promptRoot, replacements)
 }
 
-function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
+function makeHttp(input?: {
+  mcpInstructions?: MCP.ServerInstructions[]
+  processor?: "blocking"
+  runtimeProfile?: "apexo" | "grok-build"
+  backgroundSubagents?: boolean
+}) {
   const root = LayerNode.group([promptRoot, testLLMServerNode])
   const replacements = [
+    [LocationServiceMap.node, locationServiceMapLayer],
     [SessionSummary.node, summary],
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
-    [RuntimeFlags.node, runtimeFlags],
+    [
+      RuntimeFlags.node,
+      input?.runtimeProfile
+        ? RuntimeFlags.layer({
+            experimentalEventSystem: true,
+            runtimeProfile: input.runtimeProfile,
+            experimentalBackgroundSubagents: input.backgroundSubagents ?? false,
+          })
+        : runtimeFlags,
+    ],
   ] as const
   if (input?.processor === "blocking") {
-    return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
+    return AppNodeBuilderV1.build(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
   }
-  return LayerNode.compile(root, replacements)
+  return AppNodeBuilderV1.build(root, replacements)
 }
 
 function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
@@ -240,6 +262,765 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
 }
 
 const it = testEffect(makeHttp())
+const grok = testEffect(makeHttp({ runtimeProfile: "grok-build" }))
+const grokWithChildren = testEffect(makeHttp({ runtimeProfile: "grok-build", backgroundSubagents: true }))
+const goalCandidate = JSON.stringify({
+  decision: "candidate_complete",
+  evidence: "The supplied test evidence covers the objective",
+  next_step: "Independently verify all requirements",
+  blocker_key: "",
+})
+
+grokWithChildren.instance("goal execution waits for its background child before independent verification", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({
+      title: "Goal background child",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Delegate the inspection" }],
+    })
+    const goal = yield* goals.create(chat.id, {
+      id: Goal.ID.create(),
+      objective: "Finish the delegated inspection and verify it",
+    })
+    const released = yield* Deferred.make<void>()
+    const child = (body: Record<string, unknown>) =>
+      Array.isArray(body.messages) &&
+      body.messages.some((message) => message.role === "user" && message.content === "CHILD_ASYNC_WORK")
+    const worker = (body: Record<string, unknown>) => Array.isArray(body.tools) && body.tools.length > 0 && !child(body)
+    yield* goalReplyMatch(
+      server.llm,
+      (hit) => JSON.stringify(hit.body.messages).includes("independent goal planner"),
+      '{"plan":"Delegate, await child, verify"}',
+      { usage: { input: 10, output: 5 } },
+    )
+    yield* server.llm.toolMatch((hit) => worker(hit.body), "task", {
+      description: "Async inspection",
+      prompt: "CHILD_ASYNC_WORK",
+      subagent_type: "general",
+      run_in_background: true,
+    })
+    yield* server.llm.pushMatch(
+      (hit) => child(hit.body),
+      reply()
+        .wait(deferredAsPromise(released))
+        .text("Child inspection evidence")
+        .usage({ input: 100, output: 20 })
+        .stop(),
+    )
+    yield* goalReplyMatch(server.llm, (hit) => worker(hit.body), "Waiting for the child", {
+      usage: { input: 10, output: 5 },
+    })
+    yield* goalReplyMatch(server.llm, (hit) => worker(hit.body), "Child work complete", {
+      usage: { input: 10, output: 5 },
+    })
+    yield* goalReplyMatch(
+      server.llm,
+      (hit) => JSON.stringify(hit.body.messages).includes("hidden completion evaluator"),
+      goalCandidate,
+      { usage: { input: 10, output: 5 } },
+    )
+    for (const _ of [0, 1, 2]) {
+      yield* goalReplyMatch(
+        server.llm,
+        (hit) => JSON.stringify(hit.body.messages).includes("independent skeptical goal verifier"),
+        '{"confidence":"high","blocking":"none","achieved":true,"evidence":"The child finished and its evidence is available","unmet":[]}',
+        { usage: { input: 10, output: 5 } },
+      )
+    }
+    const running = yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id }).pipe(Effect.forkChild)
+    yield* server.llm.wait(4)
+    yield* pollWithTimeout(
+      sessions
+        .messages({ sessionID: chat.id })
+        .pipe(
+          Effect.map((messages) =>
+            messages.some(
+              (message) =>
+                message.info.role === "assistant" &&
+                message.info.time.completed &&
+                message.parts.some((part) => part.type === "text" && part.text === "Waiting for the child"),
+            )
+              ? true
+              : undefined,
+          ),
+        ),
+      "parent did not settle before child",
+    )
+    expect(yield* goals.get(chat.id)).toMatchObject({ phase: "executing", status: "active", verificationRounds: 0 })
+    yield* Deferred.succeed(released, undefined)
+    yield* Fiber.join(running)
+    expect(yield* goals.get(chat.id)).toMatchObject({ status: "complete" })
+    expect((yield* goals.get(chat.id))!.tokensUsed).toBeGreaterThanOrEqual(165)
+    expect(yield* server.llm.misses).toHaveLength(0)
+  }),
+)
+
+grok.instance("goal execution automatically continues after rejection and preserves the original objective", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Goal execution" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Implement A and B" }],
+    })
+    const goal = yield* goals.create(chat.id, {
+      id: Goal.ID.create(),
+      objective: "ORIGINAL_FULL_SCOPE: implement A and B and verify both",
+    })
+    for (const text of [
+      '{"plan":"Implement A and B, verify both"}',
+      "A is ready",
+      goalCandidate,
+      '{"confidence":"high","blocking":"none","achieved":false,"evidence":"Only A was checked","unmet":["Implement and verify B"]}',
+      "B is now ready and both tests pass",
+      goalCandidate,
+      '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
+      '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
+      '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
+    ])
+      yield* goalReply(server.llm, text, { usage: { input: 20, output: 10 } })
+    yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
+    if ((yield* goals.get(chat.id))?.status === "infra_paused") {
+      const children = yield* sessions.children(chat.id)
+      const errors = yield* Effect.forEach(children, (child) =>
+        sessions
+          .messages({ sessionID: child.id })
+          .pipe(
+            Effect.map((messages) =>
+              messages.flatMap((message) =>
+                message.info.role === "assistant" && message.info.error ? [message.info.error] : [],
+              ),
+            ),
+          ),
+      )
+      yield* Effect.logError(
+        "Goal fixture transport errors",
+        errors,
+        "received model requests",
+        yield* server.llm.calls,
+      )
+    }
+    expect(yield* goals.get(chat.id)).toMatchObject({
+      status: "complete",
+      tokensUsed: 270,
+      workerRounds: 2,
+      verificationRounds: 2,
+    })
+    const requests = yield* server.llm.inputs
+    expect(requests).toHaveLength(18)
+    expect(JSON.stringify(requests[1])).toContain("ORIGINAL_FULL_SCOPE")
+    expect(JSON.stringify(requests[7])).toContain("Implement and verify B")
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    expect(messages.filter((item) => item.info.role === "user")).toHaveLength(1)
+    expect(messages.filter((item) => item.info.role === "assistant")).toHaveLength(2)
+  }),
+)
+;(process.platform === "win32" ? grok.instance.skip : grok.instance)(
+  "background notification after a goal ends does not inherit its expired billing attempt",
+  () =>
+    Effect.gen(function* () {
+      const server = yield* useServerConfig(providerCfg)
+      const sessions = yield* Session.Service
+      const prompt = yield* SessionPrompt.Service
+      const database = yield* Database.Service
+      const goals = SessionGoal.make(database.db)
+      const chat = yield* sessions.create({
+        title: "Goal notification ownership",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        model: ref,
+        noReply: true,
+        parts: [{ type: "text", text: "Launch a background operation; its eventual notification is separate work" }],
+      })
+      const goal = yield* goals.create(chat.id, {
+        id: Goal.ID.create(),
+        objective: "Launch the background operation and finish once it has started",
+      })
+      yield* goalReply(server.llm, '{"plan":"Launch the command, verify that it started"}', {
+        usage: { input: 10, output: 5 },
+      })
+      yield* server.llm.tool("run_terminal_cmd", {
+        command: "while [ ! -f release-goal-notification ]; do sleep 0.01; done; printf LATE_GOAL_OUTPUT",
+        description: "Background operation",
+        block_until_ms: 0,
+      })
+      yield* goalReply(server.llm, "The background operation has started", { usage: { input: 10, output: 5 } })
+      yield* goalReply(server.llm, goalCandidate, { usage: { input: 10, output: 5 } })
+      for (const _ of [0, 1, 2]) {
+        yield* goalReply(
+          server.llm,
+          '{"confidence":"high","blocking":"none","achieved":true,"evidence":"The task launch returned its running job ID","unmet":[]}',
+          {
+            usage: { input: 10, output: 5 },
+          },
+        )
+      }
+      yield* goalReply(server.llm, "LATE_NOTIFICATION_OBSERVED", { usage: { input: 100, output: 20 } })
+      yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
+      const completed = yield* goals.get(chat.id)
+      expect(completed?.status).toBe("complete")
+      yield* writeText(path.join(server.dir, "release-goal-notification"), "release")
+      yield* pollWithTimeout(
+        sessions
+          .messages({ sessionID: chat.id })
+          .pipe(
+            Effect.map((messages) =>
+              messages.some((message) =>
+                message.parts.some((part) => part.type === "text" && part.text === "LATE_NOTIFICATION_OBSERVED"),
+              )
+                ? true
+                : undefined,
+            ),
+          ),
+        "late notification did not execute independently",
+        "10 seconds",
+      )
+      expect(yield* goals.get(chat.id)).toEqual(completed)
+      expect(yield* server.llm.inputs).toHaveLength(15)
+    }),
+  30_000,
+)
+
+grok.instance("goal execution stops at a budget boundary without issuing a verification request", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Goal budget" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Do the work" }],
+    })
+    const goal = yield* goals.create(chat.id, {
+      id: Goal.ID.create(),
+      objective: "Complete and verify all work",
+      tokenBudget: 100,
+    })
+    yield* goalReply(server.llm, '{"plan":"Implement and verify"}', { usage: { input: 20, output: 10 } })
+    yield* goalReply(server.llm, "Work completed", { usage: { input: 75, output: 5 } })
+    yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
+    expect(yield* server.llm.calls).toBe(3)
+    expect(yield* goals.get(chat.id)).toMatchObject({
+      status: "budget_limited",
+      tokensUsed: 110,
+      verificationRounds: 0,
+    })
+  }),
+)
+
+grok.instance("goal execution cancellation persists pause and an explicit run cannot silently resume it", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Goal pause" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Do the work" }],
+    })
+    const goal = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Complete and verify work" })
+    const target = { sessionID: chat.id, goalID: goal.id }
+    yield* goalReply(server.llm, '{"plan":"Implement and verify"}', { usage: { input: 20, output: 10 } })
+    yield* server.llm.hang
+    const running = yield* prompt.runGoal(target).pipe(Effect.forkChild)
+    yield* server.llm.wait(3)
+    const duplicate = yield* prompt.runGoal(target).pipe(Effect.result)
+    expect(duplicate._tag).toBe("Failure")
+    yield* prompt.cancel(chat.id)
+    yield* Fiber.join(running)
+    expect(yield* goals.get(chat.id)).toMatchObject({ status: "user_paused", tokensUsed: 30 })
+    yield* prompt.runGoal(target)
+    expect(yield* server.llm.calls).toBe(3)
+  }),
+)
+
+grok.instance("ordinary prompts do not activate a persisted goal", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "No implicit goal execution" })
+    yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Do not run until explicitly started" })
+    yield* goalReply(server.llm, "Answer to the ordinary question")
+    yield* prompt.prompt({ sessionID: chat.id, model: ref, parts: [{ type: "text", text: "An ordinary question" }] })
+    expect(yield* server.llm.calls).toBe(1)
+    expect(yield* goals.get(chat.id)).toMatchObject({ phase: "idle", workerRounds: 0, tokensUsed: 0 })
+  }),
+)
+
+grok.instance("goal execution requires three distinct blocked rounds and update_goal cannot finish it directly", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({
+      title: "Goal blocker",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Do all the work" }],
+    })
+    const goal = yield* goals.create(chat.id, {
+      id: Goal.ID.create(),
+      objective: "Implement and verify every requirement",
+    })
+    yield* goalReply(server.llm, '{"plan":"Implement, run tests, verify"}', { usage: { input: 10, output: 5 } })
+    for (const _ of [1, 2, 3]) {
+      yield* server.llm.tool("update_goal", { blocked_reason: "Required service is unavailable" })
+      yield* goalReply(server.llm, "The required service remains unavailable")
+      yield* goalReply(
+        server.llm,
+        JSON.stringify({
+          decision: "blocked",
+          evidence: "The service rejected the actual request",
+          next_step: "Restore the required service",
+          blocker_key: "required_service",
+        }),
+        { usage: { input: 10, output: 5 } },
+      )
+    }
+    yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
+    expect(yield* server.llm.calls).toBe(11)
+    expect(yield* goals.get(chat.id)).toMatchObject({ status: "blocked", workerRounds: 3, verificationRounds: 0 })
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const calls = messages.flatMap((message) =>
+      message.parts.filter((part) => part.type === "tool" && part.tool === "update_goal"),
+    )
+    expect(calls).toHaveLength(3)
+    expect(calls.every((part) => part.type === "tool" && part.state.status === "completed")).toBe(true)
+  }),
+)
+
+grok.instance("goal execution includes actual child model usage in the parent budget", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({
+      title: "Goal child usage",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Delegate the inspection, then finish" }],
+    })
+    const goal = yield* goals.create(chat.id, {
+      id: Goal.ID.create(),
+      objective: "Inspect with a child and verify the answer",
+    })
+    yield* goalReply(server.llm, '{"plan":"Delegate, inspect, verify"}', { usage: { input: 10, output: 5 } })
+    yield* server.llm.tool("task", {
+      description: "Inspect fixture",
+      prompt: "CHILD_GOAL_INSPECT",
+      subagent_type: "general",
+      run_in_background: false,
+    })
+    yield* goalReply(server.llm, "Child inspection evidence", { usage: { input: 200, output: 50 } })
+    yield* goalReply(server.llm, "Inspection done", { usage: { input: 20, output: 10 } })
+    yield* goalReply(server.llm, goalCandidate, { usage: { input: 10, output: 5 } })
+    for (const _ of [0, 1, 2]) {
+      yield* goalReply(
+        server.llm,
+        '{"confidence":"high","blocking":"none","achieved":true,"evidence":"Child inspection and final output satisfy the goal","unmet":[]}',
+        { usage: { input: 30, output: 10 } },
+      )
+    }
+    yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
+    const parentMessages = yield* sessions.messages({ sessionID: chat.id })
+    const delegated = parentMessages
+      .flatMap((message) => message.parts)
+      .find((part) => part.type === "tool" && part.tool === "task")
+    expect(delegated && delegated.type === "tool" ? delegated.state : undefined).toMatchObject({ status: "completed" })
+    expect(yield* server.llm.calls).toBe(15)
+    expect(yield* goals.get(chat.id)).toMatchObject({ status: "complete", tokensUsed: 430 })
+    expect(yield* sessions.children(chat.id)).toHaveLength(5)
+  }),
+)
+
+grok.instance(
+  "goal model planning and rejection use independent HTTP requests without changing conversation history",
+  () =>
+    Effect.gen(function* () {
+      const server = yield* useServerConfig(providerCfg)
+      const sessions = yield* Session.Service
+      const prompt = yield* SessionPrompt.Service
+      const models = yield* SessionGoalModel.Service
+      const database = yield* Database.Service
+      const goals = SessionGoal.make(database.db)
+      const chat = yield* sessions.create({ title: "Goal model review" })
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        model: ref,
+        noReply: true,
+        parts: [{ type: "text", text: "WORKER_HISTORY_MARKER" }],
+      })
+      const info = yield* goals.create(chat.id, {
+        id: Goal.ID.create(),
+        objective: "Implement feature A and verify feature B",
+      })
+      const target = { sessionID: chat.id, goalID: info.id }
+      const history = yield* sessions.messages({ sessionID: chat.id })
+      yield* goalReply(server.llm, '{"plan":"1. Implement A. 2. Verify B with the required tests."}', {
+        usage: { input: 20, output: 10 },
+      })
+      const planned = yield* models.run({ target, prompt, kind: "planning", evidence: "Repository evidence" })
+      expect(planned.info?.plan).toContain("Verify B")
+      expect(planned.info?.tokensUsed).toBe(30)
+      const worker = yield* goals.begin(target, "executing")
+      yield* goals.update(worker, { completed: true })
+      yield* goals.finish(worker, {})
+      yield* goalReply(
+        server.llm,
+        '{"confidence":"high","blocking":"none","achieved":false,"evidence":"A was checked but B has no test evidence","unmet":["Verify B"]}',
+        { usage: { input: 40, output: 20 } },
+      )
+      const verified = yield* models.run({
+        target,
+        prompt,
+        kind: "verifying",
+        evidence: "A passed; worker says all done",
+      })
+      expect(verified.info?.status).toBe("active")
+      expect(verified.info?.unmet).toEqual(["Verify B"])
+      expect(verified.info?.tokensUsed).toBe(90)
+      expect(yield* sessions.messages({ sessionID: chat.id })).toEqual(history)
+      const inputs = yield* server.llm.inputs
+      expect(inputs).toHaveLength(5)
+      for (const input of inputs) {
+        expect(JSON.stringify(input)).toContain(info.objective)
+        expect(JSON.stringify(input)).not.toContain("WORKER_HISTORY_MARKER")
+        expect(input.tools).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ function: expect.objectContaining({ name: "read_file" }) }),
+          ]),
+        )
+        expect(input.tools).toEqual(
+          expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: "write" }) })]),
+        )
+      }
+      expect(JSON.stringify(inputs[2])).toContain("independent skeptical goal verifier")
+    }),
+)
+
+grok.instance("goal model HTTP failures pause without retrying or certifying completion", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const models = yield* SessionGoalModel.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Goal unavailable" })
+    yield* prompt.prompt({ sessionID: chat.id, model: ref, noReply: true, parts: [{ type: "text", text: "Work" }] })
+    const info = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Complete the full objective" })
+    yield* server.llm.error(503, { error: { message: "Provider unavailable" } })
+    const result = yield* models.run({
+      prompt,
+      target: { sessionID: chat.id, goalID: info.id },
+      kind: "planning",
+      evidence: "Current code",
+    })
+    expect(result.info?.status).toBe("infra_paused")
+    expect(yield* server.llm.calls).toBe(1)
+    expect(result.info?.history.some((item) => item.event === "completed")).toBe(false)
+  }),
+)
+
+grok.instance("goal model abort closes the HTTP request and pauses the owned attempt", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const models = yield* SessionGoalModel.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Goal cancel" })
+    yield* prompt.prompt({ sessionID: chat.id, model: ref, noReply: true, parts: [{ type: "text", text: "Work" }] })
+    const info = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Complete every requirement" })
+    yield* server.llm.hang
+    const running = yield* models
+      .run({ prompt, target: { sessionID: chat.id, goalID: info.id }, kind: "planning", evidence: "Current code" })
+      .pipe(Effect.forkChild)
+    yield* server.llm.wait(1)
+    yield* Fiber.interrupt(running)
+    expect((yield* goals.get(chat.id))?.status).toBe("user_paused")
+    expect(yield* sessions.messages({ sessionID: chat.id })).toHaveLength(1)
+  }),
+)
+grok.instance("goal roles read workspace files, bill every turn once, and resume only the first skeptic", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const models = yield* SessionGoalModel.Service
+    const database = yield* Database.Service
+    const fs = yield* FSUtil.Service
+    const dir = yield* TestInstance
+    const file = path.join(dir.directory, "evidence.txt")
+    yield* fs.writeWithDirs(file, "REAL_WORKSPACE_EVIDENCE_FIRST")
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Goal workspace review" })
+    yield* prompt.prompt({ sessionID: chat.id, model: ref, noReply: true, parts: [{ type: "text", text: "Work" }] })
+    const info = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Check the current evidence file" })
+    const target = { sessionID: chat.id, goalID: info.id }
+    yield* server.llm.push(reply().tool("read_file", { target_file: file }).usage({ input: 10, output: 5 }))
+    yield* goalReply(server.llm, '{"plan":"Read current evidence, fix the gap, and verify"}', {
+      usage: { input: 20, output: 10 },
+    })
+    const planned = yield* models.run({ target, prompt, kind: "planning", evidence: "Inspect evidence.txt" })
+    expect(planned.info?.plannerSessionID).toBeDefined()
+    expect(planned.info?.tokensUsed).toBe(45)
+    expect(JSON.stringify((yield* server.llm.inputs)[1])).toContain("REAL_WORKSPACE_EVIDENCE_FIRST")
+    const work = yield* goals.begin(target, "executing")
+    yield* goals.finish(work, { verify: true })
+    yield* server.llm.push(reply().tool("read_file", { target_file: file }).usage({ input: 10, output: 5 }))
+    yield* goalReply(
+      server.llm,
+      JSON.stringify({
+        achieved: false,
+        confidence: "high",
+        blocking: "none",
+        evidence: "File still has first evidence",
+        unmet: ["Replace first evidence"],
+      }),
+      { usage: { input: 20, output: 10 } },
+    )
+    const rejected = yield* models.run({ target, prompt, kind: "verifying", evidence: "Worker claims done" })
+    const first = rejected.info?.verification?.results[0]
+    expect(first?.sessionID).toBeDefined()
+    expect(first?.tokensUsed).toBe(45)
+    expect(rejected.info?.status).toBe("active")
+    yield* fs.writeWithDirs(file, "REAL_WORKSPACE_EVIDENCE_FIXED")
+    const next = yield* goals.begin(target, "executing")
+    yield* goals.finish(next, { verify: true })
+    yield* server.llm.push(reply().tool("read_file", { target_file: file }).usage({ input: 10, output: 5 }))
+    for (const _ of [0, 1, 2])
+      yield* goalReply(
+        server.llm,
+        JSON.stringify({
+          achieved: true,
+          confidence: "high",
+          blocking: "none",
+          evidence: "Current file is fixed",
+          unmet: [],
+        }),
+        { usage: { input: 20, output: 10 } },
+      )
+    const verified = yield* models.run({ target, prompt, kind: "verifying", evidence: "Check the changed file again" })
+    expect(verified.info?.status).toBe("complete")
+    expect(verified.info?.tokensUsed).toBe(195)
+    expect(verified.info?.verification?.results.map((item) => item.tokensUsed)).toEqual([45, 30, 30])
+    expect(verified.info?.verification?.results[0].sessionID).toBe(first?.sessionID)
+    expect(new Set(verified.info?.verification?.results.map((item) => item.sessionID)).size).toBe(3)
+    const inputs = yield* server.llm.inputs
+    expect(JSON.stringify(inputs[7])).toContain("REAL_WORKSPACE_EVIDENCE_FIRST")
+    expect(JSON.stringify(inputs[8])).toContain("REAL_WORKSPACE_EVIDENCE_FIXED")
+    expect(JSON.stringify(inputs.slice(11))).not.toContain("REAL_WORKSPACE_EVIDENCE_FIRST")
+    expect(yield* sessions.messages({ sessionID: chat.id })).toHaveLength(1)
+    const history = yield* sessions.messages({ sessionID: first!.sessionID! })
+    expect(history.filter((message) => message.info.role === "user")).toHaveLength(2)
+    expect(history.flatMap((message) => message.parts).filter((part) => part.type === "tool")).toHaveLength(6)
+    expect(yield* server.llm.misses).toHaveLength(0)
+  }),
+)
+
+grok.instance("goal role pairs select real models and agents without widening parent or role permissions", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      provider: {
+        test: {
+          ...providerCfg(url).provider.test,
+          models: Object.fromEntries(
+            ["test-model", "planner-model", "skeptic-model"].map((id) => [
+              id,
+              { ...cfg.provider.test.models["test-model"], id },
+            ]),
+          ),
+        },
+      },
+      agent: {
+        build: { permission: { bash: "deny" } },
+        inspector: { prompt: "ROLE_INSPECTOR_MARKER", permission: { webfetch: "deny" } },
+      },
+      goal: {
+        planner_model: { model: "test/planner-model", agent_type: "inspector" },
+        skeptic_models: [
+          { model: "skeptic-model", agent_type: "inspector" },
+          { model: "test/test-model", agent_type: "build" },
+        ],
+      },
+    }))
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const models = yield* SessionGoalModel.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Role model routing" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Inspect" }],
+    })
+    const info = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Check every requirement" })
+    const target = { sessionID: chat.id, goalID: info.id }
+    yield* goalReply(server.llm, '{"plan":"Inspect then verify"}', { usage: { input: 10, output: 5 } })
+    const planned = yield* models.run({ target, prompt, kind: "planning", evidence: "Current files" })
+    expect(planned.info?.plannerExecution).toMatchObject({
+      model: { providerID: "test", id: "planner-model" },
+      agent: "inspector",
+    })
+    const work = yield* goals.begin(target, "executing")
+    yield* goals.finish(work, { verify: true })
+    for (const _ of [0, 1, 2])
+      yield* goalReply(
+        server.llm,
+        JSON.stringify({ achieved: true, confidence: "high", blocking: "none", evidence: "Checked", unmet: [] }),
+        { usage: { input: 10, output: 5 } },
+      )
+    const verified = yield* models.run({ target, prompt, kind: "verifying", evidence: "Work complete" })
+    expect(verified.info?.status).toBe("complete")
+    expect(verified.info?.tokensUsed).toBe(60)
+    expect(verified.info?.verification?.results.map((item) => String(item.execution?.model.id))).toEqual([
+      "skeptic-model",
+      "test-model",
+      "skeptic-model",
+    ])
+    const requests = yield* server.llm.inputs
+    expect(requests.map((item) => item.model).toSorted()).toEqual([
+      "planner-model",
+      "planner-model",
+      "skeptic-model",
+      "skeptic-model",
+      "skeptic-model",
+      "skeptic-model",
+      "skeptic-model",
+      "skeptic-model",
+      "test-model",
+      "test-model",
+      "test-model",
+    ])
+    expect(JSON.stringify(requests[0])).toContain("ROLE_INSPECTOR_MARKER")
+    expect(JSON.stringify(requests[0]?.tools)).not.toContain('"run_terminal_cmd"')
+    expect(JSON.stringify(requests[0]?.tools)).not.toContain('"web_fetch"')
+    expect(JSON.stringify(requests[0]?.tools)).toContain('"read_file"')
+    expect(yield* sessions.messages({ sessionID: chat.id })).toHaveLength(1)
+  }),
+)
+
+grok.instance("unknown Goal role pairs fall back atomically and record the actual selection", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      goal: { planner_model: { model: "test/missing", agent_type: "build" } },
+    }))
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const models = yield* SessionGoalModel.Service
+    const database = yield* Database.Service
+    const goals = SessionGoal.make(database.db)
+    const chat = yield* sessions.create({ title: "Unavailable role pair" })
+    yield* prompt.prompt({ sessionID: chat.id, model: ref, noReply: true, parts: [{ type: "text", text: "Inspect" }] })
+    const info = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Check requirements" })
+    yield* goalReply(server.llm, '{"plan":"Inspect requirements"}', { usage: { input: 10, output: 5 } })
+    const result = yield* models.run({
+      target: { sessionID: chat.id, goalID: info.id },
+      prompt,
+      kind: "planning",
+      evidence: "Current files",
+    })
+    expect(result.info?.plannerExecution).toMatchObject({
+      model: { id: ref.modelID, providerID: ref.providerID },
+      agent: "build",
+      fallback: "model_unavailable",
+      requested: { model: "test/missing", agent_type: "build" },
+    })
+    expect((yield* server.llm.inputs).map((item) => item.model)).toEqual(["test-model", "test-model"])
+    expect(result.info?.tokensUsed).toBe(15)
+  }),
+)
+
+grok.instance("goal workspace review respects inherited path denials", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const models = yield* SessionGoalModel.Service
+    const database = yield* Database.Service
+    const fs = yield* FSUtil.Service
+    const dir = yield* TestInstance
+    const file = path.join(dir.directory, "restricted.txt")
+    yield* fs.writeWithDirs(file, "MUST_NOT_REACH_THE_REVIEWER")
+    const chat = yield* sessions.create({
+      title: "Goal permissions",
+      permission: [
+        { permission: "*", pattern: "*", action: "allow" },
+        { permission: "read", pattern: "*restricted.txt", action: "deny" },
+      ],
+    })
+    yield* prompt.prompt({ sessionID: chat.id, model: ref, noReply: true, parts: [{ type: "text", text: "Work" }] })
+    const goals = SessionGoal.make(database.db)
+    const info = yield* goals.create(chat.id, { id: Goal.ID.create(), objective: "Inspect restricted evidence" })
+    yield* server.llm.push(reply().tool("read_file", { target_file: file }).usage({ input: 10, output: 5 }))
+    const result = yield* models.run({
+      target: { sessionID: chat.id, goalID: info.id },
+      prompt,
+      kind: "planning",
+      evidence: "Try the file under existing permissions",
+    })
+    expect(result.info?.status).toBe("infra_paused")
+    expect(result.info?.tokensUsed).toBe(15)
+    expect(JSON.stringify(yield* server.llm.inputs)).not.toContain("MUST_NOT_REACH_THE_REVIEWER")
+    const children = yield* sessions.children(chat.id)
+    expect(children).toHaveLength(1)
+    const messages = yield* sessions.messages({ sessionID: children[0].id })
+    expect(
+      messages
+        .flatMap((message) => message.parts)
+        .some((part) => part.type === "tool" && part.state.status === "error"),
+    ).toBe(true)
+  }),
+)
+
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const withMcpInstructions = testEffect(
@@ -255,6 +1036,251 @@ const withMcpInstructions = testEffect(
 )
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
+
+;(process.platform === "win32" ? grok.instance.skip : grok.instance)(
+  "monitor stderr events wake an idle parent while the command is still running",
+  () =>
+    Effect.gen(function* () {
+      const server = yield* useServerConfig(providerCfg)
+      const sessions = yield* Session.Service
+      const prompt = yield* SessionPrompt.Service
+      const jobs = yield* BackgroundJob.Service
+      const chat = yield* sessions.create({
+        title: "Monitor events",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* server.llm.tool("monitor", {
+        command:
+          "(printf PARTIAL; while [ ! -f release-monitor ]; do sleep 0.01; done; printf ' EVENT\\n'; while [ ! -f release-suppressed ]; do sleep 0.01; done; printf 'SUPPRESSED_EVENT\\n'; while [ ! -f release-resumed ]; do sleep 0.01; done; printf 'RESUMED_EVENT\\n'; while [ ! -f finish-monitor ]; do sleep 0.01; done) >&2",
+        description: "watch event",
+        persistent: true,
+      })
+      yield* server.llm.text("Monitor started.")
+      yield* server.llm.text("MONITOR_OBSERVED")
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "Watch for the event." }],
+      })
+      expect(yield* server.llm.inputs).toHaveLength(2)
+      yield* writeText(path.join(server.dir, "release-monitor"), "release")
+      const history = yield* pollWithTimeout(
+        sessions
+          .messages({ sessionID: chat.id })
+          .pipe(
+            Effect.map((messages) =>
+              messages.some(
+                (message) =>
+                  message.info.role === "assistant" &&
+                  message.info.time.completed &&
+                  message.parts.some((part) => part.type === "text" && part.text === "MONITOR_OBSERVED"),
+              )
+                ? messages
+                : undefined,
+            ),
+          ),
+        "monitor did not notify the idle parent",
+        "10 seconds",
+      )
+      const notifications = history
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.synthetic && part.text.startsWith("Monitor event:"))
+      expect(notifications).toHaveLength(1)
+      expect(JSON.stringify(notifications)).toContain("PARTIAL EVENT")
+      const monitor = (yield* jobs.list()).find((job) => job.type === "monitor")
+      expect(monitor?.status).toBe("running")
+      expect(monitor?.metadata?.lineCount).toBe(1)
+      yield* prompt.cancel(chat.id)
+      yield* writeText(path.join(server.dir, "release-suppressed"), "release")
+      yield* pollWithTimeout(
+        jobs.get(monitor!.id).pipe(Effect.map((job) => (job?.metadata?.eventBatches === 2 ? true : undefined))),
+        "monitor did not process the suppressed event",
+        "10 seconds",
+      )
+      expect(yield* server.llm.inputs).toHaveLength(3)
+      yield* server.llm.text("User resumed watching.")
+      yield* prompt.prompt({ sessionID: chat.id, model: ref, parts: [{ type: "text", text: "Continue watching." }] })
+      yield* server.llm.text("MONITOR_RESUMED")
+      yield* writeText(path.join(server.dir, "release-resumed"), "release")
+      const resumed = yield* pollWithTimeout(
+        sessions
+          .messages({ sessionID: chat.id })
+          .pipe(
+            Effect.map((messages) =>
+              messages.some(
+                (message) =>
+                  message.info.role === "assistant" &&
+                  message.info.time.completed &&
+                  message.parts.some((part) => part.type === "text" && part.text === "MONITOR_RESUMED"),
+              )
+                ? messages
+                : undefined,
+            ),
+          ),
+        "user input did not re-enable monitor wakeups",
+        "10 seconds",
+      )
+      expect(JSON.stringify(resumed)).toContain("RESUMED_EVENT")
+      const received = resumed
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.synthetic)
+      expect(JSON.stringify(received)).not.toContain("SUPPRESSED_EVENT")
+      yield* jobs.cancel(monitor!.id)
+      expect((yield* jobs.get(monitor!.id))?.status).toBe("cancelled")
+      expect(yield* server.llm.inputs).toHaveLength(5)
+    }),
+  30_000,
+)
+;[
+  { blockUntil: 0, exit: 0 },
+  { blockUntil: 1, exit: 0 },
+  { blockUntil: 0, exit: 7 },
+].forEach((scenario) => {
+  const run = process.platform === "win32" ? grok.instance.skip : grok.instance
+  run(
+    `background shell wakes an idle parent after block_until_ms=${scenario.blockUntil}, exit=${scenario.exit}`,
+    () =>
+      Effect.gen(function* () {
+        const server = yield* useServerConfig(providerCfg)
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const status = yield* SessionStatus.Service
+        const chat = yield* sessions.create({
+          title: "Background completion",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        yield* server.llm.tool("run_terminal_cmd", {
+          command: `while [ ! -f release-background ]; do sleep 0.01; done; printf BACKGROUND_RESULT; exit ${scenario.exit}`,
+          description: "wait for release",
+          block_until_ms: scenario.blockUntil,
+        })
+        yield* server.llm.text("Waiting for the background command.")
+        yield* server.llm.text("BACKGROUND_OBSERVED")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "Start the background command and report its completion." }],
+        })
+        expect((yield* status.get(chat.id)).type).toBe("idle")
+        expect(yield* server.llm.inputs).toHaveLength(2)
+        yield* writeText(path.join(server.dir, "release-background"), "release")
+        const history = yield* pollWithTimeout(
+          sessions
+            .messages({ sessionID: chat.id })
+            .pipe(
+              Effect.map((messages) =>
+                messages.some((message) =>
+                  message.parts.some((part) => part.type === "text" && part.text === "BACKGROUND_OBSERVED"),
+                )
+                  ? messages
+                  : undefined,
+              ),
+            ),
+          "background command did not wake the idle parent",
+          "10 seconds",
+        )
+        const notifications = history
+          .flatMap((message) => message.parts)
+          .filter(
+            (part) =>
+              part.type === "text" &&
+              part.synthetic &&
+              part.text.startsWith(`Background command ${scenario.exit ? "failed" : "completed"}:`),
+          )
+        expect(notifications).toHaveLength(1)
+        expect(JSON.stringify(notifications)).toContain("BACKGROUND_RESULT")
+        expect(JSON.stringify((yield* server.llm.inputs).at(-1))).toContain("BACKGROUND_RESULT")
+        expect(yield* server.llm.inputs).toHaveLength(3)
+      }),
+    30_000,
+  )
+})
+;["explicit", "steer"].forEach((mode) => {
+  const run = process.platform === "win32" ? grok.instance.skip : grok.instance
+  run(
+    `foreground shell promotion by ${mode} preserves the command and wakes the idle parent once`,
+    () =>
+      Effect.gen(function* () {
+        const server = yield* useServerConfig(providerCfg)
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const jobs = yield* BackgroundJob.Service
+        const status = yield* SessionStatus.Service
+        const chat = yield* sessions.create({
+          title: "Foreground promotion",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        yield* server.llm.tool("run_terminal_cmd", {
+          command:
+            "printf 'PROMOTED_STARTED\\n'; while [ ! -f release-promoted ]; do sleep 0.01; done; printf PROMOTED_RESULT",
+          description: "foreground command",
+        })
+        yield* server.llm.text("Command is now in the background.")
+        yield* server.llm.text("PROMOTED_OBSERVED")
+        const first = yield* prompt
+          .prompt({
+            sessionID: chat.id,
+            agent: "build",
+            model: ref,
+            parts: [{ type: "text", text: "Run a foreground command." }],
+          })
+          .pipe(Effect.forkChild)
+        const job = yield* pollWithTimeout(
+          jobs
+            .list()
+            .pipe(
+              Effect.map((jobs) =>
+                jobs.find(
+                  (job) => job.metadata?.ownerSessionId === chat.id && job.output?.includes("PROMOTED_STARTED"),
+                ),
+              ),
+            ),
+          "foreground command did not start",
+        )
+        expect(job.metadata?.background).toBe(false)
+        if (mode === "explicit") expect(yield* BackgroundJob.promoteSession(jobs, chat.id, false)).toBe(true)
+        if (mode === "steer")
+          yield* prompt.prompt({
+            sessionID: chat.id,
+            agent: "build",
+            model: ref,
+            parts: [{ type: "text", text: "Continue with another task while that command finishes." }],
+          })
+        yield* Fiber.join(first)
+        expect((yield* status.get(chat.id)).type).toBe("idle")
+        expect((yield* jobs.get(job.id))?.status).toBe("running")
+        expect((yield* jobs.get(job.id))?.metadata?.background).toBe(true)
+        expect(yield* server.llm.inputs).toHaveLength(2)
+        yield* writeText(path.join(server.dir, "release-promoted"), "release")
+        const messages = yield* pollWithTimeout(
+          sessions
+            .messages({ sessionID: chat.id })
+            .pipe(
+              Effect.map((messages) =>
+                messages.some((message) =>
+                  message.parts.some((part) => part.type === "text" && part.text === "PROMOTED_OBSERVED"),
+                )
+                  ? messages
+                  : undefined,
+              ),
+            ),
+          "promoted command did not deliver its result",
+          "10 seconds",
+        )
+        const notifications = messages
+          .flatMap((message) => message.parts)
+          .filter(
+            (part) => part.type === "text" && part.synthetic && part.text.startsWith("Background command completed:"),
+          )
+        expect(notifications).toHaveLength(1)
+        expect(JSON.stringify(notifications)).toContain("PROMOTED_RESULT")
+        expect(yield* server.llm.inputs).toHaveLength(3)
+      }),
+    30_000,
+  )
+})
 
 // Config that registers a custom "test" provider with a "test-model" model
 // so provider model lookup succeeds inside the loop.

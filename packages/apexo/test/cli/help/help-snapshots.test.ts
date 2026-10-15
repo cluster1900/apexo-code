@@ -60,6 +60,9 @@ const TOP_LEVEL = [
   "pr",
   "session",
   "plugin",
+  "plugins",
+  "memory",
+  "goal",
   "db",
 ] as const
 
@@ -67,6 +70,7 @@ const TOP_LEVEL = [
 // distinct argv shape, not every leaf. Add new entries when a subcommand
 // gains user-visible flags that we want to lock in.
 const SUBCOMMANDS = [
+  ["memory", "status"],
   ["mcp", "list"],
   ["mcp", "add"],
   ["mcp", "auth"],
@@ -79,6 +83,9 @@ const SUBCOMMANDS = [
   ["session", "list"],
   ["session", "delete"],
   ["db", "path"],
+  ["plugins", "list"],
+  ["plugins", "install"],
+  ["plugins", "add-source"],
 ] as const
 
 // Fixed wrap width so a developer's terminal doesn't affect snapshots.
@@ -98,6 +105,7 @@ describe("apexo CLI help-text snapshots", () => {
         expect(topLevel.exitCode).toBe(0)
         expect(topLevel.stderr.endsWith("\n")).toBe(true)
         expect(topLevel.stderr).toContain("--mini")
+        expect(topLevel.stderr).toContain("--session-protocol")
         expect(topLevel.stderr).not.toContain("--thinking")
         expect(topLevel.stderr).not.toContain("--variant")
         expect(topLevel.stderr).not.toContain("--demo")

@@ -16,21 +16,33 @@ import { ConfigAttachments } from "./config/attachments"
 import { ConfigCompaction } from "./config/compaction"
 import { ConfigCommand } from "./config/command"
 import { ConfigExperimental } from "./config/experimental"
+import { ConfigTask } from "./config/task"
+import { ConfigGoal } from "./config/goal"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigLSP } from "./config/lsp"
 import { ConfigMCP } from "./config/mcp"
+import { ConfigMedia } from "./config/media"
+import { ConfigMemory } from "./config/memory"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
+import { ConfigToolset } from "./config/toolset"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 import { ConfigV1 } from "./v1/config/config"
 import { ConfigMigrateV1 } from "./v1/config/migrate"
+import { PluginBundleState } from "./plugin-bundle-state"
 
 export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
   }),
+  goal: ConfigGoal.Info.pipe(Schema.optional),
+  task: ConfigTask.Info.pipe(Schema.optional),
+  toolset: ConfigToolset.Info.pipe(Schema.optional),
+  media: ConfigMedia.Info.pipe(Schema.optional),
+  memory: ConfigMemory.Info.pipe(Schema.optional),
+  memory_v2: ConfigMemory.V2.pipe(Schema.optional),
   shell: Schema.String.pipe(Schema.optional).annotate({
     description: "Default shell to use for terminal and shell tool execution",
   }),
@@ -96,6 +108,10 @@ export class Document extends Schema.Class<Document>("Config.Document")({
   type: Schema.Literal("document"),
   path: Schema.String.pipe(Schema.optional),
   info: Info,
+  // An invalid explicit media selection must block fallback without reviving any
+  // other settings from the rejected document. This is not public Config.Info.
+  mediaInvalid: Schema.optional(Schema.Boolean),
+  taskInvalid: Schema.optional(Schema.Boolean),
 }) {}
 
 export class Directory extends Schema.Class<Directory>("Config.Directory")({
@@ -125,6 +141,7 @@ const layer = Layer.effect(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const policy = yield* Policy.Service
+    const bundles = yield* PluginBundleState.Service
     // Legacy config names (legacy-compat.ts) first, then apexo.json(c) so Apexo files win within a directory.
     const names = [`${LEGACY_CONFIG_NAME}.json`, `${LEGACY_CONFIG_NAME}.jsonc`, "apexo.json", "apexo.jsonc"]
     const configDirs = [".apexo", LEGACY_CONFIG_DIR]
@@ -145,7 +162,17 @@ const layer = Layer.effect(
           ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
           : decodeInfo(input),
       )
-      if (!info) return
+      if (!info) {
+        if (input && typeof input === "object" && (Object.hasOwn(input, "media") || Object.hasOwn(input, "task")))
+          return new Document({
+            type: "document",
+            path: filepath,
+            info: new Info({}),
+            mediaInvalid: Object.hasOwn(input, "media") || undefined,
+            taskInvalid: Object.hasOwn(input, "task") || undefined,
+          })
+        return
+      }
       return new Document({ type: "document", path: filepath, info })
     })
 
@@ -200,16 +227,26 @@ const layer = Layer.effect(
 
     return Service.of({
       entries: Effect.fn("Config.entries")(function* () {
-        return configs
+        const bundle = yield* bundles.get
+        return [
+          new Document({
+            type: "document",
+            info: Schema.decodeUnknownSync(Info)(ConfigMigrateV1.migrate(bundle.config)),
+          }),
+          ...configs,
+        ]
       }),
     })
   }),
 )
 
-export const locationLayer = layer.pipe(Layer.provideMerge(Policy.locationLayer))
+export const locationLayer = layer.pipe(
+  Layer.provideMerge(Policy.locationLayer),
+  Layer.provide(PluginBundleState.layer),
+)
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [FSUtil.node, Global.node, Location.node, Policy.node],
+  deps: [FSUtil.node, Global.node, Location.node, Policy.node, PluginBundleState.node],
 })

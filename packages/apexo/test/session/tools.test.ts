@@ -70,6 +70,7 @@ const layer = Layer.mergeAll(
   Layer.succeed(
     ToolRegistry.Service,
     ToolRegistry.Service.of({
+      scheduler: () => Effect.die("unused"),
       ids: () => Effect.succeed(["timing"]),
       all: () => Effect.succeed([]),
       named: () => Effect.die("unused"),

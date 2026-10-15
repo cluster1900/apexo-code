@@ -1,0 +1,27 @@
+# Native Memory operation controls
+
+The existing Memory browser now opens a native operation view in App, Desktop, mini and fullscreen terminals. `/flush` and `/dream` select that view without starting restored work. Compatibility Memory remains on its existing adapter and work dialog.
+
+Opening the view reads durable receipts and polls without overlapping requests. Capture is observed from actual completed Session turns; there is no invented manual capture operation. Extract and Dream are explicit actions. Receipt state and ownership remain distinct, and unverified ownership is never described as a dead worker. Unknown transport outcomes retain the original command ID for an explicit repeat. Durable Retry sends the original receipt ID to the server, which derives the original request; the client never reconstructs a migration or recovery request from a new preview.
+
+Migration and recovery require an explicit preview. Clear additionally requires destructive confirmation. The retained preview object is sent unchanged. A changed-state response clears that review and requires a new explicit preview and confirmation. Scope and backend availability come from the server; a V2-pinned Session's unsupported legacy relocation remains an actionable error with no legacy fallback. Carryover uses the fixed legacy source and does not silently change the pinned backend.
+
+Dialog close aborts observation, not durable work. Session or server navigation invalidates the owner, closes the old dialog and fences delayed reads and previews. Mutations advance an observation version so older polling results cannot overwrite the new receipt. Cancel uses the canonical joined-cancel endpoint, and a committed result is not described as undone cancellation. App supports complete en/zh/zht operation phrases; terminal text retains its existing English boundary.
+
+## Verification boundaries
+
+The focused generated-client suite exercises original IDs and preview objects, native-only routes, exact retries, owner and per-call cancellation, and error propagation. Real browser and native Electron-window fixtures exercise capture receipts, passive restore, Dream publication, server-derived retry without replay, zero-processed flush, unsupported migration, reviewed carryover, unavailable discard, held-provider cancellation, changed-preview refusal, explicit clear and owner navigation. The terminal fixture uses real mini/fullscreen attach and keyboard actions, including bounded detail scrolling and irreversible confirmation.
+
+Private Electron validation combines a freshly built renderer with the preserved, byte-identical compatible main/preload artifacts. This is native-window interaction evidence, not a full-product rebuild. Root integration must rebuild and verify the final shared product. Exact artifact hashes, command outcomes, provider counts and isolated evidence locations are retained in the review handoff rather than embedded as ephemeral paths here.
+
+Installed Grok comparison is recorded separately in [the native Memory reference audit](native-memory-reference-audit.md): eight observed checks and five classified provider requests, plus actual isolated clear of two topics with no provider calls. That reference establishes capture, flush, Dream and scope-clear behavior. It does not establish an equivalent operation receipt panel, server-derived retry or prepared-plan discard API. Apexo owns these controls and all execution; no installed-runtime dependency was introduced.
+
+## Shared integration acceptance
+
+The 35-file UI handoff is integrated, with four narrow compositions preserving Scheduler translations and existing readiness history. The missing delivered TUI package export is restored; the corrected workspace type gate passes all 21 tasks (19 cache hits). The focused App adapter/locale gate passes 15 tests / 418 assertions. Fresh complete App and Desktop builds pass. See [BUG323](testing/test-fixtures/memory-operation-handoff-manifest.md) for why private validation did not establish handoff completeness.
+
+Production browser and the freshly rebuilt actual Electron window each pass 16 checks with five provider calls, across English, Simplified Chinese and Traditional Chinese. The rendered Chinese clear-review screenshots were inspected: receipt outcomes, scope, irreversible confirmation and disabled-before-consent action are readable. Held list/preview replies cannot populate a replacement Session or server.
+
+Source mini/fullscreen at both 120×40 and 80×24 each pass nine checks with three provider calls. Both terminal modes also pass the same nine checks at 80×24 against the rebuilt mixed Desktop backend. The fixture now preserves that actual backend selection; see [BUG322](testing/test-fixtures/memory-operation-backend-selection.md). Narrow terminal captures retain the operation controls and scrollable reviewed details. All these commands exited zero and joined owned children.
+
+A fresh isolated installed-Grok comparison again passes eight Memory observations / five classified requests and actual scope clear of two topics with zero requests. Its home/port guards pass. The receipt-panel, original-operation retry and prepared-plan discard equivalence limits above remain explicit. This completes this UI slice's scoped acceptance, not the broader Memory lifecycle, full-repository gates or cross-platform scope. The private paired composer measurement remains the applicable bounded observation; no zero-cost performance claim is made.

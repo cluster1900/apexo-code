@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 // Regression: a stored step-finish part with a negative token count made the
 // messages endpoint 400. Some providers reported `outputTokens` excluding
 // reasoning while also reporting `reasoningTokens` separately, so the
@@ -22,7 +23,9 @@ import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(LayerNode.compile(LayerNode.group([Session.node, Database.node])), httpApiLayer))
+const it = testEffect(
+  Layer.mergeAll(AppNodeBuilderV1.build(LayerNode.group([Session.node, Database.node])), httpApiLayer),
+)
 
 function seedNegativeTokenSession() {
   return Effect.gen(function* () {

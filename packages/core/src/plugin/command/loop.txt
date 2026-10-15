@@ -1,0 +1,14 @@
+Schedule a recurring prompt using the native scheduler_create tool.
+
+User request:
+$ARGUMENTS
+
+If the request is empty, show usage: /loop [interval] <prompt>. Examples: /loop 30m check deploy status; /loop check deploy status every hour. Ask how often it should run. Never invent a missing interval or prompt.
+
+Derive the interval from the user's wording at either end of the request. Express it as a number followed by s, m, h, or d. The minimum interval is 60 seconds; explain when a shorter request is raised to that minimum. Use fire_immediately=true. Do not explore the workspace or execute the requested checks inline before creating the schedule: the first scheduled occurrence does that work.
+
+Write a self-contained prompt with the relevant paths, identifiers, checks, expected healthy result, a concise report, and an explicit stopping condition. Each occurrence runs in an owned background child. Keep each occurrence bounded; do not create a shell polling loop. If its stopping condition is met, the child may delete its own schedule with scheduler_delete. Existing schedules can be updated by scheduler_create with their task_id and changed fields.
+
+Confirm the schedule ID, interval, stopping condition, and seven-day expiry. Explain that Pause and Delete affect future occurrences; an already admitted Task is managed separately. After a server restart, saved intent is paused and requires explicit Resume for future occurrences; interrupted work is not replayed. Ordinary Stop pauses future timers and joins owned occurrence children while the parent is active.
+
+A one-time delayed command or event-driven watch is not a recurring schedule. Use the appropriate background Shell or Monitor capability instead, subject to normal permissions. Schedule creation remains an ordinary model tool call; request any required permission and report denials without claiming a schedule was created.

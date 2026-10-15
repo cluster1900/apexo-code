@@ -1,0 +1,7 @@
+# BUG-20261015-235: Native Memory phase deadlines failed in one combined run
+
+- **Status:** Unresolved timing observation; no root cause or product repair established.
+- **Scope:** The fourteen-case private native Memory lifecycle suite.
+- **Observed:** One run passed twelve cases and failed two: the real Stop case exceeded its ten-second transient text readiness deadline (case elapsed 11.29 seconds), and automatic terminal capture exceeded its ten-second operation-settlement poll (case elapsed 22.31 seconds including cleanup). The run lasted 82.94 seconds. The prior five-file gate had passed these same cases and failed only the separately corrected foreign-lease fixture.
+- **Investigation:** The Stop barrier waits for the actual canonical Text.Delta; the automatic case waits for its durable finished operation. No phase cause beyond those boundaries was isolated. Other shared/private validation was active, but concurrent host load is context, not a proven cause.
+- **Verification:** One unchanged isolated rerun, `bun test test/v2/memory-lifecycle-native.test.ts --test-name-pattern 'a real Stop|ordinary terminal capture'` from `packages/apexo`, passed two tests / 17 assertions in 3.63 seconds (individual cases 0.87 and 0.89 seconds). All handles were reaped. Neither deadline nor assertion was relaxed. The passing rerun does not establish a fix; shared integration remains required.

@@ -1,3 +1,4 @@
+import { usePluginsDialog } from "./plugins-dialog"
 import { useParams } from "@solidjs/router"
 import { onCleanup } from "solid-js"
 import { useCommand } from "@/context/command"
@@ -28,8 +29,15 @@ export function useSettingsCommand() {
   const command = useCommand()
   const language = useLanguage()
   const show = useSettingsDialog()
+  const plugins = usePluginsDialog()
 
   command.register("settings", () => [
+    {
+      id: "plugins.open",
+      title: language.t("plugins.title"),
+      category: language.t("command.category.settings"),
+      onSelect: plugins,
+    },
     {
       id: "settings.open",
       title: language.t("command.settings.open"),

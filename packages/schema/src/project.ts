@@ -2,11 +2,17 @@ export * as Project from "./project"
 
 import { Schema } from "effect"
 import { define, inventory } from "./event"
-import { NonNegativeInt, optional } from "./schema"
+import { AbsolutePath, NonNegativeInt, optional } from "./schema"
 import { ProjectID } from "./project-id"
 
 export const ID = ProjectID
 export type ID = typeof ID.Type
+
+export const Current = Schema.Struct({
+  id: ID,
+  directory: AbsolutePath,
+}).annotate({ identifier: "Project.Current" })
+export interface Current extends Schema.Schema.Type<typeof Current> {}
 
 export const Vcs = Schema.Literal("git").annotate({ identifier: "Project.Vcs" })
 export const Icon = Schema.Struct({

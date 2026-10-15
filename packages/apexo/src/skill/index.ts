@@ -1,3 +1,5 @@
+import { PluginStore } from "@apexo/core/plugin-store"
+import { PluginBundle } from "@apexo/core/plugin-bundle"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import path from "path"
 import { Effect, Layer, Context, Schema } from "effect"
@@ -283,6 +285,16 @@ const layer = Layer.effect(
           content: CUSTOMIZE_APEXO_SKILL_BODY,
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
+        if (!flags.pure) {
+          const plugins = yield* Effect.promise(() => PluginStore.active(path.join(global.data, "plugins")))
+          for (const plugin of plugins) {
+            const bundle = yield* Effect.promise(() => PluginBundle.read(plugin.root, plugin.item.name))
+            for (const skill of bundle.skills) {
+              s.skills[skill.name] = skill
+              s.dirs.add(path.dirname(skill.location))
+            }
+          }
+        }
         return s
       }),
     )

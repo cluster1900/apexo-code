@@ -34,6 +34,8 @@ const base = {
 
 export const Info = Schema.Struct({
   ...base,
+  /** Presentation only; this marker never grants Plan approval or execution authority. */
+  purpose: Schema.Literal("plan_approval").pipe(optional),
   custom: Schema.Boolean.pipe(optional).annotate({
     description: "Allow typing a custom answer (default: true)",
   }),

@@ -18,6 +18,12 @@ export const PlanEnterTool = Tool.define(
       parameters: Parameters,
       execute: (_params: {}, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          yield* ctx.ask({
+            permission: "plan_enter",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: {},
+          })
           const messages = yield* session.messages({ sessionID: ctx.sessionID }).pipe(Effect.orDie)
           const lastUser = messages.findLast((item) => item.info.role === "user" && item.info.model)
           const model =

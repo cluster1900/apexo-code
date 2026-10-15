@@ -1,3 +1,4 @@
+import { usePluginsDialog } from "@/components/plugins-dialog"
 import { type Accessor, createMemo, For, type JSX, onCleanup, Show, splitProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
@@ -160,8 +161,13 @@ export function HomeUtilityNav(props: {
   onOpenHelp: () => void
   language: ReturnType<typeof useLanguage>
 }) {
+  const plugins = usePluginsDialog()
   return (
     <div class={`${props.class ?? ""} min-w-0 flex-col gap-1 pr-3`}>
+      <HomeProjectNavButton type="button" onClick={plugins}>
+        <IconV2 name="grid-plus" size="small" />
+        <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("plugins.title")}</span>
+      </HomeProjectNavButton>
       <HomeProjectNavButton
         type="button"
         class="text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"

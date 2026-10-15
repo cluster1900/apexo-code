@@ -27,6 +27,16 @@ export const original = {
   APEXO_SERVER_USERNAME: Flag.APEXO_SERVER_USERNAME,
 }
 
+// This harness owns these files. Call only after its scenario and HTTP service scopes close.
+export const resetExerciseDatabase = Effect.promise(async () => {
+  const fs = await import("fs/promises")
+  await Promise.all(
+    [exerciseDatabasePath, `${exerciseDatabasePath}-wal`, `${exerciseDatabasePath}-shm`].map((file) =>
+      fs.rm(file, { force: true }),
+    ),
+  )
+})
+
 export const cleanupExercisePaths = Effect.promise(async () => {
   const fs = await import("fs/promises")
   if (!preserveExerciseDatabase) {

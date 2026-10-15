@@ -1,3 +1,10 @@
+import { CompatHookSnapshotLocation } from "./hook-snapshot-location"
+import { HookPreferences } from "@apexo/core/hook-preferences"
+import { SessionSchema } from "@apexo/core/session/schema"
+import { SessionLifecycle } from "@apexo/core/session/lifecycle"
+import { InstanceRef } from "@/effect/instance-ref"
+import { HostHookSnapshot } from "./host-hook-snapshot"
+import { loadBundleHooks, usesSelection, withSelection } from "./bundle-hooks"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import type {
   Hooks,
@@ -7,7 +14,7 @@ import type {
   WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@apexo/plugin"
 import { Config } from "@/config/config"
-import { createApexoClient } from "@apexo/sdk"
+import { createApexoClient } from "@apexo/sdk/client"
 import { ServerAuth } from "@/server/auth"
 import { OpenAIPlugin } from "./openai/openai"
 import { Session } from "@/session/session"
@@ -114,6 +121,8 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
     const flags = yield* RuntimeFlags.Service
+    const hostHooks = yield* HostHookSnapshot.Service
+    const snapshots = yield* CompatHookSnapshotLocation.Service
     const native = yield* Antigravity.Service
     const auth = yield* Auth.Service
 
@@ -235,6 +244,9 @@ const layer = Layer.effect(
           )
         }
 
+        if (!flags.pure)
+          hooks.push(...(yield* Effect.promise(() => loadBundleHooks(ctx.directory, undefined, undefined, false))))
+
         // Notify plugins of current config
         for (const hook of hooks) {
           yield* Effect.tryPromise({
@@ -248,11 +260,37 @@ const layer = Layer.effect(
 
         const unsubscribe = yield* events.listen((event) => {
           if (event.location?.directory !== ctx.directory) return Effect.void
-          return Effect.sync(() => {
-            for (const hook of hooks) {
+          return Effect.gen(function* () {
+            const data = event.data as Record<string, unknown>
+            const part = data.part as { sessionID?: string } | undefined
+            const id = typeof data.sessionID === "string" ? data.sessionID : part?.sessionID
+            const claim = id ? yield* SessionLifecycle.current(SessionSchema.ID.make(id)) : undefined
+            const active = id && claim ? yield* hostHooks.get(id) : []
+            // Deferred notifications inherit their publisher's incarnation. An
+            // unowned or retired event must never discover choices for a reused ID.
+            const selected =
+              id && [...hooks, ...active].some((hook) => usesSelection(hook, "event"))
+                ? claim
+                  ? yield* snapshots.select(SessionSchema.ID.make(id)).pipe(
+                      Effect.catch(() =>
+                        Effect.succeed(
+                          () =>
+                            new HookPreferences.Failure({
+                              code: "conflict",
+                              message: "Captured Hook choices are unavailable",
+                            }),
+                        ),
+                      ),
+                    )
+                  : () =>
+                      new HookPreferences.Failure({ code: "conflict", message: "This Hook event has no Session owner" })
+                : undefined
+            for (const original of [...hooks, ...active]) {
+              const hook = selected ? withSelection(original, selected) : original
               void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any })
             }
-          })
+            if (id && event.type === "session.deleted") yield* hostHooks.release(id)
+          }).pipe(Effect.provideService(InstanceRef, ctx))
         })
         yield* Effect.addFinalizer(() => unsubscribe)
 
@@ -282,7 +320,17 @@ const layer = Layer.effect(
     >(name: Name, input: Input, output: Output) {
       if (!name) return output
       const s = yield* InstanceState.get(state)
-      for (const hook of s.hooks) {
+      const id =
+        typeof input === "object" && input !== null && "sessionID" in input && typeof input.sessionID === "string"
+          ? input.sessionID
+          : undefined
+      const active = id && name !== "chat.message" ? yield* hostHooks.get(id) : []
+      const selected =
+        id && s.hooks.some((hook) => usesSelection(hook, name))
+          ? yield* snapshots.select(SessionSchema.ID.make(id)).pipe(Effect.orDie)
+          : undefined
+      for (const original of [...s.hooks, ...active]) {
+        const hook = selected ? withSelection(original, selected) : original
         const fn = hook[name] as any
         if (!fn) continue
         yield* Effect.promise(async () => fn(input, output))
@@ -306,7 +354,15 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Config.node, RuntimeFlags.node, Antigravity.node, Auth.node],
+  deps: [
+    CompatHookSnapshotLocation.node,
+    HostHookSnapshot.node,
+    EventV2Bridge.node,
+    Config.node,
+    RuntimeFlags.node,
+    Antigravity.node,
+    Auth.node,
+  ],
 })
 
 export * as Plugin from "."

@@ -1,4 +1,8 @@
 import type { McpServer } from "@apexo/client/promise"
+import type { McpStatusMap } from "@apexo/sdk/v2/client"
+
+export type McpConnectionStatus = McpServer["status"] | McpStatusMap[string]
+export type McpAction = "connect" | "disconnect" | "retry" | "resetPreference"
 
 export async function toggleMcp(input: {
   status: McpServer["status"]["status"]

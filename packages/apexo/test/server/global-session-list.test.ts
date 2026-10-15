@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { SessionProjector } from "@apexo/core/session/projector"
@@ -9,7 +10,9 @@ import { provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([SessionNs.node, SessionProjector.node, Project.node, CrossSpawnSpawner.node])),
+  AppNodeBuilderV1.build(
+    LayerNode.group([SessionNs.node, SessionProjector.node, Project.node, CrossSpawnSpawner.node]),
+  ),
 )
 
 const withSession = (input?: Parameters<SessionNs.Interface["create"]>[0]) =>

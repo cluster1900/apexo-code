@@ -1,3 +1,4 @@
+import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
@@ -56,9 +57,9 @@ const replacements = [
   [RuntimeFlags.node, RuntimeFlags.layer()],
 ] as const
 
-const it = testEffect(LayerNode.compile(root, replacements))
+const it = testEffect(AppNodeBuilderV1.build(root, replacements))
 const withCodeMode = testEffect(
-  LayerNode.compile(root, [
+  AppNodeBuilderV1.build(root, [
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
     [
@@ -81,7 +82,7 @@ const withCodeMode = testEffect(
   ]),
 )
 const withEmptyCodeMode = testEffect(
-  LayerNode.compile(root, [
+  AppNodeBuilderV1.build(root, [
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
     [
@@ -94,29 +95,35 @@ const withEmptyCodeMode = testEffect(
   ]),
 )
 const withGrokBuildProfile = testEffect(
-  LayerNode.compile(root, [
+  AppNodeBuilderV1.build(root, [
     [Config.node, configLayer],
     [
       RuntimeFlags.node,
-      RuntimeFlags.layer({ runtimeProfile: "grok-build", experimentalPlanMode: true, experimentalLspTool: true }),
+      RuntimeFlags.layer({
+        runtimeProfile: "grok-build",
+        experimentalPlanMode: true,
+        experimentalLspTool: true,
+        grokMemory: true,
+      }),
     ],
   ]),
 )
 const withGrokBuildDesktopProfile = testEffect(
-  LayerNode.compile(root, [
+  AppNodeBuilderV1.build(root, [
     [Config.node, configLayer],
     [
       RuntimeFlags.node,
       RuntimeFlags.layer({
         runtimeProfile: "grok-build",
         client: "desktop",
+        grokMemory: true,
         experimentalPlanMode: true,
         experimentalLspTool: true,
       }),
     ],
   ]),
 )
-const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withBrokenPlugin = testEffect(AppNodeBuilderV1.build(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -199,6 +206,7 @@ describe("tool.registry", () => {
           "enter_plan_mode",
           "exit_plan_mode",
           "todo_write",
+          "update_goal",
           "web_fetch",
         ]),
       )
@@ -236,10 +244,15 @@ describe("tool.registry", () => {
         "get_task_output",
         "wait_tasks",
         "kill_task",
+        "update_goal",
+        "send_feedback",
         "memory",
+        "memory_search",
+        "memory_get",
         "image_gen",
         "image_to_video",
         "reference_to_video",
+        "image_edit",
         "monitor",
         "scheduler_create",
         "scheduler_delete",

@@ -1,0 +1,13 @@
+# BUG-20261015-070: Foreground Task returned before cancellation receipt settlement
+
+- **Scope:** Isolated native Task draft; no integrated production release.
+- **Status:** Verified in isolated native HTTP and composed runtime regressions; final integration acceptance pending.
+- **Observed:** Cancelling a held child returned HTTP 204 and a cancelled Detail, but the foreground parent's tool result had already recorded `status: running` with empty output. Provider call 3 received that premature result. The fixture then failed to observe its expected parent continuation, first at its five-second outer bound and again at the explicit twenty-second operation bound.
+- **Expected:** Foreground completion, owned wait, and cancel must agree on the terminal Task receipt after child cleanup. Exactly one ordinary parent continuation should receive `cancelled`.
+- **Root cause:** `BackgroundJob.cancel` completes its notification Deferred before joining the job scope. Task treated that notification as durable Task receipt settlement. The worker's cancellation finalizer had not yet written the terminal launch record when foreground execution read it.
+- **Fix:** A per-launch Task receipt latch is completed after the worker's joined cleanup and terminal write. It is synchronization, not another executor or scheduler. Foreground completion and owned management use it; concurrent cancellation joins the same receipt. A missing terminal receipt fails the latch, and closing a pre-start owner fails pending waiters rather than reporting successful settlement. No finalizer waits on its own scope or latch. Existing Created proofs still fence stale writes.
+- **Verification:** The real native HTTP regression passed with three provider calls. It checks bounded wait without wake, foreign ownership rejection, concurrent two-cancel plus wait, immutable cancelled Detail, repeated cancel, and exactly one parent continuation carrying `cancelled`. The first corrected run passed 1 test/22 assertions; concurrent-control coverage passed 23 assertions in the subsequent combined run. Server and Apexo typechecks passed. A different mixed HTTP test in that combined run exceeded its old five-second whole-test budget; this record does not claim that batch passed.
+
+Generic background completion is an engine notification; consumers that promise a durable domain receipt must join that domain's settlement boundary.
+
+Later composed acceptance passed 10 tests/162 assertions. The additional 2-test/39-assertion boundary gate verifies missing receipt and closed-owner failure as well as pre-registration cancellation conflicts. The latter is a separate cause recorded in [BUG-20261015-075](native-task-prestart-cancel.md).

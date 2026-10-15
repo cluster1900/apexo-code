@@ -8,6 +8,7 @@ import { AbsolutePath } from "../../schema"
 import { SkillV2 } from "../../skill"
 import { Global } from "../../global"
 import { Location } from "../../location"
+import { PluginBundleState } from "../../plugin-bundle-state"
 
 export const Plugin = define({
   id: "config-skill",
@@ -15,8 +16,21 @@ export const Plugin = define({
     const config = yield* Config.Service
     const global = yield* Global.Service
     const location = yield* Location.Service
+    const bundles = yield* PluginBundleState.Service
     yield* ctx.skill.transform(
       Effect.fn(function* (draft) {
+        for (const skill of (yield* bundles.get).skills)
+          draft.source(
+            SkillV2.EmbeddedSource.make({
+              type: "embedded",
+              skill: {
+                name: skill.name,
+                content: skill.content,
+                location: AbsolutePath.make(skill.location),
+                ...(skill.description === undefined ? {} : { description: skill.description }),
+              },
+            }),
+          )
         const entries = yield* config.entries()
         const directories = entries.flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
         const items = entries.flatMap((entry) => (entry.type === "document" ? (entry.info.skills ?? []) : []))

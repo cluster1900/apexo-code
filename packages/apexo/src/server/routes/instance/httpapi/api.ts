@@ -11,6 +11,11 @@ import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { ControlPlaneApi } from "./groups/control-plane"
 import { EventApi } from "./groups/event"
+import { PluginsApi } from "./groups/plugins"
+import { GoalApi } from "./groups/goal"
+import { FeedbackApi } from "./groups/feedback"
+import { HooksApi } from "./groups/hooks"
+import { SideQuestionApi } from "./groups/side-question"
 import { ExperimentalApi } from "./groups/experimental"
 import { FileApi } from "./groups/file"
 import { InstanceApi } from "./groups/instance"
@@ -61,6 +66,11 @@ export const RootHttpApi = HttpApi.make("apexo-root")
 export const InstanceHttpApi = HttpApi.make("apexo-instance")
   .addHttpApi(ConfigApi)
   .addHttpApi(ExperimentalApi)
+  .addHttpApi(PluginsApi)
+  .addHttpApi(GoalApi)
+  .addHttpApi(FeedbackApi)
+  .addHttpApi(HooksApi)
+  .addHttpApi(SideQuestionApi)
   .addHttpApi(FileApi)
   .addHttpApi(InstanceApi)
   .addHttpApi(McpApi)
