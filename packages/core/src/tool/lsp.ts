@@ -2,6 +2,7 @@ export * as LspTool from "./lsp"
 
 import { Effect, Layer, Schema } from "effect"
 import { Lsp } from "@apexo/schema/lsp"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
@@ -35,6 +36,7 @@ export const node = makeLocationNode({
       const permission = yield* PermissionV2.Service
       const mutation = yield* LocationMutation.Service
       const fs = yield* FSUtil.Service
+      const sandbox = yield* CommandSandbox.Service
       yield* tools
         .register({
           lsp: Tool.make({
@@ -76,6 +78,7 @@ export const node = makeLocationNode({
                     targets,
                     (target) =>
                       Effect.gen(function* () {
+                        yield* sandbox.assertRead(context.sessionID, target.canonical, target.resource)
                         if (target.externalDirectory)
                           yield* assertWorkspace({
                             ...LocationMutation.externalDirectoryPermission(target.externalDirectory),
@@ -114,7 +117,9 @@ export const node = makeLocationNode({
                   return yield* new Tool.Failure({
                     message: "This LSP operation requires 1-based line and character positions",
                   })
+                yield* sandbox.assertRead(context.sessionID, input.filePath, input.filePath)
                 const target = yield* mutation.resolve({ path: input.filePath, kind: "file" })
+                yield* sandbox.assertRead(context.sessionID, target.canonical, input.filePath)
                 if (target.externalDirectory)
                   yield* permission.assert({
                     ...access,
@@ -167,5 +172,5 @@ export const node = makeLocationNode({
         .pipe(Effect.orDie)
     }),
   ),
-  deps: [ToolRegistry.node, LSP.node, PermissionV2.node, LocationMutation.node, FSUtil.node],
+  deps: [ToolRegistry.node, LSP.node, PermissionV2.node, LocationMutation.node, FSUtil.node, CommandSandbox.node],
 })

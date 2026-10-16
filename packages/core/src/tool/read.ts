@@ -2,6 +2,8 @@ export * as ReadTool from "./read"
 
 import { ToolFailure } from "@apexo/llm"
 import { Effect, Layer, Schema } from "effect"
+import nodePath from "node:path"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { Image } from "../image"
@@ -39,6 +41,7 @@ const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const image = yield* Image.Service
     const permission = yield* PermissionV2.Service
+    const sandbox = yield* CommandSandbox.Service
 
     yield* tools
       .register({
@@ -64,6 +67,7 @@ const layer = Layer.effectDiscard(
               }
               const path = input.path ?? input.filePath
               if (!path) return yield* new ToolFailure({ message: "path or filePath is required" })
+              yield* sandbox.assertRead(context.sessionID, path, path)
               const target = yield* mutation.resolve({ path, kind: "directory" })
               const external = target.externalDirectory
               if (external)
@@ -75,6 +79,7 @@ const layer = Layer.effectDiscard(
                 })
               const resource = target.resource
               const absolute = AbsolutePath.make(target.canonical)
+              yield* sandbox.assertRead(context.sessionID, target.canonical, path)
               const type = yield* reader.inspect(absolute)
               yield* permission.assert({
                 action: name,
@@ -84,8 +89,13 @@ const layer = Layer.effectDiscard(
                 agent: context.agent,
                 source,
               })
-              if (type === "directory")
-                return yield* reader.list(absolute, { offset: input.offset, limit: input.limit })
+              if (type === "directory") {
+                const page = yield* reader.list(absolute, { offset: input.offset, limit: input.limit })
+                const entries = yield* sandbox.filterReadable(context.sessionID, page.entries, (entry) =>
+                  nodePath.resolve(absolute, entry.path),
+                )
+                return new ReadToolFileSystem.ListPage({ ...page, entries })
+              }
               const content = yield* reader.read(absolute, resource, {
                 offset: input.offset,
                 limit: input.limit,
@@ -120,5 +130,12 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/read",
   layer,
-  deps: [ToolRegistry.node, ReadToolFileSystem.node, LocationMutation.node, Image.node, PermissionV2.node],
+  deps: [
+    ToolRegistry.node,
+    ReadToolFileSystem.node,
+    LocationMutation.node,
+    Image.node,
+    PermissionV2.node,
+    CommandSandbox.node,
+  ],
 })

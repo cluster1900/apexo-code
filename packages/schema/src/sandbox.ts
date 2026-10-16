@@ -3,7 +3,12 @@ export * as Sandbox from "./sandbox"
 import { Schema } from "effect"
 import { DateTimeUtcFromMillis, optional } from "./schema"
 
-export const Profile = Schema.Literals(["off", "workspace", "read-only"]).annotate({ identifier: "Sandbox.Profile" })
+export const BuiltinProfile = Schema.Literals(["off", "workspace", "read-only", "strict", "devbox"]).annotate({
+  identifier: "Sandbox.BuiltinProfile",
+})
+export type BuiltinProfile = typeof BuiltinProfile.Type
+
+export const Profile = Schema.String.annotate({ identifier: "Sandbox.Profile" })
 export type Profile = typeof Profile.Type
 
 export const FailureCode = Schema.Literals([
@@ -19,7 +24,7 @@ export interface Receipt extends Schema.Schema.Type<typeof Receipt> {}
 export const Receipt = Schema.Struct({
   id: Schema.String,
   revision: Schema.String,
-  backend: Schema.Literal("seatbelt"),
+  backend: Schema.Literals(["seatbelt", "bwrap"]),
   confirmedAt: DateTimeUtcFromMillis,
   outcome: Schema.Literal("exited"),
   exitCode: Schema.Int,
@@ -32,7 +37,7 @@ export const Status = Schema.Struct({
   profile: optional(Profile),
   revision: optional(Schema.String),
   backend: Schema.Struct({
-    kind: Schema.Literals(["seatbelt", "none"]),
+    kind: Schema.Literals(["seatbelt", "bwrap", "none"]),
     availability: Schema.Literals(["unchecked", "available", "unsupported", "unavailable"]),
   }),
   network: optional(Schema.Literals(["off", "unrestricted"])),

@@ -8,6 +8,7 @@ export * as WriteTool from "./write"
 
 import { ToolFailure } from "@apexo/llm"
 import { Effect, Layer, Schema } from "effect"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { LocationMutation } from "../location-mutation"
@@ -52,6 +53,7 @@ const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const files = yield* FileMutation.Service
     const permission = yield* PermissionV2.Service
+    const sandbox = yield* CommandSandbox.Service
 
     yield* tools
       .register({
@@ -71,6 +73,7 @@ const layer = Layer.effectDiscard(
                 }
                 const path = input.path ?? input.filePath
                 if (!path) return yield* new ToolFailure({ message: "path or filePath is required" })
+                yield* sandbox.assertWrite(context.sessionID, path, path)
                 const target = yield* mutation.resolve({ path, kind: "file" })
                 const external = target.externalDirectory
                 if (external)
@@ -88,6 +91,7 @@ const layer = Layer.effectDiscard(
                   agent: context.agent,
                   source,
                 })
+                yield* sandbox.assertWrite(context.sessionID, target.canonical, path)
                 return yield* files.writeTextPreservingBom({ target, content: input.content })
               }).pipe(
                 Effect.mapError(() => new ToolFailure({ message: `Unable to write ${input.path ?? input.filePath}` })),
@@ -103,5 +107,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/write",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node, CommandSandbox.node],
 })

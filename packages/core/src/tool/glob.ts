@@ -3,6 +3,7 @@ export * as GlobTool from "./glob"
 import { ToolFailure } from "@apexo/llm"
 import { Effect, Layer, Schema } from "effect"
 import path from "path"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { Location } from "../location"
@@ -41,6 +42,7 @@ const layer = Layer.effectDiscard(
     const ripgrep = yield* Ripgrep.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
+    const sandbox = yield* CommandSandbox.Service
 
     yield* tools
       .register({
@@ -73,22 +75,21 @@ const layer = Layer.effectDiscard(
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
               const cwd = path.resolve(location.directory, input.path ?? ".")
-              return yield* ripgrep
-                .glob({
-                  cwd,
-                  pattern: input.pattern,
-                  limit: input.limit ?? Number.MAX_SAFE_INTEGER,
-                })
-                .pipe(
-                  Effect.map((result) =>
-                    result.map((entry) =>
-                      FileSystem.Entry.make({
-                        ...entry,
-                        path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
-                      }),
-                    ),
-                  ),
-                )
+              yield* sandbox.assertRead(context.sessionID, cwd, input.path ?? ".")
+              const raw = yield* ripgrep.glob({
+                cwd,
+                pattern: input.pattern,
+                limit: input.limit ?? Number.MAX_SAFE_INTEGER,
+              })
+              const filtered = yield* sandbox.filterReadable(context.sessionID, raw, (entry) =>
+                path.resolve(cwd, entry.path),
+              )
+              return filtered.map((entry) =>
+                FileSystem.Entry.make({
+                  ...entry,
+                  path: RelativePath.make(path.relative(location.directory, path.resolve(cwd, entry.path))),
+                }),
+              )
             }).pipe(
               Effect.mapError(() => new ToolFailure({ message: `Unable to find files matching ${input.pattern}` })),
             ),
@@ -101,5 +102,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/glob",
   layer,
-  deps: [ToolRegistry.node, Ripgrep.node, Location.node, PermissionV2.node],
+  deps: [ToolRegistry.node, Ripgrep.node, Location.node, PermissionV2.node, CommandSandbox.node],
 })

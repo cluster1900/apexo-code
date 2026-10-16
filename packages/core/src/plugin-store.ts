@@ -6,6 +6,7 @@ import os from "node:os"
 import { createHash, randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { parse } from "toml"
 import { Schema } from "effect"
 import { PluginStore } from "@apexo/schema/plugin-store"
 import { Flock } from "./util/flock"
@@ -147,9 +148,158 @@ export async function detail(root: string, id: string) {
   return { item, readme: readme.slice(0, 100_000) }
 }
 
-// Runtime consumers only see explicitly installed and enabled snapshots.
+type Policy = {
+  readonly requireSha: boolean
+  readonly strictMarketplaces: boolean
+  readonly allowedMarketplaces: ReadonlySet<string>
+  readonly disableAllPlugins: boolean
+  readonly disabledPlugins: ReadonlySet<string>
+}
+
+async function normalizePolicyLocation(raw: string): Promise<string | undefined> {
+  const trimmed = raw.trim()
+  if (!trimmed) return undefined
+  try {
+    return (await resolveSource(trimmed)).location
+  } catch {
+    if (path.isAbsolute(trimmed)) return path.resolve(trimmed)
+    return trimmed
+  }
+}
+
+async function extractMarketplaceList(value: unknown): Promise<string[]> {
+  if (!Array.isArray(value)) return []
+  const items: string[] = []
+  for (const entry of value) {
+    const raw =
+      typeof entry === "string"
+        ? entry
+        : string(record(entry).location) ?? string(record(entry).url) ?? string(record(entry).source)
+    if (!raw) continue
+    const normalized = await normalizePolicyLocation(raw)
+    if (normalized) items.push(normalized)
+  }
+  return items
+}
+
+async function loadPolicy(root: string): Promise<Policy> {
+  const dirs = [process.env.GROK_SYSTEM_CONFIG_DIR, process.env.GROK_HOME, root].filter(
+    (d): d is string => typeof d === "string" && d.length > 0 && path.isAbsolute(d),
+  )
+  const files = dirs.flatMap((dir) => [
+    path.join(dir, "requirements.toml"),
+    path.join(dir, "config.toml"),
+    path.join(dir, "managed_config.toml"),
+    path.join(dir, "policy.toml"),
+  ])
+  const allowedMarketplaces = new Set<string>([official])
+  const disabledPlugins = new Set<string>()
+  const state = {
+    requireSha: process.env.GROK_MARKETPLACE_REQUIRE_SHA === "1" || process.env.GROK_MARKETPLACE_REQUIRE_SHA === "true",
+    strictMarketplaces: false,
+    disableAllPlugins: false,
+  }
+  const visited = new Set<string>()
+  for (const file of files) {
+    if (visited.has(file)) continue
+    visited.add(file)
+    const text = await fs.readFile(file, "utf8").catch(() => undefined)
+    if (!text) continue
+    const doc = (() => {
+      try {
+        return record(parse(text))
+      } catch {
+        return undefined
+      }
+    })()
+    if (!doc) continue
+    const pluginsSection = record(doc.plugins)
+    const marketplaceSection = record(doc.marketplace)
+    if (
+      doc.require_sha === true ||
+      doc.requireSha === true ||
+      pluginsSection.require_sha === true ||
+      pluginsSection.requireSha === true ||
+      marketplaceSection.require_sha === true ||
+      marketplaceSection.requireSha === true
+    ) {
+      state.requireSha = true
+    }
+    const strictRaw =
+      doc.strict_known_marketplaces ??
+      doc.strictKnownMarketplaces ??
+      pluginsSection.strict_known_marketplaces ??
+      pluginsSection.strictKnownMarketplaces ??
+      marketplaceSection.strict_known_marketplaces ??
+      marketplaceSection.strictKnownMarketplaces
+    if (strictRaw === true) {
+      state.strictMarketplaces = true
+    } else if (Array.isArray(strictRaw)) {
+      state.strictMarketplaces = true
+      for (const loc of await extractMarketplaceList(strictRaw)) allowedMarketplaces.add(loc)
+    }
+    const extraRaw =
+      doc.extra_known_marketplaces ??
+      doc.extraKnownMarketplaces ??
+      pluginsSection.extra_known_marketplaces ??
+      pluginsSection.extraKnownMarketplaces ??
+      marketplaceSection.extra_known_marketplaces ??
+      marketplaceSection.extraKnownMarketplaces
+    for (const loc of await extractMarketplaceList(extraRaw)) allowedMarketplaces.add(loc)
+
+    if (
+      doc.disable_plugins === true ||
+      doc.disablePlugins === true ||
+      pluginsSection.disable_plugins === true ||
+      pluginsSection.disablePlugins === true ||
+      pluginsSection.disable_all === true
+    ) {
+      state.disableAllPlugins = true
+    }
+    for (const list of [
+      doc.disable_plugins,
+      doc.disablePlugins,
+      doc.disabled_plugins,
+      doc.disabledPlugins,
+      pluginsSection.disabled,
+      pluginsSection.disable_plugins,
+      pluginsSection.disablePlugins,
+      pluginsSection.disabled_plugins,
+      pluginsSection.disabledPlugins,
+    ]) {
+      for (const name of strings(list)) disabledPlugins.add(name)
+    }
+  }
+  return {
+    requireSha: state.requireSha,
+    strictMarketplaces: state.strictMarketplaces,
+    allowedMarketplaces,
+    disableAllPlugins: state.disableAllPlugins,
+    disabledPlugins,
+  }
+}
+
+function isPluginDisabledByPolicy(policy: Policy, id: string, name: string) {
+  return policy.disableAllPlugins || policy.disabledPlugins.has(id) || policy.disabledPlugins.has(name)
+}
+
+function isMarketplaceAllowed(policy: Policy, location: string) {
+  if (!policy.strictMarketplaces) return true
+  if (policy.allowedMarketplaces.has(location)) return true
+  for (const allowed of policy.allowedMarketplaces) {
+    if (path.isAbsolute(allowed) && path.isAbsolute(location) && location.startsWith(`${allowed}${path.sep}`)) {
+      return true
+    }
+  }
+  return false
+}
+
+// Runtime consumers only see explicitly installed, enabled, and policy-permitted snapshots.
 export async function active(root: string) {
-  return (await state(root)).installed.filter((entry) => entry.item.status === "enabled")
+  const [value, policy] = await Promise.all([state(root), loadPolicy(root)])
+  return value.installed.filter(
+    (entry) => entry.item.status === "enabled" && !isPluginDisabledByPolicy(policy, entry.item.id, entry.item.name),
+  )
 }
 
 /** Capture all enabled, trusted snapshots and their data under the registry mutation lock. */
@@ -157,8 +307,10 @@ export async function capture(root: string) {
   await fs.mkdir(root, { recursive: true })
   root = await fs.realpath(root)
   await using lock = await Flock.acquire(`plugins:${root}`)
-  const value = await state(root)
-  const entries = value.installed.filter((entry) => entry.item.status === "enabled")
+  const [value, policy] = await Promise.all([state(root), loadPolicy(root)])
+  const entries = value.installed.filter(
+    (entry) => entry.item.status === "enabled" && !isPluginDisabledByPolicy(policy, entry.item.id, entry.item.name),
+  )
   if (entries.some((entry) => !entry.trusted)) throw new Error("trust", "Enabled plugin is not trusted")
   const records = [...(await cleanData(root, value.data ?? []))]
   const token = randomUUID()
@@ -253,11 +405,13 @@ export async function mutate(root: string, input: PluginStore.Action) {
   await fs.mkdir(root, { recursive: true })
   root = await fs.realpath(root)
   await using lock = await Flock.acquire(`plugins:${root}`)
-  const value = await state(root)
+  const [value, policy] = await Promise.all([state(root), loadPolicy(root)])
   if (input.keepData !== undefined && input.action !== "uninstall")
     throw new Error("invalid", "keepData is only valid for uninstall")
   if (input.action === "add-source") {
     const target = await resolveSource(input.source ?? "")
+    if (!isMarketplaceAllowed(policy, target.location))
+      throw new Error("invalid", "Plugin source is blocked by strict_known_marketplaces policy")
     const id = hash(JSON.stringify(target))
     if (value.sources.some((s) => s.info.location === target.location)) return catalog(root)
     const source = await refresh(
@@ -302,6 +456,8 @@ export async function mutate(root: string, input: PluginStore.Action) {
   if (input.action === "update" && !current) throw new Error("missing", "Installed plugin not found")
   if (input.action === "install" && current?.item.status === "downloaded") {
     if (!input.trust) throw new Error("trust", "Review the plugin and pass --trust to install it")
+    if (isPluginDisabledByPolicy(policy, current.item.id, current.item.name))
+      throw new Error("invalid", `Plugin ${current.item.name} is disabled by policy`)
     if (
       value.installed.some(
         (v) => v.item.id !== current.item.id && v.item.name === current.item.name && v.item.status === "enabled",
@@ -318,6 +474,8 @@ export async function mutate(root: string, input: PluginStore.Action) {
   }
   if (["enable", "disable", "uninstall"].includes(input.action)) {
     if (!current) throw new Error("missing", "Installed plugin not found")
+    if (input.action === "enable" && isPluginDisabledByPolicy(policy, current.item.id, current.item.name))
+      throw new Error("invalid", `Plugin ${current.item.name} is disabled by policy`)
     if (input.action === "enable" && !current.trusted && !input.trust)
       throw new Error("trust", "Review the plugin and pass --trust to enable it")
     if (
@@ -363,12 +521,18 @@ export async function mutate(root: string, input: PluginStore.Action) {
   if (!entry && !source)
     throw new Error("missing", "Plugin not found; refresh sources or provide a Git URL or local folder")
   const target = entry?.target ?? (await resolveSource(source!))
+  if (!isMarketplaceAllowed(policy, target.location))
+    throw new Error("invalid", "Plugin source is blocked by strict_known_marketplaces policy")
+  if (policy.requireSha && (!target.ref || !/^[a-f0-9]{40}$/.test(target.ref)))
+    throw new Error("invalid", "Plugin policy requires a pinned 40-character commit SHA (require_sha)")
   const fetched = await fetchSource(root, target)
   const inspected = await inspect(
     fetched.root,
     entry?.item.name ?? path.basename(target.subdir ?? target.location, ".git"),
   )
   const id = entry?.item.id ?? `local:${hash(JSON.stringify(target))}:${inspected.name}`
+  if (input.action !== "download" && isPluginDisabledByPolicy(policy, id, inspected.name))
+    throw new Error("invalid", `Plugin ${inspected.name} is disabled by policy`)
   if (
     input.action !== "download" &&
     value.installed.some((v) => v.item.id !== id && v.item.name === inspected.name && v.item.status === "enabled")
@@ -491,7 +655,7 @@ async function refresh(
       if (!url && !subdir) throw new Error("invalid", `Missing source for ${name}`)
       const target = url
         ? { ...(await resolveSource(url)), ref, subdir }
-        : { location: await contained(fetched.root, subdir!) }
+        : { location: await contained(fetched.root, subdir!), ...(ref ? { ref } : {}) }
       const summary = record(summaries[name])
       const components = !ref || summary.sha === ref ? record(summary.components) : {}
       return {

@@ -101,7 +101,7 @@ export const make = Effect.gen(function* () {
           ),
         )
         const policy = stored.policy
-        if (policy.profile !== "off") {
+        if (CommandSandboxPolicy.isConfined(policy)) {
           const { revision, ...value } = policy
           if (revision !== CommandSandboxPolicy.revision(value))
             return yield* failure("The stored command sandbox policy revision is invalid.")
@@ -175,14 +175,18 @@ export const make = Effect.gen(function* () {
           return yield* failure("The parent command sandbox capability is unavailable.")
         if (parent.policy.profile !== target.profile || parent.policy.network !== target.network)
           return yield* failure("Child placement cannot change its command sandbox profile.")
-        const derived =
-          target.profile === "off"
-            ? target
-            : yield* CommandSandboxPaths.resolve({
-                workspace: target.workspace,
-                profile: target.profile,
-                protected: [...target.protected, ...(parent.policy.profile === "off" ? [] : parent.policy.protected)],
-              })
+        const derived = CommandSandboxPolicy.isOff(target)
+          ? target
+          : yield* CommandSandboxPaths.resolve({
+              workspace: target.workspace,
+              profile: target.profile,
+              protected: [
+                ...target.protected,
+                ...(CommandSandboxPolicy.isOff(parent.policy) ? [] : parent.policy.protected),
+              ],
+              extraDenyLiterals: CommandSandboxPolicy.isOff(parent.policy) ? undefined : parent.policy.denyLiterals,
+              extraDenyGlobs: CommandSandboxPolicy.isOff(parent.policy) ? undefined : parent.policy.denyGlobs,
+            })
         const result: Capability = Object.freeze({ [capability]: true as const })
         capabilities.set(result, { ...parent, derived })
         return result

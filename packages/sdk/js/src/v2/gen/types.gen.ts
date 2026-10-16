@@ -2116,9 +2116,16 @@ export type Config = {
       }
   instructions?: Array<string>
   memory?: {
+    embedding?: {
+      provider?: "api" | "local" | "auto"
+      model?: string
+      dimensions?: number
+    }
     search?: {
       max_results?: number
       min_score?: number
+      vector_weight?: number
+      text_weight?: number
       recency_decay?: number
       temporal_decay?: {
         enabled?: boolean
@@ -2250,6 +2257,7 @@ export type Config = {
       max_flush_write_chars?: number
       flush_model?: string
       idle_timeout_secs?: number
+      semantic_dedup_threshold?: number
     }
     auto?: boolean
     prune?: boolean
@@ -5211,12 +5219,12 @@ export type SessionV2Info = {
   revert?: RevertState
 }
 
-export type SandboxProfile = "off" | "workspace" | "read-only"
+export type SandboxProfile = string
 
 export type SandboxReceipt = {
   id: string
   revision: string
-  backend: "seatbelt"
+  backend: "seatbelt" | "bwrap"
   confirmedAt: number
   outcome: "exited"
   exitCode: number
@@ -5236,7 +5244,7 @@ export type SandboxStatus = {
   profile?: SandboxProfile
   revision?: string
   backend: {
-    kind: "seatbelt" | "none"
+    kind: "seatbelt" | "bwrap" | "none"
     availability: "unchecked" | "available" | "unsupported" | "unavailable"
   }
   network?: "off" | "unrestricted"

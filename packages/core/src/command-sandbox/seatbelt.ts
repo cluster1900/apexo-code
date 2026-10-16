@@ -6,20 +6,57 @@ import { Duration } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import type { AppProcess } from "../process"
 
+import type { CommandSandboxPolicy } from "./policy"
+
 export interface Input {
   readonly workspace: string
   readonly temporary: string
   readonly home: string
-  readonly profile: "workspace" | "read-only"
+  readonly profile: string
+  readonly base?: CommandSandboxPolicy.BaseProfile
+  readonly network?: "off" | "unrestricted"
   readonly protected: ReadonlyArray<string>
   readonly ancestors: ReadonlyArray<string>
+  readonly readOnly?: ReadonlyArray<string>
+  readonly readWrite?: ReadonlyArray<string>
+  readonly denyLiterals?: ReadonlyArray<string>
+  readonly denyGlobs?: ReadonlyArray<CommandSandboxPolicy.DenyGlob>
   readonly shell: string
   readonly command: string
   readonly cwd: string
 }
 
+const STRICT_READ_SUBPATHS = [
+  "/System",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/Library",
+  "/opt/homebrew",
+  "/etc",
+  "/private/etc",
+  "/var/select",
+  "/private/var/select",
+  "/dev",
+  "/tmp",
+  "/private/tmp",
+  "/var/tmp",
+  "/private/var/tmp",
+  "/Users/Shared",
+]
+
 /** Only constant syntax enters the profile. Filesystem names are opaque -D parameters. */
 export function prepare(input: Input) {
+  const readOnly = input.readOnly ?? []
+  const readWrite = input.readWrite ?? []
+  const denyLiterals = input.denyLiterals ?? []
+  const denyGlobs = input.denyGlobs ?? []
+  const base =
+    input.base ??
+    (input.profile === "read-only" || input.profile === "strict" || input.profile === "devbox"
+      ? input.profile
+      : "workspace")
+  const network = input.network ?? (base === "devbox" ? "unrestricted" : "off")
   const paths = [
     input.workspace,
     input.temporary,
@@ -28,17 +65,33 @@ export function prepare(input: Input) {
     input.shell,
     ...input.protected,
     ...input.ancestors,
+    ...readOnly,
+    ...readWrite,
+    ...denyLiterals,
   ]
   if (paths.some((value) => !path.isAbsolute(value) || value.includes("\0") || Buffer.byteLength(value) > 4096))
     throw new Error("Sandbox requires bounded absolute paths")
-  if (input.protected.length > 128 || input.ancestors.length > 128)
+  if (
+    input.protected.length > 256 ||
+    input.ancestors.length > 256 ||
+    readOnly.length > 128 ||
+    readWrite.length > 128 ||
+    denyLiterals.length > 128 ||
+    denyGlobs.length > 128
+  )
     throw new Error("Sandbox path policy exceeds its bound")
+  if (denyGlobs.some((glob) => !glob.regex.startsWith("^") || glob.regex.includes("\0") || glob.regex.includes("\n")))
+    throw new Error("Sandbox deny glob regex is invalid")
   const bindings = [
     ["WORKSPACE", input.workspace],
     ["TEMPORARY", input.temporary],
     ...input.protected.map((value, index) => [`PROTECTED_${index}`, value]),
     ...input.ancestors.map((value, index) => [`ANCESTOR_${index}`, value]),
+    ...readOnly.map((value, index) => [`READ_ONLY_${index}`, value]),
+    ...readWrite.map((value, index) => [`READ_WRITE_${index}`, value]),
+    ...denyLiterals.map((value, index) => [`DENY_LITERAL_${index}`, value]),
   ]
+  const allowsWorkspaceWrites = base === "workspace" || base === "devbox"
   const profile = [
     "(version 1)",
     "(deny default)",
@@ -46,13 +99,33 @@ export function prepare(input: Input) {
     "(allow process-fork)",
     "(allow signal (target same-sandbox))",
     "(allow sysctl-read)",
-    "(allow file-read*)",
+    ...(network === "unrestricted" ? ["(allow network*)", "(allow system-socket)"] : []),
+    ...(base === "strict"
+      ? [
+          '(allow file-read* (literal "/"))',
+          ...STRICT_READ_SUBPATHS.map((subpath) => `(allow file-read* (subpath "${subpath}"))`),
+          ...input.ancestors.map((_, index) => `(allow file-read-metadata (literal (param "ANCESTOR_${index}")))`),
+          '(allow file-read* (subpath (param "TEMPORARY")))',
+          '(allow file-read* (subpath (param "WORKSPACE")))',
+          ...readOnly.map((_, index) => `(allow file-read* (subpath (param "READ_ONLY_${index}")))`),
+          ...readWrite.map((_, index) => `(allow file-read* (subpath (param "READ_WRITE_${index}")))`),
+        ]
+      : ["(allow file-read*)"]),
     '(allow file-write-data (literal "/dev/null"))',
     '(allow file-write* (subpath (param "TEMPORARY")))',
     '(deny file-write-unlink (literal (param "TEMPORARY")))',
-    ...(input.profile === "workspace" ? ['(allow file-write* (subpath (param "WORKSPACE")))'] : []),
+    ...(allowsWorkspaceWrites ? ['(allow file-write* (subpath (param "WORKSPACE")))'] : []),
+    ...readWrite.map((_, index) => `(allow file-write* (subpath (param "READ_WRITE_${index}")))`),
     ...input.protected.map((_, index) => `(deny file-write* (subpath (param "PROTECTED_${index}")))`),
     ...input.ancestors.map((_, index) => `(deny file-write-unlink (literal (param "ANCESTOR_${index}")))`),
+    ...denyLiterals.flatMap((_, index) => [
+      `(deny file-read* (subpath (param "DENY_LITERAL_${index}")))`,
+      `(deny file-write* (subpath (param "DENY_LITERAL_${index}")))`,
+    ]),
+    ...denyGlobs.flatMap((glob) => {
+      const escaped = glob.regex.replaceAll('"', '\\"')
+      return [`(deny file-read* (regex #"${escaped}"))`, `(deny file-write* (regex #"${escaped}"))`]
+    }),
     // Path policy does not isolate pre-existing hardlinks; new link creation is denied.
     "(deny file-link)",
   ].join("\n")

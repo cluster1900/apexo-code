@@ -4,6 +4,7 @@ import { ToolFailure } from "@apexo/llm"
 import { FileDiff } from "@apexo/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Effect, Layer, Schema } from "effect"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
@@ -63,6 +64,7 @@ const layer = Layer.effectDiscard(
     const files = yield* FileMutation.Service
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
+    const sandbox = yield* CommandSandbox.Service
 
     yield* tools
       .register({
@@ -98,8 +100,12 @@ const layer = Layer.effectDiscard(
                 if (move) return yield* new ToolFailure({ message: "apply_patch moves are not supported yet" })
 
                 const targets: Array<{ readonly hunk: Patch.Hunk; readonly target: LocationMutation.Target }> = []
-                for (const hunk of hunks)
-                  targets.push({ hunk, target: yield* mutation.resolve({ path: hunk.path, kind: "file" }) })
+                for (const hunk of hunks) {
+                  yield* sandbox.assertWrite(context.sessionID, hunk.path, hunk.path)
+                  const target = yield* mutation.resolve({ path: hunk.path, kind: "file" })
+                  yield* sandbox.assertWrite(context.sessionID, target.canonical, hunk.path)
+                  targets.push({ hunk, target })
+                }
                 const externalDirectories = new Map<string, LocationMutation.ExternalDirectoryAuthorization>()
                 for (const { target } of targets) {
                   const external = target.externalDirectory
@@ -199,7 +205,14 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/apply-patch",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node],
+  deps: [
+    ToolRegistry.node,
+    LocationMutation.node,
+    FileMutation.node,
+    FSUtil.node,
+    PermissionV2.node,
+    CommandSandbox.node,
+  ],
 })
 
 function patchFile(change: Prepared): typeof FileDiff.Info.Type {

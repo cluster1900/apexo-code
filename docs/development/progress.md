@@ -26,16 +26,16 @@ The following is a capability inventory, not a list of new tasks. Read the linke
 | Child placement | Task cwd, retained Task/Workflow worktrees, dirty tracked/untracked snapshot, durable placement receipt, verified deleted-worktree reconstruction (`R06`) and current authority checks | [Placement](../native-child-placement.md); CLI/Desktop cwd 8 checks each, Task worktree 9 checks each, Workflow worktree 6 checks each, nested Task 6 checks each |
 | Shell / Monitor / Scheduler | Live output, background promotion, events/wake/cancel, native manager UI, wait/prefix/output policies, owned lifetime, durable Scheduler and restart recovery | [Shell](../native-shell.md), [Process UI](../native-shell-ui.md); omitted/zero native lifetime has an explicit ten-hour cap |
 | Goal | Persistent control and budgets, independent evaluation/verification, reports, role/model preflight, closing summary, compaction accounting and guarded cleanup | [Goal](../goal-feature.md), [native Goal](../goal-native-v2.md); latest full-unit Goal timeout remains unresolved |
-| Hooks | Sources/imports, exact-folder trust, repository-root Hook trust (`R02`), command/HTTP hooks, matching, decisions, lifecycle/Subagent hooks, Stop gates, snapshots, reload, preferences and management UI | [Hook sources](../native-hook-sources.md), [Hook parity](../grok-hooks-parity.md), [Repository Hook trust](../repository-hook-trust.md); CLI/Desktop backend 7/7 each, Browser/Native Electron UI + locales 5/5 each, unit/TUI 16/58 |
+| Hooks | Sources/imports, exact-folder trust, repository-root Hook trust (`R02`), administrator Hook layers (`system_managed`, Ed25519 `signed_requirements`, `system_requirements`, `allow_managed_hooks_only`, `fail_closed`, `R09`), command/HTTP hooks, matching, decisions, lifecycle/Subagent hooks, Stop gates, snapshots, reload, preferences and management UI | [Hook sources](../native-hook-sources.md), [Hook parity](../grok-hooks-parity.md), [Repository Hook trust](../repository-hook-trust.md); CLI/Desktop sources+admin 5/5 each, repo trust 7/7 each, UI+locales 5/5 each, unit/TUI 55 pass |
 | Memory | Legacy lexical + optional authenticated API embedding hybrid ranking (`R03`), durable semantic legacy-flush dedup (`0.92` threshold), native/compatibility basic lifecycle, V2 capture/flush/Dream, explicit recovery and management, automatic/manual legacy Dream and consumed-source cleanup | [Current Memory contract](../memory-v2-feature.md), [Legacy semantic design](handoffs/legacy-memory-semantic-design.md); 84 unit/E2E tests, CLI/Desktop 6/6 checks each |
 | V2 batch Dream | Opt-in bounded consolidation, per-note applied/no-change/deferred/unplaceable outcomes, durable plans/recovery and new-Dream action | [Batch Dream](../native-memory-batch-dream.md); shared 57 tests / 279 assertions; CLI and rebuilt Desktop each 6 checks |
-| Plugins | Local/recommended discovery and installation, storefront, sources, trust, enable/disable/update/uninstall, immutable snapshots, resource/template picker, permission-gated LSP activation | [Plugins](../plugins-feature.md); user-facing name stays Plugins with locale translations |
-| Plugin socket LSP / persistent data | Socket transport without owning an external server process; plugin-owned data epochs, active-reader retention, keep-data uninstall and status refresh | [Socket](../plugins-socket-transport.md), [data](../plugins-persistent-data.md); shared data 19/98, CLI/Desktop 5 checks each, actual en/zh/zht windows 8 each |
+| Plugins | Local/recommended discovery and installation, storefront, sources, trust, organizational policy (`strict_known_marketplaces`, `extra_known_marketplaces`, `require_sha`, `disable_plugins`, `R09`), enable/disable/update/uninstall, immutable snapshots, resource/template picker, permission-gated LSP activation | [Plugins](../plugins-feature.md); user-facing name stays Plugins with locale translations |
+| Plugin socket LSP / persistent data | Socket transport without owning an external server process; plugin-owned data epochs, active-reader retention, keep-data uninstall, organizational policy enforcement (`R09`) and status refresh | [Socket](../plugins-socket-transport.md), [data](../plugins-persistent-data.md); CLI/Desktop 6/6 checks each, actual en/zh/zht windows 8 each |
 | Feedback / side questions / media | Draft/review/export, image attachments, independent `/btw`, image/video tools, permissions, polling/cancel, saved-media presentation and explicit S3 options | [Feedback](../feedback-drafts.md), [images](../feedback-images.md), [side questions](../side-questions.md), [media](../native-media-tools.md); external/platform boundaries remain |
-| Command sandbox | Immutable stored profiles, child inheritance and macOS native Bash/descendant Seatbelt enforcement | [Sandbox](../native-command-sandbox.md); whole-agent and Linux sandboxing are not implemented by this slice |
+| Command & whole-agent sandbox | Immutable stored profiles (`off`, `workspace`, `read-only`, `strict`, `devbox`, and custom `sandbox.toml` profiles with `deny` globs), child inheritance, macOS Seatbelt and Linux `bwrap` builders (`R08`), and whole-agent in-process tool enforcement (`R07`) | [Sandbox](../native-command-sandbox.md); 16 unit/E2E tests (157 assertions), CLI/Desktop 8/8 checks each, Grok Build 3/3 profiles |
 | Structured usage CLI | Read-only Session/turn/step/model usage reporting (`apexo usage <sessionID> [turn]`, `R04`) across native durable event ledgers and compatibility projected histories | [Usage handoff](handoffs/session-usage/README.md); 10 unit/adversarial tests (129 assertions); CLI, Desktop and Grok Build 1.0.52 verified side-by-side |
 
-## Phase 1 & Phase 2 verification and acceptance (`R01`–`R06`)
+## Phase 1, Phase 2 & Phase 3 verification and acceptance (`R01`–`R09`)
 
 - **Repository Hook trust (`R02`, Phase 1)**:
   - Integrated across `@apexo/core`, `@apexo/schema`, `@apexo/protocol`, `@apexo/server`, `@apexo/client`, `@apexo/sdk`, `@apexo/app`, `@apexo/tui`, and `apexo` CLI runtime (`BUG-20261015-379`, `BUG-20261015-381`).
@@ -57,6 +57,12 @@ The following is a capability inventory, not a list of new tasks. Read the linke
 - **Deleted worktree recovery (`R06`, Phase 2)**:
   - Implemented immutable worktree `Snapshot` capture (`baseCommit`, tracked `patch`, untracked files with sha256/mode/base64 content), verified deleted-worktree reconstruction in `SessionChildPlacement.validateSaved`, `sourcePlacement` forwarding prior to `SessionChildResume.prepare`, and `(device, inode)` synchronization across `SessionStore`, `SessionTaskStore`, and `WorkflowStore` (`BUG-20261016-386`).
   - Verified across **21 tests / 232 assertions** (including 5 adversarial fail-closed negative controls), CLI + rebuilt Desktop (`bun script/grok-child-placement.mjs cli|desktop cwd|worktree` **8/8 and 9/9 checks**, `bun script/grok-workflow-placement.mjs cli|desktop` **6/6 checks**), and installed Grok Build (`bun script/grok-task-placement-official.mjs worktree` **7/7**, `bun script/grok-workflow-placement-official.mjs` **7/7**).
+- **Whole-agent sandbox, `sandbox.toml` custom profiles / deny globs, and Linux `bwrap` (`R07`, `R08`, Phase 3)**:
+  - Extended `CommandSandboxPolicy`, `CommandSandboxPaths`, `CommandSandboxSeatbelt`, `CommandSandboxLinux`, and `CommandSandbox.Service` to support `strict`, `devbox`, and custom `sandbox.toml` profiles (`extends`, `read_only`, `read_write`, `deny`, `restrict_network`), compiled `denyLiterals` and `denyGlobs`, Linux `bwrap` command construction and execution, and whole-agent in-process tool enforcement across `read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `webfetch`, `websearch`, `media`, `lsp`, `mcp-tools`, and `mcp-resources` (`BUG-20261016-387`).
+  - Verified failing-before negative control, **16 unit/E2E tests (157 assertions)**, CLI + rebuilt Desktop (`bun script/grok-native-command-sandbox.mjs cli` and `desktop`: **8/8 checks, 10 provider calls each**), and installed Grok Build (`bun script/grok-command-sandbox-official.mjs`: **3/3 profiles, 4 provider calls**).
+- **Administrator Hook layers and organizational Plugin policy (`R09`, Phase 3)**:
+  - Implemented `system_managed` (rank `7`), Ed25519-verified `signed_requirements` (`requirements.signed.toml` + `.sig` + `requirements.pub`, rank `6`), and `system_requirements` (rank `5`) in `HostHooks.discover`, non-disableable `policy: "managed"`, `fail_closed = true` signature failure handling, tighten-only `allow_managed_hooks_only` across `HostHooks`, `HookSnapshotLocation`, and `loadBundleHooks`, plus organizational plugin policies (`strict_known_marketplaces`, `extra_known_marketplaces`, `require_sha`, `disable_plugins`) in `PluginStore` (`BUG-20261016-387`).
+  - Verified failing-before negative controls (`0 pass, 6 fail` before implementation), **49 unit/E2E tests (207 assertions)**, and CLI + rebuilt Desktop (`bun script/grok-hook-sources-native.mjs cli|desktop` **5/5 checks, 7 provider calls each**; `bun script/grok-plugin-data-native.mjs cli|desktop` **6/6 checks, 7 provider calls each**).
 
 ## Aggregate and release gate status
 
@@ -64,29 +70,29 @@ The following is a capability inventory, not a list of new tasks. Read the linke
 | --- | --- | --- |
 | Workspace types (`bun turbo typecheck --concurrency=2`) | **All 21 tasks pass, 0 errors** | **Yes** |
 | Canonical Client / legacy SDK generation (`bun run check:generated`) | **Passed, zero diff** | **Yes** |
-| App / Desktop builds | Both pass with Phase 2 changes integrated | **Yes** |
+| App / Desktop builds | Both pass with Phase 3 changes integrated | **Yes** |
 | Complete unit gate (`GITHUB_ACTIONS=false bun turbo test --concurrency=2`) | **6/6 tasks pass; zero failures** | **Yes** |
 | Complete HTTP gate (`bun run test:httpapi`) | **343 scenarios pass in each of coverage, authorization and Effect modes; 314 routes, zero gaps** | **Yes** |
-| Linux scoped tests | **117 pass / 876 assertions across 19 files** with container init/reaping | Scoped Linux evidence only; not full Linux or sandbox enforcement acceptance |
+| Linux scoped tests | **117 pass / 876 assertions across 19 files** with container init/reaping | Scoped Linux evidence only; not full Linux kernel enforcement acceptance |
 | Windows / full platform matrix | Incomplete | No |
-| CI / PR merge | Local gates green; ready for Phase 2 push | Ready for Phase 2 commit |
+| CI / PR merge | Local gates green; ready for Phase 3 push | Ready for Phase 3 commit |
 
 Historical intermittent observations (such as [BUG376](../testing/test-stability/native-goal-aggregate-timeout.md)) remain documented in the bug ledger as historical records until their underlying historical causes are separately proven.
 
-## Not finished (Phase 3+ roadmap)
+## Not finished (Phase 4 roadmap)
 
-| Group | Remaining work | State after Phase 2 |
+| Group | Remaining work | State after Phase 3 |
 | --- | --- | --- |
 | G01 Workflow | Remaining explicit execution/platform contracts | Deleted-worktree reconstruction (`R06`) complete |
-| G02 Sandbox | Whole-agent enforcement for file tools, Hooks, MCP and LSP; Linux/Landlock/network controls; custom policy/deny patterns | Not implemented; macOS command sandbox is already present (`R07`, `R08`) |
-| G03 Hooks | Administrator-enforced / signed policy; remaining precise decision precedence | Repository Hook trust (`R02`) complete; admin policy (`R09`) pending |
+| G02 Sandbox | Actual Linux host kernel execution matrix (`R12`) | Whole-agent sandbox (`R07`), `sandbox.toml` custom profiles/deny globs and Linux `bwrap` (`R08`) complete |
+| G03 Hooks | Cross-platform checks (`R12`) | Repository Hook trust (`R02`) and administrator/signed Hook policy (`R09`) complete |
 | G04 `/btw` | Cross-platform acceptance | Feature implemented; validation incomplete (`R12`) |
 | G05 Memory | Platform checks | Legacy semantic Memory (`R03`) complete; historical unknown ownership deliberately remains fail-closed |
 | G06 Goal | Platform validation; separately proven option gaps only | Core feature implemented; full unit gate green |
 | G07 Native Task | Platform checks | Advanced Task messaging, background nesting (`R05`), and deleted-placement recovery (`R06`) complete |
 | G08 Feedback | Positive native OS clipboard acceptance; platform checks; review draft-versus-direct-submission product difference | Validation/product decision (`R12`) |
 | G09 Media | Automatic team ZDR policy/auth claims; transient signing fallback; production service/storage and platform acceptance | Missing contracts / external-service validation (`R10`) |
-| G10 Plugins | Remaining manifest/organizational policy and Hook integration; remote Git credentials, platform and clean-host performance checks | Remaining contracts / acceptance (`R09`, `R12`); storefront/data/socket are implemented |
+| G10 Plugins | Remote Git credentials, platform and clean-host performance checks (`R12`) | Storefront/data/socket and organizational policy (`R09`) complete |
 | G11 Shell | Precise timeout-folding dialect comparison, remaining bounded contract and platform checks | Audit / acceptance (`R12`); manager UI is implemented |
 | G12 Product surfaces | Exact dashboard interactions, local trace bundle and native top-level fork comparisons | Usage CLI (`R04`) complete; other comparisons bounded (`R11`) |
 | G13 Verification | Full Linux/Windows and relevant reference matrix | macOS full unit + HTTP gates green (`R01`); cross-platform matrix (`R12`) pending |
@@ -101,5 +107,7 @@ The pinned reference's alternate proprietary-harness representability function r
 | [Usage CLI](handoffs/session-usage/README.md) (`R04`) | **Integrated and verified (Phase 1)** | 10 unit/adversarial tests (129 assertions), CLI + Desktop + Grok Build 1.0.52 side-by-side parity |
 | [Legacy semantic Memory](handoffs/legacy-memory-semantic-design.md) (`R03`) | **Integrated and verified (Phase 2)** | 84 unit/E2E tests, 6/6 CLI + 6/6 Desktop backend checks (`grok-memory-legacy-native.mjs`), hybrid retrieval + durable semantic-flush dedup (`BUG-20261016-385`) |
 | [Native child placement](../native-child-placement.md) (`R05`, `R06`) | **Integrated and verified (Phase 2)** | 47 unit/E2E tests (598 assertions), CLI + Desktop Task cwd (8/8), Task worktree (9/9), Workflow worktree (6/6), nested Task (6/6), Grok Build parity (`BUG-20261016-386`) |
+| [Whole-agent sandbox & policies](../native-command-sandbox.md) (`R07`, `R08`) | **Integrated and verified (Phase 3)** | 16 unit/E2E tests (157 assertions), CLI + Desktop 8/8 checks each (`grok-native-command-sandbox.mjs`), Grok Build 3/3 profiles (`BUG-20261016-387`) |
+| [Admin Hook & Plugin policy](../native-hook-sources.md) (`R09`) | **Integrated and verified (Phase 3)** | 49 unit/E2E tests (207 assertions), CLI + Desktop Hook sources/admin 5/5 each (`grok-hook-sources-native.mjs`), CLI + Desktop Plugin data/policy 6/6 each (`grok-plugin-data-native.mjs`, `BUG-20261016-387`) |
 
 

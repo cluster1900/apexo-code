@@ -1,5 +1,6 @@
 // Real native CLI/Desktop acceptance; imported commands remain Apexo-owned.
 import assert from "node:assert/strict"
+import { generateKeyPairSync, sign } from "node:crypto"
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -106,7 +107,7 @@ try {
   checks.push("user-managed-default-remains-disableable")
   await writeFile(join(home, "config.toml"), imports(false) + config(["duplicate", "user"], "user"))
   await writeFile(join(home, "trusted_folders.toml"), "")
-  assert.equal((await prompt()).length, 9)
+  assert.equal((await prompt()).length, 6)
   const revoked = await runtime.api(`${route}/hooks/reload`, undefined, "POST")
   assert.equal(revoked.inspection.hooks.length, 4)
   assert.deepEqual(
@@ -114,6 +115,34 @@ try {
     ["requirements", "user", "file"],
   )
   checks.push("reload-removes-imports-and-keeps-saved-disable-choice")
+
+  const pair = generateKeyPairSync("ed25519")
+  const publicKey = pair.publicKey.export({ type: "spki", format: "pem" }).toString()
+  const signedBody = `allow_managed_hooks_only = true\n[signature]\nrequired = true\nfail_closed = true\n${config(["duplicate", "signed-admin"], "signed")}`
+  const signature = sign(null, Buffer.from(signedBody, "utf8"), pair.privateKey).toString("base64")
+  await writeFile(join(home, "requirements.pub"), publicKey)
+  await writeFile(join(home, "requirements.signed.toml"), signedBody)
+  await writeFile(join(home, "requirements.signed.toml.sig"), signature)
+  const enforced = await runtime.api(`${route}/hooks/reload`, undefined, "POST")
+  assert.equal(enforced.inspection.hooks.length, 2)
+  assert.ok(enforced.inspection.hooks.every((hook) => hook.readOnlyReason === "managed" && hook.configurable === false))
+  const signedHook = enforced.inspection.hooks.find((hook) => hook.source === `${home}/requirements.signed.toml`)
+  assert.ok(signedHook)
+  const rejectDisable = await fetch(`${runtime.url}${route}/hooks/preference`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ hookID: signedHook.id, enabled: false }),
+  })
+  assert.equal(rejectDisable.status, 400)
+  await rejectDisable.text()
+  const signedRun = await prompt()
+  assert.deepEqual(
+    signedRun.map((row) => row.tag),
+    ["duplicate", "signed-admin"],
+  )
+  assert.equal(signedRun[0].value, "signed")
+  checks.push("signed-requirements-and-allow-managed-hooks-only-admin-policy")
+
   for (const row of await rows()) assert.throws(() => process.kill(row.pid, 0))
   const evidence = { kind, checks, providerCalls: runtime.calls.length, rows: await rows(), output: runtime.output }
   await writeFile(join(runtime.output, "hook-sources.json"), JSON.stringify(evidence, null, 2))

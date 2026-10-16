@@ -1,8 +1,10 @@
 export * as McpResourceTools from "./mcp-resources"
 
+import { fileURLToPath } from "node:url"
 import { Effect, Layer, Schema } from "effect"
 import { MCP } from "../mcp"
 import { McpResources } from "../mcp-resources"
+import { CommandSandbox } from "../command-sandbox"
 import { PermissionV2 } from "../permission"
 import { Location } from "../location"
 import { LocationRuntimeGuard } from "../location-runtime-guard"
@@ -20,6 +22,7 @@ const supported = new Set(["application/pdf", "image/gif", "image/jpeg", "image/
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const mcp = yield* MCP.Service
+    const sandbox = yield* CommandSandbox.Service
     const permission = yield* PermissionV2.Service
     const location = yield* Location.Service
     const guard = yield* LocationRuntimeGuard.Service
@@ -85,17 +88,32 @@ const layer = Layer.effectDiscard(
                 .use(
                   location,
                   Effect.gen(function* () {
+                    if (input.uri.startsWith("file://")) {
+                      const filePath = (() => {
+                        try {
+                          return fileURLToPath(input.uri)
+                        } catch {
+                          return undefined
+                        }
+                      })()
+                      if (filePath) {
+                        yield* sandbox
+                          .assertRead(context.sessionID, filePath)
+                          .pipe(Effect.mapError((error) => new Tool.Failure({ message: error.message })))
+                      }
+                    }
                     yield* authorize(input.server, input.uri, context)
                     return yield* mcp.readResource(input.server, input.uri)
                   }),
                 )
                 .pipe(
-                  Effect.mapError(
-                    (error) =>
-                      new Tool.Failure({
-                        message:
-                          error instanceof MCP.Failure ? error.message : "Read permission denied for MCP resource",
-                      }),
+                  Effect.mapError((error) =>
+                    error instanceof Tool.Failure
+                      ? error
+                      : new Tool.Failure({
+                          message:
+                            error instanceof MCP.Failure ? error.message : "Read permission denied for MCP resource",
+                        }),
                   ),
                 ),
             toModelOutput: ({ output }) => {
@@ -123,5 +141,12 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/mcp-resources",
   layer,
-  deps: [MCP.node, ToolRegistry.node, PermissionV2.node, Location.node, LocationRuntimeGuard.node],
+  deps: [
+    MCP.node,
+    CommandSandbox.node,
+    ToolRegistry.node,
+    PermissionV2.node,
+    Location.node,
+    LocationRuntimeGuard.node,
+  ],
 })

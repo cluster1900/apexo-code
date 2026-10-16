@@ -102,6 +102,33 @@ try {
   assert.notEqual(fresh.data, directory)
   assert.equal(fresh.count, 1)
   checks.push("default-uninstall-retires-active-data-and-reinstall-uses-new-epoch")
+
+  const pluginRoot = join(fresh.data, "..", "..")
+  await writeFile(
+    join(pluginRoot, "managed_config.toml"),
+    [
+      'strict_known_marketplaces = ["https://github.com/xai-org/plugin-marketplace.git"]',
+      'disable_plugins = ["persistent-data"]',
+      "",
+    ].join("\n"),
+  )
+  const blockedSource = await fetch(
+    `${runtime.url}/api/plugins/manage?location[directory]=${encodeURIComponent(runtime.directory)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "add-source", source: "https://github.com/evil-org/rogue-marketplace.git" }),
+    },
+  )
+  assert.equal(blockedSource.status, 400)
+  await blockedSource.text()
+  await reload()
+  const countBeforeDisabledPrompt = (await rows()).length
+  await prompt()
+  assert.equal((await rows()).length, countBeforeDisabledPrompt)
+  assert.equal(await readFile(join(fresh.data, "counter"), "utf8"), "1")
+  checks.push("organizational-plugin-policy-blocks-unlisted-source-and-disabled-plugin-activation")
+
   console.log(JSON.stringify({ kind, output: runtime.output, checks, providerCalls: runtime.calls.length }, null, 2))
 } finally {
   await runtime.close()

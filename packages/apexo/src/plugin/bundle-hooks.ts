@@ -37,22 +37,25 @@ export async function loadBundleHooks(
   home?: string,
   hostEnabled = home !== undefined,
   selection?: HookPreferences.Selection,
+  systemDir?: string,
 ): Promise<Hooks[]> {
   const plugins = await PluginStore.active(store)
-  const host = hostEnabled ? await HostHooks.discover(directory, home) : { sources: [], diagnostics: [] }
+  const host = hostEnabled
+    ? await HostHooks.discover(directory, home, undefined, undefined, systemDir)
+    : { sources: [], diagnostics: [], allowManagedHooksOnly: false }
   for (const diagnostic of host.diagnostics) console.warn("[host-hooks]", diagnostic)
-  const sources = [
-    ...(await Promise.all(
-      plugins.map(async (plugin) => ({
-        name: plugin.item.name,
-        root: plugin.root,
-        hooks: ConfigHooks.normalize((await PluginBundle.read(plugin.root, plugin.item.name)).hooks),
-        host: false,
-        pluginID: plugin.item.id,
-      })),
-    )),
-    ...host.sources,
-  ]
+  const pluginSources = host.allowManagedHooksOnly
+    ? []
+    : await Promise.all(
+        plugins.map(async (plugin) => ({
+          name: plugin.item.name,
+          root: plugin.root,
+          hooks: ConfigHooks.normalize((await PluginBundle.read(plugin.root, plugin.item.name)).hooks),
+          host: false,
+          pluginID: plugin.item.id,
+        })),
+      )
+  const sources = [...pluginSources, ...host.sources]
   return hooksFromSources(directory, sources, undefined, selection)
 }
 

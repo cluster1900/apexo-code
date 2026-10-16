@@ -71,7 +71,11 @@ export function CommandSandboxDialog(props: {
                     <p data-status="sandbox-profile">
                       {language.t("commandSandbox.stored", {
                         profile: status().profile
-                          ? language.t(profileKey[status().profile!])
+                          ? status().profile === "off" ||
+                            status().profile === "workspace" ||
+                            status().profile === "read-only"
+                            ? language.t(profileKey[status().profile as keyof typeof profileKey])
+                            : status().profile!
                           : language.t("commandSandbox.unknown"),
                       })}
                     </p>

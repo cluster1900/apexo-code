@@ -5,6 +5,7 @@ import { DateTime, Duration, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
+import { CommandSandbox } from "../command-sandbox"
 import { Config } from "../config"
 import { ConfigMedia } from "../config/media"
 import { MediaS3 } from "./media-s3"
@@ -83,10 +84,12 @@ const layer = Layer.effectDiscard(
     const lifecycle = yield* SessionLifecycle.Service
     const sessions = yield* SessionStore.Service
     const config = yield* Config.Service
+    const sandbox = yield* CommandSandbox.Service
 
     const execute = (request: Request, context: Tool.Context) =>
       Effect.gen(function* () {
         const claim = yield* lifecycle.capture(context.sessionID)
+        yield* sandbox.assertNetwork(context.sessionID)
         const selection = (yield* config.entries()).findLast(
           (entry) => entry.type === "document" && (entry.mediaInvalid || entry.info.media !== undefined),
         )
@@ -180,7 +183,9 @@ const layer = Layer.effectDiscard(
               try: () => (resolved.startsWith("file://") ? fileURLToPath(resolved) : resolved),
               catch: () => fail("Invalid reference path"),
             })
+            yield* sandbox.assertRead(context.sessionID, path, path)
             const target = yield* mutation.resolve({ path, kind: "file" })
+            yield* sandbox.assertRead(context.sessionID, target.canonical, path)
             if (target.externalDirectory)
               yield* authorize(
                 "external_directory",
@@ -457,5 +462,6 @@ export const node = makeLocationNode({
     Image.node,
     SessionLifecycle.node,
     SessionStore.node,
+    CommandSandbox.node,
   ],
 })

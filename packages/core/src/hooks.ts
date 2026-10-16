@@ -1,7 +1,7 @@
 export * as HostHooks from "./hooks"
 
 import path from "node:path"
-import { createHash } from "node:crypto"
+import { createHash, verify } from "node:crypto"
 import { readFile, readdir, realpath, stat } from "node:fs/promises"
 import { parse } from "toml"
 import { Global } from "./global"
@@ -22,7 +22,14 @@ export type Source = {
   readonly root: string
   readonly hooks: Record<string, unknown>
   readonly host: boolean
-  readonly provenance?: "user_requirements" | "user" | "user_managed" | "file"
+  readonly provenance?:
+    | "system_managed"
+    | "signed_requirements"
+    | "system_requirements"
+    | "user_managed"
+    | "user_requirements"
+    | "user"
+    | "file"
   // Set only by trusted Core source construction, never copied from a handler document.
   pluginID?: string
   readonly data?: string
@@ -82,7 +89,26 @@ export function choices(
   )
 }
 
-export type Inspection = { sources: Source[]; diagnostics: string[]; projectTrusted: boolean }
+export type Inspection = {
+  sources: Source[]
+  diagnostics: string[]
+  projectTrusted: boolean
+  allowManagedHooksOnly?: boolean
+}
+
+function hasFlag(doc: Record<string, unknown> | undefined, snake: string, camel: string) {
+  if (!doc) return false
+  const hooks = record(doc.hooks)
+  const security = record(doc.security)
+  return (
+    doc[snake] === true ||
+    doc[camel] === true ||
+    hooks[snake] === true ||
+    hooks[camel] === true ||
+    security[snake] === true ||
+    security[camel] === true
+  )
+}
 
 // Only the host-global trust store can authorize project executable configuration.
 export async function discover(
@@ -90,8 +116,12 @@ export async function discover(
   home = process.env.GROK_HOME ?? path.join(Global.Path.home, ".grok"),
   userHome = Global.Path.home,
   repository?: { proof: HookProjectTrust.Proof; data: string },
+  systemDir?: string,
 ): Promise<Inspection> {
   if (!path.isAbsolute(home) || !path.isAbsolute(userHome)) throw new Error("Hook homes must be absolute")
+  const defaultHome = path.join(Global.Path.home, ".grok")
+  const effectiveSystemDir =
+    systemDir ?? process.env.GROK_SYSTEM_CONFIG_DIR ?? (home === defaultHome ? "/etc/grok" : path.join(home, "system"))
   const diagnostics: string[] = []
   const workspace = await realpath(directory)
   const legacy = await HookProjectTrust.legacy(home, workspace, repository?.proof.root)
@@ -116,10 +146,90 @@ export async function discover(
         diagnostics.push(`${file}: unable to read or parse hook configuration`)
         return undefined
       })
+  const loadVerifiedSigned = async (file: string) => {
+    const info = await stat(file).catch(() => undefined)
+    if (!info) return { present: false, verified: false, document: undefined }
+    if (!info.isFile()) {
+      diagnostics.push(`${file}: hook settings source must be a file`)
+      return { present: true, verified: false, document: undefined }
+    }
+    const rawText = await readFile(file, "utf8").catch(() => undefined)
+    const sigText = await readFile(`${file}.sig`, "utf8").catch(() => undefined)
+    const pubKey =
+      process.env.GROK_REQUIREMENTS_PUBLIC_KEY ??
+      (await readFile(path.join(effectiveSystemDir, "requirements.pub"), "utf8").catch(() => undefined)) ??
+      (await readFile(path.join(home, "requirements.pub"), "utf8").catch(() => undefined))
+    if (rawText === undefined || !sigText || !pubKey) {
+      diagnostics.push(`${file}: missing Ed25519 signature or trusted public key`)
+      return { present: true, verified: false, document: undefined }
+    }
+    const signatureOk = (() => {
+      try {
+        return verify(null, Buffer.from(rawText, "utf8"), pubKey.trim(), Buffer.from(sigText.trim(), "base64"))
+      } catch {
+        return false
+      }
+    })()
+    if (!signatureOk) {
+      diagnostics.push(`${file}: invalid or unverified Ed25519 signature`)
+      return { present: true, verified: false, document: undefined }
+    }
+    const parsed = (() => {
+      try {
+        return record(parse(rawText))
+      } catch {
+        diagnostics.push(`${file}: unable to read or parse hook configuration`)
+        return undefined
+      }
+    })()
+    return { present: true, verified: parsed !== undefined, document: parsed }
+  }
   // Read settings and hooks from the same host-owned bytes. Project documents,
   // registered files and environment variables cannot enable vendor imports.
+  const sysReqPath = path.join(effectiveSystemDir, "requirements.toml")
+  const sysManagedPath = path.join(effectiveSystemDir, "managed_config.toml")
+  const signedReqPath = path.join(home, "requirements.signed.toml")
+  const userReqPath = path.join(home, "requirements.toml")
   const configPath = path.join(home, "config.toml")
+  const userManagedPath = path.join(home, "managed_config.toml")
+
+  const sysReq = (await stat(sysReqPath).catch(() => undefined))?.isFile() ? await load(sysReqPath) : undefined
+  const sysManaged = (await stat(sysManagedPath).catch(() => undefined))?.isFile()
+    ? await load(sysManagedPath)
+    : undefined
+  const signedResult = await loadVerifiedSigned(signedReqPath)
+  const userReq = (await stat(userReqPath).catch(() => undefined))?.isFile() ? await load(userReqPath) : undefined
   const config = (await stat(configPath).catch(() => undefined))?.isFile() ? await load(configPath) : undefined
+  const userManaged = (await stat(userManagedPath).catch(() => undefined))?.isFile()
+    ? await load(userManagedPath)
+    : undefined
+
+  const failClosed =
+    process.env.GROK_REQUIREMENTS_FAIL_CLOSED === "1" ||
+    [sysReq, sysManaged, userReq].some((doc) => hasFlag(doc, "fail_closed", "failClosed"))
+  const failClosedTriggered = failClosed && (!signedResult.present || !signedResult.verified)
+  if (failClosedTriggered) {
+    diagnostics.push(
+      `${signedReqPath}: signed requirements verification failed under fail_closed policy; suppressing non-managed hooks`,
+    )
+  }
+
+  // Tighten-only: once any layer enables allow_managed_hooks_only, no layer can disable it.
+  const allowManagedHooksOnly =
+    failClosedTriggered ||
+    [sysReq, signedResult.document, sysManaged, userReq, config, userManaged].some((doc) =>
+      hasFlag(doc, "allow_managed_hooks_only", "allowManagedHooksOnly"),
+    )
+
+  const preloaded = new Map<string, Record<string, unknown> | undefined>([
+    [sysReqPath, sysReq],
+    [sysManagedPath, sysManaged],
+    [signedReqPath, signedResult.document],
+    [userReqPath, userReq],
+    [configPath, config],
+    [userManagedPath, userManaged],
+  ])
+
   const imports = record(record(config?.hooks).imports)
   const vendors = (root: string, native = false) => [
     ...(imports.claude === true
@@ -145,15 +255,21 @@ export async function discover(
         }))
       : []),
   ]
-  const candidates: {
+  const allCandidates: {
     file: string
     settings: boolean
     provenance: NonNullable<Source["provenance"]>
+    managed?: boolean
     projectAuthority?: HookProjectTrust.Authority
   }[] = [
-    { file: path.join(home, "requirements.toml"), settings: true, provenance: "user_requirements" },
+    { file: sysReqPath, settings: true, provenance: "system_requirements", managed: true },
+    ...(signedResult.verified
+      ? [{ file: signedReqPath, settings: true, provenance: "signed_requirements" as const, managed: true }]
+      : []),
+    { file: sysManagedPath, settings: true, provenance: "system_managed", managed: true },
+    { file: userReqPath, settings: true, provenance: "user_requirements" },
     { file: configPath, settings: true, provenance: "user" },
-    { file: path.join(home, "managed_config.toml"), settings: true, provenance: "user_managed" },
+    { file: userManagedPath, settings: true, provenance: "user_managed" },
     ...[
       ...[
         path.join(home, "hooks"),
@@ -166,6 +282,7 @@ export async function discover(
       ...(projectTrusted ? project : []),
     ].map((candidate) => ({ ...candidate, provenance: "file" as const })),
   ]
+  const candidates = allowManagedHooksOnly ? allCandidates.filter((c) => c.managed === true) : allCandidates
   const entries: {
     source: Source
     event: string
@@ -175,7 +292,15 @@ export async function discover(
   }[] = []
   const seen = new Map<string, number>()
   const visited = new Set<string>()
-  const ranks = { user_managed: 4, user_requirements: 3, user: 2, file: 1 }
+  const ranks: Record<NonNullable<Source["provenance"]>, number> = {
+    system_managed: 7,
+    signed_requirements: 6,
+    system_requirements: 5,
+    user_managed: 4,
+    user_requirements: 3,
+    user: 2,
+    file: 1,
+  }
   for (const candidate of candidates) {
     const info = await stat(candidate.file).catch(() => undefined)
     if (!info) continue
@@ -197,20 +322,28 @@ export async function discover(
     for (const file of files) {
       if (visited.has(file)) continue
       visited.add(file)
-      const document = file === configPath ? config : await load(file)
+      const document = preloaded.has(file) ? preloaded.get(file) : await load(file)
       if (!document) continue
-      const source = Object.freeze({
+      const source: Source = Object.freeze({
         name: file,
         root: path.dirname(file),
         hooks: {},
         host: true,
         provenance: candidate.provenance,
+        ...(candidate.managed ? { policy: "managed" as const } : {}),
         ...(candidate.projectAuthority ? { projectAuthority: candidate.projectAuthority } : {}),
       })
       const hooks = ConfigHooks.normalize(
         Object.fromEntries(
           Object.entries(record(document.hooks)).filter(([event, groups]) => {
-            if (event === "imports") return false
+            if (
+              event === "imports" ||
+              event === "allow_managed_hooks_only" ||
+              event === "allowManagedHooksOnly" ||
+              event === "fail_closed" ||
+              event === "failClosed"
+            )
+              return false
             if (Array.isArray(groups)) return true
             diagnostics.push(`${file}: invalid hook groups for ${event}`)
             return false
@@ -298,12 +431,18 @@ export async function discover(
   }
   if (
     !projectTrusted &&
+    !allowManagedHooksOnly &&
     (await Promise.all(vendors(workspace, true).map((candidate) => stat(candidate.file).catch(() => undefined)))).some(
       Boolean,
     )
   )
     diagnostics.push("Project hooks are disabled until this exact workspace has a host folder-trust grant")
-  return { sources, diagnostics, projectTrusted }
+  return {
+    sources,
+    diagnostics,
+    projectTrusted,
+    ...(allowManagedHooksOnly ? { allowManagedHooksOnly: true } : {}),
+  }
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -311,8 +450,8 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 // Inspection deliberately excludes command text, HTTP URLs and environment values.
-export async function inspect(directory: string, home?: string, userHome?: string) {
-  return inspection(await discover(directory, home, userHome))
+export async function inspect(directory: string, home?: string, userHome?: string, systemDir?: string) {
+  return inspection(await discover(directory, home, userHome, undefined, systemDir))
 }
 
 export function inspection(result: Inspection) {

@@ -6,6 +6,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises"
 import path from "node:path"
 import { Context, DateTime, Duration, Effect, Layer } from "effect"
 import { Sandbox } from "@apexo/schema/sandbox"
+import { Bwrap } from "./command-sandbox/linux"
 import { CommandSandboxPaths } from "./command-sandbox/paths"
 import { CommandSandboxPolicy } from "./command-sandbox/policy"
 import { Seatbelt } from "./command-sandbox/seatbelt"
@@ -17,13 +18,34 @@ import { SessionCommandSandbox } from "./session/command-sandbox"
 import { SessionLifecycle } from "./session/lifecycle"
 import { SessionSchema } from "./session/schema"
 
+const PROJECT_PROTECTED_NAMES = [
+  ".apexo",
+  ".opencode",
+  ".grok",
+  ".git",
+  ".claude",
+  ".cursor",
+  ".vscode",
+  ".idea",
+  "apexo.json",
+  "apexo.jsonc",
+  "opencode.json",
+  "opencode.jsonc",
+  ".mcp.json",
+  ".lsp.json",
+  "AGENTS.md",
+  "CLAUDE.md",
+]
+
 export const make = Effect.gen(function* () {
   const global = yield* Global.Service
   const location = yield* Location.Service
   const appProcess = yield* AppProcess.Service
   const sessions = yield* SessionCommandSandbox.Service
+  const backendKind: Sandbox.Status["backend"]["kind"] =
+    process.platform === "darwin" ? "seatbelt" : process.platform === "linux" ? "bwrap" : "none"
   const backend: { availability: Sandbox.Status["backend"]["availability"] } = {
-    availability: process.platform === "darwin" ? "unchecked" : "unsupported",
+    availability: backendKind === "none" ? "unsupported" : "unchecked",
   }
   const receipts = new WeakMap<SessionLifecycle.Claim, { created: string; receipt: Sandbox.Receipt }>()
   const failures = new WeakMap<
@@ -43,24 +65,30 @@ export const make = Effect.gen(function* () {
   )
   const prepare = (policy: CommandSandboxPolicy.Confined, input: { shell: string; command: string; cwd: string }) =>
     Effect.gen(function* () {
-      if (process.platform !== "darwin")
+      if (backendKind === "none")
         return yield* new CommandSandboxPolicy.Failure({
           code: "unsupported_platform",
-          message: "Native command sandboxing currently supports macOS only.",
+          message: "Native command sandboxing currently supports macOS and Linux only.",
         })
       yield* CommandSandboxPaths.verify(policy)
       const directory = yield* temporary
+      const launchInput: Seatbelt.Input = {
+        ...input,
+        workspace: policy.workspace,
+        profile: policy.profile,
+        base: policy.base,
+        network: policy.network,
+        protected: policy.protected,
+        ancestors: policy.ancestors,
+        readOnly: policy.readOnly,
+        readWrite: policy.readWrite,
+        denyLiterals: policy.denyLiterals,
+        denyGlobs: policy.denyGlobs,
+        temporary: directory,
+        home: directory,
+      }
       return yield* Effect.try({
-        try: () =>
-          Seatbelt.prepare({
-            ...input,
-            workspace: policy.workspace,
-            profile: policy.profile,
-            protected: policy.protected,
-            ancestors: policy.ancestors,
-            temporary: directory,
-            home: directory,
-          }),
+        try: () => (backendKind === "bwrap" ? Bwrap.prepare(launchInput) : Seatbelt.prepare(launchInput)),
         catch: () =>
           new CommandSandboxPolicy.Failure({
             code: "invalid_policy",
@@ -74,33 +102,24 @@ export const make = Effect.gen(function* () {
       Effect.scoped(
         Effect.gen(function* () {
           if (profile === "off") return CommandSandboxPolicy.off
-          if (process.platform !== "darwin")
-            return yield* new CommandSandboxPolicy.Failure({
-              code: "unsupported_platform",
-              message: "Native command sandboxing currently supports macOS only.",
-            })
           const policy = yield* CommandSandboxPaths.resolve({
             workspace: location.directory,
             profile,
+            home: global.home,
             protected: [
               global.config,
               global.data,
               global.state,
               global.cache,
-              ...[
-                ".apexo",
-                ".opencode",
-                ".grok",
-                ".git",
-                "apexo.json",
-                "apexo.jsonc",
-                "opencode.json",
-                "opencode.jsonc",
-                "AGENTS.md",
-              ].map((name) => path.join(location.directory, name)),
+              ...PROJECT_PROTECTED_NAMES.map((name) => path.join(location.directory, name)),
             ],
           })
-          if (policy.profile === "off") return policy
+          if (CommandSandboxPolicy.isOff(policy)) return policy
+          if (backendKind === "none")
+            return yield* new CommandSandboxPolicy.Failure({
+              code: "unsupported_platform",
+              message: "Native command sandboxing currently supports macOS and Linux only.",
+            })
           const probe = yield* prepare(policy, { shell: "/bin/sh", command: "exit 0", cwd: policy.workspace })
           const result = yield* appProcess
             .run(probe.command, { timeout: Duration.seconds(3), maxOutputBytes: 512, maxErrorBytes: 1024 })
@@ -140,7 +159,7 @@ export const make = Effect.gen(function* () {
           revision: current.policy.revision,
           network: current.policy.network,
           backend: {
-            kind: process.platform === "darwin" ? ("seatbelt" as const) : ("none" as const),
+            kind: backendKind,
             availability: backend.availability,
           },
           ...(receipt?.created === current.created ? { latestExecution: receipt.receipt } : {}),
@@ -152,17 +171,96 @@ export const make = Effect.gen(function* () {
             scope: "native_commands" as const,
             stored: false,
             backend: {
-              kind: process.platform === "darwin" ? ("seatbelt" as const) : ("none" as const),
+              kind: backendKind,
               availability: backend.availability,
             },
             failure: { code: failure.code, message: failure.message },
           } satisfies Sandbox.Status),
         ),
       ),
+    assertRead: (sessionID: SessionSchema.ID, targetPath: string, rawPath?: string) =>
+      Effect.gen(function* () {
+        const current = yield* sessions.inspect(sessionID)
+        if (CommandSandboxPolicy.isOff(current.policy)) return
+        const policy = current.policy
+        yield* CommandSandboxPaths.verify(policy)
+        const resolved = yield* Effect.tryPromise({
+          try: () => CommandSandboxPaths.resolveTarget(rawPath ?? targetPath, policy.workspace),
+          catch: (error) =>
+            error instanceof CommandSandboxPolicy.Failure
+              ? error
+              : new CommandSandboxPolicy.Failure({
+                  code: "unsafe_path",
+                  message: `Sandbox blocked read access to ${rawPath ?? targetPath}`,
+                }),
+        })
+        if (
+          !CommandSandboxPaths.canRead(policy, resolved.lexical, resolved.canonical) ||
+          !CommandSandboxPaths.canRead(policy, targetPath, resolved.canonical)
+        )
+          return yield* new CommandSandboxPolicy.Failure({
+            code: "unsafe_path",
+            message: `Sandbox policy '${policy.profile}' denied read access to ${rawPath ?? targetPath}`,
+          })
+      }),
+    assertWrite: (sessionID: SessionSchema.ID, targetPath: string, rawPath?: string) =>
+      Effect.gen(function* () {
+        const current = yield* sessions.inspect(sessionID)
+        if (CommandSandboxPolicy.isOff(current.policy)) return
+        const policy = current.policy
+        yield* CommandSandboxPaths.verify(policy)
+        const resolved = yield* Effect.tryPromise({
+          try: () => CommandSandboxPaths.resolveTarget(rawPath ?? targetPath, policy.workspace),
+          catch: (error) =>
+            error instanceof CommandSandboxPolicy.Failure
+              ? error
+              : new CommandSandboxPolicy.Failure({
+                  code: "unsafe_path",
+                  message: `Sandbox blocked write access to ${rawPath ?? targetPath}`,
+                }),
+        })
+        if (
+          !CommandSandboxPaths.canWrite(policy, resolved.lexical, resolved.canonical) ||
+          !CommandSandboxPaths.canWrite(policy, targetPath, resolved.canonical)
+        )
+          return yield* new CommandSandboxPolicy.Failure({
+            code: "unsafe_path",
+            message: `Sandbox policy '${policy.profile}' denied write access to ${rawPath ?? targetPath}`,
+          })
+      }),
+    filterReadable: <T>(sessionID: SessionSchema.ID, items: ReadonlyArray<T>, getPath: (item: T) => string) =>
+      Effect.gen(function* () {
+        const current = yield* sessions.inspect(sessionID)
+        if (CommandSandboxPolicy.isOff(current.policy)) return [...items]
+        const policy = current.policy
+        yield* CommandSandboxPaths.verify(policy)
+        const kept: T[] = []
+        for (const item of items) {
+          const raw = getPath(item)
+          const resolved = yield* Effect.tryPromise({
+            try: () => CommandSandboxPaths.resolveTarget(raw, policy.workspace),
+            catch: () => new Error("unresolvable"),
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (resolved && CommandSandboxPaths.canRead(policy, resolved.lexical, resolved.canonical)) {
+            kept.push(item)
+          }
+        }
+        return kept
+      }),
+    assertNetwork: (sessionID: SessionSchema.ID) =>
+      Effect.gen(function* () {
+        const current = yield* sessions.inspect(sessionID)
+        if (CommandSandboxPolicy.isOff(current.policy)) return
+        if (current.policy.network !== "unrestricted")
+          return yield* new CommandSandboxPolicy.Failure({
+            code: "invalid_policy",
+            message: `Sandbox policy '${current.policy.profile}' disables network access.`,
+          })
+      }),
     prepare: (sessionID: SessionSchema.ID, input: { shell: string; command: string; cwd: string }) =>
       Effect.gen(function* () {
         const current = yield* sessions.inspect(sessionID)
-        if (current.policy.profile === "off") return undefined
+        if (CommandSandboxPolicy.isOff(current.policy)) return undefined
         const prepared = yield* prepare(current.policy, input).pipe(
           Effect.tapError((error) =>
             Effect.sync(() => {
@@ -201,7 +299,7 @@ export const make = Effect.gen(function* () {
                 receipt: {
                   id: randomUUID(),
                   revision: current.policy.revision,
-                  backend: "seatbelt",
+                  backend: backendKind === "bwrap" ? "bwrap" : "seatbelt",
                   confirmedAt: DateTime.makeUnsafe(Date.now()),
                   outcome: "exited",
                   exitCode: result.exitCode,

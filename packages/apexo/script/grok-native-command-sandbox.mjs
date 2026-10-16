@@ -1,19 +1,19 @@
 // Actual Apexo CLI/packaged Desktop command-only sandbox acceptance; macOS only.
 import assert from "node:assert/strict"
-import { writeFile, readFile } from "node:fs/promises"
+import { mkdir, writeFile, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { startShellFixture } from "./grok-shell-fixture.mjs"
 
 assert.equal(process.platform, "darwin", "This acceptance requires the macOS Seatbelt backend")
 const kind = process.argv[2] ?? "cli"
 const requests = []
-const command = { value: "" }
+const nextCall = { tool: "bash", args: { command: "" } }
 const runtime = await startShellFixture(kind, {
   config: { snapshot: false },
   next({ finished, ancillary }) {
     if (ancillary) return { content: "Sandbox fixture" }
     requests.push({ finished })
-    return finished ? { content: "Command complete" } : { tool: "bash", args: { command: command.value } }
+    return finished ? { content: "Command complete" } : { tool: nextCall.tool, args: nextCall.args }
   },
 })
 const checks = []
@@ -27,11 +27,13 @@ const create = (input = {}) =>
     })
     .then((result) => result.data)
 const status = (id) => runtime.api(`/api/session/${id}/sandbox`)
-const execute = async (id, value) => {
-  command.value = value
-  await runtime.api(`/api/session/${id}/prompt`, { prompt: { text: `Run this sandbox check: ${value}` } })
+const executeTool = async (id, tool, args) => {
+  nextCall.tool = tool
+  nextCall.args = args
+  await runtime.api(`/api/session/${id}/prompt`, { prompt: { text: `Run this sandbox check: ${tool}` } })
   await runtime.api(`/api/session/${id}/wait`, undefined, "POST")
 }
+const execute = (id, value) => executeTool(id, "bash", { command: value })
 try {
   await writeFile(join(runtime.directory, "apexo.json"), runtime.env.APEXO_CONFIG_CONTENT)
   const off = await create()
@@ -61,6 +63,36 @@ try {
   assert.equal(await Bun.file(join(runtime.directory, "readonly-blocked")).exists(), false)
   assert.equal((await status(readonly.id)).latestExecution.backend, "seatbelt")
   checks.push("read-only-command-denies-workspace-write")
+
+  await mkdir(join(runtime.directory, ".grok"), { recursive: true })
+  await writeFile(
+    join(runtime.directory, ".grok/sandbox.toml"),
+    [
+      "[profiles.audit-custom]",
+      'extends = "workspace"',
+      'deny = ["secrets/**"]',
+      "restrict_network = true",
+      "",
+    ].join("\n"),
+  )
+  const custom = await create({ commandSandbox: "audit-custom" })
+  assert.equal((await status(custom.id)).profile, "audit-custom")
+  assert.equal((await status(custom.id)).network, "off")
+  await executeTool(custom.id, "write", {
+    filePath: join(runtime.directory, "secrets/token.txt"),
+    content: "FORBIDDEN",
+  })
+  assert.equal(await Bun.file(join(runtime.directory, "secrets/token.txt")).exists(), false)
+  await executeTool(custom.id, "write", {
+    filePath: join(runtime.directory, "custom-allowed.txt"),
+    content: "CUSTOM_OK",
+  })
+  assert.equal(await readFile(join(runtime.directory, "custom-allowed.txt"), "utf8"), "CUSTOM_OK")
+  await executeTool(custom.id, "webfetch", {
+    url: "http://127.0.0.1:9/blocked",
+    format: "text",
+  })
+  checks.push("custom-profile-and-whole-agent-in-process-write-and-webfetch-enforcement")
 
   const before = requests.length
   const adopted = await create({ id: workspace.id, location: { directory: "/does-not-exist" } })

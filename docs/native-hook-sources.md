@@ -36,19 +36,27 @@ Workspace imports require both the host setting and the existing exact canonical
 
 Executing a Session captures definitions and effective preferences. Passive inspection and subsequent dispatch do not rediscover files. Explicit serialized reload rechecks import flags and exact workspace trust, then publishes a complete replacement through the existing Session Hook snapshot service. Changing files alone does not modify an existing captured registry. Turning imports off or revoking trust removes their definitions on reload, while saved disable choices remain intact. New Sessions capture the current configuration.
 
-## Boundaries and verification
+## Administrator-enforced Hook layers and organizational Plugin policy (`R09`)
 
-Administrator-enforced sources remain unimplemented. They require an authenticated Apexo policy capability; this slice does not treat user-owned requirements, signed-looking fields, managed filenames or environment settings as that capability. Parent-directory authorization remains a separate design requiring explicit repository-bound consent.
+Host discovery supports three administrator-enforced Hook layers above user-controlled sources:
 
-The pinned reference's `xai-grok-config/src/loader.rs` describes additive config layers and duplicate provenance ranks; `xai-grok-hooks/src/discovery.rs` describes global/project import ordering and replacement in the original duplicate slot. Apexo intentionally requires host opt-in with a default of false rather than inheriting the reference's broader compatibility defaults.
+1. `$GROK_SYSTEM_CONFIG_DIR/requirements.toml` (default `/etc/grok/requirements.toml`, provenance `system_requirements`, rank `5`).
+2. `$GROK_HOME/requirements.signed.toml` verified against `$GROK_HOME/requirements.signed.toml.sig` using an Ed25519 public key from `GROK_REQUIREMENTS_PUBLIC_KEY`, `$GROK_SYSTEM_CONFIG_DIR/requirements.pub`, or `$GROK_HOME/requirements.pub` (provenance `signed_requirements`, rank `6`).
+3. `$GROK_SYSTEM_CONFIG_DIR/managed_config.toml` (default `/etc/grok/managed_config.toml`, provenance `system_managed`, rank `7`).
 
-Validation from package directories:
+Duplicate handler precedence across all layers is `system_managed (7) > signed_requirements (6) > system_requirements (5) > user_managed (4) > user_requirements (3) > user (2) > file (1)`. Administrator layers stamp `policy: "managed"` (`configurable: false`, `readOnlyReason: "managed"`), cannot be disabled by `enabled: false` or user preferences (`SessionHookSnapshot.preference` fails with `read_only`), and cannot be spoofed by raw `policy` or `provenance` fields in user/project/file sources.
 
-- Core and Apexo `bun typecheck`: passed.
-- Hook source, deduplication, host dispatch, environment, snapshot and preferences tests: 31 passed, 140 assertions. The four initial feature tests failed against the previous loader. A further failing-before settings-directory regression and an explicit flat Cursor grammar control are included.
-- `bun script/grok-hook-sources-native.mjs cli`: four checks passed with six real provider calls, including command traces, import reload, disable retention and terminated Hook PIDs.
-- Unified rebuilt Desktop passes the same four checks / six provider calls after the Feedback, Workflow resume and Shell wait composition.
-- Shared integration repeats the six-file 31-test / 140-assertion gate, Core/Apexo typechecks and native CLI four-check / six-call acceptance successfully. The nine baseline/final file hashes were verified before copying.
-- The isolated installed Grok 1.0.52 comparator completed three scenarios (two conversation requests) and confirms opt-in global and trusted-project grouped Claude/Cursor imports. It differs from the pinned source: this fixture's user requirements/managed Hook layers do not execute, environment-distinct user/file copies remain separate, headless Stop dispatch appears twice, and malformed requirements abort startup with exit 2. Apexo follows the pinned additive-layer/raw-identity discovery contract. These differences are preserved as comparison evidence, not hidden behind a parity claim.
+When `fail_closed = true` (or `GROK_REQUIREMENTS_FAIL_CLOSED=1`) is active and `requirements.signed.toml` is missing or fails Ed25519 verification, or when any layer sets `allow_managed_hooks_only = true` (tighten-only), all non-managed user, vendor import, project, and plugin bundle hooks are suppressed while administrator-managed hooks remain active.
 
-See [fixture corrections](testing/test-fixtures/hook-source-fixture-assumptions.md) and the [settings-source kind regression](testing/runtime/hook-settings-source-kind.md). The installed-runtime script is a comparison fixture only and does not verify Apexo's implementation.
+Organizational plugin policy (`PluginStore.loadPolicy` in `packages/core/src/plugin-store.ts`) enforces:
+- `strict_known_marketplaces` and `extra_known_marketplaces` (allowing only listed marketplaces plus the official marketplace when strict mode is enabled).
+- Tighten-only `require_sha = true` / `GROK_MARKETPLACE_REQUIRE_SHA=1` requiring a pinned 40-character hexadecimal Git commit SHA on plugin installs and updates (across both `url` and `path` catalog entries).
+- `disable_plugins` / `disabled_plugins` / `[plugins].disabled` blocking installation, enabling, and runtime activation (`PluginStore.active` and `PluginStore.capture`) while preserving already-captured in-flight reader leases (`BUG-20261016-387`).
+
+## Verification
+
+- Core and Apexo `bun typecheck`: passed (`21/21` workspace tasks).
+- Hook and Plugin unit, adversarial, and E2E suites (`packages/apexo`): **49 passed, 0 failed, 207 assertions** across `hook-admin-policy.test.ts`, `plugin-admin-policy.test.ts`, `hook-sources.test.ts`, `hook-preferences.test.ts`, `hook-repository-trust.test.ts`, `store.test.ts`, and `host-hooks.test.ts`.
+- `bun script/grok-hook-sources-native.mjs cli` and `desktop`: **5/5 checks passed, 7 provider calls each**, including additive layers, trusted imports, disable retention, Ed25519 `signed_requirements`, and `allow_managed_hooks_only`.
+- `bun script/grok-plugin-data-native.mjs cli` and `desktop`: **6/6 checks passed, 7 provider calls each**, including persistent plugin data epochs, active-reader retention, `strict_known_marketplaces`, and `disable_plugins`.
+- See [Phase 3 sandbox and admin policy audit](testing/runtime/phase3-sandbox-and-admin-policy-audit.md) (`BUG-20261016-387`), [fixture corrections](testing/test-fixtures/hook-source-fixture-assumptions.md), and the [settings-source kind regression](testing/runtime/hook-settings-source-kind.md).

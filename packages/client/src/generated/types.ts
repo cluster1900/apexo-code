@@ -339,35 +339,35 @@ export type SessionsCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
-    readonly commandSandbox?: "off" | "workspace" | "read-only"
+    readonly commandSandbox?: string
   }["id"]
   readonly agent?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
-    readonly commandSandbox?: "off" | "workspace" | "read-only"
+    readonly commandSandbox?: string
   }["agent"]
   readonly model?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
-    readonly commandSandbox?: "off" | "workspace" | "read-only"
+    readonly commandSandbox?: string
   }["model"]
   readonly location?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
-    readonly commandSandbox?: "off" | "workspace" | "read-only"
+    readonly commandSandbox?: string
   }["location"]
   readonly commandSandbox?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
-    readonly commandSandbox?: "off" | "workspace" | "read-only"
+    readonly commandSandbox?: string
   }["commandSandbox"]
 }
 
@@ -410,17 +410,17 @@ export type SessionsSandboxInput = { readonly sessionID: { readonly sessionID: s
 export type SessionsSandboxOutput = {
   readonly scope: "native_commands"
   readonly stored: boolean
-  readonly profile?: "off" | "workspace" | "read-only"
+  readonly profile?: string
   readonly revision?: string
   readonly backend: {
-    readonly kind: "seatbelt" | "none"
+    readonly kind: "seatbelt" | "bwrap" | "none"
     readonly availability: "unchecked" | "available" | "unsupported" | "unavailable"
   }
   readonly network?: "off" | "unrestricted"
   readonly latestExecution?: {
     readonly id: string
     readonly revision: string
-    readonly backend: "seatbelt"
+    readonly backend: "seatbelt" | "bwrap"
     readonly confirmedAt: number
     readonly outcome: "exited"
     readonly exitCode: number

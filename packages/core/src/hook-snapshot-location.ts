@@ -83,7 +83,10 @@ export const layer = Layer.effect(
                       ),
                     )
                   : { sources: [], diagnostics: [], projectTrusted: false }
-                return { ...host, sources: [...installed.sources, ...host.sources] }
+                return {
+                  ...host,
+                  sources: host.allowManagedHooksOnly ? host.sources : [...installed.sources, ...host.sources],
+                }
               }),
             ),
           ),

@@ -3,6 +3,7 @@ export * as GrepTool from "./grep"
 import { ToolFailure } from "@apexo/llm"
 import { Effect, Layer, Schema } from "effect"
 import path from "path"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { FSUtil } from "../fs-util"
@@ -57,6 +58,7 @@ const layer = Layer.effectDiscard(
     const ripgrep = yield* Ripgrep.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
+    const sandbox = yield* CommandSandbox.Service
 
     yield* tools
       .register({
@@ -93,36 +95,30 @@ const layer = Layer.effectDiscard(
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
               const target = path.resolve(location.directory, input.path ?? ".")
+              yield* sandbox.assertRead(context.sessionID, target, input.path ?? ".")
               const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
-              return yield* ripgrep
-                .grep({
-                  cwd: info?.type === "Directory" ? target : path.dirname(target),
-                  pattern: input.pattern,
-                  file: info?.type === "File" ? path.basename(target) : undefined,
-                  include: input.include,
-                  limit: input.limit ?? Number.MAX_SAFE_INTEGER,
-                })
-                .pipe(
-                  Effect.map((result) =>
-                    result.map((match) =>
-                      FileSystem.Match.make({
-                        ...match,
-                        entry: FileSystem.Entry.make({
-                          ...match.entry,
-                          path: RelativePath.make(
-                            path.relative(
-                              location.directory,
-                              path.resolve(
-                                info?.type === "Directory" ? target : path.dirname(target),
-                                match.entry.path,
-                              ),
-                            ),
-                          ),
-                        }),
-                      }),
+              const searchRoot = info?.type === "Directory" ? target : path.dirname(target)
+              const raw = yield* ripgrep.grep({
+                cwd: searchRoot,
+                pattern: input.pattern,
+                file: info?.type === "File" ? path.basename(target) : undefined,
+                include: input.include,
+                limit: input.limit ?? Number.MAX_SAFE_INTEGER,
+              })
+              const filtered = yield* sandbox.filterReadable(context.sessionID, raw, (match) =>
+                path.resolve(searchRoot, match.entry.path),
+              )
+              return filtered.map((match) =>
+                FileSystem.Match.make({
+                  ...match,
+                  entry: FileSystem.Entry.make({
+                    ...match.entry,
+                    path: RelativePath.make(
+                      path.relative(location.directory, path.resolve(searchRoot, match.entry.path)),
                     ),
-                  ),
-                )
+                  }),
+                }),
+              )
             }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to grep for ${input.pattern}` }))),
         }),
       })
@@ -133,5 +129,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/grep",
   layer,
-  deps: [ToolRegistry.node, FSUtil.node, Ripgrep.node, Location.node, PermissionV2.node],
+  deps: [ToolRegistry.node, FSUtil.node, Ripgrep.node, Location.node, PermissionV2.node, CommandSandbox.node],
 })

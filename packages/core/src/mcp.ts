@@ -7,6 +7,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { Cause, Context, Effect, Exit, Fiber, FiberSet, Layer, Schema, Scope } from "effect"
 import { Mcp } from "@apexo/schema/mcp"
 import { McpEvent } from "@apexo/schema/mcp-event"
+import { CommandSandbox } from "./command-sandbox"
 import { Config } from "./config"
 import { EventV2 } from "./event"
 import { ConfigMCP } from "./config/mcp"
@@ -86,6 +87,7 @@ const make = Effect.gen(function* () {
   const permission = yield* PermissionV2.Service
   const guard = yield* LocationRuntimeGuard.Service
   const tools = yield* Tools.Service
+  const sandbox = yield* CommandSandbox.Service
   const lifetime = yield* Scope.Scope
   // Keep jobs outside individual connection scopes: a successful recovery retires
   // its predecessor, and must never wait for its own worker to stop.
@@ -385,6 +387,8 @@ const make = Effect.gen(function* () {
                 permission,
                 guard,
                 location,
+                sandbox,
+                remote: server.type === "remote",
                 active: () => ownership.committed && current.connections.get(name)?.token === token && alive.value,
               }),
             ),
@@ -975,5 +979,6 @@ export const node = makeLocationNode({
     PermissionV2.node,
     LocationRuntimeGuard.node,
     ToolRegistry.toolsNode,
+    CommandSandbox.node,
   ],
 })

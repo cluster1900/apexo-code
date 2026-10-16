@@ -10,6 +10,7 @@ import { ToolFailure } from "@apexo/llm"
 import { FileDiff } from "@apexo/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Effect, Layer, Schema } from "effect"
+import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
@@ -97,6 +98,7 @@ const layer = Layer.effectDiscard(
     const files = yield* FileMutation.Service
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
+    const sandbox = yield* CommandSandbox.Service
 
     yield* tools
       .register({
@@ -140,6 +142,7 @@ const layer = Layer.effectDiscard(
 
                 const path = input.path ?? input.filePath
                 if (!path) return yield* new ToolFailure({ message: "path or filePath is required" })
+                yield* unableToEdit(sandbox.assertWrite(context.sessionID, path, path))
                 const target = yield* unableToEdit(mutation.resolve({ path, kind: "file" }))
                 const external = target.externalDirectory
                 if (external) {
@@ -163,6 +166,7 @@ const layer = Layer.effectDiscard(
                     source: permissionSource,
                   }),
                 )
+                yield* unableToEdit(sandbox.assertWrite(context.sessionID, target.canonical, path))
                 const source = decodeUtf8(yield* unableToEdit(fs.readFile(target.canonical)))
                 const ending = detectLineEnding(source.text)
                 const oldString = convertToLineEnding(input.oldString, ending)
@@ -224,5 +228,12 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/edit",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, FSUtil.node, PermissionV2.node],
+  deps: [
+    ToolRegistry.node,
+    LocationMutation.node,
+    FileMutation.node,
+    FSUtil.node,
+    PermissionV2.node,
+    CommandSandbox.node,
+  ],
 })

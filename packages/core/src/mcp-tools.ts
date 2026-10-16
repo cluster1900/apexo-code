@@ -3,6 +3,7 @@ export * as McpTools from "./mcp-tools"
 import { createHash } from "node:crypto"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { Effect, Schema } from "effect"
+import type { CommandSandbox } from "./command-sandbox"
 import { Tool } from "./tool/tool"
 import { PermissionV2 } from "./permission"
 import { LocationRuntimeGuard } from "./location-runtime-guard"
@@ -25,6 +26,8 @@ export async function make(input: {
   permission: PermissionV2.Interface
   guard: LocationRuntimeGuard.Interface
   location: Location.Ref
+  sandbox?: CommandSandbox.Interface
+  remote?: boolean
   active: () => boolean
 }) {
   const { CallToolResultSchema } = await import("@modelcontextprotocol/sdk/types.js")
@@ -41,6 +44,11 @@ export async function make(input: {
           input.location,
           Effect.gen(function* () {
             if (!input.active()) return yield* new Tool.Failure({ message: `Stale MCP tool call: ${key}` })
+            if (input.remote && input.sandbox) {
+              yield* input.sandbox
+                .assertNetwork(context.sessionID)
+                .pipe(Effect.mapError(() => new Tool.Failure({ message: `Sandbox network policy blocked ${key}` })))
+            }
             yield* input.permission
               .assert({
                 action: key,
