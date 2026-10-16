@@ -77,7 +77,7 @@ export const node = makeGlobalNode({
 })
 
 const restricted = new Set(["workflow", "update_goal"])
-const delegationTools = new Set(["task", "task_output", "task_wait", "task_cancel"])
+const delegationTools = new Set(["task", "task_output", "task_wait", "task_cancel", "send_subagent_message"])
 export function materialize(
   base: ToolRegistry.Materialization,
   scheduled = false,

@@ -25,9 +25,11 @@ import { LocationMutation } from "./location-mutation"
 import { AgentV2 } from "./agent"
 import { ModelV2 } from "./model"
 import { ProviderV2 } from "./provider"
+import { MemoryEmbedding } from "./memory-embedding"
 import { MemoryFiles } from "./memory-files"
 import { MemoryFlush } from "./memory-flush"
 import { MemoryMaintenance } from "./memory-maintenance"
+import { MemorySearch } from "./memory-search"
 import { MemorySession } from "./memory-session"
 import { MemoryTranscriptNative } from "./memory-transcript-native"
 import { MemoryV2 } from "./memory-v2"
@@ -43,6 +45,27 @@ import { SessionSchema } from "./session/schema"
 import { SessionStore } from "./session/store"
 import { WorkspaceMemory } from "./workspace-memory"
 import { Flock } from "./util/flock"
+
+export const DuplicateProof = Schema.Struct({
+  embeddingIdentity: Schema.String,
+  threshold: Schema.Finite,
+  similarity: Schema.Finite,
+  neighborPath: Schema.String,
+  neighborStartLine: Schema.Number,
+  neighborFileHash: Schema.String,
+  neighborChunkHash: Schema.String,
+  candidateHash: Schema.String,
+})
+export type DuplicateProof = typeof DuplicateProof.Type
+
+export const Publication = Schema.Struct({
+  operationID: MemoryOperation.ID,
+  planHash: Schema.String,
+  status: Schema.Literals(["accepted", "empty", "duplicate"]),
+  content: Schema.optionalKey(Schema.String),
+  duplicate: Schema.optionalKey(DuplicateProof),
+})
+export type Publication = typeof Publication.Type
 
 export const Plan = Schema.Struct({
   sessionID: SessionSchema.ID,
@@ -96,6 +119,7 @@ const make = Effect.gen(function* () {
   const admission = yield* SessionInputAdmission.Service
   const config = yield* Config.Service
   const database = yield* Database.Service
+  const embedding = yield* MemoryEmbedding.Service
   const location = yield* Location.Service
   const global = yield* Global.Service
   const sessions = yield* SessionStore.Service
@@ -147,7 +171,12 @@ const make = Effect.gen(function* () {
       input.home,
       input,
     )
-  const access = Effect.fnUntraced(function* (id: SessionSchema.ID, agent: string, file: string) {
+  const accessAction = Effect.fnUntraced(function* (
+    id: SessionSchema.ID,
+    agent: string,
+    file: string,
+    actions: readonly ("read" | "edit")[],
+  ) {
     const inspect = yield* permission.inspect(id, AgentV2.ID.make(agent))
     const resolved = yield* mutation.resolve({ path: file, kind: "file" })
     if (resolved.externalDirectory && inspect("external_directory", [resolved.externalDirectory.resource]) !== "allow")
@@ -160,9 +189,13 @@ const make = Effect.gen(function* () {
         }),
       ),
     ]
-    if (inspect("read", paths) !== "allow" || inspect("edit", paths) !== "allow")
-      return yield* fail("Legacy Memory source and destination access is not allowed", "forbidden")
+    for (const action of actions) {
+      if (inspect(action, paths) !== "allow")
+        return yield* fail("Legacy Memory source and destination access is not allowed", "forbidden")
+    }
   })
+  const access = (id: SessionSchema.ID, agent: string, file: string) =>
+    accessAction(id, agent, file, ["read", "edit"])
   const metadata = Effect.fnUntraced(function* (
     id: SessionSchema.ID,
     stopped?: SessionMessage.ID,
@@ -453,10 +486,23 @@ const make = Effect.gen(function* () {
       delay: (options.idle_timeout_secs ?? 300) * 1000,
     }
   })
-  const execute = Effect.fn("MemoryLegacyNative.execute")(function* (
-    plan: Plan,
-    automatic?: { readonly claim: SessionLifecycle.Claim; readonly valid: () => boolean },
-  ) {
+  type ExecuteOptions =
+    | { readonly claim: SessionLifecycle.Claim; readonly valid: () => boolean }
+    | {
+        readonly operationID: MemoryOperation.ID
+        readonly automatic?: { readonly claim: SessionLifecycle.Claim; readonly valid: () => boolean }
+        readonly recover?: Publication
+        readonly prepared?: (publication: Publication) => Effect.Effect<void, unknown>
+      }
+  const execute = Effect.fn("MemoryLegacyNative.execute")(function* (plan: Plan, optionsInput?: ExecuteOptions) {
+    const automatic =
+      optionsInput && "operationID" in optionsInput ? optionsInput.automatic : optionsInput
+    const operationID =
+      optionsInput && "operationID" in optionsInput
+        ? optionsInput.operationID
+        : MemoryOperation.ID.make("mop_legacy-flush")
+    const recover = optionsInput && "operationID" in optionsInput ? optionsInput.recover : undefined
+    const prepared = optionsInput && "operationID" in optionsInput ? optionsInput.prepared : undefined
     const last = plan.sources.at(-1)
     if (!last) return { status: "no_work", processed: 0 } satisfies MemoryOperation.Result
     if (
@@ -472,18 +518,65 @@ const make = Effect.gen(function* () {
       const file = target(plan)
       const home = yield* io(() => realpath(input.home))
       const canonicalFile = path.join(home, path.relative(input.home, file))
+      const planHash = MemoryV2.hash(JSON.stringify(plan))
       const marker = `<!-- apexo-native-flush:${MemoryV2.hash(JSON.stringify([plan.createdEventID, plan.sources.map((source) => [source.promptID, source.assistantID, source.transcript]), [modelRef.providerID, modelRef.id, modelRef.variant ?? null]]))} -->`
+      const initialPlacement = yield* placement(plan.sessionID)
+      const initialAgent = initialPlacement.session.agent
       const validate = Effect.gen(function* () {
+        if (automatic && !automatic.valid()) return yield* Effect.interrupt
         const current = yield* placement(plan.sessionID)
         if (
           current.snapshot.revision !== plan.revision ||
           (yield* SessionIncarnation.created(database.db, plan.sessionID)) !== plan.createdEventID ||
-          (yield* io(() => MemoryMaintenance.revision(scope))) !== plan.generation
+          (yield* io(() => MemoryMaintenance.revision(scope))) !== plan.generation ||
+          current.session.agent !== initialAgent
         )
           return yield* fail("Legacy Memory source changed after admission", "changed")
         for (const source of plan.sources) yield* access(plan.sessionID, source.agent, file)
         return current.session
       })
+      const authorizeRead = (files: readonly string[]) =>
+        Effect.gen(function* () {
+          for (const source of plan.sources) {
+            for (const targetPath of files) {
+              yield* accessAction(plan.sessionID, source.agent, targetPath, ["read"])
+            }
+          }
+        })
+      const verifyDuplicateAtCommit = (dup: DuplicateProof) =>
+        Effect.gen(function* () {
+          yield* authorizeRead([dup.neighborPath])
+          const roots = yield* io(async () =>
+            Promise.all(
+              (["global", "workspace"] as const).map(async (rootScope) => {
+                const folder = path.dirname(
+                  WorkspaceMemory.file(input.directory, input.home, { ...input, scope: rootScope }),
+                )
+                return { path: await realpath(folder), alias: path.resolve(folder), source: rootScope }
+              }),
+            ),
+          )
+          const matchedRoot = roots.find(
+            (root) =>
+              MemoryFiles.allowed(root.path, dup.neighborPath) || MemoryFiles.allowed(root.alias, dup.neighborPath),
+          )
+          if (!matchedRoot) return yield* fail("Legacy flush duplicate source is outside memory roots", "changed")
+          const canonicalNeighbor = MemoryFiles.allowed(matchedRoot.path, dup.neighborPath)
+            ? dup.neighborPath
+            : path.join(matchedRoot.path, path.relative(matchedRoot.alias, dup.neighborPath))
+          yield* authorizeRead([canonicalNeighbor])
+          const neighborText = yield* io(() =>
+            MemoryFiles.read(canonicalNeighbor, matchedRoot, 1_000_001).then((value) => {
+              if (value.size > 1_000_000) throw new Error("Legacy Memory file exceeds bound")
+              return value.bytes.toString("utf8")
+            }),
+          ).pipe(Effect.mapError(() => fail("Legacy flush duplicate source changed before publication", "changed")))
+          if (MemoryV2.hash(neighborText) !== dup.neighborFileHash)
+            return yield* fail("Legacy flush duplicate source changed before publication", "changed")
+          const matchedChunk = MemorySearch.chunks(neighborText).find((item) => item.start === dup.neighborStartLine)
+          if (!matchedChunk || MemoryV2.hash(matchedChunk.content) !== dup.neighborChunkHash)
+            return yield* fail("Legacy flush duplicate chunk changed before publication", "changed")
+        })
       const session = yield* validate
       // Same destination lock orders legacy flushes across processes; never clear while holding it.
       yield* Flock.effect(`${canonicalFile}.native-flush`, {
@@ -493,10 +586,73 @@ const make = Effect.gen(function* () {
       })
       const previous = yield* io(() => read(file, input))
       if (previous.includes(marker)) return { status: "completed", processed: 0 } satisfies MemoryOperation.Result
-      if (previous.includes(marker.replace(" -->", ":empty -->")))
+      if (
+        previous.includes(marker.replace(" -->", ":empty -->")) ||
+        previous.includes(marker.replace(" -->", ":duplicate -->"))
+      )
         return { status: "no_work", processed: 0 } satisfies MemoryOperation.Result
       if (MemoryV2.hash(previous) !== plan.flush.previousHash)
         return yield* fail("Legacy Memory destination changed; request a fresh flush", "changed")
+      const publish = (publication: Publication) =>
+        Effect.gen(function* () {
+          if (
+            publication.planHash !== planHash ||
+            (publication.status === "accepted" && !publication.content) ||
+            (publication.status !== "accepted" && publication.content !== undefined) ||
+            (publication.status === "duplicate" && !publication.duplicate)
+          )
+            return yield* fail("Legacy flush publication receipt is invalid", "changed")
+          yield* MemoryMaintenance.writeEffect(
+            scope,
+            Effect.gen(function* () {
+              yield* Flock.effect(canonicalFile, {
+                dir: path.join(home, ".grok", "memory", ".locks"),
+                deadOwnerOnly: true,
+              })
+              const commit = modes.commit(
+                plan.sessionID,
+                settings,
+                plan.revision,
+                Effect.gen(function* () {
+                  if (automatic && !automatic.valid()) return yield* Effect.interrupt
+                  yield* validate
+                  if (publication.status === "duplicate") {
+                    yield* verifyDuplicateAtCommit(publication.duplicate!)
+                  }
+                  const publishedMarker =
+                    publication.status === "empty"
+                      ? marker.replace(" -->", ":empty -->")
+                      : publication.status === "duplicate"
+                        ? marker.replace(" -->", ":duplicate -->")
+                        : marker
+                  yield* io(() =>
+                    publishLocked(
+                      file,
+                      input,
+                      plan.flush.previousHash,
+                      [
+                        previous.trimEnd(),
+                        publishedMarker,
+                        ...(publication.status === "accepted" && publication.content ? [publication.content] : []),
+                      ]
+                        .filter(Boolean)
+                        .join("\n\n") + "\n",
+                    ),
+                  )
+                }),
+              )
+              // Order the final short commit against durable prompt admission after acquiring storage leases.
+              yield* automatic ? admission.fence(automatic.claim, commit) : commit
+            }),
+            plan.generation,
+          )
+          return {
+            status: publication.status === "accepted" ? "completed" : "no_work",
+            processed: publication.status === "accepted" ? 1 : 0,
+            committed: true,
+          } satisfies MemoryOperation.Result
+        })
+      if (recover) return yield* publish(recover)
       const model = yield* models.resolve({ ...session, agent: AgentV2.ID.make(last.agent), model: modelRef })
       yield* validate
       const output = { text: "", finished: false }
@@ -534,43 +690,116 @@ const make = Effect.gen(function* () {
       if (!output.finished) return yield* fail("Legacy flush did not finish", "invalid")
       const parsed = MemoryFlush.response(output.text, plan.flush.maxChars)
       if (parsed.status === "rejected") return yield* fail("Legacy flush returned invalid Markdown", "invalid")
-      yield* MemoryMaintenance.writeEffect(
-        scope,
-        Effect.gen(function* () {
-          yield* Flock.effect(canonicalFile, { dir: path.join(home, ".grok", "memory", ".locks"), deadOwnerOnly: true })
-          const commit = modes.commit(
-            plan.sessionID,
-            settings,
-            plan.revision,
-            Effect.gen(function* () {
-              if (automatic && !automatic.valid()) return yield* Effect.interrupt
-              yield* validate
-              yield* io(() =>
-                publishLocked(
-                  file,
-                  input,
-                  plan.flush.previousHash,
-                  [
-                    previous.trimEnd(),
-                    parsed.status === "empty" ? marker.replace(" -->", ":empty -->") : marker,
-                    ...(parsed.status === "accepted" ? [parsed.content] : []),
-                  ]
-                    .filter(Boolean)
-                    .join("\n\n") + "\n",
-                ),
+      yield* validate
+      const duplicate =
+        parsed.status === "accepted" &&
+        (Boolean(settings.memory.embedding?.model?.trim()) ||
+          (settings.memory.embedding?.provider !== undefined && settings.memory.embedding.provider !== "api"))
+          ? yield* Effect.gen(function* () {
+              const cacheFile = path.join(
+                scope.root,
+                plan.generation === "initial" ? "search.sqlite" : `search-${plan.generation}.sqlite`,
               )
-            }),
-          )
-          // Order the final short commit against durable prompt admission after acquiring storage leases.
-          yield* automatic ? admission.fence(automatic.claim, commit) : commit
-        }),
-        plan.generation,
-      )
-      return {
-        status: parsed.status === "empty" ? "no_work" : "completed",
-        processed: parsed.status === "empty" ? 0 : 1,
-        committed: true,
-      } satisfies MemoryOperation.Result
+              for (const source of plan.sources) {
+                yield* access(plan.sessionID, source.agent, cacheFile)
+                yield* accessAction(plan.sessionID, source.agent, `${cacheFile}-wal`, ["edit"])
+                yield* accessAction(plan.sessionID, source.agent, `${cacheFile}-shm`, ["edit"])
+              }
+              const authorityFailure: { error?: SessionMemoryModeNative.Failure } = {}
+              const search = yield* MemorySearch.make({
+                ...input,
+                search: settings.memory.search,
+                embedding: () =>
+                  Effect.gen(function* () {
+                    yield* validate.pipe(
+                      Effect.tapError((err) =>
+                        Effect.sync(() => {
+                          authorityFailure.error = err instanceof Failure ? err : fail("Legacy Memory authority changed", "changed")
+                        }),
+                      ),
+                      Effect.mapError((err) =>
+                        new MemorySearch.MemoryError({
+                          message: err instanceof Failure ? err.message : "Legacy Memory authority changed",
+                        }),
+                      ),
+                    )
+                    return yield* embedding.resolve({
+                      embedding: settings.memory.embedding,
+                      fallbackProviderID: modelRef.providerID,
+                    })
+                  }),
+                watch: false,
+                joinIO: true,
+              })
+              const outcome = yield* search
+                .semanticDuplicate(
+                  {
+                    content: parsed.content,
+                    threshold: options.semantic_dedup_threshold ?? 0.92,
+                  },
+                  (files) =>
+                    Effect.gen(function* () {
+                      yield* validate
+                      yield* authorizeRead(search.accessPaths(files))
+                    }).pipe(
+                      Effect.tapError((err) =>
+                        Effect.sync(() => {
+                          authorityFailure.error = err instanceof Failure ? err : fail("Legacy Memory authority changed", "changed")
+                        }),
+                      ),
+                      Effect.mapError((err) =>
+                        new MemorySearch.MemoryError({
+                          message: err instanceof Failure ? err.message : "Legacy Memory authority changed",
+                        }),
+                      ),
+                    ),
+                )
+                .pipe(
+                  Effect.mapError(
+                    (err) => authorityFailure.error ?? fail(err.message, "changed"),
+                  ),
+                )
+              return outcome.duplicate ? outcome : undefined
+            }).pipe(Effect.scoped)
+          : undefined
+      yield* validate
+      const publication =
+        parsed.status === "empty"
+          ? Publication.make({
+              operationID,
+              planHash,
+              status: "empty",
+            })
+          : duplicate
+            ? Publication.make({
+                operationID,
+                planHash,
+                status: "duplicate",
+                duplicate: {
+                  embeddingIdentity: duplicate.embeddingIdentity,
+                  threshold: duplicate.threshold,
+                  similarity: duplicate.similarity,
+                  neighborPath: duplicate.neighborPath,
+                  neighborStartLine: duplicate.neighborStartLine,
+                  neighborFileHash: duplicate.neighborFileHash,
+                  neighborChunkHash: duplicate.neighborChunkHash,
+                  candidateHash: duplicate.candidateHash,
+                },
+              })
+            : Publication.make({
+                operationID,
+                planHash,
+                status: "accepted",
+                content: parsed.content,
+              })
+      if (prepared) {
+        yield* prepared(publication).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Failure ? cause : fail("Legacy flush publication state could not be saved"),
+          ),
+        )
+      }
+      return yield* publish(publication)
     }).pipe(
       Effect.provideService(
         PermissionV2.Inherited,
@@ -591,6 +820,7 @@ export const node = makeLocationNode({
     SessionInputAdmission.node,
     Config.node,
     Database.node,
+    MemoryEmbedding.node,
     Location.node,
     Global.node,
     SessionStore.node,

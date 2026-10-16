@@ -73,20 +73,6 @@ it.instance(
       yield* llm.respond((hit) => {
         expect(JSON.stringify(hit.body.tools)).toContain('"task"')
         return reply()
-          .tool("task", {
-            description: "Forbidden background",
-            prompt: "MUST_NOT_RUN_BACKGROUND",
-            subagent_type: "helper",
-            background: true,
-          })
-          .item()
-      })
-      yield* llm.respond((hit) => {
-        const results = (hit.body.messages as { role: string; content: unknown }[]).filter(
-          (message) => message.role === "tool",
-        )
-        expect(JSON.stringify(results)).toContain("foreground execution")
-        return reply()
           .tool("task", { description: "Grandchild", prompt: "NESTED_GRANDCHILD", subagent_type: "helper" })
           .item()
       })
@@ -147,7 +133,7 @@ it.instance(
       expect((yield* post(`/api/session/${grandchild.id}/prompt`, { prompt: { text: "NOT_AUTHORIZED" } })).status).toBe(
         409,
       )
-      expect(yield* llm.calls).toBe(7)
+      expect(yield* llm.calls).toBe(6)
     }),
   { git: true },
   30_000,
@@ -239,7 +225,7 @@ it.instance(
 )
 
 it.instance(
-  "nested foreground inherits headless consent and parent hard denies through both child levels",
+  "nested foreground inherits headless consent, rejects headless nested background, and enforces parent hard denies",
   () =>
     Effect.gen(function* () {
       const instance = yield* TestInstance
@@ -269,9 +255,23 @@ it.instance(
       )
       yield* llm.respond(() =>
         reply()
-          .tool("task", { description: "Grandchild", prompt: "HEADLESS_GRANDCHILD", subagent_type: "helper" })
+          .tool("task", {
+            description: "Forbidden headless background",
+            prompt: "MUST_NOT_RUN_BACKGROUND",
+            subagent_type: "helper",
+            background: true,
+          })
           .item(),
       )
+      yield* llm.respond((hit) => {
+        const results = (hit.body.messages as { role: string; content: unknown }[]).filter(
+          (message) => message.role === "tool",
+        )
+        expect(JSON.stringify(results)).toContain("headless inputs")
+        return reply()
+          .tool("task", { description: "Grandchild", prompt: "HEADLESS_GRANDCHILD", subagent_type: "helper" })
+          .item()
+      })
       yield* llm.respond((hit) => {
         // Catalog visibility follows the selected agent; inherited authority is enforced by the Bash leaf.
         expect(JSON.stringify(hit.body.tools)).toContain('"bash"')
@@ -312,7 +312,125 @@ it.instance(
       expect(
         yield* Effect.promise(() => Bun.file(path.join(instance.directory, "nested-denied-marker")).exists()),
       ).toBe(false)
-      expect(yield* llm.calls).toBe(6)
+      expect(yield* llm.calls).toBe(7)
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "nested background tasks support ancestor inspection, task_message interject, and recursive subtree cancellation",
+  () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const llm = yield* TestLLMServer
+      yield* configure(instance.directory, llm.url)
+      const configuration = yield* Effect.promise(() => Bun.file(path.join(instance.directory, "apexo.json")).json())
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(instance.directory, "apexo.json"),
+          JSON.stringify({
+            ...configuration,
+            task: { maxDepth: 2, activeMessages: true },
+          }),
+        ),
+      )
+      const grandchildGate = Promise.withResolvers<void>()
+      yield* Effect.addFinalizer(() => Effect.sync(() => grandchildGate.resolve()))
+      const created = yield* post("/api/session", {
+        location: { directory: instance.directory },
+        model: { providerID: "task-fixture", id: "model" },
+        agent: "build",
+      })
+      const parent = (yield* Schema.decodeUnknownEffect(SessionResponse)(yield* created.json)).data
+      // Turn 1 (root): launch background child.
+      yield* llm.respond(() =>
+        reply()
+          .tool("task", {
+            description: "Bg Child",
+            prompt: "BG_CHILD_START",
+            subagent_type: "helper",
+            background: true,
+          })
+          .item(),
+      )
+      // Subsequent turns for root, child, and grandchild may interleave; dispatch by session prompt lineage.
+      for (let i = 0; i < 4; i++) {
+        yield* llm.respond((hit) => {
+          const body = JSON.stringify(hit.body)
+          if (body.includes("Launch nested background tree")) {
+            return reply().text("ROOT_AFTER_CHILD_LAUNCH").stop().item()
+          }
+          if (body.includes("BG_CHILD_START")) {
+            const toolResults = (hit.body.messages as { role: string; content: unknown }[]).filter(
+              (m) => m.role === "tool",
+            )
+            const match = JSON.stringify(toolResults).match(/\\"id\\":\\"(ses_[A-Za-z0-9]+)\\"|\"id\":\"(ses_[A-Za-z0-9]+)\"/)
+            const grandchildID = match?.[1] ?? match?.[2]
+            if (grandchildID) {
+              return reply().tool("task_wait", { task_id: grandchildID, timeout_ms: 25_000 }).item()
+            }
+            return reply()
+              .tool("task", {
+                description: "Bg Grandchild",
+                prompt: "BG_GRANDCHILD_START",
+                subagent_type: "helper",
+                background: true,
+              })
+              .item()
+          }
+          return reply().text("GRANDCHILD_HELD_OUTPUT").wait(grandchildGate.promise).stop().item()
+        })
+      }
+      expect(
+        (yield* post(`/api/session/${parent.id}/prompt`, { prompt: { text: "Launch nested background tree" } })).status,
+      ).toBe(200)
+      yield* llm.wait(5)
+      const children = yield* HttpClient.get(`/api/session/${parent.id}/task`).pipe(
+        Effect.flatMap((response) => response.json),
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(Task.Summary))),
+      )
+      expect(children).toHaveLength(1)
+      const child = children[0]!
+      const grandchildren = yield* pollWithTimeout(
+        HttpClient.get(`/api/session/${child.id}/task`).pipe(
+          Effect.flatMap((response) => response.json),
+          Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(Task.Summary))),
+          Effect.map((list) => (list.length === 1 ? list : undefined)),
+        ),
+        "Background grandchild did not appear",
+        "10 seconds",
+      )
+      const grandchild = grandchildren[0]!
+      expect(grandchild.background).toBe(true)
+      // Root ancestor can inspect the background grandchild directly.
+      const ancestorView = yield* HttpClient.get(`/api/session/${parent.id}/task/${grandchild.id}`)
+      expect(ancestorView.status).toBe(200)
+      const ancestorDetail = yield* Schema.decodeUnknownEffect(Task.Detail)(yield* ancestorView.json)
+      expect(ancestorDetail.id).toBe(grandchild.id)
+      expect(ancestorDetail.parentSessionID).toBe(child.id)
+      // Root ancestor can send a launch-bound message directly to the running background grandchild.
+      const messageRes = yield* post(`/api/session/${parent.id}/task/${grandchild.id}/message`, {
+        inputID: SessionMessage.ID.create(),
+        text: "ANCESTOR_STEER_TO_GRANDCHILD",
+        delivery: "steer",
+      })
+      expect(messageRes.status).toBe(200)
+      const receipt = yield* Schema.decodeUnknownEffect(Task.MessageReceipt)(yield* messageRes.json)
+      expect(receipt.status).toBe("admitted")
+      // Cancelling the intermediate child from root recursively cancels and joins the held grandchild.
+      const cancelRes = yield* HttpClient.post(`/api/session/${parent.id}/task/${child.id}/cancel`)
+      expect(cancelRes.status).toBe(204)
+      const cancelledChildRes = yield* HttpClient.get(`/api/session/${parent.id}/task/${child.id}`)
+      expect(cancelledChildRes.status).toBe(200)
+      const cancelledChild = yield* Schema.decodeUnknownEffect(Task.Detail)(yield* cancelledChildRes.json)
+      expect(cancelledChild.status).toBe("cancelled")
+      const cancelledGrandchildRes = yield* HttpClient.get(`/api/session/${parent.id}/task/${grandchild.id}`)
+      expect(cancelledGrandchildRes.status).toBe(200)
+      const cancelledGrandchild = yield* Schema.decodeUnknownEffect(Task.Detail)(
+        yield* cancelledGrandchildRes.json,
+      )
+      expect(cancelledGrandchild.status).toBe("cancelled")
     }),
   { git: true },
   30_000,

@@ -142,7 +142,12 @@ function memoryRetrievalTools(options: ExtensionOptions): Tool.Def[] {
           return {
             title: "memory_search",
             output: `${output}${result.skipped.length ? `\n${result.skipped.length} memory file(s) disappeared while indexing; retry to refresh.` : ""}`,
-            metadata: { results: result.results, skipped: result.skipped.length },
+            metadata: {
+              results: result.results,
+              skipped: result.skipped.length,
+              mode: result.mode,
+              ...(result.fallback ? { fallback: result.fallback } : {}),
+            },
           }
         }).pipe(Effect.scoped, Effect.orDie),
     },

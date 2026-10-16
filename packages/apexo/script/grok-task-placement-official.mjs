@@ -23,7 +23,7 @@ await promisify(execFile)("/usr/bin/git", ["init"], { cwd })
 await promisify(execFile)("/usr/bin/git", ["add", "tracked.txt"], { cwd })
 await promisify(execFile)(
   "/usr/bin/git",
-  ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"],
+  ["-c", "commit.gpgsign=false", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"],
   { cwd },
 )
 await writeFile(join(cwd, "tracked.txt"), "DIRTY_PARENT\n")

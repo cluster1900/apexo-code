@@ -50,7 +50,7 @@ export const node = makeLocationNode({
             ? {
                 send_subagent_message: Tool.make({
                   description:
-                    "Send a durable message to a direct-child native Task. A completed child starts a new owned background run when the current parent can own background Tasks. Defaults to steer at the next safe turn; queue waits until idle; interject prioritizes delivery and interrupts only passive Task/process waits. Acceptance is not completion.",
+                    "Send a durable message to an owned child or descendant native Task. A completed direct child starts a new owned background run when the current parent can own background Tasks. Defaults to steer at the next safe turn; queue waits until idle; interject prioritizes delivery and interrupts only passive Task/process waits. Acceptance is not completion.",
                   input: Schema.Struct({
                     subagent_id: SessionSchema.ID,
                     text: Task.MessageInput.fields.text,
@@ -81,7 +81,7 @@ export const node = makeLocationNode({
             : {}),
           task: Tool.make({
             description:
-              "Run one native subagent Task. background=true returns while independent work continues; completion is delivered when the parent is idle. task_id follows up the same completed owned child. resume_from creates a fresh child from a terminal direct child's durable transcript, saved Agent and model; do not combine it with task_id. isolation=worktree creates a retained native worktree including dirty tracked and untracked files; cwd selects an existing directory and cannot be combined with worktree. A resume retains the source placement and ignores new placement options. Nested foreground Tasks require task.maxDepth greater than the current captured depth. Nested background Tasks and background Tasks during Goals are unavailable.",
+              "Run one native subagent Task. background=true returns while independent work continues; completion is delivered when the parent is idle. task_id follows up the same completed owned child. resume_from creates a fresh child from a terminal direct child's durable transcript, saved Agent and model; do not combine it with task_id. isolation=worktree creates a retained native worktree including dirty tracked and untracked files; cwd selects an existing directory and cannot be combined with worktree. A resume retains the source placement and ignores new placement options. Nested Tasks require task.maxDepth greater than the current captured depth. Background Tasks during Goals are unavailable.",
             input: SessionTask.Input,
             output: SessionTask.Output,
             execute: (input, context) => tasks.execute(input, context).pipe(Effect.mapError(failure)),
@@ -121,7 +121,7 @@ export const node = makeLocationNode({
                         }
                       const result = outcome.value
                       if (!result.timedOut && result.task.status !== "running")
-                        yield* completions.observed(context.sessionID, input.task_id)
+                        yield* completions.observed(result.task.parentSessionID, input.task_id)
                       return result.task
                     }
                     return yield* tasks.output(context.sessionID, input.task_id)

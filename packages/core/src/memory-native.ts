@@ -5,16 +5,19 @@ import { Context, Effect, Layer } from "effect"
 import { MemoryNote } from "@apexo/schema/memory-note"
 import { SessionID } from "@apexo/schema/session-id"
 import { Config } from "./config"
+import { Database } from "./database/database"
 import { makeLocationNode } from "./effect/app-node"
 import { Global } from "./global"
 import { Location } from "./location"
 import { LocationMutation } from "./location-mutation"
 import { MemoryCatalog } from "./memory-catalog"
+import { MemoryEmbedding } from "./memory-embedding"
 import { MemoryMaintenance } from "./memory-maintenance"
 import { MemorySearch } from "./memory-search"
 import { MemoryV2 } from "./memory-v2"
 import { MemoryV2Catalog } from "./memory-v2-catalog"
 import { PermissionV2 } from "./permission"
+import { SessionIncarnation } from "./session/incarnation"
 import { SessionLifecycle } from "./session/lifecycle"
 import { SessionManagedChild } from "./session/managed-child"
 import { SessionMemoryModeNative } from "./session/memory-mode-native"
@@ -82,6 +85,8 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
+    const database = yield* Database.Service
+    const embedding = yield* MemoryEmbedding.Service
     const global = yield* Global.Service
     const location = yield* Location.Service
     const lifecycle = yield* SessionLifecycle.Service
@@ -278,6 +283,10 @@ const layer = Layer.effect(
         invoke(
           context.sessionID,
           Effect.gen(function* () {
+            const session = yield* placement(context.sessionID)
+            const created = yield* SessionIncarnation.created(database.db, context.sessionID)
+            if (!created)
+              return yield* new Failure({ code: "changed", message: "Session creation proof is unavailable" })
             const snapshot = yield* enabled(context.sessionID, true)
             const roots = ["global", "workspace"].map((scope) =>
               WorkspaceMemory.file(location.directory, global.home, {
@@ -286,18 +295,50 @@ const layer = Layer.effect(
               }),
             )
             yield* ask(context, "memory_search", roots)
+            const verifyAuthority = Effect.gen(function* () {
+              const currentSession = yield* placement(context.sessionID).pipe(
+                Effect.mapError(() => new MemorySearch.MemoryError({ message: "Session is no longer available" })),
+              )
+              const currentSnapshot = yield* enabled(context.sessionID, true).pipe(
+                Effect.mapError(() => new MemorySearch.MemoryError({ message: "Memory is disabled for this Session" })),
+              )
+              if (
+                currentSnapshot.revision !== snapshot.revision ||
+                (yield* SessionIncarnation.created(database.db, context.sessionID)) !== created ||
+                (currentSession.agent !== undefined && currentSession.agent !== (session.agent ?? context.agent))
+              )
+                return yield* new MemorySearch.MemoryError({ message: "Session authority changed during search" })
+              return currentSession
+            }).pipe(
+              Effect.mapError((error) =>
+                error instanceof MemorySearch.MemoryError
+                  ? error
+                  : new MemorySearch.MemoryError({ message: "Session authority changed during search" }),
+              ),
+            )
             const search = yield* MemorySearch.make({
               directory: location.directory,
               projectID: location.project.id,
               home: global.home,
               search: settings.memory?.search,
+              embedding: () =>
+                Effect.gen(function* () {
+                  const currentSession = yield* verifyAuthority
+                  return yield* embedding.resolve({
+                    embedding: settings.memory?.embedding,
+                    fallbackProviderID: currentSession.model?.providerID ?? session.model?.providerID,
+                  })
+                }),
               watch: false,
               joinIO: true,
             })
             const result = yield* search.search(input, (files) =>
-              ask(context, "read", search.accessPaths(files)).pipe(
-                Effect.mapError(() => new MemorySearch.MemoryError({ message: "Memory read is not permitted" })),
-              ),
+              Effect.gen(function* () {
+                yield* verifyAuthority
+                yield* ask(context, "read", search.accessPaths(files)).pipe(
+                  Effect.mapError(() => new MemorySearch.MemoryError({ message: "Memory read is not permitted" })),
+                )
+              }),
             )
             return yield* mode.commit(context.sessionID, settings, snapshot.revision, Effect.succeed(result))
           }).pipe(Effect.scoped),
@@ -374,6 +415,8 @@ export const node = makeLocationNode({
   layer,
   deps: [
     Config.node,
+    Database.node,
+    MemoryEmbedding.node,
     Global.node,
     Location.node,
     SessionLifecycle.node,

@@ -1,14 +1,18 @@
 export * as SessionTaskMessage from "./task-message"
 
 import { and, asc, eq, isNull } from "drizzle-orm"
-import { Context, DateTime, Deferred, Effect, Layer } from "effect"
+import { Context, DateTime, Deferred, Effect, Layer, Option, Schema } from "effect"
 import { Task } from "@apexo/schema/task"
+import { optional } from "@apexo/schema/schema"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
+import { SessionExecutionPolicy } from "./execution-policy"
+import { SessionIncarnation } from "./incarnation"
 import { SessionInput } from "./input"
 import { SessionGoal } from "./goal"
+import { SessionManagedChild } from "./managed-child"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionInputTable, SessionTable } from "./sql"
@@ -17,6 +21,43 @@ import { SessionTaskStore } from "./task-store"
 import { SessionTaskRole } from "./task-role"
 
 export const validText = (text: string) => text.trim().length > 0 && Buffer.byteLength(text, "utf8") <= 32768
+
+export const SenderSource = Schema.Literals(["tool", "operator"])
+export type SenderSource = typeof SenderSource.Type
+
+const StoredBinding = Schema.Struct({
+  parentCreated: Schema.String,
+  senderID: SessionSchema.ID,
+  senderCreated: Schema.String,
+  source: optional(SenderSource),
+})
+type StoredBinding = typeof StoredBinding.Type
+const decodeStoredBinding = Schema.decodeUnknownOption(Schema.fromJsonString(StoredBinding))
+
+const decodeBinding = (raw: string, record: SessionTaskStore.Record): StoredBinding => {
+  if (!raw.startsWith("{"))
+    return {
+      parentCreated: raw,
+      senderID: record.parentID,
+      senderCreated: raw,
+      source: undefined,
+    }
+  const parsed = decodeStoredBinding(raw)
+  return Option.isSome(parsed)
+    ? parsed.value
+    : {
+        parentCreated: raw,
+        senderID: record.parentID,
+        senderCreated: raw,
+        source: undefined,
+      }
+}
+
+const encodeBinding = (binding: StoredBinding) =>
+  binding.source === undefined &&
+  binding.senderID === undefined
+    ? binding.parentCreated
+    : JSON.stringify(binding)
 
 const make = Effect.gen(function* () {
   const database = yield* Database.Service
@@ -83,9 +124,9 @@ const make = Effect.gen(function* () {
       }
       return { launch, record }
     })
-  const receipt = (parentID: SessionSchema.ID, childID: SessionSchema.ID, inputID: SessionMessage.ID) =>
+  const receiptWithBinding = (viewerID: SessionSchema.ID, childID: SessionSchema.ID, inputID: SessionMessage.ID) =>
     Effect.gen(function* () {
-      const record = yield* tasks.owned(parentID, childID)
+      const record = yield* tasks.descendant(viewerID, childID)
       const row = yield* db
         .select()
         .from(SessionTaskMessageTable)
@@ -94,18 +135,21 @@ const make = Effect.gen(function* () {
         .pipe(Effect.orDie)
       const input = yield* SessionInput.find(db, inputID)
       const launch = row ? yield* tasks.launch(row.launch_id) : undefined
+      if (!row || !input || !launch)
+        return yield* new SessionTaskStore.Failure({ code: "missing", message: "Task message is unavailable" })
+      const binding = decodeBinding(row.parent_created, record)
+      const senderCreated = yield* SessionIncarnation.created(db, binding.senderID).pipe(Effect.orDie)
       if (
-        !row ||
-        !input ||
-        !launch ||
         input.sessionID !== childID ||
-        launch.parentID !== parentID ||
+        launch.parentID !== record.parentID ||
         launch.sessionID !== childID ||
-        row.parent_created !== record.parentCreated ||
-        row.child_created !== record.childCreated
+        binding.parentCreated !== record.parentCreated ||
+        row.child_created !== record.childCreated ||
+        !senderCreated ||
+        binding.senderCreated !== senderCreated
       )
         return yield* new SessionTaskStore.Failure({ code: "missing", message: "Task message is unavailable" })
-      return {
+      const value: Task.MessageReceipt = {
         inputID,
         taskID: childID,
         delivery: row.delivery,
@@ -115,8 +159,11 @@ const make = Effect.gen(function* () {
             : (row.terminal ?? (input.withdrawnSeq !== undefined ? "interrupted" : "admitted")),
         admittedAt: DateTime.toEpochMillis(input.timeCreated),
         ...(row.promoted_at === null ? {} : { promotedAt: row.promoted_at }),
-      } satisfies Task.MessageReceipt
+      }
+      return { receipt: value, binding, structured: row.parent_created.startsWith("{") }
     })
+  const receipt = (viewerID: SessionSchema.ID, childID: SessionSchema.ID, inputID: SessionMessage.ID) =>
+    receiptWithBinding(viewerID, childID, inputID).pipe(Effect.map((item) => item.receipt))
   const open = (launchID: string) =>
     Effect.gen(function* () {
       const launch = yield* tasks.launch(launchID)
@@ -141,15 +188,20 @@ const make = Effect.gen(function* () {
           message: "Task delivery was closed before registration",
         })
     })
-  // Exact retries reconcile the canonical input before inspecting a later launch.
-  const retry = (parentID: SessionSchema.ID, childID: SessionSchema.ID, input: Task.MessageInput) =>
+  // Exact retries reconcile the canonical input and sender attribution before inspecting a later launch.
+  const retry = (
+    senderID: SessionSchema.ID,
+    childID: SessionSchema.ID,
+    input: Task.MessageInput,
+  ) =>
     Effect.gen(function* () {
       const delivery = input.delivery ?? "steer"
       const existing = yield* SessionInput.find(db, input.inputID)
       if (existing) {
-        const previous = yield* receipt(parentID, existing.sessionID, input.inputID)
+        const previous = yield* receiptWithBinding(senderID, existing.sessionID, input.inputID)
         if (
-          previous.delivery !== delivery ||
+          previous.binding.senderID !== senderID ||
+          previous.receipt.delivery !== delivery ||
           !SessionInput.equivalent(existing, {
             sessionID: childID,
             prompt: { text: input.text },
@@ -160,10 +212,15 @@ const make = Effect.gen(function* () {
             code: "invalid",
             message: "Task message ID was reused with different input",
           })
-        return previous
+        return previous.receipt
       }
     })
-  const initial = (launchID: string, input: Task.MessageInput, check: () => Effect.Effect<void>) =>
+  const initial = (
+    launchID: string,
+    input: Task.MessageInput,
+    check: () => Effect.Effect<void>,
+    source?: SenderSource,
+  ) =>
     Effect.gen(function* () {
       if (!validText(input.text))
         return yield* new SessionTaskStore.Failure({ code: "invalid", message: "Invalid initial Task message" })
@@ -212,7 +269,12 @@ const make = Effect.gen(function* () {
                   .values({
                     input_id: input.inputID,
                     launch_id: launchID,
-                    parent_created: record.parentCreated,
+                    parent_created: encodeBinding({
+                      parentCreated: record.parentCreated,
+                      senderID: record.parentID,
+                      senderCreated: record.parentCreated,
+                      source,
+                    }),
                     child_created: record.childCreated,
                     delivery: input.delivery ?? "steer",
                     bytes: Buffer.byteLength(input.text, "utf8"),
@@ -229,10 +291,13 @@ const make = Effect.gen(function* () {
         )
     })
   const send = (
-    parentID: SessionSchema.ID,
+    senderID: SessionSchema.ID,
     childID: SessionSchema.ID,
     input: Task.MessageInput,
-    operator?: { readonly agent: SessionSchema.Info["agent"] },
+    options?: {
+      readonly agent?: SessionSchema.Info["agent"]
+      readonly source?: SenderSource
+    },
   ) =>
     Effect.gen(function* () {
       const bytes = Buffer.byteLength(input.text, "utf8")
@@ -241,11 +306,37 @@ const make = Effect.gen(function* () {
           code: "invalid",
           message: "Task message must contain 1 to 32768 UTF-8 bytes",
         })
-      yield* tasks.owned(parentID, childID)
+      if (yield* SessionExecutionPolicy.forSession(senderID))
+        return yield* new SessionTaskStore.Failure({
+          code: "denied",
+          message: "Active Task delivery is unavailable to headless inputs",
+        })
+      const senderTask = yield* tasks.read(senderID)
+      const senderManaged = yield* SessionManagedChild.managed(db, senderID).pipe(
+        Effect.mapError(() => new SessionTaskStore.Failure({ code: "denied", message: "Sender authority is invalid" })),
+      )
+      if (senderManaged && !senderTask)
+        return yield* new SessionTaskStore.Failure({
+          code: "denied",
+          message: "Active Task delivery is unavailable to this managed child",
+        })
+      if (senderTask) {
+        yield* tasks.owned(senderTask.parentID, senderID)
+        const senderRole = roles.get(senderID)
+        if (!senderRole || senderRole.record.childCreated !== senderTask.childCreated)
+          return yield* new SessionTaskStore.Failure({
+            code: "stale",
+            message: "Sender Task has no live capability",
+          })
+      }
+      const record = yield* tasks.descendant(senderID, childID)
+      const senderCreated = yield* SessionIncarnation.created(db, senderID).pipe(Effect.orDie)
+      if (!senderCreated)
+        return yield* new SessionTaskStore.Failure({ code: "missing", message: "Sender Session is unavailable" })
       const delivery = input.delivery ?? "steer"
-      const previous = yield* retry(parentID, childID, input)
+      const previous = yield* retry(senderID, childID, input)
       if (previous) return previous
-      const latest = yield* tasks.latest(parentID, childID)
+      const latest = yield* tasks.latest(record.parentID, childID)
       if (!latest) return yield* new SessionTaskStore.Failure({ code: "missing", message: "Task has no launch" })
       yield* active(latest.id)
       yield* events
@@ -262,15 +353,47 @@ const make = Effect.gen(function* () {
             commit: () =>
               Effect.gen(function* () {
                 const current = yield* active(latest.id)
-                if (operator) {
+                const currentRecord = yield* tasks.descendant(senderID, childID)
+                const currentSenderCreated = yield* SessionIncarnation.created(db, senderID).pipe(Effect.orDie)
+                if (
+                  !currentSenderCreated ||
+                  currentSenderCreated !== senderCreated ||
+                  currentRecord.parentCreated !== current.record.parentCreated ||
+                  currentRecord.childCreated !== current.record.childCreated
+                )
+                  return yield* new SessionTaskStore.Failure({
+                    code: "stale",
+                    message: "Sender incarnation changed during message admission",
+                  })
+                if (senderTask) {
+                  const senderRole = roles.get(senderID)
+                  if (!senderRole || senderRole.record.childCreated !== senderTask.childCreated)
+                    return yield* new SessionTaskStore.Failure({
+                      code: "stale",
+                      message: "Sender Task lost its live capability during admission",
+                    })
+                  if (senderRole.attempt)
+                    yield* goals
+                      .check(senderRole.attempt)
+                      .pipe(
+                        Effect.mapError(
+                          () =>
+                            new SessionTaskStore.Failure({
+                              code: "stale",
+                              message: "Task Goal attempt is no longer eligible",
+                            }),
+                        ),
+                      )
+                }
+                if (options && "agent" in options) {
                   const parent = yield* db
                     .select({ agent: SessionTable.agent })
                     .from(SessionTable)
-                    .where(eq(SessionTable.id, parentID))
+                    .where(eq(SessionTable.id, senderID))
                     .get()
                     .pipe(Effect.orDie)
                   // Operator consent belongs to the persisted selection captured before permission evaluation.
-                  if (!parent || (parent.agent ?? undefined) !== operator.agent)
+                  if (!parent || (parent.agent ?? undefined) !== options.agent)
                     return yield* new SessionTaskStore.Failure({
                       code: "stale",
                       message: "Operator agent changed during message permission evaluation",
@@ -283,10 +406,28 @@ const make = Effect.gen(function* () {
                   .where(eq(SessionTaskMessageTable.launch_id, latest.id))
                   .all()
                   .pipe(Effect.orDie)
+                const decodedPending = rows.map((row) => ({
+                  bytes: row.binding.bytes,
+                  binding: decodeBinding(row.binding.parent_created, current.record),
+                }))
+                const decodedTotal = total.map((row) => decodeBinding(row.parent_created, current.record))
+                const sameBucket = (binding: StoredBinding) =>
+                  binding.senderID === senderID && binding.source === options?.source
+                const bucketPending = decodedPending.filter((item) => sameBucket(item.binding))
+                const bucketTotal = decodedTotal.filter(sameBucket)
+                const hasOtherBucketPending = decodedPending.some((item) => !sameBucket(item.binding))
+                const hasOtherBucketTotal = decodedTotal.some((item) => !sameBucket(item))
+                const narrowQuota = senderID !== current.record.parentID || hasOtherBucketPending || hasOtherBucketTotal
+                const maxSenderPending = narrowQuota ? 16 : 32
+                const maxSenderPendingBytes = narrowQuota ? 524_288 : 1_048_576
+                const maxSenderTotal = narrowQuota ? 64 : 128
                 if (
                   rows.length >= 32 ||
                   rows.reduce((sum, row) => sum + row.binding.bytes, 0) + bytes > 1048576 ||
-                  total.length >= 128
+                  total.length >= 128 ||
+                  bucketPending.length >= maxSenderPending ||
+                  bucketPending.reduce((sum, item) => sum + item.bytes, 0) + bytes > maxSenderPendingBytes ||
+                  bucketTotal.length >= maxSenderTotal
                 )
                   return yield* new SessionTaskStore.Failure({
                     code: "busy",
@@ -297,7 +438,12 @@ const make = Effect.gen(function* () {
                   .values({
                     input_id: input.inputID,
                     launch_id: latest.id,
-                    parent_created: current.record.parentCreated,
+                    parent_created: encodeBinding({
+                      parentCreated: current.record.parentCreated,
+                      senderID,
+                      senderCreated,
+                      source: options?.source,
+                    }),
                     child_created: current.record.childCreated,
                     delivery,
                     bytes,
@@ -314,10 +460,11 @@ const make = Effect.gen(function* () {
               if (error instanceof SessionTaskStore.Failure) return yield* Effect.fail(error)
               if (!(error instanceof SessionInput.LifecycleConflict)) return yield* Effect.die(error)
               const stored = yield* SessionInput.find(db, input.inputID)
-              const previous = yield* receipt(parentID, childID, input.inputID)
+              const previous = yield* receiptWithBinding(senderID, childID, input.inputID)
               if (
                 !stored ||
-                previous.delivery !== delivery ||
+                previous.binding.senderID !== senderID ||
+                previous.receipt.delivery !== delivery ||
                 !SessionInput.equivalent(stored, {
                   sessionID: childID,
                   prompt: { text: input.text },
@@ -335,7 +482,7 @@ const make = Effect.gen(function* () {
         const signal = signals.get(latest.id)
         if (signal) yield* Deferred.succeed(signal, undefined)
       }
-      return yield* receipt(parentID, childID, input.inputID)
+      return yield* receipt(senderID, childID, input.inputID)
     })
   const promote = (launchID: string, delivery: "steer" | "queue") =>
     Effect.gen(function* () {

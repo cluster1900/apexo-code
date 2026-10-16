@@ -48,6 +48,7 @@ const Record = Schema.Struct({
   createdEventID: Schema.String,
   plan: Schema.Unknown,
   legacyDream: Schema.optionalKey(MemoryDreamNative.Publication),
+  legacyFlush: Schema.optionalKey(MemoryLegacyNative.Publication),
   dreamClaim: Schema.optionalKey(
     Schema.Struct({
       id: Schema.String,
@@ -247,6 +248,31 @@ const make = Effect.gen(function* () {
         JSON.stringify(proof.legacyDream) !== JSON.stringify(record.legacyDream)
       )
         return yield* new Failure({ code: "conflict", message: "Legacy Dream publication owner cannot be proven" })
+    }
+    if (record.legacyFlush && record.legacyFlush.operationID !== record.id) {
+      const origin = yield* database.db
+        .select()
+        .from(SessionMemoryOperationTable)
+        .where(
+          and(
+            eq(SessionMemoryOperationTable.id, record.legacyFlush.operationID),
+            eq(SessionMemoryOperationTable.session_id, sessionID),
+          ),
+        )
+        .get()
+      const proof = origin ? yield* Schema.decodeUnknownEffect(Record)(origin.data) : undefined
+      if (
+        !proof ||
+        proof.id !== origin?.id ||
+        proof.token !== origin?.token ||
+        proof.createdEventID !== origin?.created_event_id ||
+        proof.createdEventID !== record.createdEventID ||
+        proof.kind !== "flush" ||
+        proof.backend !== "legacy" ||
+        proof.legacyFlush?.operationID !== proof.id ||
+        JSON.stringify(proof.legacyFlush) !== JSON.stringify(record.legacyFlush)
+      )
+        return yield* new Failure({ code: "conflict", message: "Legacy Flush publication owner cannot be proven" })
     }
     return record
   })
@@ -459,6 +485,7 @@ const make = Effect.gen(function* () {
       createdAt: yield* Clock.currentTimeMillis,
       ...(input.retryOf ? { retryOf: input.retryOf } : {}),
       ...(previous?.legacyDream ? { legacyDream: previous.legacyDream } : {}),
+      ...(previous?.legacyFlush ? { legacyFlush: previous.legacyFlush } : {}),
     }
     return yield* lifecycle.use(
       sessionID,
@@ -505,6 +532,7 @@ const make = Effect.gen(function* () {
           const batchClaims = [...(previous?.batchClaims ?? [])]
           const captureToken = automatic.get(claim)?.token
           const legacyDream: { value?: MemoryDreamNative.Publication } = { value: previous?.legacyDream }
+          const legacyFlush: { value?: MemoryLegacyNative.Publication } = { value: previous?.legacyFlush }
           const settlement = { done: false, committed: false }
           const finish = (result: MemoryOperation.Result) =>
             save({
@@ -512,6 +540,7 @@ const make = Effect.gen(function* () {
               claims: [...claims],
               ...(dreamClaim.value ? { dreamClaim: dreamClaim.value } : {}),
               ...(legacyDream.value ? { legacyDream: legacyDream.value } : {}),
+              ...(legacyFlush.value ? { legacyFlush: legacyFlush.value } : {}),
               ...(batchClaims.length ? { batchClaims: [...batchClaims] } : {}),
               state: "finished",
               ownership: "settled",
@@ -550,6 +579,7 @@ const make = Effect.gen(function* () {
                                 ...record,
                                 ...(dreamClaim.value ? { dreamClaim: dreamClaim.value } : {}),
                                 ...(legacyDream.value ? { legacyDream: legacyDream.value } : {}),
+                                ...(legacyFlush.value ? { legacyFlush: legacyFlush.value } : {}),
                                 state: "running",
                                 ownership: "local",
                               })
@@ -603,12 +633,28 @@ const make = Effect.gen(function* () {
                                     }),
                                 })
                               if (Schema.is(MemoryLegacyNative.Plan)(plan))
-                                return yield* memory.executeLegacy(
-                                  plan,
-                                  automaticEpoch
-                                    ? { claim: automaticEpoch.claim, valid: () => isCurrent(automaticEpoch) }
-                                    : undefined,
-                                )
+                                return yield* memory.executeLegacy(plan, {
+                                  operationID: record.id,
+                                  ...(automaticEpoch
+                                    ? {
+                                        automatic: {
+                                          claim: automaticEpoch.claim,
+                                          valid: () => isCurrent(automaticEpoch),
+                                        },
+                                      }
+                                    : {}),
+                                  ...(previous?.legacyFlush ? { recover: previous.legacyFlush } : {}),
+                                  prepared: (publication) =>
+                                    Effect.gen(function* () {
+                                      legacyFlush.value = publication
+                                      yield* save({
+                                        ...record,
+                                        legacyFlush: publication,
+                                        state: "running",
+                                        ownership: "local",
+                                      })
+                                    }),
+                                })
                               if (Schema.is(MemoryLifecycleNative.RecoveryPlan)(plan))
                                 return yield* memory.executeRecovery(
                                   plan,

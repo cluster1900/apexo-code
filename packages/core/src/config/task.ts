@@ -5,8 +5,7 @@ import { Schema } from "effect"
 export const Info = Schema.Struct({
   activeMessages: Schema.optional(Schema.Boolean),
   maxDepth: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 16 }))).annotate({
-    description:
-      "Maximum native Task child depth, captured at the first launch (default 1). Nested Tasks are foreground only.",
+    description: "Maximum native Task child depth, captured at the first launch (default 1).",
   }),
 })
 

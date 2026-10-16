@@ -133,8 +133,12 @@ try {
   assert.equal(await readFile(join(fixture.directory, "tracked.txt"), "utf8"), "DIRTY_PARENT")
   assert.equal(await Bun.file(join(fixture.directory, "child.txt")).exists(), false)
   assert.ok(JSON.stringify(history).includes(placement === "worktree" ? "DIRTY_PARENT" : "EXPLICIT_CWD"))
-  if (placement === "worktree")
+  if (placement === "worktree") {
     assert.equal((await fixture.api(`/api/session/${parent.id}/task/${source.id}`)).worktreePath, source.directory)
+    await rm(source.directory, { recursive: true, force: true })
+    assert.equal(await Bun.file(join(source.directory, "child.txt")).exists(), false)
+    await writeFile(join(fixture.directory, "tracked.txt"), "MUTATED_PARENT")
+  }
   await fixture.crash()
   await fixture.reopen()
   await fixture.api(`/api/session/${parent.id}/prompt`, { prompt: { text: "PARENT_CONTINUE" } })
@@ -152,6 +156,10 @@ try {
   )
   assert.ok(copied.every((message) => !history.data.some((old) => old.id === message.id)))
   assert.equal((await fixture.api(`/api/session/${resumed.id}`)).data.location.directory, source.directory)
+  if (placement === "worktree") {
+    assert.equal(await readFile(join(source.directory, "child.txt"), "utf8"), "CHILD_EDIT")
+    assert.equal(await readFile(join(source.directory, "tracked.txt"), "utf8"), "DIRTY_PARENT")
+  }
   assert.equal(calls.length, 8)
   checks.push(
     "owned-effective-placement-and-isolated-write",
@@ -162,6 +170,7 @@ try {
     "saved-model-over-requested-agent",
     "canonical-provider-turn-count",
     "resume-retains-placement-over-new-cwd",
+    ...(placement === "worktree" ? ["deleted-worktree-reconstructed-from-snapshot"] : []),
   )
   console.log(
     JSON.stringify(

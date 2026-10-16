@@ -124,6 +124,88 @@ export function make(db: Database.Interface["db"]) {
         return record
       }),
     )
+  const descendant = (ancestorID: SessionSchema.ID, sessionID: SessionSchema.ID) =>
+    storage(
+      Effect.gen(function* () {
+        const record = yield* read(sessionID)
+        if (!record) return yield* new Failure({ code: "missing", message: "Task does not belong to this Session" })
+        if (record.parentID === ancestorID) return yield* owned(ancestorID, sessionID)
+        if (!record.delegation)
+          return yield* new Failure({ code: "missing", message: "Task does not belong to this Session" })
+        const visited = new Set<SessionSchema.ID>([sessionID])
+        let current: Record = yield* owned(record.parentID, record.sessionID)
+        let matched = current.parentID === ancestorID
+        for (let step = 0; step < 16; step++) {
+          if (current.parentID === ancestorID) matched = true
+          const policy = current.delegation
+          if (!policy || policy.depth < 1 || policy.depth > policy.maxDepth)
+            return yield* new Failure({
+              code: "stale",
+              message: "Task ownership no longer matches this Session incarnation",
+            })
+          if (policy.depth === 1) {
+            if (current.parentID !== policy.rootID)
+              return yield* new Failure({
+                code: "stale",
+                message: "Task ownership no longer matches this Session incarnation",
+              })
+            if (!matched)
+              return yield* new Failure({ code: "missing", message: "Task does not belong to this Session" })
+            return record
+          }
+          if (visited.has(current.parentID))
+            return yield* new Failure({ code: "storage", message: "Task ownership is invalid" })
+          visited.add(current.parentID)
+          const parent = yield* read(current.parentID)
+          if (!parent)
+            return yield* new Failure({
+              code: "stale",
+              message: "Task ownership no longer matches this Session incarnation",
+            })
+          const verifiedParent = yield* owned(parent.parentID, parent.sessionID)
+          const inherited = verifiedParent.delegation
+          if (
+            !inherited ||
+            inherited.depth !== policy.depth - 1 ||
+            inherited.maxDepth !== policy.maxDepth ||
+            inherited.rootID !== policy.rootID ||
+            inherited.rootCreated !== policy.rootCreated
+          )
+            return yield* new Failure({
+              code: "stale",
+              message: "Task ownership no longer matches this Session incarnation",
+            })
+          current = verifiedParent
+        }
+        return yield* new Failure({ code: "storage", message: "Task ownership is invalid" })
+      }),
+    )
+  const children = (parentID: SessionSchema.ID) =>
+    storage(
+      Effect.gen(function* () {
+        const created = yield* SessionIncarnation.created(db, parentID)
+        if (!created) return [] as Record[]
+        const rows = yield* db
+          .select()
+          .from(SessionTaskTable)
+          .where(eq(SessionTaskTable.parent_id, parentID))
+          .orderBy(desc(SessionTaskTable.time_created), desc(SessionTaskTable.session_id))
+        const records = yield* Effect.forEach(rows, (row) => Schema.decodeUnknownEffect(Record)(row.data))
+        const live: Record[] = []
+        for (const record of records) {
+          if (record.parentCreated !== created) continue
+          if (record.childCreated !== (yield* SessionIncarnation.created(db, record.sessionID))) continue
+          if (
+            record.delegation !== undefined &&
+            (record.delegation.depth > record.delegation.maxDepth ||
+              record.delegation.rootCreated !== (yield* SessionIncarnation.created(db, record.delegation.rootID)))
+          )
+            continue
+          live.push(record)
+        }
+        return live
+      }),
+    )
   const launch = (id: string) =>
     storage(
       Effect.gen(function* () {
@@ -226,6 +308,8 @@ export function make(db: Database.Interface["db"]) {
     managed: (sessionID: SessionSchema.ID) => managed(db, sessionID),
     read,
     owned,
+    descendant,
+    children,
     launch,
     create: (record: Record) =>
       storage(
@@ -389,6 +473,38 @@ export function make(db: Database.Interface["db"]) {
             .get()
           return row ? yield* Schema.decodeUnknownEffect(Launch)(row.data) : undefined
         }),
+      ),
+    updatePlacement: (
+      parentID: SessionSchema.ID,
+      sessionID: SessionSchema.ID,
+      placement: SessionChildPlacementRecord.Record,
+    ) =>
+      storage(
+        db.transaction(
+          () =>
+            Effect.gen(function* () {
+              const record = yield* owned(parentID, sessionID)
+              if (
+                !record.placement ||
+                record.placement.mode !== "worktree" ||
+                placement.mode !== "worktree" ||
+                record.placement.directory !== placement.directory ||
+                record.placement.projectID !== placement.projectID ||
+                record.placement.repository !== placement.repository
+              )
+                return yield* new Failure({
+                  code: "invalid",
+                  message: "Task placement update cannot change its owned worktree identity",
+                })
+              const updated: Record = { ...record, placement }
+              yield* db
+                .update(SessionTaskTable)
+                .set({ data: updated })
+                .where(eq(SessionTaskTable.session_id, sessionID))
+              return updated
+            }),
+          { behavior: "immediate" },
+        ),
       ),
   }
 }

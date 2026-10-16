@@ -1,7 +1,7 @@
 export * as SessionChildPlacement from "./child-placement"
 
 import path from "node:path"
-import { lstat, opendir, realpath } from "node:fs/promises"
+import { lstat, mkdir, opendir, realpath, rm } from "node:fs/promises"
 import { Context, Effect, Layer, Scope } from "effect"
 import { Model } from "@apexo/schema/model"
 import { AgentV2 } from "../agent"
@@ -39,6 +39,12 @@ export interface Interface {
     agent: AgentV2.ID,
   ) => Effect.Effect<ReadonlyArray<PermissionAuthority.Snapshot>, Failure>
   readonly verify: (record: SessionChildPlacementRecord.Record) => Effect.Effect<void, Failure>
+  readonly snapshot: (
+    record: SessionChildPlacementRecord.Record,
+  ) => Effect.Effect<SessionChildPlacementRecord.Record, Failure>
+  readonly recover: (
+    record: SessionChildPlacementRecord.Record,
+  ) => Effect.Effect<SessionChildPlacementRecord.Record, Failure>
   readonly prepare: (input: {
     parent: SessionSchema.Info
     parentAgent: AgentV2.ID
@@ -48,6 +54,7 @@ export interface Interface {
     childID: SessionSchema.ID
     sandbox: SessionCommandSandbox.Capability
     saved?: SessionChildPlacementRecord.Record
+    recoverSaved?: boolean
     cwd?: string
     worktree?: boolean
   }) => Effect.Effect<Prepared | undefined, Failure, Scope.Scope>
@@ -77,17 +84,163 @@ const make = Effect.gen(function* () {
         return { dev: info.dev.toString(), ino: info.ino.toString() }
       }),
     )
-  const verify = (record: SessionChildPlacementRecord.Record) =>
+  const verifyRepository = (record: SessionChildPlacementRecord.Record) =>
     Effect.gen(function* () {
       const current = yield* identity(record.directory)
       if (current.dev !== record.dev || current.ino !== record.ino)
         return yield* new Failure({ message: "Child placement changed filesystem identity" })
-      if (record.repository) {
-        const repository = yield* git.repo.discover(record.directory)
-        if (!repository || repository.commonDirectory !== record.repository || repository.worktree !== record.directory)
-          return yield* new Failure({ message: "Child worktree no longer belongs to its captured repository" })
+      if (!record.repository) return undefined
+      if (record.repositoryDev !== undefined && record.repositoryIno !== undefined) {
+        const repositoryIdentity = yield* identity(record.repository)
+        if (repositoryIdentity.dev !== record.repositoryDev || repositoryIdentity.ino !== record.repositoryIno)
+          return yield* new Failure({ message: "Child worktree repository changed filesystem identity" })
       }
+      const repository = yield* git.repo.discover(record.directory)
+      if (!repository || repository.commonDirectory !== record.repository || repository.worktree !== record.directory)
+        return yield* new Failure({ message: "Child worktree no longer belongs to its captured repository" })
+      return repository
     })
+  const verify = (record: SessionChildPlacementRecord.Record) => verifyRepository(record).pipe(Effect.asVoid)
+  const snapshot = (record: SessionChildPlacementRecord.Record) =>
+    safe(
+      Effect.gen(function* () {
+        if (record.mode !== "worktree") return record
+        const repository = yield* verifyRepository(record)
+        if (!repository)
+          return yield* new Failure({ message: "Child worktree no longer belongs to its captured repository" })
+        const baseRevision = yield* git.history.head(repository)
+        if (!baseRevision) return yield* new Failure({ message: "Child worktree HEAD is unavailable" })
+        const changes = yield* git.change.capture({ repository, path: record.directory })
+        const current = yield* identity(record.directory)
+        if (current.dev !== record.dev || current.ino !== record.ino)
+          return yield* new Failure({ message: "Child placement changed filesystem identity" })
+        if (record.repository && record.repositoryDev !== undefined && record.repositoryIno !== undefined) {
+          const repositoryIdentity = yield* identity(record.repository)
+          if (repositoryIdentity.dev !== record.repositoryDev || repositoryIdentity.ino !== record.repositoryIno)
+            return yield* new Failure({ message: "Child worktree repository changed filesystem identity" })
+        }
+        if ((yield* git.history.head(repository)) !== baseRevision)
+          return yield* new Failure({ message: "Child worktree changed during snapshot capture" })
+        return {
+          ...record,
+          baseRevision,
+          changes,
+        } satisfies SessionChildPlacementRecord.Record
+      }),
+    )
+  const recover = (record: SessionChildPlacementRecord.Record) =>
+    safe(
+      Effect.gen(function* () {
+        const stat = yield* Effect.tryPromise(async () => {
+          try {
+            return await lstat(record.directory, { bigint: true })
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return undefined
+            throw error
+          }
+        })
+        if (stat !== undefined) {
+          yield* verify(record)
+          return record
+        }
+        if (record.mode !== "worktree")
+          return yield* new Failure({ message: "Deleted cwd child placement cannot be reconstructed" })
+        if (
+          !record.repository ||
+          record.repositoryDev === undefined ||
+          record.repositoryIno === undefined ||
+          !record.baseRevision ||
+          record.changes === undefined
+        )
+          return yield* new Failure({ message: "Deleted child worktree has no complete snapshot receipt" })
+        const access = yield* SessionChildPlacementAccess.Current
+        if (!access)
+          return yield* new Failure({ message: "Child placement requires native parent execution ownership" })
+        const currentProject = yield* projects.resolve(location.project.directory)
+        if (
+          currentProject.id !== location.project.id ||
+          currentProject.id !== record.projectID ||
+          currentProject.vcs?.type !== "git"
+        )
+          return yield* new Failure({ message: "Parent worktree project identity is unavailable" })
+        const sourceRepository = yield* git.repo.discover(location.project.directory)
+        if (!sourceRepository || sourceRepository.commonDirectory !== record.repository)
+          return yield* new Failure({ message: "Child worktree no longer belongs to its captured repository" })
+        const repositoryIdentity = yield* identity(record.repository)
+        if (repositoryIdentity.dev !== record.repositoryDev || repositoryIdentity.ino !== record.repositoryIno)
+          return yield* new Failure({ message: "Child worktree repository changed filesystem identity" })
+        const projectParent = AbsolutePath.make(path.dirname(location.project.directory))
+        yield* identity(projectParent)
+        const worktreesRoot = AbsolutePath.make(path.join(projectParent, ".apexo-worktrees"))
+        if (path.dirname(record.directory) !== worktreesRoot || !path.basename(record.directory))
+          return yield* new Failure({ message: "Child worktree path is outside the managed worktrees root" })
+        const rootStat = yield* Effect.tryPromise(async () => {
+          try {
+            return await lstat(worktreesRoot, { bigint: true })
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return undefined
+            throw error
+          }
+        })
+        if (rootStat && (!rootStat.isDirectory() || rootStat.isSymbolicLink()))
+          return yield* new Failure({ message: "Managed worktrees root is not a canonical directory" })
+        yield* Effect.tryPromise(() => mkdir(worktreesRoot, { recursive: true }))
+        yield* identity(worktreesRoot)
+        yield* git.worktree
+          .remove({ repository: sourceRepository, directory: record.directory, force: true })
+          .pipe(Effect.catch(() => Effect.void))
+        const created = yield* git.worktree.create({
+          repository: sourceRepository,
+          directory: record.directory,
+          revision: record.baseRevision,
+        })
+        const applied = yield* Effect.gen(function* () {
+          if (record.changes && record.changes.length > 0)
+            yield* git.change.apply({
+              repository: created,
+              path: record.directory,
+              changes: Git.ChangeSet.make(record.changes),
+            })
+          if (
+            created.commonDirectory !== record.repository ||
+            created.worktree !== record.directory ||
+            (yield* git.history.head(created)) !== record.baseRevision
+          )
+            return yield* new Failure({ message: "Reconstructed child worktree did not match its snapshot receipt" })
+          const resolvedProject = yield* projects.resolve(record.directory)
+          if (resolvedProject.id !== record.projectID || resolvedProject.vcs?.type !== "git")
+            return yield* new Failure({ message: "Reconstructed child worktree project identity changed" })
+          const current = yield* identity(record.directory)
+          const recovered: SessionChildPlacementRecord.Record = {
+            ...record,
+            dev: current.dev,
+            ino: current.ino,
+          }
+          yield* verify(recovered)
+          return recovered
+        }).pipe(
+          Effect.tapError(() =>
+            git.worktree
+              .remove({ repository: sourceRepository, directory: record.directory, force: true })
+              .pipe(
+                Effect.catch(() => Effect.void),
+                Effect.andThen(
+                  Effect.tryPromise(() => rm(record.directory, { recursive: true, force: true })).pipe(
+                    Effect.catch(() => Effect.void),
+                  ),
+                ),
+              ),
+          ),
+        )
+        yield* directories.create({
+          projectID: applied.projectID,
+          directory: applied.directory,
+          strategy: ProjectCopy.StrategyID.make("git_worktree"),
+          behavior: "replace",
+        })
+        return applied
+      }),
+    )
   const capture = (source: SessionSchema.Info, agent: AgentV2.ID) =>
     safe(
       Effect.gen(function* () {
@@ -108,6 +261,8 @@ const make = Effect.gen(function* () {
   return Service.of({
     capture,
     verify,
+    snapshot,
+    recover,
     prepare: (input) =>
       safe(
         Effect.gen(function* () {
@@ -118,72 +273,82 @@ const make = Effect.gen(function* () {
           if (!access || access.parentID !== input.parent.id)
             return yield* new Failure({ message: "Child placement requires native parent execution ownership" })
           const initial = yield* permission.capture(input.parent.id, input.parentAgent)
-          const record =
-            input.saved ??
-            (yield* Effect.gen(function* () {
-              if (input.worktree) {
-                const current = yield* projects.resolve(location.project.directory)
-                if (current.id !== input.parent.projectID || current.vcs?.type !== "git")
-                  return yield* new Failure({ message: "Parent worktree project identity is unavailable" })
-                yield* directories.create({ projectID: current.id, directory: current.directory })
-              }
-              const sourceRepository = input.worktree ? yield* git.repo.discover(location.project.directory) : undefined
-              const copiedChanges = sourceRepository
-                ? yield* git.change.capture({ repository: sourceRepository, path: location.project.directory })
-                : undefined
-              const directory = input.worktree
-                ? (yield* copies.create({
-                    projectID: location.project.id,
-                    strategy: ProjectCopy.StrategyID.make("git_worktree"),
-                    sourceDirectory: location.project.directory,
-                    directory: AbsolutePath.make(
-                      path.join(path.dirname(location.project.directory), ".apexo-worktrees"),
-                    ),
-                    name: input.childID,
-                    preserveWorkingTree: true,
-                  })).directory
-                : AbsolutePath.make(
-                    yield* Effect.tryPromise(() => realpath(path.resolve(location.directory, input.cwd!.trim()))),
-                  )
-              const repository = input.worktree ? yield* git.repo.discover(directory) : undefined
-              if (input.worktree && !repository)
-                return yield* new Failure({ message: "Child worktree repository is unavailable" })
-              const proof = {
-                mode: input.worktree ? ("worktree" as const) : ("cwd" as const),
-                directory,
-                projectID: location.project.id,
-                ...(repository
-                  ? { repository: repository.commonDirectory, baseRevision: yield* git.history.head(repository) }
-                  : {}),
-                ...(yield* identity(directory)),
-              }
-              if (repository) {
-                const changes = copiedChanges
-                // Register as soon as exact allocation identity is known, before project admission.
-                yield* Effect.addFinalizer(() =>
-                  Effect.gen(function* () {
-                    if (yield* sessions.get(input.childID)) return
-                    yield* verify(proof)
-                    if (
-                      (yield* git.history.head(repository)) !== proof.baseRevision ||
-                      (yield* git.change.capture({ repository, path: directory })) !== changes
+          const record = input.saved
+            ? input.recoverSaved
+              ? yield* recover(input.saved)
+              : input.saved
+            : yield* Effect.gen(function* () {
+                if (input.worktree) {
+                  const current = yield* projects.resolve(location.project.directory)
+                  if (current.id !== input.parent.projectID || current.vcs?.type !== "git")
+                    return yield* new Failure({ message: "Parent worktree project identity is unavailable" })
+                  yield* directories.create({ projectID: current.id, directory: current.directory })
+                }
+                const sourceRepository = input.worktree ? yield* git.repo.discover(location.project.directory) : undefined
+                const copiedChanges = sourceRepository
+                  ? yield* git.change.capture({ repository: sourceRepository, path: location.project.directory })
+                  : undefined
+                const directory = input.worktree
+                  ? (yield* copies.create({
+                      projectID: location.project.id,
+                      strategy: ProjectCopy.StrategyID.make("git_worktree"),
+                      sourceDirectory: location.project.directory,
+                      directory: AbsolutePath.make(
+                        path.join(path.dirname(location.project.directory), ".apexo-worktrees"),
+                      ),
+                      name: input.childID,
+                      preserveWorkingTree: true,
+                    })).directory
+                  : AbsolutePath.make(
+                      yield* Effect.tryPromise(() => realpath(path.resolve(location.directory, input.cwd!.trim()))),
                     )
-                      return
-                    const paths = yield* cleanupPaths(directory)
-                    if (!paths || (yield* git.index.ignored({ repository, paths })).size > 0) return
-                    yield* copies.remove({ projectID: location.project.id, directory, force: true })
-                  }).pipe(Effect.catchCause(() => Effect.void)),
-                )
-              }
-              const project = yield* projects.resolve(directory)
-              yield* database.db
-                .insert(ProjectTable)
-                .values({ id: project.id, worktree: project.directory, vcs: project.vcs?.type, sandboxes: [] })
-                .onConflictDoNothing()
-                .run()
-                .pipe(Effect.orDie)
-              return { ...proof, projectID: project.id }
-            }))
+                const repository = input.worktree ? yield* git.repo.discover(directory) : undefined
+                const baseRevision = repository ? yield* git.history.head(repository) : undefined
+                const repositoryIdentity = repository ? yield* identity(repository.commonDirectory) : undefined
+                if (input.worktree && (!repository || !baseRevision || !repositoryIdentity || copiedChanges === undefined))
+                  return yield* new Failure({ message: "Child worktree repository is unavailable" })
+                const proof: SessionChildPlacementRecord.Record = {
+                  mode: input.worktree ? ("worktree" as const) : ("cwd" as const),
+                  directory,
+                  projectID: location.project.id,
+                  ...(repository && baseRevision && repositoryIdentity && copiedChanges !== undefined
+                    ? {
+                        repository: repository.commonDirectory,
+                        repositoryDev: repositoryIdentity.dev,
+                        repositoryIno: repositoryIdentity.ino,
+                        baseRevision,
+                        changes: copiedChanges,
+                      }
+                    : {}),
+                  ...(yield* identity(directory)),
+                }
+                if (repository) {
+                  const changes = copiedChanges
+                  // Register as soon as exact allocation identity is known, before project admission.
+                  yield* Effect.addFinalizer(() =>
+                    Effect.gen(function* () {
+                      if (yield* sessions.get(input.childID)) return
+                      yield* verify(proof)
+                      if (
+                        (yield* git.history.head(repository)) !== proof.baseRevision ||
+                        (yield* git.change.capture({ repository, path: directory })) !== changes
+                      )
+                        return
+                      const paths = yield* cleanupPaths(directory)
+                      if (!paths || (yield* git.index.ignored({ repository, paths })).size > 0) return
+                      yield* copies.remove({ projectID: location.project.id, directory, force: true })
+                    }).pipe(Effect.catchCause(() => Effect.void)),
+                  )
+                }
+                const project = yield* projects.resolve(directory)
+                yield* database.db
+                  .insert(ProjectTable)
+                  .values({ id: project.id, worktree: project.directory, vcs: project.vcs?.type, sandboxes: [] })
+                  .onConflictDoNothing()
+                  .run()
+                  .pipe(Effect.orDie)
+                return { ...proof, projectID: project.id }
+              })
           yield* verify(record)
           const external = record.mode === "cwd" && !inside(location.directory, record.directory)
           if (external)

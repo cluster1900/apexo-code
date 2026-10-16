@@ -50,6 +50,18 @@ const layer = Layer.effectDiscard(
               }),
             ),
             skipped: Schema.Array(Schema.String),
+            mode: Schema.optional(Schema.Literals(["fts", "hybrid"])),
+            fallback: Schema.optional(
+              Schema.Literals([
+                "unsupported_provider",
+                "invalid_model",
+                "unavailable_provider",
+                "unauthorized",
+                "invalid_endpoint",
+                "transport",
+                "malformed_response",
+              ]),
+            ),
           }),
           execute: (input, context) => memory.search(input, context).pipe(Effect.mapError(failure)),
         }),

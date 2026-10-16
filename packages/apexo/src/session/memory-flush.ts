@@ -5,6 +5,7 @@ import { filesystem } from "@apexo/core/effect/app-node-platform"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Global } from "@apexo/core/global"
 import { MemoryFlush } from "@apexo/core/memory-flush"
+import { MemorySearch } from "@apexo/core/memory-search"
 import { MemoryWork } from "@apexo/schema/memory-work"
 import { MemorySession } from "@apexo/core/memory-session"
 import { MemoryMaintenance } from "@apexo/core/memory-maintenance"
@@ -22,6 +23,7 @@ import { usable } from "./overflow"
 import { SessionID } from "./schema"
 import { Session } from "./session"
 import { SessionStatus } from "./status"
+import { MemoryIndex } from "./memory-index"
 import { SessionMemoryDream } from "./memory-dream"
 import { SessionMemoryMode } from "./memory-mode"
 import { SessionMemoryBackend } from "./memory-backend"
@@ -51,6 +53,7 @@ const layer = Layer.effect(
     const global = yield* Global.Service
     const fs = yield* FileSystem.FileSystem
     const status = yield* SessionStatus.Service
+    const index = yield* MemoryIndex.Service
     const dream = yield* SessionMemoryDream.Service
     const mode = yield* SessionMemoryMode.Service
     const backend = yield* SessionMemoryBackend.Service
@@ -211,9 +214,57 @@ const layer = Layer.effect(
               const content = previous
                 .replace(/^<!-- apexo-(?:session-checkpoint|flush-through):[^\n]* -->\n?/gm, "")
                 .trim()
-              const next = content.includes(result.content)
-                ? content
-                : [content, `<!-- apexo-flush-entry -->\n\n${result.content}`].filter(Boolean).join("\n\n")
+              const semanticDup =
+                Boolean(cfg.memory?.embedding?.model?.trim()) ||
+                (cfg.memory?.embedding?.provider !== undefined && cfg.memory.embedding.provider !== "api")
+                  ? yield* index.get(flushModel.providerID).pipe(
+                      Effect.flatMap((search) =>
+                        search.semanticDuplicate(
+                          {
+                            content: result.content,
+                            threshold: settings?.semantic_dedup_threshold ?? 0.92,
+                          },
+                          (paths) =>
+                            search
+                              .accessPaths(paths)
+                              .every(
+                                (file) =>
+                                  Permission.evaluate("read", file, agent.permission, session.permission ?? [])
+                                    .action === "allow",
+                              )
+                              ? Effect.void
+                              : Effect.fail(new MemorySearch.MemoryError({ message: "Memory read is denied" })),
+                        ),
+                      ),
+                      Effect.catchCause(() =>
+                        Effect.succeed({
+                          duplicate: false as const,
+                          threshold: settings?.semantic_dedup_threshold ?? 0.92,
+                        }),
+                      ),
+                    )
+                  : { duplicate: false as const, threshold: settings?.semantic_dedup_threshold ?? 0.92 }
+              if (semanticDup.duplicate || content.includes(result.content)) {
+                yield* mode.commit(
+                  sessionID,
+                  revision,
+                  Effect.promise(() =>
+                    MemorySession.save(
+                      ctx.directory,
+                      {
+                        ...record,
+                        generation,
+                        content: `<!-- apexo-session-checkpoint:${record.captured} -->\n<!-- apexo-flush-through:${last} -->\n${content ? `${content}\n` : ""}`,
+                      },
+                      global.home,
+                      location,
+                    ),
+                  ),
+                )
+                current.through = last
+                return { status: "no_work" } as const
+              }
+              const next = [content, `<!-- apexo-flush-entry -->\n\n${result.content}`].filter(Boolean).join("\n\n")
               yield* mode.commit(
                 sessionID,
                 revision,
@@ -318,6 +369,7 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     Global.node,
     SessionStatus.node,
+    MemoryIndex.node,
     SessionMemoryDream.node,
     SessionMemoryMode.node,
     SessionMemoryBackend.node,

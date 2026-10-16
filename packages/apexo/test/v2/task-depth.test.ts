@@ -66,6 +66,17 @@ it.live("Task depth lineage persists, rejects forged widening and historical par
       const reopened = SessionTaskStore.make(database.db)
       expect((yield* reopened.owned(child.id, grandchild.id)).delegation).toEqual(nested.delegation)
       expect((yield* reopened.owned(root.id, grandchild.id).pipe(Effect.result))._tag).toBe("Failure")
+      expect((yield* reopened.descendant(root.id, grandchild.id)).sessionID).toBe(grandchild.id)
+      expect((yield* reopened.descendant(child.id, grandchild.id)).sessionID).toBe(grandchild.id)
+      expect((yield* reopened.children(root.id)).map((entry) => entry.sessionID)).toEqual([child.id])
+      expect((yield* reopened.children(child.id)).map((entry) => entry.sessionID)).toEqual([grandchild.id])
+      const sibling = yield* sessions.create({ location: root.location, parentID: root.id })
+      const unrelated = yield* sessions.create({ location: root.location })
+      for (const invalidAncestor of [sibling.id, unrelated.id, grandchild.id]) {
+        const check = yield* reopened.descendant(invalidAncestor, grandchild.id).pipe(Effect.result)
+        expect(check._tag).toBe("Failure")
+      }
+      expect((yield* reopened.descendant(child.id, root.id).pipe(Effect.result))._tag).toBe("Failure")
       const deeper = yield* sessions.create({ location: root.location, parentID: grandchild.id })
       expect(
         (yield* tasks
@@ -94,6 +105,13 @@ it.live("Task depth lineage persists, rejects forged widening and historical par
           })
           .pipe(Effect.result))._tag,
       ).toBe("Failure")
+      yield* database.db
+        .update(SessionTaskTable)
+        .set({ data: { ...record, childCreated: "stale-intermediate" } })
+        .where(eq(SessionTaskTable.session_id, child.id))
+      const staleIntermediate = yield* tasks.descendant(root.id, grandchild.id).pipe(Effect.result)
+      expect(staleIntermediate._tag).toBe("Failure")
+      if (staleIntermediate._tag === "Failure") expect(staleIntermediate.failure.code).toBe("stale")
       yield* database.db.update(SessionTaskTable).set({ data: record }).where(eq(SessionTaskTable.session_id, child.id))
       yield* database.db
         .update(SessionTaskTable)
@@ -102,6 +120,9 @@ it.live("Task depth lineage persists, rejects forged widening and historical par
       const stale = yield* tasks.owned(child.id, grandchild.id).pipe(Effect.result)
       expect(stale._tag).toBe("Failure")
       if (stale._tag === "Failure") expect(stale.failure.code).toBe("stale")
+      const staleDescendant = yield* tasks.descendant(root.id, grandchild.id).pipe(Effect.result)
+      expect(staleDescendant._tag).toBe("Failure")
+      if (staleDescendant._tag === "Failure") expect(staleDescendant.failure.code).toBe("stale")
     }).pipe(
       Effect.provide(
         AppNodeBuilder.build(

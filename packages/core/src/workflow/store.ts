@@ -166,6 +166,37 @@ export function make(db: Database.Interface["db"]) {
           tasks: state.tasks.map((task) => (task.key === key ? { ...task, selection } : task)),
         }
       }).pipe(Effect.as(selection)),
+    updatePlacement: (
+      sessionID: SessionID,
+      id: Workflow.ID,
+      key: string,
+      placement: SessionChildPlacementRecord.Record,
+    ) =>
+      change(sessionID, id, (state) => {
+        const task = state.tasks.find((task) => task.key === key)
+        const current = task?.selection?.placement
+        if (
+          !task?.selection ||
+          !current ||
+          current.mode !== "worktree" ||
+          placement.mode !== "worktree" ||
+          current.directory !== placement.directory ||
+          current.projectID !== placement.projectID ||
+          current.repository !== placement.repository
+        )
+          throw new Failure({
+            code: "invalid",
+            message: "Workflow placement update cannot change its owned worktree identity",
+          })
+        return {
+          ...state,
+          tasks: state.tasks.map((entry) =>
+            entry.key === key && entry.selection
+              ? { ...entry, selection: { ...entry.selection, placement } }
+              : entry,
+          ),
+        }
+      }).pipe(Effect.as(placement)),
     claimSchemaAttempt: (sessionID: SessionID, id: Workflow.ID, key: string, attempt: 0 | 1) =>
       change(sessionID, id, (state) => {
         const task = state.tasks.find((task) => task.key === key)

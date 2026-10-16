@@ -63,14 +63,27 @@ const make = Effect.gen(function* () {
     completedAt: launch.completedAt,
     blockedReason: launch.status === "running" && launch.owner !== tasks.owner ? "process_restart" : undefined,
   })
-  const output = (parentID: SessionSchema.ID, childID: SessionSchema.ID, launchID?: string) =>
+  const resolveOwned = (callerID: SessionSchema.ID, childID: SessionSchema.ID, launchID?: string) =>
+    Effect.gen(function* () {
+      const direct = yield* tasks.owned(callerID, childID).pipe(Effect.result)
+      const record =
+        direct._tag === "Success"
+          ? direct.success
+          : direct.failure.code === "missing"
+            ? yield* tasks.descendant(callerID, childID)
+            : yield* Effect.fail(direct.failure)
+      const launch = yield* launchID ? tasks.launch(launchID) : tasks.latest(record.parentID, childID)
+      if (!launch || launch.parentID !== record.parentID || launch.sessionID !== childID)
+        return yield* new SessionTaskStore.Failure({ code: "missing", message: "Task has no launch receipt" })
+      if (record.parentID !== callerID && !launch.request.background)
+        return yield* new SessionTaskStore.Failure({ code: "missing", message: "Task does not belong to this Session" })
+      return { record, launch }
+    })
+  const output = (callerID: SessionSchema.ID, childID: SessionSchema.ID, launchID?: string) =>
     lifecycle.read(
-      parentID,
+      callerID,
       Effect.gen(function* () {
-        const record = yield* tasks.owned(parentID, childID)
-        const launch = yield* launchID ? tasks.launch(launchID) : tasks.latest(parentID, childID)
-        if (!launch || launch.parentID !== parentID || launch.sessionID !== childID)
-          return yield* new SessionTaskStore.Failure({ code: "missing", message: "Task has no launch receipt" })
+        const { record, launch } = yield* resolveOwned(callerID, childID, launchID)
         const reply = launch.replyID ? yield* sessions.message(launch.replyID) : undefined
         const text =
           reply?.sessionID === childID && reply.message.type === "assistant"
@@ -105,48 +118,79 @@ const make = Effect.gen(function* () {
         return values.filter((value): value is Task.Summary => value !== undefined)
       }),
     )
-  const wait = (parentID: SessionSchema.ID, childID: SessionSchema.ID, timeout: number) =>
+  const wait = (callerID: SessionSchema.ID, childID: SessionSchema.ID, timeout: number) =>
     lifecycle.read(
-      parentID,
+      callerID,
       Effect.gen(function* () {
-        const launch = yield* tasks.latest(parentID, childID)
-        const done = launch ? settling.get(launch.id) : undefined
+        const { launch } = yield* resolveOwned(callerID, childID)
+        const done = settling.get(launch.id)
         const settled = done && (yield* Deferred.isDone(done))
         if (done && settled) yield* Deferred.await(done)
         const timedOut = done
           ? !settled && (timeout <= 0 || Option.isNone(yield* Deferred.await(done).pipe(Effect.timeoutOption(timeout))))
-          : launch?.owner === tasks.owner && launch.status === "running"
-        return { task: yield* output(parentID, childID), timedOut: Boolean(timedOut) }
+          : launch.owner === tasks.owner && launch.status === "running"
+        return { task: yield* output(callerID, childID), timedOut: Boolean(timedOut) }
       }),
     )
-  const cancel = (parentID: SessionSchema.ID, childID: SessionSchema.ID) =>
-    lifecycle.read(
-      parentID,
-      Effect.gen(function* () {
-        const launch = yield* tasks.latest(parentID, childID)
-        if (launch?.owner === tasks.owner) {
-          const done = settling.get(launch.id)
-          if (launch.status === "running") {
-            yield* messages.close(launch.id, "cancelled")
-            const cancelled = yield* jobs.cancel(launch.id)
-            if (!cancelled && (yield* tasks.launch(launch.id))?.status === "running")
+  const cancelSubtree = (
+    parentID: SessionSchema.ID,
+    childID: SessionSchema.ID,
+    strictStarting: boolean,
+  ): Effect.Effect<void, SessionTaskStore.Failure> =>
+    Effect.gen(function* () {
+      const launch = yield* tasks.latest(parentID, childID)
+      if (launch?.owner === tasks.owner) {
+        const done = settling.get(launch.id)
+        if (launch.status === "running") {
+          yield* messages.close(launch.id, "cancelled")
+          const cancelled = yield* jobs.cancel(launch.id)
+          if (!cancelled && (yield* tasks.launch(launch.id))?.status === "running") {
+            if (strictStarting)
               return yield* new SessionTaskStore.Failure({
                 code: "busy",
                 message: "Task worker is still starting; retry cancellation after it is registered",
               })
           }
-          if (done) yield* Deferred.await(done)
         }
-        return yield* output(parentID, childID)
+        if (done) yield* Deferred.await(done)
+      }
+      const grandchildren = yield* tasks
+        .children(childID)
+        .pipe(Effect.catchTag("SessionTaskFailure", () => Effect.succeed([])))
+      for (const grandchild of grandchildren) {
+        yield* cancelSubtree(childID, grandchild.sessionID, false).pipe(
+          Effect.catchTag("SessionTaskFailure", () => Effect.void),
+        )
+      }
+    })
+  const cancelChildren = (parentID: SessionSchema.ID) =>
+    Effect.gen(function* () {
+      const children = yield* tasks
+        .children(parentID)
+        .pipe(Effect.catchTag("SessionTaskFailure", () => Effect.succeed([])))
+      for (const child of children) {
+        yield* cancelSubtree(parentID, child.sessionID, false).pipe(
+          Effect.catchTag("SessionTaskFailure", () => Effect.void),
+        )
+      }
+    })
+  const cancel = (callerID: SessionSchema.ID, childID: SessionSchema.ID) =>
+    lifecycle.read(
+      callerID,
+      Effect.gen(function* () {
+        const { record } = yield* resolveOwned(callerID, childID)
+        yield* cancelSubtree(record.parentID, childID, true)
+        return yield* output(callerID, childID)
       }),
     )
   return {
-    output: (parentID: SessionSchema.ID, childID: SessionSchema.ID) => output(parentID, childID),
+    output: (callerID: SessionSchema.ID, childID: SessionSchema.ID) => output(callerID, childID),
     /** Internal exact-launch projection; public output deliberately selects the latest launch. */
     receipt: (parentID: SessionSchema.ID, childID: SessionSchema.ID, launchID: string) =>
       output(parentID, childID, launchID),
     wait,
     cancel,
+    cancelChildren,
     list,
     settlement,
   }

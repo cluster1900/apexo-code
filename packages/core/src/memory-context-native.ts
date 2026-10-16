@@ -2,6 +2,7 @@ export * as MemoryContextNative from "./memory-context-native"
 
 import path from "node:path"
 import { MemoryContext } from "./memory-context"
+import { MemoryEmbedding } from "./memory-embedding"
 import { MemoryMaintenance } from "./memory-maintenance"
 import { MemorySearch } from "./memory-search"
 import { WorkspaceMemory } from "./workspace-memory"
@@ -39,6 +40,7 @@ const layer = Layer.effect(
     const flags = yield* MemoryPolicy.flags.pipe(Effect.orDie)
     const config = yield* Config.Service
     const database = yield* Database.Service
+    const embedding = yield* MemoryEmbedding.Service
     const location = yield* Location.Service
     const global = yield* Global.Service
     const permission = yield* PermissionV2.Service
@@ -137,9 +139,37 @@ const layer = Layer.effect(
             !(yield* permitted([cache, `${cache}-wal`, `${cache}-shm`], "edit"))
           )
             return undefined
+          const verifyContextAuthority = Effect.gen(function* () {
+            const currentSession = yield* sessions.get(sessionID)
+            const currentMode = yield* mode(sessionID)
+            if (
+              !currentSession ||
+              !currentMode.enabled ||
+              currentMode.backend !== "legacy" ||
+              currentMode.revision !== before.revision ||
+              (yield* SessionIncarnation.created(database.db, sessionID)) !== created ||
+              (session.agent !== undefined && currentSession.agent !== session.agent)
+            )
+              return yield* new MemorySearch.MemoryError({ message: "Automatic memory authority changed" })
+            return currentSession
+          }).pipe(
+            Effect.mapError((error) =>
+              error instanceof MemorySearch.MemoryError
+                ? error
+                : new MemorySearch.MemoryError({ message: "Automatic memory authority changed" }),
+            ),
+          )
           const search = yield* MemorySearch.make({
             ...input,
             search: settings.memory.search,
+            embedding: () =>
+              Effect.gen(function* () {
+                const currentSession = yield* verifyContextAuthority
+                return yield* embedding.resolve({
+                  embedding: settings.memory.embedding,
+                  fallbackProviderID: currentSession.model?.providerID ?? session.model?.providerID,
+                })
+              }),
             watch: false,
             joinIO: true,
           })
@@ -173,16 +203,16 @@ const layer = Layer.effect(
               min_score: compaction ? 0 : (settings.memory.initial_injection?.min_score ?? 0.9),
             },
             (files) =>
-              permitted(search.accessPaths(files)).pipe(
-                Effect.flatMap((allowed) =>
-                  allowed
-                    ? Effect.void
-                    : Effect.fail(new MemorySearch.MemoryError({ message: "Automatic memory read is not permitted" })),
-                ),
-                Effect.mapError(
-                  () => new MemorySearch.MemoryError({ message: "Automatic memory read is not permitted" }),
-                ),
-              ),
+              Effect.gen(function* () {
+                yield* verifyContextAuthority
+                const allowed = yield* permitted(search.accessPaths(files)).pipe(
+                  Effect.mapError(
+                    () => new MemorySearch.MemoryError({ message: "Automatic memory read is not permitted" }),
+                  ),
+                )
+                if (!allowed)
+                  return yield* new MemorySearch.MemoryError({ message: "Automatic memory read is not permitted" })
+              }),
           )
           return {
             content: MemoryContext.format(result.results),
@@ -328,6 +358,7 @@ export const node = makeLocationNode({
   deps: [
     Config.node,
     Database.node,
+    MemoryEmbedding.node,
     Location.node,
     Global.node,
     PermissionV2.node,

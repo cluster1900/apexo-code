@@ -232,6 +232,7 @@ const make = Effect.gen(function* () {
                       childID,
                       sandbox: sandboxParent,
                       saved: selection.placement,
+                      recoverSaved: !task.sessionID,
                       worktree: !task.resumeFrom && task.worktree,
                     })
                     .pipe(
@@ -421,6 +422,15 @@ const make = Effect.gen(function* () {
                     yield* setup.run.pipe(Effect.orDie)
                   }),
                 )
+                if (placement.value?.record.mode === "worktree") {
+                  const refreshed = yield* placements.snapshot(placement.value.record).pipe(Effect.result)
+                  if (refreshed._tag === "Success") {
+                    const updated = yield* workflows
+                      .updatePlacement(parent.id, id, task.key, refreshed.success)
+                      .pipe(Effect.catch(() => Effect.succeed(refreshed.success)))
+                    placement.value = { ...placement.value, record: updated }
+                  }
+                }
                 yield* workflows.recordUsage(parent.id, id, task.key, childID, Object.fromEntries(setup.receipts))
                 const history = yield* lifecycle
                   .owned(setup.childClaim, lifecycle.use(childID, sessions.context(childID)))

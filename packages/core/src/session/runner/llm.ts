@@ -373,9 +373,10 @@ const layer = Layer.effect(
         yield* scheduleRuntime.bind(sessionID)
       if (!execution) yield* SessionInputExecutionOwner.release(sessionID)
       yield* SessionInputExecutionOwner.observe(sessionID)
-      const admitCompletion = !execution && !ownedRole && !attempt && (yield* CompletionAdmission)
+      const admitCompletion =
+        !execution && (!ownedRole || Boolean(taskRole)) && !attempt && (yield* CompletionAdmission)
       const completion = admitCompletion ? yield* taskCompletions.take(sessionID) : ""
-      const processCompletion = admitCompletion ? yield* processCompletions.take(sessionID) : ""
+      const processCompletion = admitCompletion && !ownedRole ? yield* processCompletions.take(sessionID) : ""
       const monitorEvents = !execution && !ownedRole && !attempt ? yield* processCompletions.takeEvents(sessionID) : ""
       return yield* SessionExecutionPolicy.provide(
         sessionID,
@@ -837,7 +838,7 @@ const layer = Layer.effect(
           }
           if (!goal && !ownedRole && !(yield* plans.reconcile(input.sessionID))) return
           // Only the first turn in this continuation may consume a ready notice, after input policy is selected.
-          let admitCompletion = !goal && !ownedRole
+          let admitCompletion = !goal && (!ownedRole || Boolean(taskRole))
           let needsContinuation = true
           let step = 1
           while (needsContinuation) {
@@ -950,11 +951,19 @@ const layer = Layer.effect(
           }
           if (taskRole?.launchID) {
             const launch = yield* taskStore.launch(taskRole.launchID)
+            const hasChildCompletion = !taskRole.attempt && (yield* taskCompletions.pending(input.sessionID))
+            if (hasChildCompletion) {
+              promotion = launch?.request.activeMessages ? yield* taskMessages.next(taskRole.launchID) : undefined
+              shouldRun = true
+              continue
+            }
             if (launch?.request.activeMessages) {
               promotion = yield* taskMessages.continueOrClose(taskRole.launchID)
               shouldRun = promotion !== undefined
               continue
             }
+            shouldRun = false
+            continue
           }
           const queued = !ownedRole && (yield* SessionInput.hasPending(db, input.sessionID, "queue"))
           shouldRun =

@@ -13,6 +13,9 @@ export const Record = Schema.Struct({
   dev: Schema.String,
   ino: Schema.String,
   repository: optional(AbsolutePath),
+  repositoryDev: optional(Schema.String),
+  repositoryIno: optional(Schema.String),
   baseRevision: optional(Schema.String),
+  changes: optional(Schema.String),
 })
 export type Record = typeof Record.Type

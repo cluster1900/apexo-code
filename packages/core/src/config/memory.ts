@@ -65,6 +65,23 @@ export const V2 = Schema.Struct({
   }),
 })
 
+export const EmbeddingProvider = Schema.Literals(["api", "local", "auto"])
+export type EmbeddingProvider = typeof EmbeddingProvider.Type
+
+export const Embedding = Schema.Struct({
+  provider: Schema.optional(EmbeddingProvider).annotate({
+    description: 'Embedding provider transport (default: "api"; only "api" is currently supported).',
+  }),
+  model: Schema.optional(Schema.String).annotate({
+    description:
+      "Optional provider/model or model ID for legacy semantic memory embeddings; unset or empty uses FTS-only.",
+  }),
+  dimensions: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(4096))).annotate({
+    description: "Embedding vector dimensions (default: 1024, maximum: 4096).",
+  }),
+})
+export type Embedding = typeof Embedding.Type
+
 export const Flush = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({ description: "Enable automatic memory flush (default: true)" }),
   soft_threshold_tokens: Schema.optional(NonNegativeInt).annotate({
@@ -79,11 +96,17 @@ export const Flush = Schema.Struct({
   idle_timeout_secs: Schema.optional(NonNegativeInt).annotate({
     description: "Idle seconds before memory flush; 0 disables idle flush (default: 300)",
   }),
+  semantic_dedup_threshold: Schema.optional(Schema.Finite).annotate({
+    description:
+      "Suppress legacy memory flush write when top-3 neighbor similarity exceeds this threshold (default: 0.92)",
+  }),
 })
 
 export const Search = Schema.Struct({
   max_results: Schema.optional(NonNegativeInt),
   min_score: Schema.optional(Schema.Finite),
+  vector_weight: Schema.optional(Schema.Finite),
+  text_weight: Schema.optional(Schema.Finite),
   recency_decay: Schema.optional(Schema.Finite),
   temporal_decay: Schema.optional(
     Schema.Struct({
@@ -108,6 +131,7 @@ export const Search = Schema.Struct({
 export type Search = typeof Search.Type
 
 export const Info = Schema.Struct({
+  embedding: Schema.optional(Embedding),
   search: Schema.optional(Search),
   enabled: Schema.optional(Schema.Boolean).annotate({
     description:

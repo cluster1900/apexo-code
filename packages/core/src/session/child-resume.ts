@@ -48,6 +48,7 @@ export const prepare = Effect.fn("SessionChildResume.prepare")(function* (input:
       if (!launch || !["completed", "failed", "cancelled"].includes(launch.status) || !record.model)
         return yield* invalid("Child resume source Task is not terminal with a saved model")
       return {
+        kind: "task" as const,
         owner: `task:${launch.id}:${launch.status}`,
         workflowPolicy: record.sourcePolicy?.workflow ?? false,
         delegation: record.delegation,
@@ -73,24 +74,45 @@ export const prepare = Effect.fn("SessionChildResume.prepare")(function* (input:
     if (!entry.selection || entry.selection.readOnly === undefined)
       return yield* invalid("Child resume source has no saved capability and authority ceiling")
     return {
+      kind: "workflow" as const,
+      runID: owner.runID,
+      key: owner.key,
       owner: `workflow:${owner.runID}:${owner.key}:${entry.status}`,
       selection: entry.selection,
       workflowPolicy: true,
       delegation: undefined,
     }
   })
-  const source = yield* owned
+  const initialSource = yield* owned
   const session = yield* input.sessions.get(input.sourceID)
   if (!session) return yield* invalid("Child resume source no longer exists")
-  if (source.selection.placement) {
-    if (!input.placement || session.location.directory !== source.selection.placement.directory)
+  let reconstructed = false
+  if (initialSource.selection.placement) {
+    if (!input.placement || session.location.directory !== initialSource.selection.placement.directory)
       return yield* invalid("Child resume placement has no matching native admission")
-    yield* input.placement.verify(source.selection.placement)
+    const recovered = yield* input.placement
+      .recover(initialSource.selection.placement)
+      .pipe(Effect.mapError((error) => invalid(error.message)))
+    if (
+      recovered.dev !== initialSource.selection.placement.dev ||
+      recovered.ino !== initialSource.selection.placement.ino
+    ) {
+      reconstructed = true
+      if (initialSource.kind === "task")
+        yield* input.tasks
+          .updatePlacement(input.parent.id, input.sourceID, recovered)
+          .pipe(Effect.mapError((error) => invalid(error.message)))
+      if (initialSource.kind === "workflow")
+        yield* input.workflows
+          .updatePlacement(input.parent.id, initialSource.runID, initialSource.key, recovered)
+          .pipe(Effect.mapError((error) => invalid(error.message)))
+    }
   } else if (
     session.location.directory !== input.parent.location.directory ||
     session.location.workspaceID !== input.parent.location.workspaceID
   )
     return yield* invalid("Child resume source placement is unavailable")
+  const source = reconstructed ? yield* owned : initialSource
   const snapshot = yield* SessionHistoryCopy.capture(input.db, input.sourceID)
   const originalSandbox = yield* input.sandbox.get(input.sourceID)
   const parentSandbox = yield* input.sandbox.get(input.parent.id)

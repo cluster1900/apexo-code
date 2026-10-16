@@ -13,6 +13,7 @@ import { FileSystemSearch } from "./filesystem/search"
 import { Watcher } from "./filesystem/watcher"
 import { Image } from "./image"
 import { HookSnapshotLocation } from "./hook-snapshot-location"
+import { MemoryEmbedding } from "./memory-embedding"
 import { MemoryLifecycleNative } from "./memory-lifecycle-native"
 import { MemoryNative } from "./memory-native"
 import { MemoryContextNative } from "./memory-context-native"
@@ -86,6 +87,7 @@ export const locationServices = LayerNode.group([
   HookSnapshotLocation.node,
   SkillGuidance.node,
   ReferenceGuidance.node,
+  MemoryEmbedding.node,
   MemoryContextNative.node,
   MemoryNative.node,
   MemoryLifecycleNative.node,

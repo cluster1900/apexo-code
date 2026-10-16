@@ -17,6 +17,8 @@ import { Database } from "@apexo/core/database/database"
 import { LocationRuntimeGuard } from "@apexo/core/location-runtime-guard"
 import { SessionLifecycle } from "@apexo/core/session/lifecycle"
 import { SessionStore } from "@apexo/core/session/store"
+import { SessionTable } from "@apexo/core/session/sql"
+import { eq } from "drizzle-orm"
 import { SessionExecutionPolicy } from "@apexo/core/session/execution-policy"
 import path from "node:path"
 import { expect } from "bun:test"
@@ -1587,3 +1589,371 @@ it.live(
     ),
   30000,
 )
+
+it.live(
+  "legacy semantic flush deduplication suppresses >0.92 matches with :duplicate marker, writes <=0.92 boundary and falls back on provider failure",
+  () =>
+    fixture(
+      (session, paths) =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionV2.Service
+          const operations = yield* SessionMemoryOperation.Service
+          const llm = yield* TestLLMServer
+          yield* llm.reset
+
+          const workspaceFile = yield* local(
+            session,
+            Effect.gen(function* () {
+              const location = yield* Location.Service
+              return WorkspaceMemory.file(paths.directory, paths.home, { projectID: location.project.id })
+            }),
+          )
+          yield* Effect.promise(async () => {
+            await mkdir(path.dirname(workspaceFile), { recursive: true })
+            await Bun.write(workspaceFile, "# Database\n\nPostgreSQL 16 runs on port 5432.\n")
+          })
+
+          // 1. Similarity 0.95 (> 0.92): suppress body and write :duplicate marker.
+          yield* llm.setEmbed((hit) => {
+            const inputs = Array.isArray(hit.body.input) ? (hit.body.input as string[]) : []
+            return {
+              status: 200,
+              body: {
+                object: "list",
+                data: inputs.map((text, index) => ({
+                  object: "embedding",
+                  index,
+                  embedding: text.includes("5432") ? [0.9, 0, 0, 0] : [1, 0, 0, 0],
+                })),
+              },
+            }
+          })
+          // Wait: both existing note and flush candidate contain "5432"; make existing [1,0,0,0] and candidate [0.9,0,0,0] (sim = 0.95).
+          yield* llm.setEmbed((hit) => {
+            const inputs = Array.isArray(hit.body.input) ? (hit.body.input as string[]) : []
+            return {
+              status: 200,
+              body: {
+                object: "list",
+                data: inputs.map((text, index) => ({
+                  object: "embedding",
+                  index,
+                  embedding: text.startsWith("# Database") ? [1, 0, 0, 0] : [0.9, 0, 0, 0],
+                })),
+              },
+            }
+          })
+
+          yield* llm.text("PostgreSQL 16 is configured on port 5432.")
+          yield* sessions.prompt({
+            sessionID: session.id,
+            prompt: { text: "Remember our primary database is PostgreSQL 16 on port 5432." },
+          })
+          yield* sessions.wait(session.id)
+          yield* enable(session.id)
+
+          yield* llm.text("## Database\n\nPrimary database uses PostgreSQL 16 on port 5432.")
+          const dupOp = MemoryOperation.ID.create()
+          yield* operations.start(session.id, { id: dupOp })
+          const dupDone = yield* settled(operations, session, dupOp)
+          expect(dupDone.result?.status).toBe("no_work")
+          expect(dupDone.result?.processed).toBe(0)
+          expect(yield* llm.calls).toBe(2)
+          expect(yield* llm.embedCalls).toBe(1)
+
+          const sessionFiles = yield* Effect.promise(() => readdir(path.join(path.dirname(workspaceFile), "sessions")))
+          expect(sessionFiles).toHaveLength(1)
+          const flushFile = path.join(path.dirname(workspaceFile), "sessions", sessionFiles[0]!)
+          const afterDup = yield* Effect.promise(() => readFile(flushFile, "utf8"))
+          expect(afterDup).toContain(":duplicate -->")
+          expect(afterDup).not.toContain("## Database")
+
+          // Retry of settled duplicate operation must not call LLM or embedding again.
+          const retryOp = MemoryOperation.ID.create()
+          yield* operations.retry(session.id, { id: retryOp, retryOf: dupOp })
+          expect((yield* settled(operations, session, retryOp)).result?.status).toBe("no_work")
+          expect(yield* llm.calls).toBe(2)
+          expect(yield* llm.embedCalls).toBe(1)
+
+          // 2. Boundary similarity === 0.92 (<= 0.92): [1,0,0,0] vs [0.84,0,0,0] -> L2 = 0.16, sim = 1 - 0.16/2 = 0.92 -> must write!
+          yield* llm.setEmbed((hit) => {
+            const inputs = Array.isArray(hit.body.input) ? (hit.body.input as string[]) : []
+            return {
+              status: 200,
+              body: {
+                object: "list",
+                data: inputs.map((text, index) => ({
+                  object: "embedding",
+                  index,
+                  embedding: text.startsWith("## Boundary") ? [0.84, 0, 0, 0] : [1, 0, 0, 0],
+                })),
+              },
+            }
+          })
+
+          yield* llm.text("Redis cache runs on port 6379.")
+          yield* sessions.prompt({
+            sessionID: session.id,
+            prompt: { text: "Remember Redis cache runs on port 6379." },
+          })
+          yield* sessions.wait(session.id)
+
+          yield* llm.text("## Boundary cache\n\nRedis cache runs on port 6379.")
+          const boundaryOp = MemoryOperation.ID.create()
+          yield* operations.start(session.id, { id: boundaryOp })
+          const boundaryDone = yield* settled(operations, session, boundaryOp)
+          expect(boundaryDone.result?.status).toBe("completed")
+          expect(boundaryDone.result?.processed).toBe(1)
+          const afterBoundary = yield* Effect.promise(() => readFile(flushFile, "utf8"))
+          expect(afterBoundary).toContain("## Boundary cache")
+
+          // 3. Provider failure during semantic dedup falls back to normal write, never false suppression.
+          yield* llm.setEmbed(() => ({ status: 503, body: { error: "embedding unavailable" } }))
+          yield* llm.text("Worker queue uses NATS JetStream.")
+          yield* sessions.prompt({
+            sessionID: session.id,
+            prompt: { text: "Remember worker queue uses NATS JetStream." },
+          })
+          yield* sessions.wait(session.id)
+
+          yield* llm.text("## Queue transport\n\nWorker queue uses NATS JetStream.")
+          const fallbackOp = MemoryOperation.ID.create()
+          yield* operations.start(session.id, { id: fallbackOp })
+          const fallbackDone = yield* settled(operations, session, fallbackOp)
+          expect(fallbackDone.result?.status).toBe("completed")
+          expect(fallbackDone.result?.processed).toBe(1)
+          const afterFallback = yield* Effect.promise(() => readFile(flushFile, "utf8"))
+          expect(afterFallback).toContain("## Queue transport")
+        }),
+      false,
+      { semantic_dedup_threshold: 0.92 },
+      { embedding: { provider: "api", model: "fixture/model", dimensions: 4 } },
+    ),
+  30000,
+)
+
+it.live(
+  "legacy semantic flush durable duplicate receipt recovers without another LLM or embedding request and verifies neighbor hash at commit",
+  () =>
+    fixture(
+      (session, paths) =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionV2.Service
+          const llm = yield* TestLLMServer
+          yield* llm.reset
+
+          const workspaceFile = yield* local(
+            session,
+            Effect.gen(function* () {
+              const location = yield* Location.Service
+              return WorkspaceMemory.file(paths.directory, paths.home, { projectID: location.project.id })
+            }),
+          )
+          yield* Effect.promise(async () => {
+            await mkdir(path.dirname(workspaceFile), { recursive: true })
+            await Bun.write(workspaceFile, "# Conventions\n\nAll services use structured JSON logging.\n")
+          })
+
+          yield* llm.setEmbed((hit) => {
+            const inputs = Array.isArray(hit.body.input) ? (hit.body.input as string[]) : []
+            return {
+              status: 200,
+              body: {
+                object: "list",
+                data: inputs.map((_, index) => ({
+                  object: "embedding",
+                  index,
+                  embedding: [1, 0, 0, 0],
+                })),
+              },
+            }
+          })
+
+          yield* llm.text("Structured JSON logging is required.")
+          yield* sessions.prompt({
+            sessionID: session.id,
+            prompt: { text: "Remember all services use structured JSON logging." },
+          })
+          yield* sessions.wait(session.id)
+          yield* enable(session.id)
+
+          yield* local(
+            session,
+            Effect.gen(function* () {
+              const memory = yield* MemoryLifecycleNative.Service
+              const plan = yield* Schema.decodeUnknownEffect(MemoryLegacyNative.Plan)(
+                yield* memory.prepareFlush(session.id),
+              )
+              const opID = MemoryOperation.ID.create()
+              const saved: { publication?: MemoryLegacyNative.Publication } = {}
+
+              yield* llm.text("## Logging\n\nAll services use structured JSON logging.")
+              const interrupted = yield* memory
+                .executeLegacy(plan, {
+                  operationID: opID,
+                  prepared: (publication) =>
+                    Effect.gen(function* () {
+                      saved.publication = publication
+                      return yield* Effect.fail(new Error("simulated crash after durable receipt save"))
+                    }),
+                })
+                .pipe(Effect.result)
+
+              expect(interrupted._tag).toBe("Failure")
+              expect(saved.publication?.status).toBe("duplicate")
+              expect(yield* llm.calls).toBe(2)
+              expect(yield* llm.embedCalls).toBe(1)
+
+              // Negative control: if neighbor file changes before recovery commits, recovery must reject!
+              yield* Effect.promise(() =>
+                Bun.write(workspaceFile, "# Conventions\n\nMutated neighbor content before commit.\n"),
+              )
+              const rejected = yield* memory
+                .executeLegacy(plan, {
+                  operationID: opID,
+                  recover: saved.publication,
+                })
+                .pipe(Effect.result)
+              expect(rejected._tag).toBe("Failure")
+              expect(yield* llm.calls).toBe(2)
+              expect(yield* llm.embedCalls).toBe(1)
+
+              // Restore exact neighbor content: recovery commits :duplicate marker with 0 extra LLM/embedding requests.
+              yield* Effect.promise(() =>
+                Bun.write(workspaceFile, "# Conventions\n\nAll services use structured JSON logging.\n"),
+              )
+              const recovered = yield* memory.executeLegacy(plan, {
+                operationID: opID,
+                recover: saved.publication,
+              })
+              expect(recovered).toMatchObject({
+                status: "no_work",
+                processed: 0,
+                committed: true,
+              })
+              expect(yield* llm.calls).toBe(2)
+              expect(yield* llm.embedCalls).toBe(1)
+            }),
+          )
+        }),
+      false,
+      { semantic_dedup_threshold: 0.92 },
+      { embedding: { provider: "api", model: "fixture/model", dimensions: 4 } },
+    ),
+  30000,
+)
+
+for (const change of ["deny_read", "switch_agent", "clear_memory", "mutate_neighbor"] as const) {
+  it.live(
+    `legacy semantic flush held embedding response rejects ${change} without false suppression or stale commit`,
+    () =>
+      fixture(
+        (session, paths) =>
+          Effect.gen(function* () {
+            const sessions = yield* SessionV2.Service
+            const store = yield* SessionStore.Service
+            const database = yield* Database.Service
+            const llm = yield* TestLLMServer
+            yield* llm.reset
+
+            const workspaceFile = yield* local(
+              session,
+              Effect.gen(function* () {
+                const location = yield* Location.Service
+                return WorkspaceMemory.file(paths.directory, paths.home, { projectID: location.project.id })
+              }),
+            )
+            yield* Effect.promise(async () => {
+              await mkdir(path.dirname(workspaceFile), { recursive: true })
+              await Bun.write(workspaceFile, "# Security\n\nRotate mTLS certificates every 24 hours.\n")
+            })
+
+            const release = Promise.withResolvers<void>()
+            yield* Effect.addFinalizer(() => Effect.sync(() => release.resolve()))
+            yield* llm.setEmbed((hit) => {
+              const inputs = Array.isArray(hit.body.input) ? (hit.body.input as string[]) : []
+              return {
+                status: 200,
+                wait: release.promise,
+                body: {
+                  object: "list",
+                  data: inputs.map((_, index) => ({
+                    object: "embedding",
+                    index,
+                    embedding: [1, 0, 0, 0],
+                  })),
+                },
+              }
+            })
+
+            yield* llm.text("Rotate mTLS certificates every 24 hours.")
+            yield* sessions.prompt({
+              sessionID: session.id,
+              prompt: { text: "Remember to rotate mTLS certificates every 24 hours." },
+            })
+            yield* sessions.wait(session.id)
+            yield* enable(session.id)
+
+            yield* local(
+              session,
+              Effect.gen(function* () {
+                const memory = yield* MemoryLifecycleNative.Service
+                const location = yield* Location.Service
+                const plan = yield* Schema.decodeUnknownEffect(MemoryLegacyNative.Plan)(
+                  yield* memory.prepareFlush(session.id),
+                )
+                yield* llm.text("## Security\n\nRotate mTLS certificates every 24 hours.")
+                const running = yield* memory.executeLegacy(plan).pipe(Effect.forkChild)
+                yield* llm.waitEmbed(1)
+
+                if (change === "deny_read") {
+                  yield* store.setPermissions({
+                    sessionID: session.id,
+                    permissions: [{ permission: "read", pattern: "*", action: "deny" }],
+                  })
+                }
+                if (change === "switch_agent") {
+                  yield* database.db
+                    .update(SessionTable)
+                    .set({ agent: "plan" })
+                    .where(eq(SessionTable.id, session.id))
+                    .run()
+                }
+                if (change === "clear_memory") {
+                  yield* Effect.promise(() =>
+                    MemoryMaintenance.clear(
+                      WorkspaceMemory.maintenance(paths.directory, paths.home, { projectID: location.project.id }),
+                      "workspace",
+                      true,
+                    ),
+                  )
+                }
+                if (change === "mutate_neighbor") {
+                  yield* Effect.promise(() =>
+                    Bun.write(workspaceFile, "# Security\n\nDifferent unrelated policy after edit.\n"),
+                  )
+                }
+
+                release.resolve()
+                const outcome = yield* Fiber.await(running)
+                expect(outcome._tag).toBe("Failure")
+                expect(yield* llm.embedCalls).toBe(1)
+
+                const files = yield* Effect.promise(() =>
+                  readdir(path.join(path.dirname(workspaceFile), "sessions")).catch((cause: unknown) => {
+                    if (MemoryFiles.missing(cause)) return []
+                    throw cause
+                  }),
+                )
+                expect(files).toEqual([])
+              }),
+            )
+          }),
+        false,
+        { semantic_dedup_threshold: 0.92 },
+        { embedding: { provider: "api", model: "fixture/model", dimensions: 4 } },
+      ),
+    30000,
+  )
+}
+

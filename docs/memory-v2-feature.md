@@ -17,7 +17,7 @@ Memory is opt-in. `memory_v2.enabled` selects V2 for new Sessions; existing Sess
 | Optional V2 batch Dream | Native bounded action/plan protocol, durable per-note outcomes and exact recovery are implemented. Final integrated App/Desktop/terminal acceptance is tracked separately in [batch Dream](native-memory-batch-dream.md). |
 | Legacy extraction and Dream | Native explicit/automatic extraction, manual/automatic Dream and consumed-source cleanup are implemented through existing native lifecycle ownership. See their linked contracts below. |
 | Recovery and migration | Native operations expose exact previews, explicit discard/clear, curated carryover and relocation with durable ownership. |
-| Semantic/vector retrieval | This is an optional **legacy** reference capability, not a V2 requirement. Apexo already has legacy lexical ranking, decay, source/access weighting and MMR. Optional embeddings, hybrid retrieval and semantic flush deduplication remain separate implementation work. |
+| Semantic/vector retrieval | Optional **legacy** reference capability (`memory_v2.enabled = false`). Native and compatibility legacy surfaces share `MemoryEmbedding`, generation-fenced `memory_vectors` in `search.sqlite`, hybrid BM25 + KNN merging, and semantic flush deduplication. See [legacy semantic Memory](native-legacy-semantic-memory.md). |
 
 The reference creates its hybrid search backend only for legacy Memory. V2 uses curated topics, observations and bounded context. Neither a comment mentioning experimental embedding providers nor a legacy feature description establishes a V2 vector contract.
 
@@ -47,7 +47,7 @@ Optional native batch Dream adds bounded read actions and patch/insert/section/c
 
 For a settled batch with deferred notes, **Run Dream** again starts a new attempt. **Retry original operation** settles only unfinished original work and preserves completed outcomes without another provider request. This distinction is shown by the adjacent App action and existing terminal Dream command. Batch behavior does not silently replace the older compatibility MemoryWork executor.
 
-See [native Dream and migration](native-memory-dream.md), [batch Dream](native-memory-batch-dream.md), [manual legacy Dream](native-legacy-dream.md), [automatic legacy Dream](native-automatic-legacy-dream.md), and [consumed-source cleanup](native-dream-consumed-cleanup.md).
+See [native Dream and migration](native-memory-dream.md), [batch Dream](native-memory-batch-dream.md), [manual legacy Dream](native-legacy-dream.md), [automatic legacy Dream](native-automatic-legacy-dream.md), [consumed-source cleanup](native-dream-consumed-cleanup.md), and [legacy semantic Memory](native-legacy-semantic-memory.md).
 
 ## Management, maintenance and limits
 
@@ -61,4 +61,4 @@ Existing storage and scan limits are intentional and operation-specific: a manua
 
 Native source CLI, rebuilt Desktop, real browser/native windows, mini/fullscreen terminals, isolated installed comparisons and process-death controls are recorded per feature. [Native operation UI](native-memory-operation-ui.md), [native recovery](native-memory-recovery.md), [native lifecycle](native-memory-lifecycle.md), [native automatic work](native-memory-automatic.md), and [reference evidence](native-memory-reference-audit.md) describe those boundaries. Aggregate test counts belong to their exact source checkpoint and are not perpetual guarantees.
 
-The installed legacy probe requested legacy mode but observed V2 artifacts. It establishes an effective-backend limitation, not installed legacy Dream or vector success. Legacy semantic implementation and its native acceptance remain open. Final batch UI acceptance and current whole-repository gates must be reported from their actual completed runs. Real-model quality, untested mounted filesystems/platforms and unsupported auxiliary accounting are not inferred from deterministic local-provider fixtures.
+The installed legacy probe requested legacy mode but observed V2 artifacts. It establishes an effective-backend limitation, not installed legacy Dream or vector success. Native and compatibility legacy semantic retrieval and flush deduplication are covered by local provider and adversarial tests; see [legacy semantic Memory](native-legacy-semantic-memory.md). Final batch UI acceptance and current whole-repository gates must be reported from their actual completed runs. Real-model quality, untested mounted filesystems/platforms and unsupported auxiliary accounting are not inferred from deterministic local-provider fixtures.

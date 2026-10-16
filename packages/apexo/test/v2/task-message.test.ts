@@ -50,6 +50,12 @@ it.live(
           agent: AgentV2.ID.make("general"),
           authority: [],
           createdAt: Date.now(),
+          delegation: {
+            rootID: parent.id,
+            rootCreated: (yield* SessionIncarnation.created(database.db, parent.id))!,
+            depth: 1,
+            maxDepth: 2,
+          },
         }
         yield* tasks.create(record)
         yield* tasks.begin({
@@ -134,6 +140,86 @@ it.live(
         ).toBe("Failure")
         expect((yield* messages.send(parent.id, child.id, steer)).status).toBe("promoted")
         expect((yield* messages.open("delivery-launch").pipe(Effect.result))._tag).toBe("Failure")
+
+        // Owned-descendant routing, sender validation, and per-sender quotas on a nested grandchild launch.
+        const grandchild = yield* sessions.create({ location: parent.location, parentID: child.id })
+        const grandchildRecord: SessionTaskStore.Record = {
+          ...record,
+          sessionID: grandchild.id,
+          parentID: child.id,
+          parentCreated: record.childCreated,
+          childCreated: (yield* SessionIncarnation.created(database.db, grandchild.id))!,
+          delegation: {
+            rootID: parent.id,
+            rootCreated: record.parentCreated,
+            depth: 2,
+            maxDepth: 2,
+          },
+        }
+        yield* tasks.create(grandchildRecord)
+        yield* tasks.begin({
+          id: "grandchild-launch",
+          sessionID: grandchild.id,
+          parentID: child.id,
+          request: {
+            description: "grandchild",
+            prompt: "initial grandchild",
+            agent: record.agent,
+            background: true,
+            activeMessages: true,
+          },
+        })
+        yield* roles.attach(grandchild.id, {
+          launchID: "grandchild-launch",
+          inputID: SessionMessage.ID.create(),
+          record: grandchildRecord,
+          attempt: undefined,
+          observe: undefined,
+          take: () => true,
+        })
+        yield* messages.open("grandchild-launch")
+        const fromChild = { inputID: SessionMessage.ID.create(), text: "from direct parent task", delivery: "steer" as const }
+        const childReceipt = yield* messages.send(child.id, grandchild.id, fromChild, { source: "tool" })
+        expect(childReceipt.status).toBe("admitted")
+        // Cross-sender reuse of the same inputID must fail with conflict.
+        expect(
+          (yield* messages.send(parent.id, grandchild.id, fromChild).pipe(Effect.result))._tag,
+        ).toBe("Failure")
+        // An inactive Task child (with no live SessionTaskRole) cannot send messages.
+        const inactiveChild = yield* sessions.create({ location: parent.location, parentID: parent.id })
+        yield* tasks.create({
+          ...record,
+          sessionID: inactiveChild.id,
+          childCreated: (yield* SessionIncarnation.created(database.db, inactiveChild.id))!,
+        })
+        expect(
+          (yield* messages
+            .send(inactiveChild.id, grandchild.id, { inputID: SessionMessage.ID.create(), text: "inactive child sender" }, { source: "tool" })
+            .pipe(Effect.result))._tag,
+        ).toBe("Failure")
+        // Non-Task managed child sessions cannot act as Task message senders.
+        const workflowChild = yield* sessions.create({
+          location: parent.location,
+          parentID: parent.id,
+          metadata: { workflowChild: "true" },
+        })
+        expect(
+          (yield* messages
+            .send(workflowChild.id, child.id, { inputID: SessionMessage.ID.create(), text: "managed child sender" })
+            .pipe(Effect.result))._tag,
+        ).toBe("Failure")
+        // Root ancestor can message the grandchild up to maxSenderPending (16), leaving room for direct parent.
+        const ancestorMessages = Array.from({ length: 16 }, (_, index) => ({
+          inputID: SessionMessage.ID.create(),
+          text: `ancestor-${index}`,
+        }))
+        yield* Effect.forEach(ancestorMessages, (entry) => messages.send(parent.id, grandchild.id, entry))
+        const ancestorOverflow = { inputID: SessionMessage.ID.create(), text: "ancestor-17-overflow" }
+        expect(
+          (yield* messages.send(parent.id, grandchild.id, ancestorOverflow).pipe(Effect.result))._tag,
+        ).toBe("Failure")
+        expect(yield* SessionInput.find(database.db, ancestorOverflow.inputID)).toBeUndefined()
+        yield* messages.close("grandchild-launch", "cancelled")
 
         const waking = yield* sessions.create({ location: parent.location, parentID: parent.id })
         const wakingRecord = {
@@ -317,6 +403,7 @@ it.live(
             parentID: goalParent.id,
             parentCreated: (yield* SessionIncarnation.created(database.db, goalParent.id))!,
             childCreated: (yield* SessionIncarnation.created(database.db, goalChild.id))!,
+            delegation: undefined,
           }
           yield* tasks.create(goalRecord)
           const launchID = `goal-delivery-${outcome}`

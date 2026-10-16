@@ -175,13 +175,11 @@ const make = Effect.gen(function* () {
         if (privateParent) yield* tasks.owned(privateParent.parentID, parent.id)
         if (
           privateParent &&
-          (input.background ||
-            !privateParent.delegation ||
-            privateParent.delegation.depth >= privateParent.delegation.maxDepth)
+          (!privateParent.delegation || privateParent.delegation.depth >= privateParent.delegation.maxDepth)
         )
           return yield* new SessionTaskStore.Failure({
             code: "denied",
-            message: "Nested Task requires foreground execution within its captured task.maxDepth",
+            message: "Nested Task requires delegation within its captured task.maxDepth",
           })
         const sandboxParent = yield* sandbox.capture(parent.id)
         const id =
@@ -312,6 +310,16 @@ const make = Effect.gen(function* () {
             message: "Background Task requires owned completion delivery",
           })
         const observe = (yield* SessionGoalUsage.Observer) ?? parentRole?.observe
+        const priorLaunch = existing ? yield* tasks.launch(id) : undefined
+        const latestLaunch = existing ? yield* tasks.latest(parent.id, childID) : undefined
+        const activeChildren = existing && children.active ? yield* children.active : undefined
+        const canRecoverExisting =
+          !!existing &&
+          !priorLaunch &&
+          !!latestLaunch &&
+          latestLaunch.status !== "running" &&
+          !activeChildren?.has(childID) &&
+          !roles.get(childID)
         const placement = yield* placements
           .prepare({
             parent,
@@ -322,6 +330,7 @@ const make = Effect.gen(function* () {
             childID,
             sandbox: sandboxParent,
             saved: existing?.placement ?? resumed?.selection.placement,
+            recoverSaved: canRecoverExisting,
             cwd: existing || resumed ? undefined : input.cwd,
             worktree: !existing && !resumed && input.isolation === "worktree",
           })
@@ -505,6 +514,13 @@ const make = Effect.gen(function* () {
                       yield* checkResumeOwner
                     } else if (existing?.resume)
                       yield* SessionHistoryCopy.assertReady(database.db, childID, existing.resume)
+                    if (
+                      existing?.placement &&
+                      placement &&
+                      (placement.record.dev !== existing.placement.dev ||
+                        placement.record.ino !== existing.placement.ino)
+                    )
+                      yield* tasks.updatePlacement(parent.id, childID, placement.record)
                     const record = yield* tasks.owned(parent.id, childID)
                     const prior = yield* tasks.launch(id)
                     const begin = tasks.begin({
@@ -560,7 +576,12 @@ const make = Effect.gen(function* () {
                     )
                     if (message) {
                       yield* Effect.addFinalizer(() => messages.close(id, "interrupted"))
-                      yield* messages.initial(id, message.input, () => checkMessageOwner.pipe(Effect.orDie))
+                      yield* messages.initial(
+                        id,
+                        message.input,
+                        () => checkMessageOwner.pipe(Effect.orDie),
+                        source.type === "operator" ? "operator" : "tool",
+                      )
                       return { launch, record, started: true }
                     }
                     yield* SessionInput.admit(database.db, events, {
@@ -640,6 +661,11 @@ const make = Effect.gen(function* () {
                 yield* checkResumeOwner
                 if (source.type === "operator") yield* checkMessageOwner
                 const result = yield* children.run(childID).pipe(Effect.exit)
+                if (placement?.record.mode === "worktree") {
+                  const refreshed = yield* placements.snapshot(placement.record).pipe(Effect.result)
+                  if (refreshed._tag === "Success")
+                    yield* tasks.updatePlacement(parent.id, childID, refreshed.success).pipe(Effect.catch(() => Effect.void))
+                }
                 if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
                 const context = yield* sessions.context(childID)
                 const reply = context.findLast((message) => message.type === "assistant")
@@ -679,20 +705,26 @@ const make = Effect.gen(function* () {
               Effect.onExit((exit) =>
                 Exit.isSuccess(exit)
                   ? Effect.void
-                  : tasks
-                      .finish({
-                        id,
-                        sessionID: childID,
-                        parentID: parent.id,
-                        status: Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
-                        message: Cause.hasInterrupts(exit.cause) ? "Task execution cancelled" : "Task execution failed",
-                      })
-                      .pipe(
-                        Effect.catch((error) =>
-                          Effect.logWarning("Task terminal receipt could not be retained", error),
-                        ),
-                        Effect.asVoid,
+                  : control.cancelChildren(childID).pipe(
+                      Effect.andThen(
+                        tasks
+                          .finish({
+                            id,
+                            sessionID: childID,
+                            parentID: parent.id,
+                            status: Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
+                            message: Cause.hasInterrupts(exit.cause)
+                              ? "Task execution cancelled"
+                              : "Task execution failed",
+                          })
+                          .pipe(
+                            Effect.catch((error) =>
+                              Effect.logWarning("Task terminal receipt could not be retained", error),
+                            ),
+                            Effect.asVoid,
+                          ),
                       ),
+                    ),
               ),
               Effect.ensuring(completion.finish),
               Effect.ensuring(
@@ -709,6 +741,7 @@ const make = Effect.gen(function* () {
                 metadata: {
                   sessionId: childID,
                   parentSessionId: parent.id,
+                  ...(setup.record.delegation ? { ownerSessionId: setup.record.delegation.rootID } : {}),
                   nativeTask: true,
                   ...(input.background ? { background: true } : {}),
                 },
@@ -765,7 +798,7 @@ const make = Effect.gen(function* () {
         if (privateParent && !roles.get(parentID))
           return yield* new SessionTaskStore.Failure({ code: "stale", message: "Parent Task has no live owner" })
         if (privateParent) yield* tasks.owned(privateParent.parentID, parentID)
-        const record = yield* tasks.owned(parentID, childID)
+        const record = yield* tasks.descendant(parentID, childID)
         const agent = context?.agent ?? (yield* agents.select(parent.agent)).id
         yield* permission.assert({
           sessionID: parentID,
@@ -794,8 +827,8 @@ const make = Effect.gen(function* () {
           })
         const previous = yield* messages.retry(parentID, childID, input)
         if (previous) return previous
-        const latest = yield* tasks.latest(parentID, childID)
-        if (latest?.status === "completed" && (context || operatorControl)) {
+        const latest = yield* tasks.latest(record.parentID, childID)
+        if (latest?.status === "completed" && record.parentID === parentID && (context || operatorControl)) {
           // This is an explicit new owned run, never an advisory wake of an old launch.
           const wake = launch(
             {
@@ -835,7 +868,10 @@ const make = Effect.gen(function* () {
             )
           return yield* messages.receipt(parentID, childID, input.inputID)
         }
-        return yield* messages.send(parentID, childID, input, context ? undefined : { agent: parent.agent })
+        return yield* messages.send(parentID, childID, input, {
+          ...(context ? {} : { agent: parent.agent }),
+          source: context ? "tool" : "operator",
+        })
       }),
     )
   const scheduled = (occurrenceID: SessionTaskOrigin.OccurrenceID) =>

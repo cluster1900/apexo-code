@@ -7,7 +7,29 @@ import { startShellFixture, poll } from "./grok-shell-fixture.mjs"
 
 const kind = process.argv[2] ?? "cli"
 const calls = []
+const embedCalls = []
+const vectorFor = (text) => {
+  const lower = String(text).toLowerCase()
+  if (lower.includes("otter") || lower.includes("marine mammal") || lower.includes("harbor socket"))
+    return [1, 0, 0]
+  return [0, 1, 0]
+}
 const fixture = await startShellFixture(kind, {
+  async http(req, res) {
+    if (!req.url?.endsWith("/embeddings")) return false
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = JSON.parse(Buffer.concat(chunks).toString())
+    const inputs = Array.isArray(body.input) ? body.input : [body.input]
+    embedCalls.push({ model: body.model, count: inputs.length })
+    res.writeHead(200, { "content-type": "application/json" })
+    res.end(
+      JSON.stringify({
+        data: inputs.map((item, index) => ({ index, embedding: vectorFor(item) })),
+      }),
+    )
+    return true
+  },
   async next({ body, input }) {
     const system = input
       .filter((item) => item.role === "system")
@@ -49,7 +71,17 @@ try {
     join(fixture.directory, "apexo.json"),
     JSON.stringify({
       snapshots: false,
-      memory: { enabled: true },
+      memory: {
+        enabled: true,
+        embedding: {
+          provider: "api",
+          model: "xai/text-embedding-3-small",
+          dimensions: 3,
+        },
+        initial_injection: {
+          min_score: 0.5,
+        },
+      },
       memory_v2: { enabled: false },
       permissions: [{ action: "*", resource: "*", effect: "allow" }],
       providers: {
@@ -97,12 +129,13 @@ try {
   checks.push("explicit-flush-persists-once-exact-and-explicit-retry-zero-provider")
   const second = await create()
   await request(`/api/session/${second.id}/prompt`, {
-    prompt: { text: "Recall project otter deployment port conventions." },
+    prompt: { text: "Summarize marine mammal harbor socket rules." },
   })
   await request(`/api/session/${second.id}/wait`, undefined, "POST", 204)
   assert.match(calls.at(-1).system, /LEGACY_NATIVE_DURABLE_FACT/)
+  assert.ok(embedCalls.length >= 1, "Semantic embedding endpoint was queried during hybrid recall")
   assert.equal(calls.length, 3)
-  checks.push("initial-recall-in-authoritative-provider-system")
+  checks.push("initial-recall-and-semantic-hybrid-match-in-authoritative-provider-system")
   for (const topic of [
     "Second metadata topic preserves immutable deployment identifiers.",
     "Third metadata topic keeps chronological project checkpoints.",
@@ -120,9 +153,15 @@ try {
   assert.equal(calls.length, 5)
   assert.equal(calls.filter((item) => item.kind === "flush").length, 1)
   checks.push("activity-checkpoint-real-native-note-zero-auxiliary-provider")
+  const dedupFlush = id()
+  await request(`${root}/flush`, { id: dedupFlush })
+  const dedupResult = (await settled(root, dedupFlush)).result
+  assert.equal(dedupResult.status, "no_work")
+  assert.equal(dedupResult.processed, 0)
+  checks.push("semantic-flush-dedup-skips-near-duplicate-entry")
   await request(root, { enabled: false }, "PATCH")
   await request(`${root}/flush`, { id: id() }, "POST", 409)
-  assert.equal(calls.length, 5)
+  assert.equal(calls.length, 6)
   checks.push("disabled-flush-zero-provider")
   console.log(
     JSON.stringify(
@@ -132,6 +171,7 @@ try {
         checks,
         mainCalls: calls.filter((item) => item.kind === "main").length,
         flushCalls: calls.filter((item) => item.kind === "flush").length,
+        embedCalls: embedCalls.length,
         output: fixture.output,
       },
       null,

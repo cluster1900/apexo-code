@@ -335,7 +335,7 @@ try {
   const version = launch(preflight, ["--version"])
   try {
     assert.equal((await bounded(version.exit, 10000, "version")).code, 0, version.data.stderr)
-    assert.match(version.data.stdout, /1\.0\.52/)
+    assert.match(version.data.stdout, /^grok 1\.0\.(52|60)\b/)
   } finally {
     await close(version)
   }

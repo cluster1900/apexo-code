@@ -109,6 +109,9 @@ try {
   assert.equal(await readFile(join(retained.directory, "child.txt"), "utf8"), "CHILD_EDIT")
   assert.equal(await Bun.file(join(fixture.directory, "child.txt")).exists(), false)
   assert.match(JSON.stringify(history), /UNTRACKED_FACT/)
+  await rm(retained.directory, { recursive: true, force: true })
+  assert.equal(await Bun.file(join(retained.directory, "child.txt")).exists(), false)
+  await writeFile(join(fixture.directory, "fact.txt"), "MUTATED_PARENT_FACT")
   await fixture.crash()
   await fixture.reopen()
   const second = await fixture.api(root, {
@@ -138,6 +141,8 @@ try {
   assert.deepEqual(await messages(source.children[0]), history)
   const child = (await fixture.api(`/api/session/${resumed.children[0]}`)).data
   assert.equal(child.location.directory, retained.directory)
+  assert.equal(await readFile(join(retained.directory, "child.txt"), "utf8"), "CHILD_EDIT")
+  assert.equal(await readFile(join(retained.directory, "fact.txt"), "utf8"), "DIRTY_TOOL_FACT")
   assert.equal(child.agent, "helper")
   assert.equal(child.parentID, parent.id)
   const latest = (await messages(resumed.children[0])).filter((message) => message.type === "assistant").at(-1)
@@ -147,6 +152,7 @@ try {
     "durable-restart-source-agent-model-and-tool-history",
     "fresh-owned-child-source-immutable",
     "confined-worktree-placement-retained",
+    "deleted-worktree-reconstructed-from-snapshot",
     "historical-usage-not-rebilled",
   )
   const denied = await fixture.api(root, {

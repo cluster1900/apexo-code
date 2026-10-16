@@ -616,6 +616,18 @@ function isTitleRequest(body: unknown): boolean {
   return JSON.stringify(body).includes("Generate a title for this conversation")
 }
 
+export type EmbedHit = {
+  url: URL
+  headers: Record<string, string>
+  body: Record<string, unknown>
+}
+
+export type EmbedResponse = {
+  status?: number
+  body: unknown
+  wait?: PromiseLike<unknown>
+}
+
 namespace TestLLMServer {
   export interface Service {
     readonly url: string
@@ -639,6 +651,10 @@ namespace TestLLMServer {
     readonly inputs: Effect.Effect<Record<string, unknown>[]>
     readonly pending: Effect.Effect<number>
     readonly misses: Effect.Effect<Hit[]>
+    readonly setEmbed: (handler: ((hit: EmbedHit) => EmbedResponse) | undefined) => Effect.Effect<void>
+    readonly embedHits: Effect.Effect<EmbedHit[]>
+    readonly embedCalls: Effect.Effect<number>
+    readonly waitEmbed: (count: number) => Effect.Effect<void>
   }
 }
 
@@ -653,6 +669,14 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
       let list: Queue[] = []
       let waits: Wait[] = []
       let misses: Hit[] = []
+      const embedState: {
+        hits: EmbedHit[]
+        waits: Wait[]
+        handler?: (hit: EmbedHit) => EmbedResponse
+      } = {
+        hits: [],
+        waits: [],
+      }
 
       const queue = (...input: (Item | Reply)[]) => {
         list = [...list, ...input.map((value) => ({ item: item(value) }))]
@@ -666,6 +690,13 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         const ready = waits.filter((item) => hits.length >= item.count)
         if (!ready.length) return
         waits = waits.filter((item) => hits.length < item.count)
+        yield* Effect.forEach(ready, (item) => Deferred.succeed(item.ready, void 0))
+      })
+
+      const notifyEmbed = Effect.fnUntraced(function* () {
+        const ready = embedState.waits.filter((item) => embedState.hits.length >= item.count)
+        if (!ready.length) return
+        embedState.waits = embedState.waits.filter((item) => embedState.hits.length < item.count)
         yield* Effect.forEach(ready, (item) => Deferred.succeed(item.ready, void 0))
       })
 
@@ -707,8 +738,47 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         return send(next)
       })
 
+      const handleEmbed = Effect.fn("TestLLMServer.handleEmbed")(function* () {
+        const req = yield* HttpServerRequest.HttpServerRequest
+        const body = yield* req.json.pipe(Effect.orElseSucceed(() => ({})))
+        const current: EmbedHit = {
+          url: new URL(req.originalUrl, "http://localhost"),
+          headers: { ...req.headers },
+          body: body && typeof body === "object" ? (body as Record<string, unknown>) : {},
+        }
+        embedState.hits = [...embedState.hits, current]
+        yield* notifyEmbed()
+        const response = embedState.handler
+          ? embedState.handler(current)
+          : {
+              status: 200,
+              body: {
+                object: "list",
+                data: (Array.isArray(current.body.input) ? current.body.input : []).map((_, index) => ({
+                  object: "embedding",
+                  index,
+                  embedding: Array.from(
+                    { length: typeof current.body.dimensions === "number" ? current.body.dimensions : 1024 },
+                    (__, dim) => (dim === 0 ? 1 : 0),
+                  ),
+                })),
+              },
+            }
+        if (response.wait) {
+          yield* Effect.promise(() => response.wait!)
+        }
+        return HttpServerResponse.text(
+          typeof response.body === "string" ? response.body : JSON.stringify(response.body),
+          {
+            status: response.status ?? 200,
+            contentType: "application/json",
+          },
+        )
+      })
+
       yield* router.add("POST", "/v1/chat/completions", handle("chat"))
       yield* router.add("POST", "/v1/responses", handle("responses"))
+      yield* router.add("POST", "/v1/embeddings", handleEmbed())
 
       yield* server.serve(router.asHttpEffect())
 
@@ -773,6 +843,9 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
           list = []
           waits = []
           misses = []
+          embedState.hits = []
+          embedState.waits = []
+          embedState.handler = undefined
         }),
         hits: Effect.sync(() => [...hits]),
         calls: Effect.sync(() => hits.length),
@@ -785,6 +858,18 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         inputs: Effect.sync(() => hits.map((hit) => hit.body)),
         pending: Effect.sync(() => list.length),
         misses: Effect.sync(() => [...misses]),
+        setEmbed: (handler) =>
+          Effect.sync(() => {
+            embedState.handler = handler
+          }),
+        embedHits: Effect.sync(() => [...embedState.hits]),
+        embedCalls: Effect.sync(() => embedState.hits.length),
+        waitEmbed: Effect.fn("TestLLMServer.waitEmbed")(function* (count: number) {
+          if (embedState.hits.length >= count) return
+          const ready = yield* Deferred.make<void>()
+          embedState.waits = [...embedState.waits, { count, ready }]
+          yield* Deferred.await(ready)
+        }),
       })
     }),
   ).pipe(Layer.provide(HttpRouter.layer), Layer.provide(NodeHttpServer.layer(() => Http.createServer(), { port: 0 })))

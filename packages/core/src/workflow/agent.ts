@@ -100,6 +100,12 @@ export const admit = Effect.fn("WorkflowAgent.admit")(function* (input: {
   }
   const placed = input.place ? yield* input.place(selection) : selection
   if (!saved) yield* input.workflows.selectChild(input.parent.id, input.task.runID, input.task.key, placed)
+  if (
+    saved?.placement &&
+    placed.placement &&
+    (placed.placement.dev !== saved.placement.dev || placed.placement.ino !== saved.placement.ino)
+  )
+    yield* input.workflows.updatePlacement(input.parent.id, input.task.runID, input.task.key, placed.placement)
   return { selection: placed, authority: [...placed.authority, ...fresh] }
 })
 
