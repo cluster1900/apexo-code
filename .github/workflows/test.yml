@@ -38,7 +38,7 @@ jobs:
 
       - name: Run unit tests
         timeout-minutes: 30
-        run: GITHUB_ACTIONS=false bun turbo test --concurrency=2
+        run: GITHUB_ACTIONS=false bun turbo test --concurrency=2 --log-order=stream --log-prefix=none
 
       - name: Check generated client
         working-directory: packages/client

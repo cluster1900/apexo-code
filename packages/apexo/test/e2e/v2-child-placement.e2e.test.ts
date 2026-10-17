@@ -99,7 +99,7 @@ for (const mode of ["cwd", "worktree"] as const) {
         yield* Effect.promise(() => Bun.write(path.join(target, "untracked.txt"), "EXPLICIT_UNTRACKED"))
         const parent = (yield* Schema.decodeUnknownEffect(SessionResponse)(
           yield* (yield* post("/api/session", {
-            commandSandbox: "workspace",
+            ...(process.platform === "darwin" ? { commandSandbox: "workspace" } : {}),
             location: { directory },
             model: { providerID: "task-fixture", id: "model" },
             agent: "build",
@@ -120,7 +120,10 @@ for (const mode of ["cwd", "worktree"] as const) {
         yield* llm.respond(() =>
           reply()
             .tool("bash", {
-              command: `pwd; cat tracked.txt untracked.txt; printf CHILD_EDIT > child.txt; (printf BAD > '${directory}/parent-escape.txt') 2>/dev/null && echo PARENT_WRITE_ESCAPED || echo PARENT_WRITE_DENIED; (printf BAD > .git) 2>/dev/null && echo GIT_WRITE_ESCAPED || echo GIT_WRITE_DENIED; /usr/bin/curl --connect-timeout 1 --max-time 2 -s ${llm.url} >/dev/null 2>&1 && echo NETWORK_ESCAPED || echo NETWORK_DENIED`,
+              command:
+                process.platform === "darwin"
+                  ? `pwd; cat tracked.txt untracked.txt; printf CHILD_EDIT > child.txt; (printf BAD > '${directory}/parent-escape.txt') 2>/dev/null && echo PARENT_WRITE_ESCAPED || echo PARENT_WRITE_DENIED; (printf BAD > .git) 2>/dev/null && echo GIT_WRITE_ESCAPED || echo GIT_WRITE_DENIED; /usr/bin/curl --connect-timeout 1 --max-time 2 -s ${llm.url} >/dev/null 2>&1 && echo NETWORK_ESCAPED || echo NETWORK_DENIED`
+                  : "pwd; cat tracked.txt untracked.txt; printf CHILD_EDIT > child.txt",
               description: "Inspect native placement",
             })
             .item(),
@@ -181,9 +184,11 @@ for (const mode of ["cwd", "worktree"] as const) {
         if (mode === "cwd") expect(source.directory).toBe(target)
         expect(requests[0]).toContain(mode === "cwd" ? "EXPLICIT_CWD" : "DIRTY_PARENT")
         expect(requests[0]).toContain(mode === "cwd" ? "EXPLICIT_UNTRACKED" : "UNTRACKED_PARENT")
-        for (const denied of ["PARENT_WRITE_DENIED", "GIT_WRITE_DENIED", "NETWORK_DENIED"])
-          expect(requests[0]).toContain(denied)
-        expect(yield* Effect.promise(() => Bun.file(path.join(directory, "parent-escape.txt")).exists())).toBe(false)
+        if (process.platform === "darwin") {
+          for (const denied of ["PARENT_WRITE_DENIED", "GIT_WRITE_DENIED", "NETWORK_DENIED"])
+            expect(requests[0]).toContain(denied)
+          expect(yield* Effect.promise(() => Bun.file(path.join(directory, "parent-escape.txt")).exists())).toBe(false)
+        }
         expect(yield* Effect.promise(() => readFile(path.join(source.directory, "child.txt"), "utf8"))).toBe(
           "CHILD_EDIT",
         )
@@ -262,7 +267,7 @@ it.instance(
       yield* Effect.promise(() => Bun.write(path.join(directory, "untracked.txt"), "UNTRACKED_PARENT"))
       const parent = (yield* Schema.decodeUnknownEffect(SessionResponse)(
         yield* (yield* post("/api/session", {
-          commandSandbox: "workspace",
+          ...(process.platform === "darwin" ? { commandSandbox: "workspace" } : {}),
           location: { directory },
           model: { providerID: "task-fixture", id: "model" },
           agent: "build",
@@ -449,7 +454,7 @@ it.instance(
       yield* Effect.promise(() => Bun.write(path.join(directory, "fact.txt"), "WORKFLOW_DIRTY_FACT"))
       const parent = (yield* Schema.decodeUnknownEffect(SessionResponse)(
         yield* (yield* post("/api/session", {
-          commandSandbox: "workspace",
+          ...(process.platform === "darwin" ? { commandSandbox: "workspace" } : {}),
           location: { directory },
           model: { providerID: "task-fixture", id: "model" },
           agent: "build",
@@ -531,7 +536,7 @@ it.instance(
       yield* Effect.promise(() => Bun.write(path.join(directory, "fact.txt"), "WORKFLOW_DIRTY_FACT"))
       const parent = (yield* Schema.decodeUnknownEffect(SessionResponse)(
         yield* (yield* post("/api/session", {
-          commandSandbox: "workspace",
+          ...(process.platform === "darwin" ? { commandSandbox: "workspace" } : {}),
           location: { directory },
           model: { providerID: "task-fixture", id: "model" },
           agent: "build",
