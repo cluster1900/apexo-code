@@ -2200,12 +2200,17 @@ export type Config = {
     }
   }
   grok_media?: {
+    image_gen_model_override?: string
+    image_edit_model_override?: string
+    disable_zdr_incompatible_tools?: boolean
+    team_blocked_reasons?: Array<string>
     zdr_video_output_s3?: {
       bucket: string
       endpoint: string
       region: string
       key_prefix?: string
       expires_secs?: number
+      zdr_only?: boolean
       read_write: {
         access_key_id: string
         secret_access_key: string
@@ -2219,6 +2224,8 @@ export type Config = {
   media?: {
     image_gen_model_override?: string
     image_edit_model_override?: string
+    disable_zdr_incompatible_tools?: boolean
+    team_blocked_reasons?: Array<string>
     video_output?:
       | {
           type: "provider"
@@ -2230,6 +2237,7 @@ export type Config = {
           region: string
           key_prefix?: string
           expires_secs?: number
+          zdr_only?: boolean
           read_write: {
             access_key_id_env: string
             secret_access_key_env: string
