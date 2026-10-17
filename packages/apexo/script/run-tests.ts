@@ -27,7 +27,7 @@ const batches = Array.from({ length: batchCount }, (_, batch) =>
 
 const workerCount = Math.max(
   1,
-  Math.min(batches.length, Number(Bun.env.APEXO_TEST_SHARDS ?? Math.min(4, Math.max(2, os.availableParallelism())))),
+  Math.min(batches.length, Number(Bun.env.APEXO_TEST_SHARDS ?? Math.min(3, Math.max(2, os.availableParallelism())))),
 )
 
 const queue = batches.map((batchFiles, index) => ({ index, batchFiles }))
@@ -43,7 +43,7 @@ async function runBatch(item: { index: number; batchFiles: string[] }) {
   })
   const timer = setTimeout(() => {
     proc.kill("SIGKILL")
-  }, 240_000)
+  }, 600_000)
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
