@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main]
+    branches: [main, grok-agent-roadmap]
   pull_request:
     branches: [main]
   workflow_dispatch:
