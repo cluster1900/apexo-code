@@ -58,7 +58,7 @@ it.live(
               description: "Observe both streams",
               monitor: { persistent: true },
               command:
-                "echo $$ > pid; printf 'FIRST\\360\\237'; sleep 0.03; printf 'ERROR中文\n' >&2; sleep 0.03; printf '\\230\\200\n'; while [ ! -f paused ]; do sleep 0.02; done; printf 'PAUSED\n'; while [ ! -f resumed ]; do sleep 0.02; done; printf 'FUTURE\n'; while [ ! -f done ]; do sleep 0.02; done; printf 'TAIL'",
+                "echo $$ > pid; printf 'FIRST\\360\\237'; sleep 0.01; printf 'ERROR中文\n' >&2; sleep 0.01; printf '\\230\\200\n'; while [ ! -f paused ]; do sleep 0.02; done; printf 'PAUSED\n'; while [ ! -f resumed ]; do sleep 0.02; done; printf 'FUTURE\n'; while [ ! -f done ]; do sleep 0.02; done; printf 'TAIL'",
             },
           })
           const awaitOutput = (text: string) =>
@@ -72,6 +72,8 @@ it.live(
           }).pipe(Effect.retry({ times: 200, schedule: Schedule.spaced("10 millis") }), Effect.timeout("5 seconds"))
           expect(run.kind).toBe("monitor")
           expect(run.monitor?.persistent).toBe(true)
+          yield* awaitOutput("😀")
+          yield* awaitOutput("ERROR中文")
           yield* awaitPending
           const foreign = yield* sessions.create({ location: parent.location })
           expect(yield* completions.pending(foreign.id)).toBe(false)

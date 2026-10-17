@@ -1326,7 +1326,7 @@ for (const change of ["prompt", "disable", "clear", "deny"] as const) {
               yield* release
               yield* Fiber.join(changing)
               expect(joined._tag).toBe("Success")
-              expect((yield* operations.get(session.id, receipt.id)).result?.status).toBe(
+              expect((yield* settled(operations, session, receipt.id)).result?.status).toBe(
                 change === "disable" ? "failed" : "cancelled",
               )
             }

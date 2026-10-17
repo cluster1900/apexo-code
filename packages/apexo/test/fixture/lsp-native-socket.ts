@@ -1,3 +1,4 @@
+import { dlopen, FFIType } from "bun:ffi"
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node"
@@ -72,6 +73,12 @@ const server = createServer({ allowHalfOpen: true }, (socket) => {
   connection.listen()
 })
 server.listen({ port: 0, host: "127.0.0.1", backlog: 1 }, () => {
+  const fd = (server as unknown as { _handle?: { fd?: number } })._handle?.fd
+  if (typeof fd === "number" && (process.platform === "darwin" || process.platform === "linux")) {
+    dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6", {
+      listen: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    }).symbols.listen(fd, 1)
+  }
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("TCP address missing")
   record({ event: "start" })

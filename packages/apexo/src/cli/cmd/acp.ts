@@ -6,7 +6,6 @@ import { createApexoClient } from "@apexo/sdk/v2/client"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { ACPProfile } from "@/acp/profile"
 import { Process } from "@/util/process"
-import { pipeline } from "node:stream/promises"
 
 export const AcpCommand = effectCmd({
   command: "acp",
@@ -109,8 +108,8 @@ async function runGrokBuildAgent(cwd: string, signal: AbortSignal) {
   })
   const code = await Promise.all([
     agent.exited,
-    pipeline(agent.stdout!, process.stdout, { end: false }),
-    pipeline(agent.stderr!, process.stderr, { end: false }),
+    forward(agent.stdout!, process.stdout),
+    forward(agent.stderr!, process.stderr),
   ])
     .then(([code]) => code)
     .catch((error) => {
@@ -122,4 +121,18 @@ async function runGrokBuildAgent(cwd: string, signal: AbortSignal) {
       process.removeListener("SIGTERM", interrupt)
     })
   if (code !== 0 && !abort.aborted) throw new Error(`Grok Build ACP exited with code ${code}`)
+}
+
+async function forward(source: NodeJS.ReadableStream, target: NodeJS.WriteStream) {
+  for await (const chunk of source) {
+    await new Promise<void>((resolve, reject) => {
+      target.write(chunk, (err) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        resolve()
+      })
+    })
+  }
 }

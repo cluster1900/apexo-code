@@ -57,12 +57,18 @@ async function runBatch(item: { index: number; batchFiles: string[] }) {
   if (exitCode !== 0) {
     const combined = `${stdout}\n${stderr}`.trim()
     console.error(combined)
-    const tail = combined
-      .split(/\r?\n/)
-      .filter((line) => line.trim().length > 0)
-      .slice(-25)
-      .join(" | ")
-      .slice(0, 1500)
+    const lines = combined.split(/\r?\n/).filter((line) => line.trim().length > 0)
+    lines
+      .map((line, idx) => ({ line, idx }))
+      .filter((entry) => entry.line.startsWith("(fail)"))
+      .forEach((entry) => {
+        const detail = lines
+          .slice(entry.idx, entry.idx + 8)
+          .join(" | ")
+          .slice(0, 1200)
+        console.log(`::error title=apexo batch ${item.index + 1}/${batches.length} test failure::${detail}`)
+      })
+    const tail = lines.slice(-25).join(" | ").slice(0, 1500)
     console.log(
       `::error title=apexo batch ${item.index + 1}/${batches.length} failed (exit ${exitCode})::${tail || item.batchFiles.join(", ")}`,
     )
