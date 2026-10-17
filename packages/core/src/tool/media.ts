@@ -96,9 +96,27 @@ const layer = Layer.effectDiscard(
         if (selection?.type === "document" && selection.mediaInvalid)
           return yield* fail("Invalid explicit media configuration; correct the selected configuration before retrying")
         const settings = selection?.type === "document" ? selection.info.media : undefined
+        const provider = (yield* catalog.provider.available()).find((item) => item.id === ProviderV2.ID.make("xai"))
+        const providerReasons = [
+          ...(Array.isArray(provider?.request.body.team_blocked_reasons)
+            ? provider.request.body.team_blocked_reasons.filter((item): item is string => typeof item === "string")
+            : []),
+          ...(Array.isArray(provider?.api.settings?.team_blocked_reasons)
+            ? provider.api.settings.team_blocked_reasons.filter((item): item is string => typeof item === "string")
+            : []),
+        ]
+        const providerClaims = {
+          disable_zdr_incompatible_tools:
+            provider?.request.body.disable_zdr_incompatible_tools === true ||
+            provider?.api.settings?.disable_zdr_incompatible_tools === true,
+          team_blocked_reasons: providerReasons,
+        }
         const options = yield* Effect.try({
-          try: () => ConfigMedia.resolve(settings, process.env, request.kind),
-          catch: () => fail("Invalid media configuration or unavailable storage credentials"),
+          try: () => ConfigMedia.resolve(settings, process.env, request.kind, providerClaims),
+          catch: (error) =>
+            error instanceof Error && error.message.includes("Zero Data Retention")
+              ? fail(error.message)
+              : fail("Invalid media configuration or unavailable storage credentials"),
         })
         if (request.kind !== "image_to_video" && !request.input.prompt.trim())
           return yield* fail("Media generation requires a non-empty prompt")
@@ -258,7 +276,6 @@ const layer = Layer.effectDiscard(
               : {}),
           }
         })
-        const provider = (yield* catalog.provider.available()).find((item) => item.id === ProviderV2.ID.make("xai"))
         if (!provider || provider.disabled) return yield* fail("Connect an enabled xAI provider to generate media")
         const connection = yield* integrations.connection.active(provider.integrationID ?? Integration.ID.make("xai"))
         const credential = connection ? yield* integrations.connection.resolve(connection) : undefined
@@ -353,10 +370,10 @@ const layer = Layer.effectDiscard(
               previewMime: preview.mime,
             }
           }
-          const signed = storage ? MediaS3.sign(storage, yield* DateTime.nowAsDate) : undefined
+          const uploadUrl = storage ? MediaS3.signUpload(storage, yield* DateTime.nowAsDate) : undefined
           const started = yield* response(`${endpoint}/videos/generations`, {
             ...body,
-            ...(signed ? { output: { upload_url: signed.upload } } : {}),
+            ...(uploadUrl ? { output: { upload_url: uploadUrl } } : {}),
           })
           const id = field(started, "request_id")
           if (typeof id !== "string" || !id) return yield* fail("Video API returned no request identifier")
@@ -364,7 +381,9 @@ const layer = Layer.effectDiscard(
             const result = yield* response(`${endpoint}/videos/${encodeURIComponent(id)}`)
             const status = field(result, "status")
             if (status === "done" || status === "completed") {
-              const url = signed?.download ?? field(field(result, "video"), "url")
+              const url = storage
+                ? MediaS3.signDownload(storage, yield* DateTime.nowAsDate)
+                : field(field(result, "video"), "url")
               if (typeof url !== "string") return yield* fail("Video API returned no output URL")
               const bytes = yield* download(url, storage?.url.origin)
               if (bytes.length < 12 || bytes.subarray(4, 8).toString() !== "ftyp")

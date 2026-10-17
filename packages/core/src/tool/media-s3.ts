@@ -33,37 +33,51 @@ export function prepare(config: ConfigMedia.Storage, filename: string) {
   }
 }
 
-export function sign(input: ReturnType<typeof prepare>, date: Date) {
+function signCapability(
+  input: ReturnType<typeof prepare>,
+  date: Date,
+  method: "GET" | "PUT",
+  credentials: ConfigMedia.Storage["read_write"],
+) {
   const timestamp = date.toISOString().replace(/[:-]|\.\d{3}/g, "")
   const day = timestamp.slice(0, 8)
   const scope = `${day}/${input.config.region}/s3/aws4_request`
-  const signed = (method: "GET" | "PUT", credentials: ConfigMedia.Storage["read_write"]) => {
-    const headers = method === "PUT" ? "content-type;host" : "host"
-    const canonicalHeaders =
-      method === "PUT" ? `content-type:video/mp4\nhost:${input.url.host}\n` : `host:${input.url.host}\n`
-    const query = Object.entries({
-      "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
-      "X-Amz-Credential": `${credentials.access_key_id}/${scope}`,
-      "X-Amz-Date": timestamp,
-      "X-Amz-Expires": String(input.config.expires_secs ?? 900),
-      "X-Amz-SignedHeaders": headers,
-    })
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([name, value]) => `${encode(name)}=${encode(value)}`)
-      .join("&")
-    const canonical = `${method}\n${input.url.pathname}\n${query}\n${canonicalHeaders}\n${headers}\nUNSIGNED-PAYLOAD`
-    const signing = [day, input.config.region, "s3", "aws4_request"].reduce(
-      (secret, value) => createHmac("sha256", secret).update(value).digest(),
-      Buffer.from(`AWS4${credentials.secret_access_key}`),
-    )
-    const signature = createHmac("sha256", signing)
-      .update(`AWS4-HMAC-SHA256\n${timestamp}\n${scope}\n${createHash("sha256").update(canonical).digest("hex")}`)
-      .digest("hex")
-    return `${input.url.origin}${input.url.pathname}?${query}&X-Amz-Signature=${signature}`
-  }
+  const headers = method === "PUT" ? "content-type;host" : "host"
+  const canonicalHeaders =
+    method === "PUT" ? `content-type:video/mp4\nhost:${input.url.host}\n` : `host:${input.url.host}\n`
+  const query = Object.entries({
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${credentials.access_key_id}/${scope}`,
+    "X-Amz-Date": timestamp,
+    "X-Amz-Expires": String(input.config.expires_secs ?? 900),
+    "X-Amz-SignedHeaders": headers,
+  })
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, value]) => `${encode(name)}=${encode(value)}`)
+    .join("&")
+  const canonical = `${method}\n${input.url.pathname}\n${query}\n${canonicalHeaders}\n${headers}\nUNSIGNED-PAYLOAD`
+  const signing = [day, input.config.region, "s3", "aws4_request"].reduce(
+    (secret, value) => createHmac("sha256", secret).update(value).digest(),
+    Buffer.from(`AWS4${credentials.secret_access_key}`),
+  )
+  const signature = createHmac("sha256", signing)
+    .update(`AWS4-HMAC-SHA256\n${timestamp}\n${scope}\n${createHash("sha256").update(canonical).digest("hex")}`)
+    .digest("hex")
+  return `${input.url.origin}${input.url.pathname}?${query}&X-Amz-Signature=${signature}`
+}
+
+export function signUpload(input: ReturnType<typeof prepare>, date: Date) {
+  return signCapability(input, date, "PUT", input.config.read_write)
+}
+
+export function signDownload(input: ReturnType<typeof prepare>, date: Date) {
+  return signCapability(input, date, "GET", input.config.read_only ?? input.config.read_write)
+}
+
+export function sign(input: ReturnType<typeof prepare>, date: Date) {
   return {
-    upload: signed("PUT", input.config.read_write),
-    download: signed("GET", input.config.read_only ?? input.config.read_write),
+    upload: signUpload(input, date),
+    download: signDownload(input, date),
   }
 }
 
@@ -73,3 +87,4 @@ function encode(value: string) {
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   )
 }
+

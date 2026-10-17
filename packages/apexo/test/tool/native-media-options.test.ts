@@ -125,3 +125,79 @@ test("invalid media selection marker is internal and survives Document roundtrip
   expect(Object.keys(roundtrip.info)).not.toContain("mediaInvalid")
   expect(JSON.stringify(roundtrip)).not.toContain("secret_access_key")
 })
+
+test("team ZDR claims bind only to supported NO_LOGS reasons or explicit flag and gate video without S3", () => {
+  expect(ConfigMedia.isZdrActive(undefined, {})).toBe(false)
+  expect(
+    ConfigMedia.isZdrActive({ team_blocked_reasons: ["BLOCKED_REASON_QUOTA", "BLOCKED_REASON_BILLING"] }, {}),
+  ).toBe(false)
+  expect(ConfigMedia.isZdrActive(undefined, { GROK_TEAM_BLOCKED_REASONS: "BLOCKED_REASON_QUOTA,OTHER" })).toBe(false)
+  expect(ConfigMedia.isZdrActive({ team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS"] }, {})).toBe(true)
+  expect(ConfigMedia.isZdrActive({ team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS_MODERATED"] }, {})).toBe(true)
+  expect(ConfigMedia.isZdrActive({ disable_zdr_incompatible_tools: true }, {})).toBe(true)
+  expect(ConfigMedia.isZdrActive(undefined, { GROK_TEAM_BLOCKED_REASONS: "OTHER,BLOCKED_REASON_NO_LOGS" })).toBe(true)
+  expect(ConfigMedia.isZdrActive(undefined, { GROK_DISABLE_ZDR_INCOMPATIBLE_TOOLS: "true" })).toBe(true)
+  expect(ConfigMedia.isZdrActive(undefined, {}, { team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS_MODERATED"] })).toBe(
+    true,
+  )
+
+  for (const kind of ["image_to_video", "reference_to_video"] as const) {
+    expect(() =>
+      ConfigMedia.resolve({ team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS"] }, env, kind),
+    ).toThrow("Zero Data Retention")
+    expect(() =>
+      ConfigMedia.resolve(
+        { video_output: { type: "provider" }, disable_zdr_incompatible_tools: true },
+        env,
+        kind,
+      ),
+    ).toThrow("Zero Data Retention")
+    expect(
+      ConfigMedia.resolve({ team_blocked_reasons: ["BLOCKED_REASON_QUOTA"] }, {}, kind).storage,
+    ).toBeUndefined()
+    expect(
+      ConfigMedia.resolve(
+        { ...settings, team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS_MODERATED"] },
+        env,
+        kind,
+      ).storage?.bucket,
+    ).toBe("examplebucket")
+  }
+
+  expect(
+    ConfigMedia.resolve({ team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS"] }, {}, "image_gen").model,
+  ).toBe("grok-imagine-image-quality")
+  expect(
+    ConfigMedia.resolve({ team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS"] }, {}, "image_edit").model,
+  ).toBe("grok-imagine-image-quality")
+
+  const zdrOnlySettings = {
+    ...settings,
+    video_output: { ...settings.video_output, zdr_only: true },
+  }
+  expect(ConfigMedia.resolve(zdrOnlySettings, {}, "image_to_video").storage).toBeUndefined()
+  expect(
+    ConfigMedia.resolve(
+      zdrOnlySettings,
+      { ...env, GROK_TEAM_BLOCKED_REASONS: "BLOCKED_REASON_NO_LOGS" },
+      "image_to_video",
+    ).storage?.bucket,
+  ).toBe("examplebucket")
+})
+
+test("MediaS3.signUpload and signDownload mint bounded capabilities at distinct timestamps", () => {
+  const storage = ConfigMedia.resolve(settings, env, "image_to_video").storage!
+  const prepared = MediaS3.prepare(storage, "test.mp4")
+  const t0 = new Date("2013-05-24T00:00:00Z")
+  const t1 = new Date("2013-05-24T00:02:30Z")
+  const upload = MediaS3.signUpload(prepared, t0)
+  const downloadAtStart = MediaS3.signDownload(prepared, t0)
+  const downloadAtCompletion = MediaS3.signDownload(prepared, t1)
+  expect(new URL(upload).searchParams.get("X-Amz-Date")).toBe("20130524T000000Z")
+  expect(new URL(downloadAtStart).searchParams.get("X-Amz-Date")).toBe("20130524T000000Z")
+  expect(new URL(downloadAtCompletion).searchParams.get("X-Amz-Date")).toBe("20130524T000230Z")
+  expect(new URL(downloadAtCompletion).searchParams.get("X-Amz-Signature")).not.toBe(
+    new URL(downloadAtStart).searchParams.get("X-Amz-Signature"),
+  )
+})
+

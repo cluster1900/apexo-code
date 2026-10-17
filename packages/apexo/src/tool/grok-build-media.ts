@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { setTimeout } from "node:timers/promises"
+import { ConfigMedia } from "@apexo/core/config/media"
 import type { ConfigGrokMedia } from "@apexo/core/config/grok-media"
 import { presign } from "./grok-media-s3"
 import { Tool } from "./tool"
@@ -40,6 +41,10 @@ const ReferenceParameters = Schema.Struct({
 
 export type Options = {
   outputS3?: ConfigGrokMedia.OutputS3
+  imageGenModelOverride?: string
+  imageEditModelOverride?: string
+  disableZdrIncompatibleTools?: boolean
+  teamBlockedReasons?: readonly string[]
   key?: Effect.Effect<string | undefined>
   transport?: Effect.Effect<{ key: string; fetch?: typeof fetch; baseURL?: string } | undefined>
   baseURL?: string
@@ -49,12 +54,18 @@ export type Options = {
 
 type Media = { bytes: Buffer; mime: string; extension: string }
 
+function resolveImageModel(configured: string | undefined, variable: string) {
+  const value = process.env[variable]?.trim() || configured?.trim() || "grok-imagine-image-quality"
+  if (value.length > 256 || /[\x00-\x1f\x7f]/.test(value)) throw new Error("Invalid media model override")
+  return value
+}
+
 export function tools(options: Options = {}): Tool.Def[] {
   return [
     define("image_gen", ImageParameters, options, async (input, request) => {
       if (!input.prompt.trim()) throw new Error("image_gen requires a non-empty prompt")
       return request.image({
-        model: "grok-imagine-image-quality",
+        model: resolveImageModel(options.imageGenModelOverride, "GROK_IMAGE_GEN_MODEL_OVERRIDE"),
         prompt: input.prompt,
         n: 1,
         aspect_ratio: input.aspect_ratio ?? "auto",
@@ -141,7 +152,7 @@ export function tools(options: Options = {}): Tool.Def[] {
         const images = await Promise.all(input.image.map(request.reference))
         return request.image(
           {
-            model: "grok-imagine-image-quality",
+            model: resolveImageModel(options.imageEditModelOverride, "GROK_IMAGE_EDIT_MODEL_OVERRIDE"),
             prompt: input.prompt,
             n: 1,
             resolution: "1k",
@@ -180,6 +191,25 @@ function define<S extends Schema.Decoder<unknown>>(
             metadata: { status: "configuration_required" },
             output: "Connect xAI in provider settings, or configure XAI_API_KEY/GROK_API_KEY, then retry.",
           }
+        const video = id === "image_to_video" || id === "reference_to_video"
+        const zdr = ConfigMedia.isZdrActive(undefined, process.env, {
+          disable_zdr_incompatible_tools: options.disableZdrIncompatibleTools,
+          team_blocked_reasons: options.teamBlockedReasons,
+        })
+        const activeOutputS3 =
+          video && options.outputS3 && (!options.outputS3.zdr_only || zdr)
+            ? {
+                ...options.outputS3,
+                read_write: { ...options.outputS3.read_write },
+                ...(options.outputS3.read_only ? { read_only: { ...options.outputS3.read_only } } : {}),
+              }
+            : undefined
+        if (video && zdr && !activeOutputS3)
+          return {
+            title: id,
+            metadata: { status: "error" },
+            output: "Team Zero Data Retention (ZDR) policy requires S3 video output storage for video generation",
+          }
         const directory = typeof ctx.extra?.directory === "string" ? ctx.extra.directory : process.cwd()
         const folder = path.join(
           directory,
@@ -190,7 +220,7 @@ function define<S extends Schema.Decoder<unknown>>(
         )
         const name = randomUUID()
         const targets = new Map(
-          (id === "image_gen" || id === "image_edit" ? ["png", "jpg"] : ["mp4"]).map((extension) => [
+          (id === "image_gen" || id === "image_edit" ? ["png", "jpg", "webp"] : ["mp4"]).map((extension) => [
             extension,
             path.join(folder, `${name}.${extension}`),
           ]),
@@ -204,11 +234,29 @@ function define<S extends Schema.Decoder<unknown>>(
           always: [...targets.values()],
           metadata: {},
         })
-        const local = references(input)
-          .map((value) => attachment(value, ctx))
-          .filter((value) => !value.startsWith("https://") && !/^data:image\//.test(value))
+        const resolvedReferences = yield* Effect.try({
+          try: () => ({ ok: true as const, value: references(input).map((value) => attachment(value, ctx)) }),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        }).pipe(Effect.catch((error) => Effect.succeed({ ok: false as const, error: error.message })))
+        if (!resolvedReferences.ok)
+          return { title: id, metadata: { status: "error" }, output: resolvedReferences.error }
+        for (const value of resolvedReferences.value) {
+          if (/^[a-z]+:\/\//i.test(value) && !value.startsWith("https://") && !value.startsWith("file://"))
+            return { title: id, metadata: { status: "error" }, output: "Reference URL must use HTTPS" }
+        }
+        const local = resolvedReferences.value.filter(
+          (value) => !value.startsWith("https://") && !/^data:image\//.test(value),
+        )
+        const authorizedFiles = new Map<string, string>()
         for (const value of new Set(local)) {
-          const file = yield* Effect.promise(() => realpath(path.resolve(directory, value)))
+          const resolvedFile = yield* Effect.tryPromise({
+            try: async () => ({ ok: true as const, file: await realpath(path.resolve(directory, value)) }),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          }).pipe(Effect.catch((error) => Effect.succeed({ ok: false as const, error: error.message })))
+          if (!resolvedFile.ok)
+            return { title: id, metadata: { status: "error" }, output: resolvedFile.error }
+          const file = resolvedFile.file
+          authorizedFiles.set(value, file)
           const relative = path.relative(directory, file)
           if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
             yield* ctx.ask({
@@ -224,12 +272,13 @@ function define<S extends Schema.Decoder<unknown>>(
           try: async (signal) => {
             const abort = AbortSignal.any([signal, ctx.abort, AbortSignal.timeout(options.timeoutMs ?? 300_000)])
             const request = client(
-              { ...options, baseURL: transport?.baseURL ?? options.baseURL },
+              { ...options, outputS3: activeOutputS3, baseURL: transport?.baseURL ?? options.baseURL },
               key,
               directory,
               abort,
               transport?.fetch,
               (value) => attachment(value, ctx),
+              authorizedFiles,
             )
             const media = await generate(input, request)
             abort.throwIfAborted()
@@ -268,6 +317,7 @@ function client(
   signal: AbortSignal,
   request: typeof fetch = fetch,
   resolve: (value: string) => string = (value) => value,
+  authorizedFiles: ReadonlyMap<string, string> = new Map(),
 ) {
   const baseURL = (options.baseURL ?? process.env.XAI_BASE_URL ?? "https://api.x.ai/v1").replace(/\/$/, "")
   const json = async (endpoint: string, body?: unknown): Promise<unknown> => {
@@ -303,11 +353,19 @@ function client(
   return {
     reference: async (reference: string) => {
       const value = resolve(reference)
-      if (value.startsWith("https://") || /^data:image\/(png|jpeg|webp);base64,/.test(value)) return { url: value }
-      const file = path.resolve(directory, value)
-      const extension = path.extname(file).toLowerCase()
+      if (value.startsWith("https://")) {
+        new URL(value)
+        return { url: value }
+      }
+      if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return { url: value }
+      if (/^[a-z]+:\/\//i.test(value) || value.startsWith("data:"))
+        throw new Error("Reference must be an HTTPS URL, bounded PNG/JPEG/WebP data URL, or local image file")
+      const canonical = await realpath(path.resolve(directory, value))
+      const expected = authorizedFiles.get(value)
+      if (expected && canonical !== expected) throw new Error("Reference file path changed after authorization")
+      const extension = path.extname(canonical).toLowerCase()
       const mime = extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg"
-      return { url: `data:${mime};base64,${(await readFile(file)).toString("base64")}` }
+      return { url: `data:${mime};base64,${(await readFile(canonical)).toString("base64")}` }
     },
     image: async (body: unknown, endpoint = "/images/generations"): Promise<Media> => {
       const response = await json(endpoint, body)
@@ -318,14 +376,22 @@ function client(
       const bytes =
         typeof b64 === "string" ? Buffer.from(b64, "base64") : typeof url === "string" ? await download(url) : undefined
       if (!bytes?.length) throw new Error("Image API returned no image data")
-      const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-      return { bytes, mime: png ? "image/png" : "image/jpeg", extension: png ? "png" : "jpg" }
+      const format = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        ? { mime: "image/png", extension: "png" }
+        : bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+          ? { mime: "image/jpeg", extension: "jpg" }
+          : bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP"
+            ? { mime: "image/webp", extension: "webp" }
+            : undefined
+      if (!format) throw new Error("Image API returned an unsupported image format")
+      return { bytes, ...format }
     },
     video: async (body: Record<string, unknown>): Promise<Media> => {
-      const storage = options.outputS3 ? presign(options.outputS3) : undefined
+      const objectKey = `${randomUUID()}.mp4`
+      const upload = options.outputS3 ? presign(options.outputS3, new Date(), objectKey).upload : undefined
       const started = await json("/videos/generations", {
         ...body,
-        ...(storage ? { output: { upload_url: storage.upload } } : {}),
+        ...(upload ? { output: { upload_url: upload } } : {}),
       })
       const requestID = field(started, "request_id")
       if (typeof requestID !== "string") throw new Error("Video API returned no request_id")
@@ -334,9 +400,11 @@ function client(
         const status = await json(`/videos/${encodeURIComponent(requestID)}`)
         const state = field(status, "status")
         if (state === "done" || state === "completed") {
-          const url = storage?.download ?? field(field(status, "video"), "url")
+          const url = options.outputS3
+            ? presign(options.outputS3, new Date(), objectKey).download
+            : field(field(status, "video"), "url")
           if (typeof url !== "string") throw new Error("Video API returned no video.url")
-          return { bytes: await download(url, !!storage), mime: "video/mp4", extension: "mp4" }
+          return { bytes: await download(url, !!options.outputS3), mime: "video/mp4", extension: "mp4" }
         }
         if (state !== "pending" && state !== "processing" && state !== "queued" && state !== "in_progress")
           throw new Error(`Video generation failed: ${String(state)}`)
@@ -363,3 +431,4 @@ function attachment(value: string, ctx: Tool.Context) {
   if (part.url.startsWith("file://")) return fileURLToPath(part.url)
   return part.url
 }
+

@@ -31,11 +31,11 @@ The following is a capability inventory, not a list of new tasks. Read the linke
 | V2 batch Dream | Opt-in bounded consolidation, per-note applied/no-change/deferred/unplaceable outcomes, durable plans/recovery and new-Dream action | [Batch Dream](../native-memory-batch-dream.md); shared 57 tests / 279 assertions; CLI and rebuilt Desktop each 6 checks |
 | Plugins | Local/recommended discovery and installation, storefront, sources, trust, organizational policy (`strict_known_marketplaces`, `extra_known_marketplaces`, `require_sha`, `disable_plugins`, `R09`), enable/disable/update/uninstall, immutable snapshots, resource/template picker, permission-gated LSP activation | [Plugins](../plugins-feature.md); user-facing name stays Plugins with locale translations |
 | Plugin socket LSP / persistent data | Socket transport without owning an external server process; plugin-owned data epochs, active-reader retention, keep-data uninstall, organizational policy enforcement (`R09`) and status refresh | [Socket](../plugins-socket-transport.md), [data](../plugins-persistent-data.md); CLI/Desktop 6/6 checks each, actual en/zh/zht windows 8 each |
-| Feedback / side questions / media | Draft/review/export, image attachments, independent `/btw`, image/video tools, permissions, polling/cancel, saved-media presentation and explicit S3 options | [Feedback](../feedback-drafts.md), [images](../feedback-images.md), [side questions](../side-questions.md), [media](../native-media-tools.md); external/platform boundaries remain |
+| Feedback / side questions / media | Draft/review/export, image attachments, independent `/btw`, image/video tools, permissions, polling/cancel, saved-media presentation, explicit S3 options, supported ZDR policy claims (`BLOCKED_REASON_NO_LOGS`, `BLOCKED_REASON_NO_LOGS_MODERATED`, `disable_zdr_incompatible_tools`), `zdr_only` S3 gating, completion-time `GET` presigning, WebP output, and canonical symlink read verification (`R10`) | [Feedback](../feedback-drafts.md), [images](../feedback-images.md), [side questions](../side-questions.md), [media](../native-media-tools.md), [media options](../native-media-options.md); 43 unit/E2E tests (312 assertions), CLI/Desktop native media 5/5 checks each, parity 7/7 each, Grok Build 5/5 scenarios |
 | Command & whole-agent sandbox | Immutable stored profiles (`off`, `workspace`, `read-only`, `strict`, `devbox`, and custom `sandbox.toml` profiles with `deny` globs), child inheritance, macOS Seatbelt and Linux `bwrap` builders (`R08`), and whole-agent in-process tool enforcement (`R07`) | [Sandbox](../native-command-sandbox.md); 16 unit/E2E tests (157 assertions), CLI/Desktop 8/8 checks each, Grok Build 3/3 profiles |
-| Structured usage CLI | Read-only Session/turn/step/model usage reporting (`apexo usage <sessionID> [turn]`, `R04`) across native durable event ledgers and compatibility projected histories | [Usage handoff](handoffs/session-usage/README.md); 10 unit/adversarial tests (129 assertions); CLI, Desktop and Grok Build 1.0.52 verified side-by-side |
+| Structured usage & trace CLIs | Read-only Session/turn/step/model usage reporting (`apexo usage <sessionID> [turn]`, `R04`) and local diagnostic `.tar.gz` trace bundle export (`apexo trace <sessionID>`, `--local`, `-o`, `--json`, `--sanitize`, `R11`) across native durable event ledgers and compatibility projected histories | [Usage handoff](handoffs/session-usage/README.md), [Audit](../grok-build-contract-audit.md); 14 unit/adversarial tests (137 assertions); CLI, Desktop and Grok Build (`1.0.52` / `1.0.60`) verified side-by-side |
 
-## Phase 1, Phase 2 & Phase 3 verification and acceptance (`R01`–`R09`)
+## Phase 1, Phase 2, Phase 3 & Phase 4 verification and acceptance (`R01`–`R12`)
 
 - **Repository Hook trust (`R02`, Phase 1)**:
   - Integrated across `@apexo/core`, `@apexo/schema`, `@apexo/protocol`, `@apexo/server`, `@apexo/client`, `@apexo/sdk`, `@apexo/app`, `@apexo/tui`, and `apexo` CLI runtime (`BUG-20261015-379`, `BUG-20261015-381`).
@@ -63,6 +63,14 @@ The following is a capability inventory, not a list of new tasks. Read the linke
 - **Administrator Hook layers and organizational Plugin policy (`R09`, Phase 3)**:
   - Implemented `system_managed` (rank `7`), Ed25519-verified `signed_requirements` (`requirements.signed.toml` + `.sig` + `requirements.pub`, rank `6`), and `system_requirements` (rank `5`) in `HostHooks.discover`, non-disableable `policy: "managed"`, `fail_closed = true` signature failure handling, tighten-only `allow_managed_hooks_only` across `HostHooks`, `HookSnapshotLocation`, and `loadBundleHooks`, plus organizational plugin policies (`strict_known_marketplaces`, `extra_known_marketplaces`, `require_sha`, `disable_plugins`) in `PluginStore` (`BUG-20261016-387`).
   - Verified failing-before negative controls (`0 pass, 6 fail` before implementation), **49 unit/E2E tests (207 assertions)**, and CLI + rebuilt Desktop (`bun script/grok-hook-sources-native.mjs cli|desktop` **5/5 checks, 7 provider calls each**; `bun script/grok-plugin-data-native.mjs cli|desktop` **6/6 checks, 7 provider calls each**).
+- **Media policy and service completion (`R10`, Phase 4)**:
+  - Implemented supported team ZDR claim evaluation (`BLOCKED_REASON_NO_LOGS`, `BLOCKED_REASON_NO_LOGS_MODERATED`, `disable_zdr_incompatible_tools`), fail-closed ZDR video policy when S3 output is inactive, `zdr_only` S3 gating, split `MediaS3.signUpload` (`PUT` at admission) and `MediaS3.signDownload` (`GET` at completion), WebP support, HTTPS-only remote reference URLs, and post-stat canonical `realpath` verification across native (`MediaTools`) and compatibility (`GrokBuildMedia`) media tools (`BUG-20261017-388`).
+  - Verified across **43 unit/E2E tests (312 assertions)**, CLI + rebuilt Desktop (`bun script/grok-native-media-options.mjs cli|desktop` **5/5 checks, 8 language calls each**; `bun script/grok-media-parity.mjs cli|desktop` **7/7 scenarios each**), and installed Grok Build `1.0.60` (`bun script/grok-media-options-official.mjs` **5/5 scenarios**).
+- **Product comparison audit and `apexo trace` CLI (`R11`, Phase 4)**:
+  - Implemented `apexo trace <sessionID>` (`packages/apexo/src/cli/cmd/trace.ts`) and registered `TraceCommand` in `packages/apexo/src/index.ts`, producing `.tar.gz` bundles (`summary.json`, `usage.json`, `events.jsonl`, `chat_history.jsonl`, `trace_config.json`, `export_metadata.json`) with `--local`, `-o/--output <path>` (atomic `wx` no-overwrite enforcement), `--json`, `--sanitize` (deterministic SHA-256 prefix redaction), `--attach`, and `--session-protocol` (`BUG-20261017-388`).
+  - Verified failing-before negative control, **14 unit/live-host tests (137 assertions across `trace.test.ts` and `usage.test.ts`)**, live CLI + Desktop native servers (**2/2 modes**), and isolated Grok Build `1.0.60` comparison.
+- **Cross-platform and external acceptance matrix (`R12`, Phase 4)**:
+  - Completed full macOS CLI + rebuilt Electron Desktop + installed Grok Build (`1.0.52` / `1.0.60`) acceptance across `R01`–`R11`, plus `grok-native-local-errors.mjs` (**7/7 checks**) and `grok-native-headless.mjs` (**15/15 checks, 20 provider calls**). External paid third-party S3/xAI accounts and non-macOS host kernels remain explicitly bounded outside local repository CI.
 
 ## Aggregate and release gate status
 
@@ -70,32 +78,32 @@ The following is a capability inventory, not a list of new tasks. Read the linke
 | --- | --- | --- |
 | Workspace types (`bun turbo typecheck --concurrency=2`) | **All 21 tasks pass, 0 errors** | **Yes** |
 | Canonical Client / legacy SDK generation (`bun run check:generated`) | **Passed, zero diff** | **Yes** |
-| App / Desktop builds | Both pass with Phase 3 changes integrated | **Yes** |
+| App / Desktop builds | Both pass with Phase 4 changes integrated | **Yes** |
 | Complete unit gate (`GITHUB_ACTIONS=false bun turbo test --concurrency=2`) | **6/6 tasks pass; zero failures** | **Yes** |
 | Complete HTTP gate (`bun run test:httpapi`) | **343 scenarios pass in each of coverage, authorization and Effect modes; 314 routes, zero gaps** | **Yes** |
 | Linux scoped tests | **117 pass / 876 assertions across 19 files** with container init/reaping | Scoped Linux evidence only; not full Linux kernel enforcement acceptance |
-| Windows / full platform matrix | Incomplete | No |
-| CI / PR merge | Local gates green; ready for Phase 3 push | Ready for Phase 3 commit |
+| Windows / full platform matrix | Bounded to non-macOS host availability | Explicit platform boundary |
+| CI / PR merge | Local gates green; ready for Phase 4 push | Ready for Phase 4 commit |
 
 Historical intermittent observations (such as [BUG376](../testing/test-stability/native-goal-aggregate-timeout.md)) remain documented in the bug ledger as historical records until their underlying historical causes are separately proven.
 
-## Not finished (Phase 4 roadmap)
+## Remaining external/platform boundaries (`R01`–`R12` roadmap complete)
 
-| Group | Remaining work | State after Phase 3 |
+| Group | Completed scope (`R01`–`R12`) | Explicit external/platform boundary |
 | --- | --- | --- |
-| G01 Workflow | Remaining explicit execution/platform contracts | Deleted-worktree reconstruction (`R06`) complete |
-| G02 Sandbox | Actual Linux host kernel execution matrix (`R12`) | Whole-agent sandbox (`R07`), `sandbox.toml` custom profiles/deny globs and Linux `bwrap` (`R08`) complete |
-| G03 Hooks | Cross-platform checks (`R12`) | Repository Hook trust (`R02`) and administrator/signed Hook policy (`R09`) complete |
-| G04 `/btw` | Cross-platform acceptance | Feature implemented; validation incomplete (`R12`) |
-| G05 Memory | Platform checks | Legacy semantic Memory (`R03`) complete; historical unknown ownership deliberately remains fail-closed |
-| G06 Goal | Platform validation; separately proven option gaps only | Core feature implemented; full unit gate green |
-| G07 Native Task | Platform checks | Advanced Task messaging, background nesting (`R05`), and deleted-placement recovery (`R06`) complete |
-| G08 Feedback | Positive native OS clipboard acceptance; platform checks; review draft-versus-direct-submission product difference | Validation/product decision (`R12`) |
-| G09 Media | Automatic team ZDR policy/auth claims; transient signing fallback; production service/storage and platform acceptance | Missing contracts / external-service validation (`R10`) |
-| G10 Plugins | Remote Git credentials, platform and clean-host performance checks (`R12`) | Storefront/data/socket and organizational policy (`R09`) complete |
-| G11 Shell | Precise timeout-folding dialect comparison, remaining bounded contract and platform checks | Audit / acceptance (`R12`); manager UI is implemented |
-| G12 Product surfaces | Exact dashboard interactions, local trace bundle and native top-level fork comparisons | Usage CLI (`R04`) complete; other comparisons bounded (`R11`) |
-| G13 Verification | Full Linux/Windows and relevant reference matrix | macOS full unit + HTTP gates green (`R01`); cross-platform matrix (`R12`) pending |
+| G01 Workflow | Rhai engine, child orchestration, receipts, saved scripts, deleted-worktree reconstruction (`R06`) | Non-macOS interactive window checks |
+| G02 Sandbox | Whole-agent sandbox (`R07`), `sandbox.toml` custom profiles/deny globs and Linux `bwrap` (`R08`) | Bare-metal Linux kernel enforcement matrix |
+| G03 Hooks | Repository Hook trust (`R02`) and administrator/signed Hook policy (`R09`) | Non-macOS host window checks |
+| G04 `/btw` | Independent side-question execution and UI | Non-macOS host window checks |
+| G05 Memory | Legacy semantic Memory (`R03`) and V2 batch Dream | Historical unknown ownership deliberately remains fail-closed |
+| G06 Goal | Persistent Goal orchestration, independent verification, role/model preflight | Alternate proprietary-harness stub explicitly excluded per audit |
+| G07 Native Task | Advanced Task messaging, background nesting (`R05`), and deleted-placement recovery (`R06`) | Non-macOS host window checks |
+| G08 Feedback | Draft/review/export and image attachments | Live vendor submission endpoint requires external credentials |
+| G09 Media | Team ZDR policy, `zdr_only` S3 gating, completion-time `GET` presigning, WebP, canonical symlink checks (`R10`) | Paid production xAI / AWS S3 accounts outside local fixtures |
+| G10 Plugins | Storefront/data/socket and organizational policy (`R09`) | Private enterprise Git credential servers |
+| G11 Shell | Live output, background promotion, process manager UI, timeout/wait policies | Non-macOS PTY hosts |
+| G12 Product surfaces | Usage CLI (`R04`) and local trace bundle CLI (`R11`) | Vendor remote trace upload service disabled by default |
+| G13 Verification | macOS full unit + HTTP + CLI + Desktop + Grok Build parity (`R01`, `R12`) | Bare-metal Windows / Linux GUI hosts |
 
 The pinned reference's alternate proprietary-harness representability function returns false. Unused `fork_context` and deprecated ignored options do not establish working features to migrate. Do not add them as deliverables without new evidence. [The bounded contract audit](../grok-build-contract-audit.md) records these decisions.
 
@@ -109,5 +117,7 @@ The pinned reference's alternate proprietary-harness representability function r
 | [Native child placement](../native-child-placement.md) (`R05`, `R06`) | **Integrated and verified (Phase 2)** | 47 unit/E2E tests (598 assertions), CLI + Desktop Task cwd (8/8), Task worktree (9/9), Workflow worktree (6/6), nested Task (6/6), Grok Build parity (`BUG-20261016-386`) |
 | [Whole-agent sandbox & policies](../native-command-sandbox.md) (`R07`, `R08`) | **Integrated and verified (Phase 3)** | 16 unit/E2E tests (157 assertions), CLI + Desktop 8/8 checks each (`grok-native-command-sandbox.mjs`), Grok Build 3/3 profiles (`BUG-20261016-387`) |
 | [Admin Hook & Plugin policy](../native-hook-sources.md) (`R09`) | **Integrated and verified (Phase 3)** | 49 unit/E2E tests (207 assertions), CLI + Desktop Hook sources/admin 5/5 each (`grok-hook-sources-native.mjs`), CLI + Desktop Plugin data/policy 6/6 each (`grok-plugin-data-native.mjs`, `BUG-20261016-387`) |
+| [Media policy & Trace CLI](../native-media-options.md) (`R10`, `R11`, `R12`) | **Integrated and verified (Phase 4)** | 43 media unit/E2E tests (312 assertions), 14 trace/usage CLI tests (137 assertions), CLI + Desktop media options 5/5 & parity 7/7 each, Grok Build 1.0.60 5/5 scenarios, live `apexo trace` CLI + Desktop 2/2 modes (`BUG-20261017-388`) |
+
 
 

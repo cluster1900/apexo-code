@@ -377,10 +377,38 @@ const layer = Layer.effect(
         { concurrency: "unbounded" },
       )
 
+      const cfg = yield* config.get()
+      const envS3 =
+        cfg.media?.video_output?.type === "s3" &&
+        process.env[cfg.media.video_output.read_write.access_key_id_env]?.trim() &&
+        process.env[cfg.media.video_output.read_write.secret_access_key_env]?.trim()
+          ? {
+              bucket: cfg.media.video_output.bucket,
+              endpoint: cfg.media.video_output.endpoint,
+              region: cfg.media.video_output.region,
+              key_prefix: cfg.media.video_output.key_prefix,
+              expires_secs: cfg.media.video_output.expires_secs,
+              zdr_only: cfg.media.video_output.zdr_only,
+              read_write: {
+                access_key_id: process.env[cfg.media.video_output.read_write.access_key_id_env]!,
+                secret_access_key: process.env[cfg.media.video_output.read_write.secret_access_key_env]!,
+              },
+              ...(cfg.media.video_output.read_only &&
+              process.env[cfg.media.video_output.read_only.access_key_id_env]?.trim() &&
+              process.env[cfg.media.video_output.read_only.secret_access_key_env]?.trim()
+                ? {
+                    read_only: {
+                      access_key_id: process.env[cfg.media.video_output.read_only.access_key_id_env]!,
+                      secret_access_key: process.env[cfg.media.video_output.read_only.secret_access_key_env]!,
+                    },
+                  }
+                : {}),
+            }
+          : undefined
       const adapted =
         flags.runtimeProfile === "grok-build"
           ? GrokBuildTools.adaptTools(result, {
-              bash: (yield* config.get()).toolset?.bash,
+              bash: cfg.toolset?.bash,
               goals,
               feedback,
               directory: yield* InstanceState.directory,
@@ -411,7 +439,18 @@ const layer = Layer.effect(
               profileExtensions: true,
               scheduler: (yield* InstanceState.get(state)).scheduler,
               media: {
-                outputS3: (yield* config.get()).grok_media?.zdr_video_output_s3,
+                outputS3: cfg.grok_media?.zdr_video_output_s3 ?? envS3,
+                imageGenModelOverride:
+                  cfg.grok_media?.image_gen_model_override ?? cfg.media?.image_gen_model_override,
+                imageEditModelOverride:
+                  cfg.grok_media?.image_edit_model_override ?? cfg.media?.image_edit_model_override,
+                disableZdrIncompatibleTools:
+                  cfg.grok_media?.disable_zdr_incompatible_tools === true ||
+                  cfg.media?.disable_zdr_incompatible_tools === true,
+                teamBlockedReasons: [
+                  ...(cfg.grok_media?.team_blocked_reasons ?? []),
+                  ...(cfg.media?.team_blocked_reasons ?? []),
+                ],
                 transport: Effect.gen(function* () {
                   const env = process.env.XAI_API_KEY ?? process.env.GROK_API_KEY
                   if (env) return { key: env }

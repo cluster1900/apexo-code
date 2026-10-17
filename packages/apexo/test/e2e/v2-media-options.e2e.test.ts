@@ -554,3 +554,118 @@ it.instance(
     }),
   20000,
 )
+
+it.instance(
+  "team ZDR claims reject provider-hosted video generation before outbound calls while allowing S3 video and image generation",
+  () =>
+    Effect.gen(function* () {
+      yield* credentials
+      const instance = yield* TestInstance
+      const llm = yield* TestLLMServer
+      const state = { videoCalls: 0, imageCalls: 0, s3Puts: 0, s3Gets: 0 }
+      const objects = new Map<string, ArrayBuffer>()
+      const storage = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            async fetch(request) {
+              const url = new URL(request.url)
+              if (request.method === "PUT") {
+                state.s3Puts++
+                objects.set(url.pathname, await request.arrayBuffer())
+                return new Response(null, { status: 200 })
+              }
+              state.s3Gets++
+              return new Response(objects.get(url.pathname), { headers: { "content-type": "video/mp4" } })
+            },
+          }),
+        ),
+        (server) => Effect.sync(() => server.stop(true)),
+      )
+      const media = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            async fetch(request) {
+              if (new URL(request.url).pathname.includes("/images/")) {
+                state.imageCalls++
+                return Response.json({ data: [{ b64_json: png }] })
+              }
+              state.videoCalls++
+              if (request.method === "GET") return Response.json({ status: "done" })
+              const payload = Schema.decodeUnknownSync(Payload)(await request.json())
+              if (payload.output) {
+                await fetch(payload.output.upload_url, {
+                  method: "PUT",
+                  body: mp4,
+                  headers: { "content-type": "video/mp4" },
+                })
+              }
+              return Response.json({ request_id: "zdr-video" })
+            },
+          }),
+        ),
+        (server) => Effect.sync(() => server.stop(true)),
+      )
+      yield* configure(instance.directory, llm.url, new URL("/v1", media.url).toString(), undefined, "media-secret", "*", {
+        team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS"],
+        video_output: { type: "provider" },
+      })
+      const created = yield* post("/api/session", {
+        location: { directory: instance.directory },
+        model: { providerID: "media-language", id: "model" },
+      })
+      const session = (yield* Schema.decodeUnknownEffect(SessionResponse)(yield* created.json)).data
+      yield* llm.tool("image_to_video", { image: `data:image/png;base64,${png}` })
+      yield* llm.text("ZDR_BLOCKED_DONE")
+      yield* post(`/api/session/${session.id}/prompt`, { prompt: { text: "zdr blocked video" } })
+      const blockedResult = yield* finished(session.id, "ZDR_BLOCKED_DONE")
+      const blockedTool = blockedResult
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((part) => part.type === "tool" && part.name === "image_to_video")
+      expect(blockedTool?.type === "tool" ? blockedTool.state.status : undefined).toBe("error")
+      expect(JSON.stringify(blockedTool)).toContain("Zero Data Retention")
+      expect(state.videoCalls).toBe(0)
+
+      yield* llm.tool("image_gen", { prompt: "zdr allowed image" })
+      yield* llm.text("ZDR_IMAGE_DONE")
+      yield* post(`/api/session/${session.id}/prompt`, { prompt: { text: "zdr image" } })
+      const imageResult = yield* finished(session.id, "ZDR_IMAGE_DONE")
+      const imageTool = imageResult
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((part) => part.type === "tool" && part.name === "image_gen")
+      expect(imageTool?.type === "tool" ? imageTool.state.status : undefined).toBe("completed")
+      expect(state.imageCalls).toBe(1)
+
+      const s3Dir = yield* tmpdirScoped()
+      const s3Config = options(storage.url.origin)
+      yield* configure(s3Dir, llm.url, new URL("/v1", media.url).toString(), undefined, "media-secret", "*", {
+        ...s3Config,
+        team_blocked_reasons: ["BLOCKED_REASON_NO_LOGS_MODERATED"],
+        video_output: s3Config.video_output?.type === "s3" ? { ...s3Config.video_output, zdr_only: true } : undefined,
+      })
+      const createdS3 = yield* post("/api/session", {
+        location: { directory: s3Dir },
+        model: { providerID: "media-language", id: "model" },
+      })
+      const s3Session = (yield* Schema.decodeUnknownEffect(SessionResponse)(yield* createdS3.json)).data
+      yield* llm.tool("reference_to_video", {
+        prompt: "zdr s3 video",
+        first_frame: `data:image/png;base64,${png}`,
+        aspect_ratio: "16:9",
+      })
+      yield* llm.text("ZDR_S3_DONE")
+      yield* post(`/api/session/${s3Session.id}/prompt`, { prompt: { text: "zdr s3 video" } })
+      const s3Result = yield* finished(s3Session.id, "ZDR_S3_DONE")
+      const s3Tool = s3Result
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((part) => part.type === "tool" && part.name === "reference_to_video")
+      expect(s3Tool?.type === "tool" ? s3Tool.state.status : undefined).toBe("completed")
+      expect(state.s3Puts).toBe(1)
+      expect(state.s3Gets).toBe(1)
+    }),
+  25000,
+)
+

@@ -32,6 +32,7 @@ import { PluginsCommand } from "./cli/cmd/plugins"
 import { MemoryCommand } from "./cli/cmd/memory"
 import { GoalCommand } from "./cli/cmd/goal"
 import { UsageCommand } from "./cli/cmd/usage"
+import { TraceCommand } from "./cli/cmd/trace"
 
 const args = hideBin(process.argv)
 
@@ -103,6 +104,7 @@ const cli = yargs(args)
   .command(ModelsCommand)
   .command(StatsCommand)
   .command(UsageCommand)
+  .command(TraceCommand)
   .command(ExportCommand)
   .command(ImportCommand)
   .command(PrCommand)

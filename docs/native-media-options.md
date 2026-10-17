@@ -60,8 +60,18 @@ Verification on the private coherent checkpoint:
 - `bun script/grok-native-media-options.mjs cli`: five checks / eight ordinary language-provider calls passed on the final source.
 - `bun script/grok-media-options-official.mjs` with an explicit isolated installed binary: five reference scenarios passed. This comparison is separate from Apexo verification.
 
-## Shared integration checkpoint
+## Team ZDR policy and completion-time GET presigning (`R10`)
 
-The coordinated shared artifact now contains this slice. Shared CLI and the freshly rebuilt packaged Desktop each passed five checks / eight ordinary language-provider calls, including both actual S3 PUT/GET video paths. The combined Shell/media/Plan suite passed 68 tests / 623 assertions, and all 21 workspace typechecks passed. Client/legacy SDK generation, candidate generated consistency, and config schema generation completed successfully. The unchanged installed-reference comparisons above remain separate evidence. No terminal transport changes are included in this slice.
+Native media configuration also accepts `media.disable_zdr_incompatible_tools`, `media.team_blocked_reasons`, and `media.video_output.zdr_only` (as well as environment variables `GROK_DISABLE_ZDR_INCOMPATIBLE_TOOLS` and `GROK_TEAM_BLOCKED_REASONS`, plus xAI provider claims in `providers.xai.api.settings` or `providers.xai.request.body`). Only supported ZDR claims (`BLOCKED_REASON_NO_LOGS`, `BLOCKED_REASON_NO_LOGS_MODERATED`, or `disable_zdr_incompatible_tools`) activate ZDR; unrelated `team_blocked_reasons` values are ignored.
 
-The first combined run had one twenty-second legacy invalid-selection test timeout. The unchanged isolated case and subsequent aggregate both passed; the delayed phase and cause remain unknown, with no production repair claimed. See [BUG148](testing/test-stability/media-options-legacy-timeout.md).
+When ZDR is active:
+- `image_to_video` and `reference_to_video` fail closed before outbound provider work unless S3 video output is active (`"Team Zero Data Retention (ZDR) policy requires S3 video output storage for video generation"`).
+- `video_output` with `zdr_only: true` activates S3 routing only when ZDR is active and falls back to `"provider"` output when ZDR is inactive.
+- `MediaS3.signUpload` mints only the `PUT` upload capability before `POST /videos/generations`, while `MediaS3.signDownload` mints the `GET` download capability fresh at video completion time (`status === "done" || status === "completed"`) using the credentials captured at admission.
+
+Verification on the Phase 4 (`R10`) checkpoint:
+- `bun test test/tool/native-media-options.test.ts test/tool/grok-build-media.test.ts test/e2e/v2-media-options.e2e.test.ts test/e2e/v2-media.e2e.test.ts`: **43 pass, 0 fail, 312 assertions**.
+- `bun script/grok-native-media-options.mjs cli` and `desktop`: **5/5 checks, 8 language calls each**.
+- `bun script/grok-media-parity.mjs cli` and `desktop`: **7/7 scenarios each**.
+- `APEXO_GROK_BUILD_BIN=/Users/hawk_wu/.grok/bin/grok bun script/grok-media-options-official.mjs`: **5/5 scenarios passed** on installed Grok Build `1.0.60`. See [BUG-20261017-388](testing/runtime/phase4-media-trace-and-acceptance.md).
+

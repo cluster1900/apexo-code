@@ -258,3 +258,62 @@ test("S3 download failure stays an error after a GET URL has been minted", async
     server.stop(true)
   }
 })
+
+test("GrokBuildMedia honors model overrides, WebP output, HTTPS-only references, symlink integrity, and team ZDR", async () => {
+  await using dir = await tmpdir()
+  const webp = Buffer.concat([
+    Buffer.from("RIFF"),
+    Buffer.from([16, 0, 0, 0]),
+    Buffer.from("WEBP"),
+    Buffer.from("VP8 "),
+    Buffer.from([4, 0, 0, 0, 0, 0, 0, 0]),
+  ])
+  const calls: { path: string; body: Record<string, unknown> }[] = []
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    async fetch(request) {
+      calls.push({ path: new URL(request.url).pathname, body: await request.json() })
+      return Response.json({ data: [{ b64_json: webp.toString("base64") }] })
+    },
+  })
+  try {
+    const tools = GrokBuildMedia.tools({
+      key: Effect.succeed("fixture-key"),
+      baseURL: server.url.href,
+      imageGenModelOverride: "custom-gen-model",
+      imageEditModelOverride: "custom-edit-model",
+      teamBlockedReasons: ["BLOCKED_REASON_NO_LOGS"],
+    })
+    const genTool = tools.find((tool) => tool.id === "image_gen")!
+    const editTool = tools.find((tool) => tool.id === "image_edit")!
+    const videoTool = tools.find((tool) => tool.id === "image_to_video")!
+
+    const genResult = await Effect.runPromise(
+      genTool.execute({ prompt: "webp test" }, { ...context, extra: { directory: dir.path } }),
+    )
+    expect(genResult.metadata.status).toBe("completed")
+    expect(String(genResult.metadata.path)).toEndWith(".webp")
+    expect(genResult.attachments?.[0]?.mime).toBe("image/webp")
+    expect(calls[0]?.body.model).toBe("custom-gen-model")
+
+    const insecureRef = await Effect.runPromise(
+      editTool.execute(
+        { prompt: "edit", image: ["http://insecure.example.com/input.png"] },
+        { ...context, extra: { directory: dir.path } },
+      ),
+    )
+    expect(insecureRef.metadata.status).toBe("error")
+    expect(insecureRef.output).toContain("HTTPS")
+
+    const zdrBlocked = await Effect.runPromise(
+      videoTool.execute({ image: `data:image/png;base64,${png}` }, { ...context, extra: { directory: dir.path } }),
+    )
+    expect(zdrBlocked.metadata.status).toBe("error")
+    expect(zdrBlocked.output).toContain("Zero Data Retention")
+    expect(calls).toHaveLength(1)
+  } finally {
+    server.stop(true)
+  }
+})
+

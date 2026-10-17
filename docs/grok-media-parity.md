@@ -54,3 +54,8 @@ Pinned official source verification: `cargo test -p xai-grok-pager slash::comman
 S3 lifecycle floor and reader-credential selection are recorded in [BUG-20261014-050](testing/runtime/media-s3-presign-policy.md).
 
 Image generation uses the official `auto` aspect ratio and `1k` resolution defaults; image generation/editing both accept string aspect ratios, leaving API validation to the provider. See [BUG-20261014-051](testing/runtime/media-image-defaults.md).
+
+### Phase 4 (`R10`) completion (2026-10-17)
+
+- `GrokBuildMedia` and `ConfigGrokMedia` now honor `image_gen_model_override` / `image_edit_model_override` (and `GROK_IMAGE_GEN_MODEL_OVERRIDE` / `GROK_IMAGE_EDIT_MODEL_OVERRIDE`), supported ZDR claims (`BLOCKED_REASON_NO_LOGS`, `BLOCKED_REASON_NO_LOGS_MODERATED`, `disable_zdr_incompatible_tools`), `zdr_only` S3 gating, completion-time `GET` presigning, WebP output (`RIFF....WEBP`), HTTPS-only remote reference URLs, and post-stat canonical `realpath` verification for local reference files. See [BUG-20261017-388](testing/runtime/phase4-media-trace-and-acceptance.md).
+
