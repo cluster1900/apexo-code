@@ -66,7 +66,7 @@ bun test test/v2/lsp-socket-native.test.ts test/v2/memory-legacy-native.test.ts 
 5. In `packages/apexo/test/v2/process-execution.test.ts`, require non-empty trimmed text in `fileText`.
 6. In `packages/apexo/test/v2/session-mcp-attachment.test.ts`, advance `TestClock` to `Math.max(first.expiresAt, second.expiresAt) + 1`.
 7. In `packages/apexo/test/v2/memory-batch-dream-native.test.ts`, `packages/apexo/test/cli/run/run-process.test.ts`, and `packages/apexo/script/run-tests.ts`, use `30 seconds` for batch Dream settlement, `cliIt.live` for full CLI subprocess tests, and cap default shard concurrency at `2`.
-8. In `packages/core/src/database/sqlite.bun.ts` and `packages/apexo/test/tool/memory-health.test.ts`, use `native.prepare(query)` with `finally { statement.finalize() }` so `native.close()` does not defer WAL checkpointing until GC, and unlink `memory_state.sqlite` before writing corrupt bytes in `memory-health.test.ts`.
+8. In `packages/apexo/test/tool/memory-health.test.ts`, unlink `memory_state.sqlite` before writing corrupt bytes so `writeFile` creates a new inode unaffected by any deferred WAL checkpoint on the prior connection while keeping `native.query` in `sqlite.bun.ts` for recovery crash fixtures.
 
 ## Verification
 
