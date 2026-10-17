@@ -151,7 +151,7 @@ const settled = (
   pollWithTimeout(
     operations.get(session.id, id).pipe(Effect.map((info) => (info.state === "finished" ? info : undefined))),
     "Memory operation did not settle",
-    "10 seconds",
+    "30 seconds",
   )
 
 const create = (count = 1, offset = 0) =>

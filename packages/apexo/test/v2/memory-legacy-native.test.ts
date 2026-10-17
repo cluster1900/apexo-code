@@ -1240,7 +1240,8 @@ for (const change of ["disable", "deny", "clear", "delete"] as const) {
             yield* Effect.sleep(1150)
             expect(yield* llm.calls).toBe(1)
             if (change !== "delete") {
-              const receipts = yield* operations.list(session.id)
+              const listed = yield* operations.list(session.id)
+              const receipts = yield* Effect.forEach(listed, (item) => settled(operations, session, item.id))
               expect(
                 receipts.every((item) => item.result?.status === "failed" || item.result?.status === "cancelled"),
               ).toBe(true)

@@ -11,7 +11,7 @@ import { cliIt } from "../../lib/cli-process"
 describe("apexo run (non-interactive subprocess)", () => {
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
-  cliIt.concurrent(
+  cliIt.live(
     "exits 0 and writes the response to stdout on a successful prompt",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -23,7 +23,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "prints each completed text part in order around a tool continuation",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -45,7 +45,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "prints reasoning before text only with --thinking",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -85,7 +85,7 @@ describe("apexo run (non-interactive subprocess)", () => {
   // The test provider's SSE error item is interpreted by the SDK as an unknown
   // finish, not a fatal provider/session error. Unknown finishes should continue
   // the prompt loop so a subsequent response can complete the run.
-  cliIt.concurrent(
+  cliIt.live(
     "unknown stream finish preserves partial output and continues",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -108,7 +108,7 @@ describe("apexo run (non-interactive subprocess)", () => {
   // --format json puts one JSON object per line on stdout for each emitted
   // event. Consumers (CI scripts, tooling) parse this stream. Asserts the
   // shape so a future event-emit change has to update this expectation.
-  cliIt.concurrent(
+  cliIt.live(
     "--format json emits parseable line-delimited JSON to stdout",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -142,7 +142,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "--format json emits a pure error record for a rejected prompt request",
     ({ apexo }) =>
       Effect.gen(function* () {
@@ -165,7 +165,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     30_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "--format streaming-json emits the Grok Build headless event shapes",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -192,7 +192,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "--format json preserves reasoning, tool, and continuation ordering",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -241,7 +241,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "--format json records an unknown stream finish and continuation",
     ({ llm, apexo }) =>
       Effect.gen(function* () {
@@ -276,7 +276,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "rejects requested permissions by default and allows them with the dangerous flag",
     ({ home, llm, apexo }) =>
       Effect.gen(function* () {
@@ -334,7 +334,7 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  cliIt.concurrent(
+  cliIt.live(
     "attach mode rejects local directories before prompt admission",
     ({ home, apexo }) =>
       Effect.gen(function* () {

@@ -571,7 +571,7 @@ test("retained snapshot bytes are capped and expiration releases capacity withou
         expect(overflow.status).toBe("failed")
         expect(overflow.error?.code).toBe("limit")
         yield* Effect.gen(function* () {
-          yield* TestClock.setTime(first.expiresAt + 1)
+          yield* TestClock.setTime(Math.max(first.expiresAt, second.expiresAt) + 1)
           expect((yield* operations.status(session.id, first.id).pipe(Effect.flip)).code).toBe("expired")
           expect((yield* operations.status(session.id, second.id).pipe(Effect.flip)).code).toBe("expired")
         }).pipe(Effect.provide(TestClock.layer()))

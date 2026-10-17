@@ -18,7 +18,7 @@ describe("apexo acp lifecycle subprocess", () => {
         const acp = yield* apexo.acp()
         acp.close()
 
-        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(5)))
+        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(20)))
         expect(code).toBe(0)
       }),
     60_000,

@@ -43,8 +43,12 @@ it.live(
         const parent = yield* sessions.create({ location: { directory: AbsolutePath.make(directory) } })
         const notifications: string[] = []
         const fileText = (name: string) =>
-          Effect.tryPromise(() => Bun.file(path.join(directory, name)).text()).pipe(
-            Effect.retry({ times: 100, schedule: Schedule.spaced("10 millis") }),
+          Effect.gen(function* () {
+            const text = (yield* Effect.tryPromise(() => Bun.file(path.join(directory, name)).text())).trim()
+            if (!text) return yield* Effect.fail("empty")
+            return text
+          }).pipe(
+            Effect.retry({ times: 200, schedule: Schedule.spaced("10 millis") }),
             Effect.timeout("5 seconds"),
           )
         const closing = yield* Effect.gen(function* () {
@@ -80,7 +84,7 @@ it.live(
           expect((yield* control.wait(parent.id, running.id, 0)).timedOut).toBe(true)
           expect(notifications).toEqual([])
           expect((yield* execution.execute(input)).id).toBe(running.id)
-          const pid = Number(yield* Effect.promise(() => Bun.file(path.join(directory, "pid")).text()))
+          const pid = Number(yield* fileText("pid"))
           process.kill(pid, 0)
           yield* Effect.promise(() => Bun.write(path.join(directory, "release"), "ready"))
           const settled = yield* control.wait(parent.id, running.id, 5000)

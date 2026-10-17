@@ -27,7 +27,7 @@ const batches = Array.from({ length: batchCount }, (_, batch) =>
 
 const workerCount = Math.max(
   1,
-  Math.min(batches.length, Number(Bun.env.APEXO_TEST_SHARDS ?? Math.min(3, Math.max(2, os.availableParallelism())))),
+  Math.min(batches.length, Number(Bun.env.APEXO_TEST_SHARDS ?? Math.min(2, Math.max(1, os.availableParallelism())))),
 )
 
 const queue = batches.map((batchFiles, index) => ({ index, batchFiles }))

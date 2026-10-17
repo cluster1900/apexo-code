@@ -1,58 +1,72 @@
-# BUG-20261017-001 — Linux CI socket backlog, stdio pipe flush, and memory operation settlement races
+# BUG-20261017-001 — Linux CI socket backlog, stdio pipe flush, and test settlement/clock races
 
 - **Bug ID**: `BUG-20261017-001`
 - **Category**: Test stability / Runtime (`test-stability`)
 - **Affected Scope**:
   - `packages/apexo/test/fixture/lsp-native-socket.ts` (`packages/apexo/test/v2/lsp-socket-native.test.ts`)
   - `packages/apexo/test/v2/memory-legacy-native.test.ts`
-  - `packages/apexo/src/cli/cmd/acp.ts` (`packages/apexo/test/cli/acp/grok-backend.test.ts`)
+  - `packages/apexo/test/v2/memory-batch-dream-native.test.ts`
+  - `packages/apexo/src/cli/cmd/acp.ts` (`packages/apexo/test/cli/acp/grok-backend.test.ts`, `packages/apexo/test/cli/acp/lifecycle.test.ts`)
   - `packages/apexo/test/v2/monitor-execution.test.ts`
+  - `packages/apexo/test/v2/process-execution.test.ts`
+  - `packages/apexo/test/v2/session-mcp-attachment.test.ts`
+  - `packages/apexo/test/cli/run/run-process.test.ts`
   - `packages/apexo/script/run-tests.ts`
-- **Occurrences**: 1 independent Linux CI episode (`unit (linux)` on PR #4).
+- **Occurrences**: 2 Linux CI runs (`unit (linux)` on PR #4).
 
 ## Observed Behavior
 
 1. **`lsp-socket-native.test.ts` (`native socket deadline also bounds a pending TCP connection`)**:
    - Failed on Ubuntu GitHub Actions with `expect(connected.size).toBeLessThan(connections.length) | Expected: < 512 | Received: 512`.
-2. **`memory-legacy-native.test.ts` (`automatic flush waiting on maintenance lock honors disable without stale publication`)**:
-   - Failed on Ubuntu GitHub Actions with `expect((yield* operations.get(session.id, receipt.id)).result?.status).toBe("failed") | Expected: "failed" | Received: undefined`.
+2. **`memory-legacy-native.test.ts` (`automatic flush waiting on maintenance lock honors disable without stale publication` and `automatic idle source is invalidated by deny before provider admission`)**:
+   - Failed on Ubuntu GitHub Actions when reading `operations.get(...)` or `operations.list(...)` before the interrupted operation finished writing its terminal `result.status` to SQLite.
 3. **`grok-backend.test.ts` (`Grok ACP proxy forwards multi-megabyte replies without truncating frames`)**:
    - Failed on Ubuntu GitHub Actions with `expect(frames.length).toBe(2) | Expected: 2 | Received: 1` when forwarding two 2.1 MB NDJSON frames.
-4. **`monitor-execution.test.ts` (`debounces persistent monitor events per session, preserves split UTF-8, supports stop and rearm without replay, and bounds output`)**:
+4. **`lifecycle.test.ts` (`apexo acp lifecycle subprocess > stdin EOF exits cleanly`)**:
+   - Timed out when `acp.close()` closed `stdin` immediately on subprocess startup because `ReadableStream` in `src/cli/cmd/acp.ts` attached `process.stdin.on("data", ...)` (resuming `stdin`) before `Effect.logInfo("setup connection")` yielded and before the `process.stdin.on("end", ...)` shutdown listener was attached.
+5. **`monitor-execution.test.ts` (`real unconfined Monitor preserves split UTF-8 pipes, Stop epochs, terminal ordering and owner deletion`)**:
    - Failed when the initial split UTF-8 `stdout` chunk (`FIRST\360\237` + `\230\200\n`) and `stderr` chunk (`ERROR中文\n`) straddled the 200ms debounce timer boundary on Linux `/bin/sh` (`dash`).
+6. **`process-execution.test.ts` (`real shell owner returns live preview, settles before notice, consumes once and joins cancellation`)**:
+   - `fileText(name)` returned `""` if it polled a PID file immediately after `/bin/sh` opened the file with `O_CREAT | O_TRUNC` and before `echo $$` wrote the PID bytes, causing `Number("")` to evaluate to `0` (`process.kill(0, 0)` checks the caller's own process group and never throws).
+7. **`session-mcp-attachment.test.ts` (`retained snapshot bytes are capped and expiration releases capacity without rereading expired handles`)**:
+   - `TestClock.setTime(first.expiresAt + 1)` left `second` unexpired whenever reserving `second` took `>= 2ms` longer than `first`.
+8. **`memory-batch-dream-native.test.ts` & `run-process.test.ts`**:
+   - Under 3-worker shard concurrency and 11 concurrent `cliIt.concurrent` full CLI subprocess cold-starts on a 4-vCPU runner, `apexo.run` (30s) and `settled` (10s for 21 topic file writes) timed out due to CPU contention.
 
 ## Expected Behavior
 
 1. Stopping the native LSP socket fixture with `SIGSTOP` saturates its TCP accept backlog well before 512 concurrent connection attempts on both macOS and Linux.
-2. Disabling automatic memory mode while an operation is parked on the maintenance lease resolves the operation receipt to terminal `failed` status before the test assertion inspects `result.status`.
-3. `apexo acp --backend grok-build` flushes all forwarded `stdout` and `stderr` write chunks to the parent pipe before the CLI process exits.
-4. Both initial `stdout` and `stderr` chunks are present in the monitor buffer before asserting on the first debounced event batch.
+2. Interrupted memory operations settle their SQLite receipt before tests assert terminal status.
+3. `apexo acp` flushes all forwarded `stdout` and `stderr` write chunks before exiting and never drops an early `stdin` EOF that arrives during startup.
+4. Monitor and process execution tests wait for non-empty PID files and decoded stream output before asserting on debounced events or process group termination.
+5. `TestClock` advances past both reserved attachment operations' expiration timestamps.
 
 ## Reproduction Steps
 
-Run the affected tests on Linux (or locally):
+Run the affected suites in `packages/apexo`:
 
 ```sh
-bun test test/v2/lsp-socket-native.test.ts test/v2/memory-legacy-native.test.ts test/cli/acp/grok-backend.test.ts test/v2/monitor-execution.test.ts
+bun test test/v2/lsp-socket-native.test.ts test/v2/memory-legacy-native.test.ts test/v2/memory-batch-dream-native.test.ts test/cli/acp/grok-backend.test.ts test/cli/acp/lifecycle.test.ts test/v2/monitor-execution.test.ts test/v2/process-execution.test.ts test/v2/session-mcp-attachment.test.ts test/cli/run/run-process.test.ts
 ```
 
 ## Root Cause
 
-1. **Bun `net.Server.listen` backlog**: Bun ignores the `backlog` option in `server.listen({ port: 0, host: "127.0.0.1", backlog: 1 })` and calls the kernel `listen(fd, SOMAXCONN)` syscall (`128` on macOS, `4096` on Linux). Because `4096 > 512`, the Linux kernel TCP stack completed the 3-way handshake for all 512 sockets even while the user-space server process was stopped.
-2. **Memory mode disable vs. operation receipt persistence**: `MemoryModeNative` resolves `worker.done` inside the inner `Effect.acquireRelease` release finalizer when interrupting the worker fiber, which allows `modes.set(..., false, false)` to return slightly before the outer `Effect.onExit` in `MemoryOperation` finishes persisting the `failed` receipt to SQLite.
-3. **Node/Bun `pipeline(..., process.stdout, { end: false })` drain**: `pipeline(agent.stdout!, process.stdout, { end: false })` resolves as soon as the source stream ends after passing the final chunk to `process.stdout.write(chunk)`, without waiting for `process.stdout`'s write callback to finish draining user-space buffered chunks into the 64 KB Linux pipe before `process.exit()` runs.
-4. **Monitor initial split-chunk timing**: Two sequential `sleep 0.03` external process spawns under `/bin/sh` (`dash`) on loaded CI runners could delay the second half of the split UTF-8 sequence past the 200ms debounce timer started by the first bytes.
+1. **Bun `net.Server.listen` backlog**: Bun ignores the `backlog` option in `server.listen({ port: 0, host: "127.0.0.1", backlog: 1 })` and calls the kernel `listen(fd, SOMAXCONN)` syscall (`128` on macOS, `4096` on Linux).
+2. **Memory mode disable / invalidation vs. operation receipt persistence**: `MemoryModeNative` resolves `worker.done` inside the inner `Effect.acquireRelease` release finalizer when interrupting the worker fiber, which can complete slightly before the outer `Effect.onExit` in `MemoryOperation` finishes persisting the terminal receipt to SQLite.
+3. **Node/Bun `pipeline(..., process.stdout, { end: false })` drain**: `pipeline(agent.stdout!, process.stdout, { end: false })` resolves when `agent.stdout` ends rather than when `process.stdout`'s write callback drains buffered chunks into the 64 KB Linux pipe.
+4. **Early `stdin` EOF race in `acp.ts`**: `process.stdin.on("data", ...)` puts `process.stdin` into flowing mode immediately; if `stdin` was already closed by the parent, `"end"` can fire across `yield* Effect.logInfo("setup connection")` before `process.stdin.on("end", ...)` is registered.
+5. **Empty PID file read & `TestClock` timestamp delta**: `fileText` accepted an empty string before `echo $$` wrote bytes (`Number("") === 0`), and `TestClock.setTime(first.expiresAt + 1)` assumed `second.expiresAt <= first.expiresAt + 1`.
 
 ## Fix
 
-1. In `packages/apexo/test/fixture/lsp-native-socket.ts`, invoke `listen(fd, 1)` via `bun:ffi` (`libSystem.B.dylib` on macOS, `libc.so.6` on Linux) inside the `server.listen` callback so the kernel updates `sk_max_ack_backlog` to `1`.
-2. In `packages/apexo/test/v2/memory-legacy-native.test.ts`, use `settled(operations, session, receipt.id)` (matching the `clear`/`deny` branch right below it) when asserting the terminal status of the interrupted operation receipt.
-3. In `packages/apexo/src/cli/cmd/acp.ts`, replace `pipeline(..., { end: false })` with an explicit `forward(source, target)` loop that awaits the `target.write(chunk, callback)` completion callback for every chunk before returning.
-4. In `packages/apexo/test/v2/monitor-execution.test.ts`, shorten the inter-byte delay from `sleep 0.03` to `sleep 0.01` and await `awaitOutput("😀")` and `awaitOutput("ERROR中文")` before `awaitPending`.
-5. In `packages/apexo/script/run-tests.ts`, emit a separate `::error` annotation for each `(fail)` block in a failed batch.
+1. In `packages/apexo/test/fixture/lsp-native-socket.ts`, invoke `listen(fd, 1)` via `bun:ffi` inside the `server.listen` callback so the kernel updates `sk_max_ack_backlog` to `1`.
+2. In `packages/apexo/test/v2/memory-legacy-native.test.ts`, await `settled(operations, session, ...)` before asserting terminal receipt status.
+3. In `packages/apexo/src/cli/cmd/acp.ts`, register the `stdin` `"end"` / `"close"` promise before constructing the `ReadableStream` (and resolve immediately if `process.stdin.readableEnded`), and use an explicit `forward(source, target)` loop that awaits `target.write(chunk, callback)`.
+4. In `packages/apexo/test/v2/monitor-execution.test.ts`, shorten the inter-byte delay to `sleep 0.01` and await `awaitOutput("😀")` and `awaitOutput("ERROR中文")` before `awaitPending`.
+5. In `packages/apexo/test/v2/process-execution.test.ts`, require non-empty trimmed text in `fileText`.
+6. In `packages/apexo/test/v2/session-mcp-attachment.test.ts`, advance `TestClock` to `Math.max(first.expiresAt, second.expiresAt) + 1`.
+7. In `packages/apexo/test/v2/memory-batch-dream-native.test.ts`, `packages/apexo/test/cli/run/run-process.test.ts`, and `packages/apexo/script/run-tests.ts`, use `30 seconds` for batch Dream settlement, `cliIt.live` for full CLI subprocess tests, and cap default shard concurrency at `2`.
 
 ## Verification
 
-- Verified focused test execution in `packages/apexo`:
-  - `bun test test/v2/lsp-socket-native.test.ts test/v2/memory-legacy-native.test.ts test/cli/acp/grok-backend.test.ts test/v2/monitor-execution.test.ts` (all 4 files pass).
-  - `bun typecheck` in `packages/apexo` passes.
+- Verified focused test execution and `bun typecheck` in `packages/apexo`.
