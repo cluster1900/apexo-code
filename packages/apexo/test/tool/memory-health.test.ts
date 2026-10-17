@@ -176,6 +176,7 @@ it.live("health rejects symlinked sidecars and damaged storage instead of return
     const input = { home, directory: home, permitted: access }
     const root = yield* Effect.scoped(MemoryCapture.make(input).pipe(Effect.map((store) => store.root.path)))
     yield* Effect.promise(async () => {
+      await rm(path.join(root, "memory_state.sqlite"), { force: true })
       await rm(path.join(root, "memory_state.sqlite-wal"), { force: true })
       await rm(path.join(root, "memory_state.sqlite-shm"), { force: true })
       await writeFile(path.join(root, "memory_state.sqlite"), "PRIVATE_CORRUPT_DATABASE")
