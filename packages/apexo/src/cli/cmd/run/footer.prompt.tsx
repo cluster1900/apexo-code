@@ -6,6 +6,7 @@ import { mcpAttachmentParts, type McpAttachmentResult } from "@apexo/sdk/v2/mcp-
 // It produces a PromptState that RunPromptBody renders as a slim single-line
 // composer while the footer view renders any active menus below it.
 /** @jsxImportSource @opentui/solid */
+import { ModeSwitch } from "@apexo/core/mode-switch"
 import { pathToFileURL } from "bun"
 import { StyledText, fg, type ColorInput, type KeyEvent, type TextareaRenderable } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
@@ -420,6 +421,16 @@ export function createPromptState(input: PromptInput): PromptState {
       } satisfies SlashOption,
       { kind: "slash", name: "new", display: "/new", description: "start a new session" } satisfies SlashOption,
       { kind: "slash", name: "exit", display: "/exit", description: "close Apexo" } satisfies SlashOption,
+      ...(ModeSwitch.available
+        ? [
+            {
+              kind: "slash",
+              name: "fullscreen",
+              display: "/fullscreen",
+              description: "switch this session to the fullscreen interface (/full)",
+            } satisfies SlashOption,
+          ]
+        : []),
     ]
     const hidden = new Set(builtins.map((item) => item.name))
     const showSkillMenu = !shell() && skillCommands().length > 0 && !hasSkillsCommand()
@@ -863,7 +874,7 @@ export function createPromptState(input: PromptInput): PromptState {
 
       const cursor = area.cursorOffset
       const head = slashHead(area.plainText)
-      const local = !shell() && (next.name === "new" || next.name === "exit")
+      const local = !shell() && (next.name === "new" || next.name === "exit" || next.name === "fullscreen")
       const separator = !shell() && !local && head && /\s/.test(area.plainText[head.end] ?? "") ? "" : " "
       const text = `/${next.name}${separator}`
 

@@ -18,6 +18,8 @@ import { DialogAlert } from "../ui/dialog-alert"
 import { DialogConfirm } from "../ui/dialog-confirm"
 import { DialogSelect } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
+import { useExit } from "../context/exit"
+import { ModeSwitch } from "@apexo/core/mode-switch"
 import { useSDK } from "../context/sdk"
 import { useSync } from "../context/sync"
 import { useLocal } from "../context/local"
@@ -44,6 +46,7 @@ export function useGrokCommands() {
   const sync = useSync()
   const local = useLocal()
   const route = useRoute()
+  const exit = useExit()
   const promptRef = usePromptRef()
   const kv = useKV()
   const [multiline, setMultiline] = kv.signal<boolean>("multiline", false)
@@ -458,6 +461,42 @@ export function useGrokCommands() {
             ? "Multiline on: Enter inserts a newline, Shift+Enter or Alt+Enter sends"
             : "Multiline off: Enter sends",
         })
+        dialog.clear()
+      },
+    },
+    {
+      name: "grok.minimal",
+      title: "Switch to the minimal interface",
+      category: "System",
+      slashName: "minimal",
+      run: () => {
+        if (!ModeSwitch.available)
+          return toast.show({
+            variant: "info",
+            message: "Switching interfaces needs a local session; restart with --mini",
+          })
+        const current = promptRef.current?.current
+        ModeSwitch.request({
+          mode: "minimal",
+          sessionID: sessionID(),
+          draft: current?.input || undefined,
+          agent: local.agent.current()?.name,
+          model: local.model.current()
+            ? `${local.model.current()!.providerID}/${local.model.current()!.modelID}`
+            : undefined,
+        })
+        dialog.clear()
+        exit()
+      },
+    },
+    {
+      name: "grok.fullscreen",
+      title: "Fullscreen interface (current)",
+      category: "System",
+      slashName: "fullscreen",
+      slashAliases: ["full"],
+      run: () => {
+        toast.show({ variant: "info", message: "Already in the fullscreen interface; /minimal switches to inline" })
         dialog.clear()
       },
     },

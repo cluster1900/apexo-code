@@ -14,6 +14,9 @@ const cliOnly: Record<string, string> = {
   move: "copies a session into another project directory; Desktop dialog not ported yet",
   slash: "TUI-internal slash palette",
   y: "TUI-internal confirmation binding",
+  minimal: "switches the terminal session to the inline renderer; Desktop has no terminal renderer",
+  fullscreen: "switches the terminal session back to the alt-screen renderer; Desktop has no terminal renderer",
+  full: "alias of fullscreen",
 }
 const desktopOnly: Record<string, string> = {
   open: "opens files in Desktop editor tabs",
@@ -80,7 +83,7 @@ const grokBuild = (
 // /logout removes stored provider credentials through the existing auth API (same as `apexo auth logout`); neither
 // replicates Grok Build's xAI account login.
 const grokSurfaceOnly: Record<string, string> = {
-  minimal: "terminal inline vs alt-screen switch; chosen at launch with --fullscreen, cannot change at runtime",
+  minimal: "terminal renderer switch (inline ↔ alt-screen) at runtime; Desktop has no terminal renderer",
   fullscreen: "same as minimal",
   full: "alias of fullscreen",
   privacy:
