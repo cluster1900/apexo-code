@@ -50,6 +50,7 @@ import { DialogThemeList } from "./component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
+import { DialogDashboard } from "./component/dialog-dashboard"
 import { DialogWorkspaceList } from "./component/dialog-workspace-list"
 import { ThemeProvider, useTheme } from "./context/theme"
 import { Home } from "./routes/home"
@@ -57,7 +58,7 @@ import { Session } from "./routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
-import { PromptQueueProvider } from "./prompt/queue-context"
+import { PromptQueueProvider, usePromptQueue } from "./prompt/queue-context"
 import { ToastProvider, useToast } from "./ui/toast"
 import { isDefaultTitle } from "./util/session"
 import { KVProvider, useKV } from "./context/kv"
@@ -92,6 +93,7 @@ registerApexoSpinner()
 
 const appGlobalBindingCommands = [
   "session.list",
+  "session.dashboard",
   "session.new",
   "session.quick_switch.1",
   "session.quick_switch.2",
@@ -563,6 +565,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     return workspace
   })
   const grok = useGrokCommands()
+  const promptQueue = usePromptQueue()
   const appCommands = createMemo(() =>
     [
       ...grok.commands,
@@ -580,10 +583,21 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "Switch session",
         category: "Session",
         suggested: sync.data.session.length > 0,
-        slashName: "sessions",
-        slashAliases: ["resume", "continue", "dashboard", "agents-dashboard"],
+        slashName: "resume",
+        slashAliases: ["continue"],
         run: () => {
           dialog.replace(() => <DialogSessionList />)
+        },
+      },
+      {
+        // Grok Build's agent dashboard: live roster with peek/reply. `/sessions` is its alias there, `/resume` the picker.
+        name: "session.dashboard",
+        title: "Agent dashboard",
+        category: "Session",
+        slashName: "dashboard",
+        slashAliases: ["agents-dashboard", "sessions"],
+        run: () => {
+          dialog.replace(() => <DialogDashboard queue={promptQueue} />)
         },
       },
       {
@@ -790,7 +804,10 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
                 : local.permission.mode === "auto"
                   ? "always-approve"
                   : "normal"
-          const next = nextSessionMode(current, { plan: sync.data.agent.some((item) => item.name === "plan"), auto: true })
+          const next = nextSessionMode(current, {
+            plan: sync.data.agent.some((item) => item.name === "plan"),
+            auto: true,
+          })
           if (next === "plan") {
             if (agent && agent !== "plan") kv.set("mode_cycle_agent", agent)
             local.agent.set("plan")
@@ -801,9 +818,12 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
           }
           toast.show({
             variant: "info",
-            message: { normal: "Normal mode", plan: "Plan mode", auto: "Auto-review mode", "always-approve": "Always-approve mode" }[
-              next
-            ],
+            message: {
+              normal: "Normal mode",
+              plan: "Plan mode",
+              auto: "Auto-review mode",
+              "always-approve": "Always-approve mode",
+            }[next],
           })
         },
       },

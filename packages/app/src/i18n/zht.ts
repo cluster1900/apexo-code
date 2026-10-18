@@ -1582,6 +1582,7 @@ export const dict = {
   "memory.operations.scope_empty": "所選範圍沒有可清除的記憶儲存區。",
   "grok.move.new": "新增工作樹",
   "grok.move.creating": "正在建立工作樹…",
+  "grok.dashboard": "代理看板",
   "grok.move": "將工作階段移到專案的其他目錄",
   "grok.move.none": "此專案沒有其他已知目錄",
   "grok.move.failed": "移動失敗",

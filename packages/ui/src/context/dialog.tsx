@@ -67,6 +67,9 @@ function init() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
+      // A dialog that steps back through its own states on Escape (e.g. the agent dashboard) opts out here
+      // and closes itself when its Escape chain runs out.
+      if (event.target instanceof Element && event.target.closest("[data-escape-local]")) return
       close()
       event.preventDefault()
       event.stopPropagation()

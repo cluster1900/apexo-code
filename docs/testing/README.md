@@ -8,6 +8,8 @@ Each record must include: a stable ID, affected scope, observed vs. expected beh
 | -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- | -------------------- |
 | Runtime | [Native batch Dream automatic admission binding](runtime/native-batch-dream-trigger.md) | Corrected; final affected57/279 pass; final UI/types separate | 1 observed draft defect |
 | Runtime | [Native batch read pagination](runtime/native-batch-pagination.md) | Both before probes fail; corrected2/4 and aggregate57/279 pass | 1 review episode, two distinct mechanisms |
+| Permissions | [TUI attach misses pending requests](permissions/attach-pending-requests.md) | Fixed; CLI dashboard flow 12/12 | 1 observed episode |
+| UI | [Agent dashboard keyboard ownership](ui/dashboard-keyboard-ownership.md) | Fixed; CLI and Desktop dashboard flows 12/12 | 3 distinct mechanisms, 1 episode |
 | UI | [Settled batch deferred status](ui/memory-batch-deferred-status.md) | Fixed; shared browser/native and three PTY cases pass | 1 observed episode |
 | UI | [Memory fullscreen footer height](ui/memory-operation-fullscreen-height.md) | Fixed; fullscreen 100×40 and 80×24 pass | 1 observed episode |
 | Runtime | [Native child placement](runtime/child-placement.md) | Integrated; private32/339 and CLI placement probes pass; composed shared checks pending | 1 feature omission with independently verified boundary defects |
@@ -236,7 +238,7 @@ Each record must include: a stable ID, affected scope, observed vs. expected beh
 | Test fixtures | [Sandbox localized fixture expectation](test-fixtures/sandbox-ui-localized-expectation.md) | Live browser seven checks passed | 1 |
 | UI | [Native App prompt envelope](ui/native-prompt-envelope.md) | Live transport 3/18 and browser three profile roundtrips passed | 1 |
 | UI | [Sandbox command on fullscreen Home](ui/sandbox-home-command.md) | Live mini/fullscreen actual command routes each three checks passed | 1 |
-| Performance | [Command sandbox composer measurement](performance/command-sandbox-composer.md) | Repaired final artifact 112.5/118 ms vs baseline 111/118; variation cause unproven | Not a bug occurrence |
+| Performance | [Command sandbox composer measurement](performance/command-sandbox-composer.md) | Repaired final artifact 112.5/118 ms vs baseline 112/128; variation cause unproven | Not a bug occurrence |
 | Test fixtures | [Background Task preview visibility](test-fixtures/task-background-preview-visibility.md) | Browser/native ten checks / 22 calls each; visible guidance/output inspected | 1 visual finding |
 | Test fixtures | [Background UI assistant marker](test-fixtures/task-background-ui-assistant-marker.md) | Helper and both terminal layouts/sizes verified | 1 |
 | Test fixtures | [Background fullscreen navigation](test-fixtures/task-background-fullscreen-navigation.md) | Both terminal sizes verified | 1 |
