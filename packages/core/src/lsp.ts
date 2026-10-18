@@ -1,6 +1,7 @@
 export * as LSP from "./lsp"
 
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FiberSet, Layer, Schema, Scope, Semaphore } from "effect"
 import { LspEvent } from "@apexo/schema/lsp-event"
 import { EventV2 } from "./event"
@@ -14,6 +15,7 @@ import { FSUtil } from "./fs-util"
 import { PluginBundleState } from "./plugin-bundle-state"
 import { makeLocationNode } from "./effect/app-node"
 import type { NativeLspClient } from "./lsp-client"
+import { LspDiagnostics } from "./lsp-diagnostics"
 
 export class Failure extends Schema.TaggedErrorClass<Failure>()("NativeLSP.Failure", {
   code: Schema.Literals(["invalid", "load", "unsupported"]),
@@ -37,8 +39,20 @@ export interface Request {
 export type WorkspaceTarget = LocationMutation.Target & { readonly kind: "file" | "directory" }
 export type AuthorizeWorkspace = (targets: readonly WorkspaceTarget[]) => Effect.Effect<void, Failure>
 
+/** A file an edit tool just wrote (`text`) or deleted (no `text`). */
+export interface FileChange {
+  readonly file: string
+  readonly text?: string
+}
 export interface Interface {
   readonly status: Effect.Effect<readonly Lsp.Status[]>
+  /**
+   * Tell the running language servers about files we changed and wait up to
+   * `LspDiagnostics.DRAIN_TIMEOUT_MS` for their verdict. Returns Grok Build's `<lsp-diagnostics>`
+   * summary, or undefined when no server answered with errors or warnings. Never starts a server and
+   * never fails: diagnostics are advisory.
+   */
+  readonly diagnose: (changes: readonly FileChange[]) => Effect.Effect<string | undefined>
   readonly execute: (input: Request, authorize?: AuthorizeWorkspace) => Effect.Effect<unknown[], Failure>
   readonly suspendRecovery: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
   readonly prepareReload: (initial?: boolean) => Effect.Effect<Prepared, Failure, Scope.Scope>
@@ -386,6 +400,47 @@ const make = Effect.gen(function* () {
           : { ...status, operations: [...status.operations] }
       }),
     ),
+    diagnose: (changes) =>
+      guard
+        .use(
+          location,
+          Effect.tryPromise({
+            try: async (signal) => {
+              const servers = [...current.connections]
+                .filter(([, connection]) => connection.client.healthy())
+                .sort(([a], [b]) => a.localeCompare(b))
+              const owned = servers.flatMap(([, connection]) =>
+                changes
+                  .filter((change) =>
+                    connection.config.extensions?.some((extension) => change.file.endsWith(extension)),
+                  )
+                  .map((change) => ({ connection, change })),
+              )
+              if (!owned.length) return undefined
+              const reports = await Promise.all(
+                owned.map(async ({ connection, change }) => {
+                  if (change.text === undefined) {
+                    await connection.client.forget(change.file)
+                    return undefined
+                  }
+                  const items = await connection.client.diagnose(
+                    {
+                      file: change.file,
+                      text: change.text,
+                      languageId: connection.config.languageIds?.[path.extname(change.file)] ?? languageId(change.file),
+                    },
+                    LspDiagnostics.DRAIN_TIMEOUT_MS,
+                    signal,
+                  )
+                  return items ? { uri: pathToFileURL(change.file).href, items } : undefined
+                }),
+              )
+              return LspDiagnostics.summarize(reports.filter((report) => report !== undefined))
+            },
+            catch: () => undefined,
+          }),
+        )
+        .pipe(Effect.orElseSucceed(() => undefined)),
     execute: (input, authorize) =>
       guard.use(
         location,

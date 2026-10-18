@@ -31,6 +31,15 @@ const methods = {
   workspaceSymbol: ["workspace/symbol", "workspaceSymbolProvider"],
 } as const
 
+/** One `textDocument/publishDiagnostics` entry, narrowed to the fields Apexo reports. */
+export interface Diagnostic {
+  readonly severity?: number
+  readonly message: string
+  readonly line: number
+}
+/** Diagnostic severities from the LSP specification. */
+export const Severity = { error: 1, warning: 2, information: 3, hint: 4 } as const
+
 export async function create(input: {
   command: readonly string[]
   transport?: "stdio" | "socket"
@@ -65,9 +74,11 @@ export async function create(input: {
   if (!readable || !writable || !transport) throw new Error("Language-server transport is unavailable")
   const workspaceRoot = input.workspaceFolder ?? input.root
   const alive = { value: true, initialized: false }
+  const listeners = new Set<() => void>()
   const disconnected = () => {
     if (!alive.value) return
     alive.value = false
+    for (const listener of listeners) listener()
     input.onClosed?.()
   }
   const closed = new Promise<void>((resolve) =>
@@ -137,6 +148,31 @@ export async function create(input: {
     applied: false,
     failureReason: "Native LSP tools are read-only",
   }))
+  // Latest publishDiagnostics per document. `sequence` orders publishes against document syncs so a
+  // server that omits versions still only answers an edit with a report that arrived after it.
+  const published = new Map<string, { version?: number; sequence: number; items: Diagnostic[] }>()
+  const clock = { sequence: 0 }
+  connection.onNotification("textDocument/publishDiagnostics", (params: unknown) => {
+    const value = record(params)
+    if (typeof value.uri !== "string") return
+    published.set(value.uri, {
+      version: typeof value.version === "number" ? value.version : undefined,
+      sequence: ++clock.sequence,
+      items: (Array.isArray(value.diagnostics) ? value.diagnostics : []).flatMap((item): Diagnostic[] => {
+        const entry = record(item)
+        if (typeof entry.message !== "string") return []
+        const line = record(record(record(entry.range).start)).line
+        return [
+          {
+            message: entry.message,
+            line: typeof line === "number" ? line : 0,
+            ...(typeof entry.severity === "number" ? { severity: entry.severity } : {}),
+          },
+        ]
+      }),
+    })
+    for (const listener of listeners) listener()
+  })
   connection.listen()
   const lifecycle: { closing?: Promise<void> } = {}
   const request = async (
@@ -245,6 +281,7 @@ export async function create(input: {
             workspace: { configuration: true, workspaceFolders: true, applyEdit: false },
             textDocument: {
               synchronization: { dynamicRegistration: false },
+              publishDiagnostics: { versionSupport: true },
               definition: { linkSupport: true },
               implementation: { linkSupport: true },
               documentSymbol: { hierarchicalDocumentSymbolSupport: true },
@@ -285,10 +322,103 @@ export async function create(input: {
     const supported = operations.filter((operation) => !!capabilities[methods[operation][1]])
     const documents = new Map<string, { text: string; version: number }>()
     const serial = { tail: Promise.resolve() }
+    const syncDocument = async (uri: string, text: string, languageId = "plaintext") => {
+      const previous = documents.get(uri)
+      if (!previous) {
+        await connection.sendNotification("textDocument/didOpen", {
+          textDocument: { uri, languageId, version: 1, text },
+        })
+        documents.set(uri, { text, version: 1 })
+        return 1
+      }
+      if (previous.text === text) return previous.version
+      const sync =
+        typeof capabilities.textDocumentSync === "number"
+          ? capabilities.textDocumentSync
+          : record(capabilities.textDocumentSync).change
+      const lines = previous.text.split(/\r\n|\r|\n/)
+      await connection.sendNotification("textDocument/didChange", {
+        textDocument: { uri, version: previous.version + 1 },
+        contentChanges: [
+          {
+            ...(sync === 2
+              ? {
+                  range: {
+                    start: { line: 0, character: 0 },
+                    end: { line: lines.length - 1, character: lines.at(-1)?.length ?? 0 },
+                  },
+                }
+              : {}),
+            text,
+          },
+        ],
+      })
+      documents.set(uri, { text, version: previous.version + 1 })
+      return previous.version + 1
+    }
+    const serialized = <A>(work: () => Promise<A>) => {
+      const next = serial.tail.then(work)
+      serial.tail = next.then(
+        () => undefined,
+        () => undefined,
+      )
+      return next
+    }
     return {
       supported,
       healthy: () => alive.value,
       close,
+      /**
+       * Tell the server about content we wrote and wait, up to `timeout` ms, for its verdict on that
+       * version. Resolves to the reported diagnostics, or undefined when the server said nothing in time.
+       */
+      diagnose: async (
+        args: { readonly file: string; readonly text: string; readonly languageId?: string },
+        timeout: number,
+        signal: AbortSignal,
+      ) => {
+        if (!alive.value) return undefined
+        const uri = pathToFileURL(args.file).href
+        // Only the sync is serialized with requests; the wait is not, so several files share one budget.
+        const synced = await serialized(async () => {
+          const sequence = clock.sequence
+          return { sequence, version: await syncDocument(uri, args.text, args.languageId) }
+        })
+        const answered = () => {
+          const entry = published.get(uri)
+          if (!entry) return undefined
+          if (entry.version !== undefined ? entry.version < synced.version : entry.sequence <= synced.sequence)
+            return undefined
+          return entry.items
+        }
+        const ready = answered()
+        if (ready || signal.aborted || !alive.value) return ready
+        return new Promise<Diagnostic[] | undefined>((resolve) => {
+          const finish = (value: Diagnostic[] | undefined) => {
+            listeners.delete(listener)
+            clearTimeout(timer)
+            signal.removeEventListener("abort", stop)
+            resolve(value)
+          }
+          const listener = () => {
+            const items = answered()
+            if (items) finish(items)
+            else if (!alive.value) finish(undefined)
+          }
+          const stop = () => finish(undefined)
+          const timer = setTimeout(stop, timeout)
+          listeners.add(listener)
+          signal.addEventListener("abort", stop, { once: true })
+        })
+      },
+      /** Forget a document we deleted so the server stops reporting on it. */
+      forget: (file: string) =>
+        serialized(async () => {
+          const uri = pathToFileURL(file).href
+          published.delete(uri)
+          if (documents.delete(uri) && alive.value)
+            await connection.sendNotification("textDocument/didClose", { textDocument: { uri } })
+        }),
       execute: (
         args: {
           operation: Operation
@@ -308,36 +438,7 @@ export async function create(input: {
             return request(methods.workspaceSymbol[0], { query: args.query ?? "" }, signal)
           if (!args.file || args.text === undefined) throw new Error("Language-server document input is missing")
           const uri = pathToFileURL(args.file).href
-          const previous = documents.get(uri)
-          if (!previous) {
-            await connection.sendNotification("textDocument/didOpen", {
-              textDocument: { uri, languageId: args.languageId ?? "plaintext", version: 1, text: args.text },
-            })
-            documents.set(uri, { text: args.text, version: 1 })
-          } else if (previous.text !== args.text) {
-            const sync =
-              typeof capabilities.textDocumentSync === "number"
-                ? capabilities.textDocumentSync
-                : record(capabilities.textDocumentSync).change
-            const lines = previous.text.split(/\r\n|\r|\n/)
-            await connection.sendNotification("textDocument/didChange", {
-              textDocument: { uri, version: previous.version + 1 },
-              contentChanges: [
-                {
-                  ...(sync === 2
-                    ? {
-                        range: {
-                          start: { line: 0, character: 0 },
-                          end: { line: lines.length - 1, character: lines.at(-1)?.length ?? 0 },
-                        },
-                      }
-                    : {}),
-                  text: args.text,
-                },
-              ],
-            })
-            documents.set(uri, { text: args.text, version: previous.version + 1 })
-          }
+          await syncDocument(uri, args.text, args.languageId)
           return request(
             methods[args.operation][0],
             {

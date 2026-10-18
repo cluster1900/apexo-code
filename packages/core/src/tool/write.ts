@@ -12,6 +12,8 @@ import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { LocationMutation } from "../location-mutation"
+import { LSP } from "../lsp"
+import { LspDiagnostics } from "../lsp-diagnostics"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -35,17 +37,21 @@ export const Output = Schema.Struct({
   target: Schema.String,
   resource: Schema.String,
   existed: Schema.Boolean,
+  /** Grok Build `<lsp-diagnostics>` summary from running language servers, model-facing only. */
+  diagnostics: Schema.optional(Schema.String),
 })
 export type Output = typeof Output.Type
 
 export const toModelOutput = (output: Output) =>
-  `${output.existed ? "Wrote" : "Created"} file successfully: ${output.resource}`
+  LspDiagnostics.withReminder(
+    `${output.existed ? "Wrote" : "Created"} file successfully: ${output.resource}`,
+    output.diagnostics,
+  )
 
 /** Deferred V2 write UX integrations remain visible at the model-facing seam. */
-// TODO: Add formatter integration after V2 formatter runtime exists.
+// No formatter runs after native edits: Grok Build has none either (search_replace/apply_patch only notify LSP).
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
-// TODO: Add LSP notification and diagnostics after V2 LSP runtime exists.
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -54,6 +60,7 @@ const layer = Layer.effectDiscard(
     const files = yield* FileMutation.Service
     const permission = yield* PermissionV2.Service
     const sandbox = yield* CommandSandbox.Service
+    const lsp = yield* LSP.Service
 
     yield* tools
       .register({
@@ -92,7 +99,11 @@ const layer = Layer.effectDiscard(
                   source,
                 })
                 yield* sandbox.assertWrite(context.sessionID, target.canonical, path)
-                return yield* files.writeTextPreservingBom({ target, content: input.content })
+                const written = yield* files.writeTextPreservingBom({ target, content: input.content })
+                const diagnostics = yield* lsp.diagnose([
+                  { file: target.canonical, text: input.content.replace(/^\uFEFF/, "") },
+                ])
+                return { ...written, ...(diagnostics ? { diagnostics } : {}) } satisfies Output
               }).pipe(
                 Effect.mapError(() => new ToolFailure({ message: `Unable to write ${input.path ?? input.filePath}` })),
               ),
@@ -107,5 +118,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/write",
   layer,
-  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node, CommandSandbox.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node, CommandSandbox.node, LSP.node],
 })
