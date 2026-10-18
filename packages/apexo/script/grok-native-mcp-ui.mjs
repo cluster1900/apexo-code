@@ -9,6 +9,8 @@ import { promisify } from "node:util"
 import { startShellFixture, poll, deadline } from "./grok-shell-fixture.mjs"
 
 import { startMcpUiFixture } from "./grok-mcp-ui-fixture.mjs"
+// The app binds mod+key: Cmd on macOS, Ctrl elsewhere.
+const mod = process.platform === "darwin" ? "Meta" : "Control"
 const kind = process.argv[2] ?? "desktop"
 const fixture = await startMcpUiFixture()
 const { runtime, repo } = fixture
@@ -161,7 +163,7 @@ try {
   } else await command("open", url)
   await command("wait", '[data-action="session-hooks"]')
   // Status is opt-in in a fresh profile; exercise the real visibility setting first.
-  await command("press", "Meta+,")
+  await command("press", `${mod}+,`)
   await command("wait", '[data-action="settings-show-status"]')
   await command("scrollintoview", '[data-action="settings-show-status"]')
   await command("click", '[data-action="settings-show-status"] [data-slot="switch-control"]')

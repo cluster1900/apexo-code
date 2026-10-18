@@ -43,6 +43,7 @@ import { useEditorContext } from "../../context/editor"
 import { openEditor } from "../../editor"
 import { useDialog } from "../../ui/dialog"
 import { DialogAlert } from "../../ui/dialog-alert"
+import { sessionTrace, sessionUsage } from "@apexo/sdk/v2/session-report"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
@@ -59,6 +60,9 @@ import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
+import { scrollback, setScrollback } from "../../context/scrollback"
+import { vimScrollAction, type VimScrollAction } from "@apexo/sdk/v2/grok-commands"
+import { useKeyboard } from "@opentui/solid"
 import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
 import { useEpilogue } from "../../context/epilogue"
@@ -332,6 +336,69 @@ export function Session() {
     r.set(route.prompt)
   }
   const keymap = useApexoKeymap()
+
+  // /vim-mode: Esc on an empty, idle prompt moves focus to the scrollback, where vim keys drive the transcript.
+  const [vim] = kv.signal<boolean>("vim_mode", false)
+  const vimCommands: Record<Exclude<VimScrollAction, "prompt">, string> = {
+    "line.down": "session.line.down",
+    "line.up": "session.line.up",
+    "half.down": "session.half.page.down",
+    "half.up": "session.half.page.up",
+    "page.down": "session.page.down",
+    "page.up": "session.page.up",
+    "message.previous": "session.message.previous",
+    "message.next": "session.message.next",
+    first: "session.first",
+    last: "session.last",
+    "copy.message": "messages.copy",
+    "copy.transcript": "session.copy",
+  }
+  createEffect(() => {
+    if (!vim()) setScrollback(false)
+  })
+  onCleanup(() => setScrollback(false))
+  useBindings(() => ({
+    priority: 2,
+    enabled:
+      vim() &&
+      !scrollback() &&
+      dialog.stack.length === 0 &&
+      promptRef.current?.current.input === "" &&
+      (sync.data.session_status[route.sessionID]?.type ?? "idle") === "idle",
+    bindings: [
+      {
+        key: "escape",
+        desc: "Scrollback (vim mode)",
+        group: "Session",
+        cmd: () => {
+          setScrollback(true)
+          toast.show({
+            variant: "info",
+            message: "Scrollback: j/k scroll, h/l messages, g/G top/bottom, y/Y copy, i to type",
+          })
+        },
+      },
+    ],
+  }))
+  useKeyboard((key) => {
+    if (!scrollback() || dialog.stack.length > 0) return
+    if (key.name === "escape") return
+    const result = vimScrollAction({
+      name: key.name,
+      char: key.sequence?.length === 1 ? key.sequence : undefined,
+      shift: key.shift,
+      ctrl: key.ctrl,
+      alt: key.meta,
+    })
+    if (!result) return
+    key.preventDefault()
+    if (result.action !== "prompt") {
+      keymap.dispatchCommand(vimCommands[result.action])
+      return
+    }
+    setScrollback(false)
+    if (result.type) promptRef.current?.set({ input: result.type, parts: [] })
+  })
   const dialog = useDialog()
   const renderer = useRenderer()
 
@@ -428,7 +495,7 @@ export function Session() {
       title: "Workflows",
       value: "session.workflow",
       category: "Session",
-      slash: { name: "workflow" },
+      slash: { name: "workflow", aliases: ["workflows"] },
       run: () => dialog.replace(() => <DialogWorkflow sessionID={route.sessionID} />),
     },
     {
@@ -472,7 +539,7 @@ export function Session() {
             title: "Browse memory",
             value: "session.memory",
             category: "Session",
-            slash: { name: "memory" },
+            slash: { name: "memory", aliases: ["mem"] },
             run: () => dialog.replace(() => <DialogMemory sessionID={route.sessionID} />),
           },
         ]
@@ -497,7 +564,7 @@ export function Session() {
       title: "Plugins",
       value: "session.plugins",
       category: "Session",
-      slash: { name: "plugins" },
+      slash: { name: "plugins", aliases: ["marketplace"] },
       run: () => dialog.replace(() => <DialogPlugins />),
     },
     {
@@ -513,6 +580,7 @@ export function Session() {
       category: "Session",
       slash: {
         name: "rename",
+        aliases: ["title"],
       },
       run: () => {
         dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
@@ -594,6 +662,7 @@ export function Session() {
       category: "Session",
       slash: {
         name: "undo",
+        aliases: ["rewind"],
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
@@ -995,6 +1064,53 @@ export function Session() {
           }
         } catch {
           toast.show({ message: "Failed to export session", variant: "error" })
+        }
+        dialog.clear()
+      },
+    },
+    {
+      title: "Session usage",
+      value: "session.usage",
+      category: "Session",
+      slash: { name: "usage", aliases: ["cost"] },
+      run: () => {
+        const sessionData = session()
+        if (!sessionData) return
+        const usage = sessionUsage({
+          info: sessionData,
+          messages: messages().map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+        })
+        const lines = [
+          `${usage.turns} turns · ${usage.calls} model calls · ${usage.inputTokens} input / ${usage.outputTokens} output tokens · $${usage.costUsd.toFixed(4)}`,
+          ...usage.models.map(
+            (model) =>
+              `${model.providerID}/${model.modelID}: ${model.calls} calls · ${model.inputTokens} in / ${model.outputTokens} out · $${model.costUsd.toFixed(4)}`,
+          ),
+        ]
+        void DialogAlert.show(dialog, "Session usage", lines.join("\n"))
+      },
+    },
+    {
+      title: "Export session trace",
+      value: "session.trace",
+      category: "Session",
+      slash: { name: "trace" },
+      run: async () => {
+        const sessionData = session()
+        if (!sessionData) return
+        const filename = `session-${sessionData.id.slice(0, 8)}.trace.json`
+        try {
+          const trace = sessionTrace(
+            {
+              info: sessionData,
+              messages: messages().map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+            },
+            "apexo-tui",
+          )
+          await writeExport(path.join(paths.cwd, filename), JSON.stringify(trace, null, 2))
+          toast.show({ message: `Session trace exported to ${filename}`, variant: "success" })
+        } catch {
+          toast.show({ message: "Failed to export session trace", variant: "error" })
         }
         dialog.clear()
       },

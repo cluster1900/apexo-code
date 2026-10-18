@@ -16,6 +16,7 @@ import { Dialog } from "@apexo/ui/dialog"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
+import { useCommand } from "@/context/command"
 import { restoreSession, restorationMessage, SessionRestorationError } from "@/utils/session-restore"
 
 export function createSessionTasks(sessionID: () => string | undefined) {
@@ -210,14 +211,19 @@ export function createSessionTasks(sessionID: () => string | undefined) {
 export function BackgroundTasksButton(props: { tasks: ReturnType<typeof createSessionTasks> }) {
   const dialog = useDialog()
   const language = useLanguage()
+  const open = () => dialog.show(() => <BackgroundTasksDialog tasks={props.tasks} />)
+  useCommand().register("session-tasks", () => [
+    {
+      id: "session.tasks",
+      title: language.t("tasks.title"),
+      slash: "tasks",
+      disabled: !props.tasks.available(),
+      onSelect: open,
+    },
+  ])
   return (
     <Show when={props.tasks.available()}>
-      <Button
-        data-action="session-tasks"
-        variant="ghost"
-        size="small"
-        onClick={() => dialog.show(() => <BackgroundTasksDialog tasks={props.tasks} />)}
-      >
+      <Button data-action="session-tasks" variant="ghost" size="small" onClick={open}>
         <Show
           when={props.tasks.state.native}
           fallback={

@@ -1,3 +1,4 @@
+import { enterAction, multiline } from "@apexo/session-ui/v2/prompt-input/multiline"
 import { McpAttachmentsButton, createSessionMcpAttachments } from "./session-mcp-attachments"
 import { appendMcpAttachments } from "./prompt-input/mcp-attachments"
 import { CommandSandboxButton, createSessionCommandSandbox } from "./session-command-sandbox"
@@ -6,6 +7,7 @@ import { SideQuestionButton, createSessionSideQuestion } from "./session-side-qu
 import { HooksButton, createSessionHooks } from "./session-hooks"
 import { FeedbackButton, createSessionFeedback } from "./session-feedback"
 import { GoalButton, createSessionGoal } from "./session-goal"
+import { useGrokCommands } from "./grok-commands"
 import { MemoryButton, createSessionMemory } from "./memory-browser"
 import { useFilteredList } from "@apexo/ui/hooks"
 import { useSpring } from "@apexo/ui/motion-spring"
@@ -293,6 +295,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
   )
   const memory = createSessionMemory(() => props.controls.session.id)
+  const grok = useGrokCommands(() => props.controls.session.id)
   const goal = createSessionGoal(
     () => props.controls.session.id,
     () => {
@@ -752,6 +755,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       .map((opt) => ({
         id: opt.id,
         trigger: opt.slash!,
+        aliases: opt.slashAliases?.join(" "),
         title: opt.title,
         description: opt.description,
         keybind: opt.keybind,
@@ -812,7 +816,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   } = useFilteredList<SlashCommand>({
     items: slashCommands,
     key: (x) => x?.id,
-    filterKeys: ["trigger", "title"],
+    filterKeys: ["trigger", "aliases", "title"],
     onSelect: handleSlashSelect,
   })
 
@@ -1287,6 +1291,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onBtw: sideQuestion.open,
       onWorkflow: workflow.open,
       onGoal: goal.show,
+      onGrokSlash: grok.submit,
       onMemoryCommand: memory.command,
       onRemember: memory.review,
       onMemoryWork: memory.work,
@@ -1371,6 +1376,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     // Handle Shift+Enter BEFORE IME check - Shift+Enter is never used for IME input
     // and should always insert a newline regardless of composition state
+    if (event.key === "Enter" && !store.popover && !isImeComposing(event) && !event.ctrlKey && !event.metaKey) {
+      const empty =
+        prompt
+          .current()
+          .map((part) => ("content" in part ? part.content : ""))
+          .join("").length === 0
+      const enter = enterAction({ multiline: multiline(), shift: event.shiftKey, alt: event.altKey, empty })
+      if (enter === "newline") {
+        addPart({ type: "text", content: "\n", start: 0, end: 0 })
+        event.preventDefault()
+        return
+      }
+      if (enter === "send") {
+        event.preventDefault()
+        if (!event.repeat) void handleSubmit(event)
+        return
+      }
+    }
+
     if (event.key === "Enter" && event.shiftKey) {
       addPart({ type: "text", content: "\n", start: 0, end: 0 })
       event.preventDefault()

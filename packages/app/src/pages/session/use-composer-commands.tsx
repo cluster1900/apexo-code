@@ -53,6 +53,7 @@ export const useComposerCommands = (input: { model?: ModelSelection } = {}) => {
       description: language.t("command.model.choose.description"),
       keybind: "mod+'",
       slash: "model",
+      slashAliases: ["models", "mo", "m"],
       onSelect: chooseModel,
     }),
     modelCommand({
@@ -60,6 +61,7 @@ export const useComposerCommands = (input: { model?: ModelSelection } = {}) => {
       title: language.t("command.model.variant.cycle"),
       description: language.t("command.model.variant.cycle.description"),
       keybind: "shift+mod+d",
+      slash: "variants",
       onSelect: () => model.variant.cycle(),
     }),
     agentCommand({
@@ -68,6 +70,7 @@ export const useComposerCommands = (input: { model?: ModelSelection } = {}) => {
       description: language.t("command.agent.cycle.description"),
       keybind: "mod+.",
       slash: "agent",
+      slashAliases: ["agents", "config-agents", "personas"],
       disabled: !local.agent.visible(),
       onSelect: () => local.agent.move(1),
     }),

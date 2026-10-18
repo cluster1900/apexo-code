@@ -8,6 +8,8 @@ import { pathToFileURL, fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { createServer } from "node:net"
 import { startShellFixture, poll, deadline } from "./grok-shell-fixture.mjs"
+// The app binds mod+key: Cmd on macOS, Ctrl elsewhere.
+const mod = process.platform === "darwin" ? "Meta" : "Control"
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const advertised = []
@@ -108,7 +110,7 @@ try {
   assert.deepEqual(await launch(), { active: "apexo", preferred: "apexo", supported: true })
   const first = await tools("PROFILE_NATIVE_APEXO", await nativeApi())
   assert.deepEqual(first, cliTools)
-  await command("press", "Meta+,")
+  await command("press", `${mod}+,`)
   await command("wait", '[data-component="settings-runtime-profile"]')
   await command("click", '[data-action="settings-runtime-profile"]')
   await command("find", "role", "option", "click", "--name", "Grok Build")
@@ -156,7 +158,7 @@ try {
   assert.deepEqual(selected.filter((name) => !manifest.tools.includes(name)), interactive)
   assert.deepEqual(manifest.tools.toSorted(), selected.filter((name) => !interactive.includes(name)))
   assert.deepEqual(advertised.find((call) => call.text.includes("PROFILE_CLI_GROK")).tools, manifest.tools.toSorted())
-  await command("press", "Meta+,")
+  await command("press", `${mod}+,`)
   await command("wait", '[data-component="settings-runtime-profile"]')
   assert.match(await command("get", "text", '[data-field="runtime-profile-active"]'), /Grok Build/)
   assert.equal(Number((await command("get", "count", '[data-field="runtime-profile-pending"]')).trim()), 0)

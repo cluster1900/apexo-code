@@ -8,6 +8,8 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { startShellFixture, poll, deadline } from "./grok-shell-fixture.mjs"
+// The app binds mod+key: Cmd on macOS, Ctrl elsewhere.
+const mod = process.platform === "darwin" ? "Meta" : "Control"
 
 const kind = process.argv[2] ?? "desktop"
 const locale = process.argv.includes("--locale") ? process.argv[process.argv.indexOf("--locale") + 1] : "en"
@@ -271,7 +273,7 @@ try {
     await command("reload")
     await command("wait", '[data-action="session-hooks"]')
   }
-  await command("press", "Meta+,")
+  await command("press", `${mod}+,`)
   await command("find", "role", "tab", "click", "--name", t("plugins.title"), "--exact")
   await command("wait", '[data-component="plugins-runtime-generation"]')
   assert.equal((await runtime.api(endpoint)).active.length, 0)

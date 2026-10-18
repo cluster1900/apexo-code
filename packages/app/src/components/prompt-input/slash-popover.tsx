@@ -22,6 +22,8 @@ export type AtOption =
 export interface SlashCommand {
   id: string
   trigger: string
+  /** Space-separated alias names, matched by the slash filter. */
+  aliases?: string
   title: string
   description?: string
   keybind?: string

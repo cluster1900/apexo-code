@@ -138,10 +138,20 @@ export async function catalog(root: string): Promise<PluginStore.Catalog> {
 
 export async function detail(root: string, id: string) {
   const value = await state(root)
-  const item = (await catalog(root)).items.find((v) => v.id === id)
+  const items = (await catalog(root)).items
+  // Like mutations (and Grok Build's `plugin details <name>`), accept a plain name when it is unambiguous,
+  // preferring installed plugins over catalog entries with the same name.
+  const named = (list: typeof items) => list.filter((v) => v.name === id)
+  const candidates = items.some((v) => v.id === id)
+    ? items.filter((v) => v.id === id)
+    : named(items.filter((v) => v.status !== "available")).length
+      ? named(items.filter((v) => v.status !== "available"))
+      : named(items)
+  if (candidates.length > 1) throw new Error("invalid", "Multiple plugins have this name. Use the full plugin ID.")
+  const item = candidates[0]
   if (!item) throw new Error("missing", "Plugin not found")
-  const installed = value.installed.find((v) => v.item.id === id)
-  const entry = value.sources.flatMap((s) => s.entries).find((e) => e.item.id === id)
+  const installed = value.installed.find((v) => v.item.id === item.id)
+  const entry = value.sources.flatMap((s) => s.entries).find((e) => e.item.id === item.id)
   const directory =
     installed?.root ?? (entry && path.isAbsolute(entry.target.location) ? entry.target.location : undefined)
   const readme = directory ? await fs.readFile(path.join(directory, "README.md"), "utf8").catch(() => "") : ""
@@ -174,7 +184,7 @@ async function extractMarketplaceList(value: unknown): Promise<string[]> {
     const raw =
       typeof entry === "string"
         ? entry
-        : string(record(entry).location) ?? string(record(entry).url) ?? string(record(entry).source)
+        : (string(record(entry).location) ?? string(record(entry).url) ?? string(record(entry).source))
     if (!raw) continue
     const normalized = await normalizePolicyLocation(raw)
     if (normalized) items.push(normalized)
@@ -806,4 +816,144 @@ export async function inspect(root: string, fallbackName = path.basename(root)) 
     // Command/HTTP hooks work, but provider-specific hook decisions and prompt/agent hooks are partial.
     warnings: components.some((v) => v.kind === "hooks") ? ["hooks"] : [],
   }
+}
+
+export type Validation = {
+  kind: "plugin" | "marketplace"
+  path: string
+  name?: string
+  version?: string
+  errors: string[]
+  warnings: string[]
+  plugins: { name: string; errors: string[]; warnings: string[] }[]
+}
+
+const catalogFiles = [
+  ".grok-plugin/marketplace.json",
+  ".grok-plugin/plugin.json",
+  ".claude-plugin/marketplace.json",
+  ".claude-plugin/plugin.json",
+  ".agents/plugins/marketplace.json",
+]
+const manifestFiles = [
+  ".grok-plugin/plugin.json",
+  ".claude-plugin/plugin.json",
+  ".codex-plugin/plugin.json",
+  "plugin.json",
+]
+const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const reason = (error: unknown) => (error instanceof globalThis.Error ? error.message : String(error))
+
+async function readJSON(root: string, files: string[], errors: string[]) {
+  const found: { file: string; value: unknown }[] = []
+  for (const file of files) {
+    const value = await json(path.join(root, file)).catch((error) => {
+      errors.push(`${file}: ${reason(error)}`)
+      return undefined
+    })
+    if (value !== undefined) found.push({ file, value })
+  }
+  return found
+}
+
+async function validatePlugin(root: string) {
+  const errors: string[] = []
+  const warnings: string[] = []
+  const manifest = (await readJSON(root, manifestFiles, errors))[0]
+  const data = record(manifest?.value)
+  if (manifest && data.name === undefined) warnings.push(`${manifest.file}: no "name"; the folder name is used`)
+  const version = string(data.version)
+  if (manifest && !version) warnings.push(`${manifest.file}: no "version"; plugin tag needs one`)
+  if (version && !semver.test(version)) errors.push(`${manifest!.file}: version "${version}" is not semver`)
+  for (const file of [".mcp.json", ".lsp.json", "hooks/hooks.json"])
+    await json(path.join(root, file)).catch((error) => errors.push(`${file}: ${reason(error)}`))
+  const info = await inspect(root).catch((error) => {
+    errors.push(reason(error))
+    return undefined
+  })
+  if (info) {
+    for (const item of info.components)
+      if ((item.kind === "skills" || item.kind === "commands" || item.kind === "agents") && !item.description)
+        warnings.push(`${item.kind}/${item.name}: no description in frontmatter`)
+  }
+  return { name: info?.name ?? string(data.name) ?? path.basename(root), version, errors, warnings }
+}
+
+/** `grok plugin validate [<path>]`: checks a plugin folder or a marketplace repository before publishing. */
+export async function validate(input: string): Promise<Validation> {
+  const root = path.resolve(input)
+  const stat = await fs.stat(root).catch(() => undefined)
+  if (!stat?.isDirectory())
+    return { kind: "plugin", path: root, errors: [`${root} is not a directory`], warnings: [], plugins: [] }
+  const errors: string[] = []
+  const index = (await readJSON(root, catalogFiles, errors)).find((item) => Array.isArray(record(item.value).plugins))
+  if (!index) {
+    const result = await validatePlugin(root)
+    return {
+      kind: "plugin",
+      path: root,
+      name: result.name,
+      version: result.version,
+      errors: [...errors, ...result.errors],
+      warnings: result.warnings,
+      plugins: [],
+    }
+  }
+  const data = record(index.value)
+  const warnings: string[] = []
+  if (!string(data.name)) errors.push(`${index.file}: missing "name"`)
+  const names = new Set<string>()
+  const plugins: Validation["plugins"] = []
+  for (const [position, raw] of (data.plugins as unknown[]).entries()) {
+    const item = record(raw)
+    const name = string(item.name) ?? ""
+    const label = name || `plugins[${position}]`
+    if (!namePattern.test(name)) errors.push(`${label}: invalid plugin name`)
+    else if (names.has(name)) errors.push(`${label}: duplicate plugin name`)
+    names.add(name)
+    if (!string(item.description)) warnings.push(`${label}: no description`)
+    const source = typeof item.source === "string" ? { type: "local", path: item.source } : record(item.source)
+    const local = string(source.path)
+    if (local && (source.type === "local" || source.type === undefined)) {
+      const dir = await contained(root, local).catch(() => undefined)
+      if (!dir) {
+        errors.push(`${label}: source path ${local} escapes the repository`)
+        continue
+      }
+      const result = await validatePlugin(dir)
+      if (name && result.name !== name)
+        result.warnings.push(`manifest name "${result.name}" differs from index "${name}"`)
+      plugins.push({ name: label, errors: result.errors, warnings: result.warnings })
+      continue
+    }
+    const url = string(source.url) ?? string(source.repo)
+    if (!url) {
+      errors.push(`${label}: source needs a local "path" or a git "url"`)
+      continue
+    }
+    const sha = string(source.sha)
+    if (!sha) warnings.push(`${label}: url source has no pinned "sha"; installs are not reproducible`)
+    else if (!/^[a-f0-9]{40}$/.test(sha)) errors.push(`${label}: "sha" must be a full 40-character commit sha`)
+  }
+  return { kind: "marketplace", path: root, name: string(data.name), errors, warnings, plugins }
+}
+
+const run = promisify(execFile)
+
+/** `grok plugin tag [<path>] [--push]`: tags a release from the plugin manifest version. */
+export async function tag(input: string, options: { push?: boolean } = {}) {
+  const result = await validate(input)
+  if (result.kind !== "plugin") throw new Error("invalid", "plugin tag needs a plugin folder, not a marketplace")
+  if (result.errors.length) throw new Error("invalid", `plugin is invalid: ${result.errors.join("; ")}`)
+  if (!result.version) throw new Error("invalid", "plugin manifest has no version to tag")
+  const git = (...args: string[]) => run("git", ["-C", result.path, ...args]).then((out) => out.stdout.trim())
+  const top = await git("rev-parse", "--show-toplevel").catch(() => {
+    throw new Error("invalid", `${result.path} is not inside a git repository`)
+  })
+  // A plugin at the repository root is tagged v1.2.3; one inside a marketplace repo is tagged name-v1.2.3.
+  const name = path.resolve(top) === result.path ? `v${result.version}` : `${result.name}-v${result.version}`
+  if (await git("tag", "--list", name)) throw new Error("invalid", `tag ${name} already exists`)
+  await git("tag", "-a", name, "-m", `${result.name} ${result.version}`)
+  if (options.push) await git("push", "origin", name)
+  return { tag: name, pushed: !!options.push, name: result.name, version: result.version }
 }

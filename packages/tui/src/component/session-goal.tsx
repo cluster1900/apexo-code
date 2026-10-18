@@ -1,4 +1,5 @@
 /** @jsxImportSource @opentui/solid */
+import { parseGoalCommand } from "@apexo/sdk/v2/goal-command"
 import { useKeyboard } from "@opentui/solid"
 import type { ColorInput, ScrollBoxRenderable } from "@opentui/core"
 import { For, onCleanup, onMount, Show } from "solid-js"
@@ -69,15 +70,17 @@ export function SessionGoal(props: {
 }) {
   const abort = new AbortController()
   const intent = props.objective?.trim()
-  const operation =
-    intent === "pause" || intent === "resume" || intent === "clear" || intent === "status" ? intent : undefined
+  const parsed = parseGoalCommand(intent)
+  const operation = parsed.type === "operation" ? parsed.operation : undefined
+  // `/goal <objective> [--budget N]` starts immediately, like Grok Build; the form is only a fallback.
+  const autoCreate = parsed.type === "create"
   const [state, setState] = createStore({
     info: undefined as GoalInfo | null | undefined,
-    objective: operation ? "" : (props.objective ?? ""),
-    budget: "",
+    objective: parsed.type === "create" || parsed.type === "invalid" ? parsed.objective : "",
+    budget: parsed.type === "create" && parsed.tokenBudget ? String(parsed.tokenBudget) : "",
     field: "objective",
     pending: false,
-    error: "",
+    error: parsed.type === "invalid" ? "Enter an objective and an optional positive integer token budget" : "",
     confirm: false,
     reports: false,
     id: `goal_${crypto.randomUUID().replaceAll("-", "")}`,
@@ -92,14 +95,18 @@ export function SessionGoal(props: {
       .then((info) => {
         if (abort.signal.aborted || state.pending || revision !== requests.revision) return
         setState("info", reconcile(info, { key: "callID" }))
-        if (!operation || requests.handled) return
+        if ((!operation && !autoCreate) || requests.handled) return
         requests.handled = true
+        if (autoCreate) {
+          if (!info) void run("create")
+          return
+        }
         if (!info || operation === "status") return
         if (operation === "clear") {
           setState("confirm", true)
           return
         }
-        void run(operation)
+        if (operation) void run(operation)
       })
       .catch(() => {
         if (!abort.signal.aborted) setState("error", "Could not read the goal")

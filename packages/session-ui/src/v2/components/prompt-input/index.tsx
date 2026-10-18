@@ -1,3 +1,4 @@
+import { enterAction, multiline } from "./multiline"
 import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { FileIcon } from "@apexo/ui/file-icon"
 import { Icon } from "@apexo/ui/icon"
@@ -161,7 +162,9 @@ export function PromptInputV2(props: PromptInputV2Props) {
             spellcheck={state.mode === "normal"}
             // @ts-expect-error
             autocomplete="off"
-            class={"relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"}
+            class={
+              "relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
+            }
             classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
             onInput={(event) => {
               const cursor = promptInputV2Cursor(event.currentTarget)
@@ -172,7 +175,21 @@ export function PromptInputV2(props: PromptInputV2Props) {
             }}
             onKeyDown={(event) => {
               if (props.controller.onKeyDown(event)) return
-              if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+              const enter =
+                event.key === "Enter" && !event.isComposing && !event.ctrlKey && !event.metaKey
+                  ? enterAction({
+                      multiline: multiline(),
+                      shift: event.shiftKey,
+                      alt: event.altKey,
+                      empty: !props.controller.value(),
+                    })
+                  : "default"
+              if (enter === "newline") {
+                event.preventDefault()
+                document.execCommand("insertLineBreak")
+                return
+              }
+              if (enter === "send" || (event.key === "Enter" && !event.shiftKey && !event.isComposing)) {
                 event.preventDefault()
                 if (event.repeat) return
                 props.controller.submit(event)

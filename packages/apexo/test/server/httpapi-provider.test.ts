@@ -261,7 +261,7 @@ function setEnvScoped(key: string, value: string) {
 }
 
 describe("provider HttpApi", () => {
-  it.instance.skip(
+  it.instance(
     "returns public v2 provider not found errors",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory

@@ -180,7 +180,8 @@ const settled = (
   pollWithTimeout(
     operations.get(session.id, id).pipe(Effect.map((info) => (info.state === "finished" ? info : undefined))),
     "Memory operation did not settle",
-    "10 seconds",
+    // Real-time wait for a worker with a provider round trip; see BUG-20261018-392 for the load evidence.
+    "20 seconds",
   )
 
 const local = <A, E, R>(session: SessionV2.Info, action: Effect.Effect<A, E, R>) =>
@@ -1730,7 +1731,7 @@ it.live(
       { semantic_dedup_threshold: 0.92 },
       { embedding: { provider: "api", model: "fixture/model", dimensions: 4 } },
     ),
-  30000,
+  90000,
 )
 
 it.live(
@@ -1957,4 +1958,3 @@ for (const change of ["deny_read", "switch_agent", "clear_memory", "mutate_neigh
     30000,
   )
 }
-

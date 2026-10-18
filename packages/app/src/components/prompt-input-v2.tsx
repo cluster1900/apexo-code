@@ -6,6 +6,7 @@ import { SideQuestionButton, createSessionSideQuestion } from "./session-side-qu
 import { HooksButton, createSessionHooks } from "./session-hooks"
 import { FeedbackButton, createSessionFeedback } from "./session-feedback"
 import { GoalButton, createSessionGoal } from "./session-goal"
+import { useGrokCommands } from "./grok-commands"
 import { MemoryButton, createSessionMemory } from "./memory-browser"
 import { ImagePreview } from "@apexo/ui/image-preview"
 import { useDialog } from "@apexo/ui/context/dialog"
@@ -175,6 +176,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     },
   )
   const memory = createSessionMemory(() => props.controls.session.id)
+  const grok = useGrokCommands(() => props.controls.session.id)
   const goal = createSessionGoal(
     () => props.controls.session.id,
     () => {
@@ -322,6 +324,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     onBtw: sideQuestion.open,
     onWorkflow: workflow.open,
     onGoal: goal.show,
+    onGrokSlash: grok.submit,
     onMemoryCommand: memory.command,
     onRemember: memory.review,
     onMemoryWork: memory.work,
@@ -413,6 +416,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       .map((item) => ({
         id: item.id,
         trigger: item.slash!,
+        aliases: item.slashAliases?.join(" "),
         title: item.title,
         description: item.description,
         type: "builtin" as const,
@@ -424,6 +428,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       kind: "command",
       label: `/${item.trigger}`,
       trigger: item.trigger,
+      aliases: "aliases" in item ? item.aliases : undefined,
       title: item.title,
       description: item.description,
       keybind: command.keybindParts(item.id),

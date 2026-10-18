@@ -1,3 +1,4 @@
+import { useGrokCommands } from "../grok-commands"
 import { sideQuestionImages } from "../side-question-browser"
 import {
   BoxRenderable,
@@ -50,6 +51,7 @@ import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
+import { scrollback } from "../../context/scrollback"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
@@ -165,6 +167,7 @@ export function Prompt(props: PromptProps) {
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const history = usePromptHistory()
+  const grok = useGrokCommands()
   const stash = usePromptStash()
   const queue = usePromptQueue()
   const keymap = useApexoKeymap()
@@ -177,6 +180,7 @@ export function Prompt(props: PromptProps) {
   const dimensions = useTerminalDimensions()
   const { theme, syntax } = useTheme()
   const kv = useKV()
+  const [multiline] = kv.signal<boolean>("multiline", false)
   const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
   const list = createMemo(() => props.placeholders?.normal ?? [])
   const shell = createMemo(() => props.placeholders?.shell ?? [])
@@ -442,6 +446,7 @@ export function Prompt(props: PromptProps) {
         category: "Session",
         name: "prompt.editor",
         slashName: "editor",
+        slashAliases: ["edit-prompt"],
         run: async () => {
           dialog.clear()
 
@@ -651,7 +656,7 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || dialog.stack.length > 0) {
+    if (props.visible === false || dialog.stack.length > 0 || scrollback()) {
       if (input.focused) input.blur()
       return
     }
@@ -853,6 +858,24 @@ export function Prompt(props: PromptProps) {
             setStore("mode", "shell")
           },
         },
+      ],
+    }
+  })
+
+  // /multiline swaps the keys: Enter inserts a newline, Shift+Enter or Alt+Enter sends. An empty composer still
+  // sends on Enter so a queued follow-up can be force-sent mid-turn.
+  useBindings(() => {
+    const on = multiline() && inputTarget() !== undefined && !props.disabled && !auto()?.visible
+    const send = () => setTimeout(() => setTimeout(() => submit(), 0), 0)
+    return {
+      target: inputTarget,
+      enabled: on,
+      bindings: [
+        ...(store.prompt.input !== ""
+          ? [{ key: "return", desc: "Insert newline", group: "Prompt", cmd: () => input.insertText("\n") }]
+          : []),
+        { key: "shift+return", desc: "Send message", group: "Prompt", cmd: send },
+        { key: "meta+return", desc: "Send message", group: "Prompt", cmd: send },
       ],
     }
   })
@@ -1101,6 +1124,22 @@ export function Prompt(props: PromptProps) {
     if (trimmed === "exit" || trimmed === "quit" || trimmed === ":q") {
       void exit()
       return true
+    }
+    if (store.mode !== "shell" && !store.prompt.parts.length) {
+      const routed = grok.submit(trimmed)
+      if (routed.handled || routed.text !== undefined) {
+        history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+        if (routed.handled) {
+          input.extmarks.clear()
+          setStore("prompt", { input: "", parts: [] })
+          input.clear()
+          return true
+        }
+        // `/plan <description>` switches to the plan agent and sends the description as the prompt.
+        setStore("prompt", "input", routed.text!)
+        input.setText(routed.text!)
+        return submitInner(delivery)
+      }
     }
     const selectedModel = local.model.current()
     if (!selectedModel) {

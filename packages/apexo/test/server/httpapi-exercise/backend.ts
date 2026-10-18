@@ -19,14 +19,17 @@ export function call(scenario: ActiveScenario, ctx: SeededContext<unknown>, opti
 
 export function callAuthProbe(scenario: ActiveScenario, credentials: "missing" | "valid" = "missing") {
   return Effect.promise(async () => {
+    // The web handler builds its layers lazily on the first request. Give that first probe a cold-start
+    // budget instead of the 1s hang detector; otherwise the first auth scenario reports status 0 under load.
+    const cold = !authProbeWarm
+    authProbeWarm = true
+    const handler = app(await runtime(), { auth: { password: "secret" } })
     const controller = new AbortController()
     return Promise.race([
-      Promise.resolve(
-        app(await runtime(), { auth: { password: "secret" } }).request(
-          toAuthProbeRequest(scenario, credentials, controller.signal),
-        ),
-      ).then((response) => capture(response, scenario.capture)),
-      Bun.sleep(1_000).then(() => {
+      Promise.resolve(handler.request(toAuthProbeRequest(scenario, credentials, controller.signal))).then((response) =>
+        capture(response, scenario.capture),
+      ),
+      Bun.sleep(cold ? 30_000 : 1_000).then(() => {
         controller.abort("auth probe timed out")
         return {
           status: 0,
@@ -40,12 +43,15 @@ export function callAuthProbe(scenario: ActiveScenario, credentials: "missing" |
   })
 }
 
+let authProbeWarm = false
+
 type CachedApp = BackendApp & { readonly dispose: () => Promise<void> }
 
 const appCache: Partial<Record<string, CachedApp>> = {}
 
 export async function disposeApps() {
   const apps = Object.values(appCache)
+  authProbeWarm = false
   for (const key of Object.keys(appCache)) delete appCache[key]
   await Promise.all(apps.flatMap((app) => (app === undefined ? [] : [app.dispose()])))
 }

@@ -1,3 +1,4 @@
+import { VIM_SCROLL_EVENT } from "@/utils/vim-mode"
 import type { FilePart, Project, UserMessage, VcsFileDiff } from "@apexo/sdk/v2"
 import { getFilename } from "@apexo/core/util/path"
 import { useDialog } from "@apexo/ui/context/dialog"
@@ -809,6 +810,13 @@ export default function Page() {
     return list.filter((item) => item.top <= line).at(-1)?.id ?? list[0]?.id ?? store.messageId
   }
 
+  function navigateToMessage(messageID: string) {
+    const message = visibleUserMessages().find((item) => item.id === messageID)
+    if (!message) return
+    autoScroll.pause()
+    scrollToMessage(message, "auto")
+  }
+
   function navigateMessageByOffset(offset: number) {
     const msgs = visibleUserMessages()
     if (msgs.length === 0) return
@@ -889,6 +897,8 @@ export default function Page() {
 
     setUi("scrollGesture", Date.now())
   }
+
+  makeEventListener(window, VIM_SCROLL_EVENT, () => markScrollGesture(scroller))
 
   const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
 
@@ -1045,6 +1055,8 @@ export default function Page() {
   }
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    // /vim-mode handles its scrollback keys in the capture phase and marks them handled.
+    if (event.defaultPrevented) return
     const path = event.composedPath()
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
     const activeElement = deepActiveElement()
@@ -1140,6 +1152,7 @@ export default function Page() {
   useComposerCommands()
   useSessionCommands({
     navigateMessageByOffset,
+    navigateToMessage,
     setActiveMessage,
     focusInput,
     review: reviewTab,

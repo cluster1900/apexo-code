@@ -134,7 +134,7 @@ export function createPromptInputV2Controller(input: {
   const commandList = useFilteredList<PromptInputV2Suggestion>({
     items: () => input.commands(),
     key: (item) => item.id,
-    filterKeys: ["trigger", "title"],
+    filterKeys: ["trigger", "aliases", "title"],
   })
   const list = () => (state.popover.type === "context" ? contextList : commandList)
   const suggestions = () => list().flat()

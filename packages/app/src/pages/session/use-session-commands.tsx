@@ -12,7 +12,14 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
-import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
+import {
+  downloadSessionExport,
+  fetchSessionExport,
+  sessionExportFilename,
+  sessionTrace,
+  sessionTranscript,
+  sessionUsage,
+} from "@/utils/session-export"
 import { findLast } from "@apexo/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
@@ -21,9 +28,13 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { createSessionOwnership } from "./session-ownership"
 import { useLocal } from "@/context/local"
+import { useGrokCommands } from "@/components/grok-commands"
+import { vimKeydown } from "@/utils/vim-mode"
+import { makeEventListener } from "@solid-primitives/event-listener"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
+  navigateToMessage?: (messageID: string) => void
   setActiveMessage: (message: UserMessage | undefined) => void
   focusInput: () => void
   review?: () => boolean
@@ -54,6 +65,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const { params, sessionKey, tabs, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
   const sessionArchive = useSessionArchive()
+  const grok = useGrokCommands(() => params.id)
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = sessionOwnership.capture()
     const value = await load()
@@ -147,6 +159,81 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const sessionID = params.id
     if (sessionID) return permission.isAutoAccepting(sessionID, sdk().directory)
     return permission.isAutoAcceptingDirectory(sdk().directory)
+  }
+
+  const withExport = async (use: (data: Awaited<ReturnType<typeof fetchSessionExport>>) => unknown) => {
+    const sessionID = params.id
+    if (!sessionID) return
+    try {
+      await use(await fetchSessionExport({ sessionID, client: sdk().client }))
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  const copyTranscript = () =>
+    withExport(async (data) => {
+      await navigator.clipboard.writeText(sessionTranscript(data))
+      showToast({ variant: "success", icon: "circle-check", title: language.t("toast.session.copy.success") })
+    })
+
+  const copyLastMessage = () =>
+    withExport(async (data) => {
+      const last = findLast(data.messages, (item) => item.info.role === "assistant")
+      const text = (last?.parts ?? [])
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n")
+        .trim()
+      if (!text) {
+        showToast({ variant: "error", title: language.t("grok.vim.noMessage") })
+        return
+      }
+      await navigator.clipboard.writeText(text)
+      showToast({ variant: "success", icon: "circle-check", title: language.t("grok.vim.copied") })
+    })
+  // Capture phase: timeline/list handlers stop propagation of bare letter keys before they reach window.
+  makeEventListener(
+    window,
+    "keydown",
+    (event) => {
+      if (params.id)
+        vimKeydown(event, { message: () => void copyLastMessage(), transcript: () => void copyTranscript() })
+    },
+    { capture: true },
+  )
+
+  const showUsage = () =>
+    withExport((data) =>
+      openDialog(
+        () => import("@/components/dialog-session-usage"),
+        (x) => dialog.show(() => <x.DialogSessionUsage usage={sessionUsage(data)} />),
+      ),
+    )
+
+  const exportTrace = () =>
+    withExport((data) => {
+      const filename = sessionExportFilename(data.info).replace(/\.json$/, ".trace.json")
+      downloadSessionExport(filename, sessionTrace(data, "apexo-desktop"))
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("toast.session.export.success.title"),
+        description: language.t("toast.session.export.success.description", { filename }),
+      })
+    })
+
+  const openTimeline = () => {
+    const sessionID = params.id
+    const navigate = actions.navigateToMessage
+    if (!sessionID || !navigate) return
+    void openDialog(
+      () => import("@/components/dialog-timeline"),
+      (x) => dialog.show(() => <x.DialogTimeline sessionID={sessionID} onSelect={navigate} />),
+    )
   }
 
   const exportSession = async () => {
@@ -341,6 +428,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.new"),
       keybind: "mod+shift+s",
       slash: "new",
+      slashAliases: ["clear", "home", "welcome"],
       onSelect: (source) => {
         if (settings.general.newLayoutDesigns()) {
           command.trigger("tab.new", source)
@@ -354,6 +442,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.undo"),
       description: language.t("command.session.undo.description"),
       slash: "undo",
+      slashAliases: ["rewind"],
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: undo,
     }),
@@ -370,6 +459,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.compact"),
       description: language.t("command.session.compact.description"),
       slash: "compact",
+      slashAliases: ["summarize"],
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: compact,
     }),
@@ -388,6 +478,46 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "export",
       disabled: !params.id,
       onSelect: exportSession,
+    }),
+    sessionCommand({
+      id: "session.skills",
+      title: language.t("command.session.skills"),
+      slash: "skills",
+      disabled: !params.id,
+      // Seeds "/" so the slash menu, which lists skills alongside commands, opens in the composer.
+      onSelect: () => {
+        prompt.set([{ type: "text", content: "/", start: 0, end: 1 }], 1)
+        actions.focusInput()
+      },
+    }),
+    sessionCommand({
+      id: "session.copy",
+      title: language.t("command.session.copy"),
+      slash: "copy",
+      disabled: !params.id,
+      onSelect: () => void copyTranscript(),
+    }),
+    sessionCommand({
+      id: "session.timeline",
+      title: language.t("command.session.timeline"),
+      slash: "timeline",
+      disabled: !params.id || visibleUserMessages().length === 0 || !actions.navigateToMessage,
+      onSelect: openTimeline,
+    }),
+    sessionCommand({
+      id: "session.usage",
+      title: language.t("command.session.usage"),
+      slash: "usage",
+      slashAliases: ["cost"],
+      disabled: !params.id,
+      onSelect: () => void showUsage(),
+    }),
+    sessionCommand({
+      id: "session.trace",
+      title: language.t("command.session.trace"),
+      slash: "trace",
+      disabled: !params.id,
+      onSelect: () => void exportTrace(),
     }),
     sessionCommand({
       id: "session.archive",
@@ -410,6 +540,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("palette.search.placeholder"),
         keybind: "mod+p",
         slash: "open",
+        slashAliases: ["help"],
         onSelect: openFile,
       }),
       tab &&
@@ -453,6 +584,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "review.toggle",
       title: language.t("command.review.toggle"),
       keybind: "mod+shift+r",
+      slash: "diff",
       onSelect: () => view().reviewPanel.toggle(),
     }),
     ...(shown()
@@ -517,6 +649,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       description: language.t("command.mcp.toggle.description"),
       keybind: "mod+;",
       slash: "mcp",
+      slashAliases: ["mcps"],
       onSelect: chooseMcp,
     }),
   ]
@@ -528,6 +661,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         ? language.t("command.permissions.autoaccept.disable")
         : language.t("command.permissions.autoaccept.enable"),
       keybind: "mod+shift+a",
+      slash: "always-approve",
       disabled: false,
       onSelect: toggleAutoAccept,
     }),
@@ -553,6 +687,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   ]
 
   command.register("session", () => [
+    ...grok.commands(),
     ...sessionCmds(),
     ...fileCmds(),
     ...contextCmds(),

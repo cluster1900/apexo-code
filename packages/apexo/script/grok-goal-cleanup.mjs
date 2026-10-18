@@ -24,9 +24,14 @@ const create = async (session, tokenBudget) => {
   await runtime.api(`${root}/${info.id}/start`, { agent: "build", model: { providerID: "xai", id: "grok-4.7" } })
   return { session: owner, root, info, reports: `${root}/${info.id}/reports` }
 }
+let databaseFile
 const pending = async () => {
-  const files = await readdir(runtime.env.XDG_DATA_HOME, { recursive: true })
-  const file = files.find((file) => file.endsWith(".db"))
+  // Locate the database once: a recursive scan races with the cleanup it is observing (ENOENT on
+  // directories that are being deleted).
+  databaseFile ??= (await readdir(runtime.env.XDG_DATA_HOME, { recursive: true }).catch(() => [])).find((file) =>
+    file.endsWith(".db"),
+  )
+  const file = databaseFile
   assert.ok(file, "Expected fixture database")
   const database = new Database(join(runtime.env.XDG_DATA_HOME, file), { readonly: true })
   try {

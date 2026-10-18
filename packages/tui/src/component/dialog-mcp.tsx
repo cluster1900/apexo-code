@@ -8,6 +8,7 @@ import { McpBrowser, mcpActions } from "./mcp-browser"
 export function DialogMcp(props: {
   sessionID: () => string | undefined
   onAttach: (prepared: McpPreparedAttachment) => void
+  openPicker?: boolean
 }) {
   const sdk = useSDK()
   const theme = useTheme()
@@ -17,6 +18,7 @@ export function DialogMcp(props: {
     <McpBrowser
       actions={mcpActions(sdk.client, sdk.directory, props.sessionID)}
       onAttach={props.onAttach}
+      openPicker={props.openPicker}
       theme={() => ({
         text: theme.theme.text,
         muted: theme.theme.textMuted,

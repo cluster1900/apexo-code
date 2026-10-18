@@ -379,6 +379,10 @@ browse, download and manage Plugins
 
 Commands:
   apexo plugins list                    list available and installed plugins
+  apexo plugins sources                 list plugin sources (Grok Build: plugin marketplace list)
+  apexo plugins validate [path]         check a plugin folder or marketplace repository before
+                                        publishing
+  apexo plugins tag [path]              tag a release from the plugin manifest version
   apexo plugins details <id>            show plugin contents and source
   apexo plugins refresh [target]        refresh plugins
   apexo plugins add-source [target]     add-source plugins
@@ -388,7 +392,7 @@ Commands:
   apexo plugins update [target]         update plugins
   apexo plugins enable [target]         enable plugins
   apexo plugins disable [target]        disable plugins
-  apexo plugins uninstall [target]      uninstall plugins
+  apexo plugins uninstall [target]      uninstall plugins                      [aliases: rm, remove]
 
 Options:
   -h, --help        show help                                                              [boolean]

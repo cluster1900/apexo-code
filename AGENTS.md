@@ -13,6 +13,7 @@
   - `bun turbo typecheck --concurrency=2` (`typecheck.yml`)
   - `GITHUB_ACTIONS=false bun turbo test --concurrency=2` (`test.yml`)
   - `bun run check:generated` in `packages/client` (`test.yml`)
+  - `bun run check:generated` in `packages/sdk/js` (`test.yml`)
   - `bun run test:httpapi` in `packages/apexo` (`test.yml`)
 
 ## Branch Names

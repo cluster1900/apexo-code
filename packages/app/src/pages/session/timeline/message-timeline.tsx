@@ -54,6 +54,7 @@ import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { useCommand } from "@/context/command"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useSettings } from "@/context/settings"
@@ -686,6 +687,27 @@ export function MessageTimeline(props: {
       titleRef.select()
     })
   }
+
+  useCommand().register("session-rename", () => [
+    {
+      id: "session.rename",
+      title: language.t("command.session.rename"),
+      slash: "rename",
+      slashAliases: ["title"],
+      disabled: !sessionID() || !!parentID(),
+      onSelect: openTitleEditor,
+    },
+    {
+      id: "session.delete",
+      title: language.t("session.delete.title"),
+      slash: "delete",
+      disabled: !sessionID(),
+      onSelect: () => {
+        const id = sessionID()
+        if (id) dialog.show(() => <DialogDeleteSession sessionID={id} />)
+      },
+    },
+  ])
 
   const closeTitleEditor = () => {
     if (titleMutation.isPending) return

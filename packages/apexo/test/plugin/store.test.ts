@@ -85,6 +85,9 @@ test("browse, download, trust, enable, disable, update and uninstall share one d
     environment: { ROOT: enabled[0].root },
   })
   expect((await PluginStore.detail(f.store, id)).readme).toContain("# Example")
+  // Plain names resolve like Grok Build's `plugin details <name>`; unknown names keep the real message.
+  expect((await PluginStore.detail(f.store, "example")).item.id).toBe(id)
+  await expect(PluginStore.detail(f.store, "no-such-plugin")).rejects.toThrow("Plugin not found")
   await PluginStore.mutate(f.store, { action: "disable", id })
   expect(await PluginStore.active(f.store)).toEqual([])
   await Bun.write(path.join(f.plugin, "plugin.json"), JSON.stringify({ name: "example", version: "2.0" }))

@@ -207,7 +207,40 @@ describe("Instruction.resolve", () => {
     ),
   )
 
-  test.todo("fetches remote instructions from config URLs via HttpClient", () => {})
+  it.live("fetches remote instructions from config URLs via HttpClient", () =>
+    Effect.gen(function* () {
+      const server = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          Bun.serve({
+            port: 0,
+            fetch: (request) =>
+              new URL(request.url).pathname === "/rules.md"
+                ? new Response("# Remote Rules")
+                : new Response("missing", { status: 404 }),
+          }),
+        ),
+        (server) => Effect.promise(() => server.stop(true)),
+      )
+      const found = `http://127.0.0.1:${server.port}/rules.md`
+      const missing = `http://127.0.0.1:${server.port}/missing.md`
+      const home = yield* tmpdirScoped()
+      const project = yield* tmpdirScoped()
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        expect(yield* svc.system()).toEqual([`Instructions from: ${found}\n# Remote Rules`])
+      }).pipe(
+        provideInstance(project),
+        Effect.provide(
+          AppNodeBuilder.build(Instruction.node, [
+            [Config.node, TestConfig.layer({ get: () => Effect.succeed({ instructions: [found, missing] }) })],
+            [Global.node, Global.layerWith({ home, config: home })],
+            [RuntimeFlags.node, RuntimeFlags.layer({})],
+          ]),
+        ),
+      )
+    }),
+  )
 })
 
 describe("Instruction.system", () => {

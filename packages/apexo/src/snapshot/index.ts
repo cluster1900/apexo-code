@@ -477,7 +477,8 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 }
 
                 const tree = yield* git(
-                  [...core, ...args(["ls-tree", "--name-only", first.hash, "--", ...run.map((item) => item.rel)])],
+                  // core.quotepath=false: quoted non-ASCII names would miss `have` and delete existing files.
+                  [...quote, ...args(["ls-tree", "--name-only", first.hash, "--", ...run.map((item) => item.rel)])],
                   {
                     cwd: state.worktree,
                   },

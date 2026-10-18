@@ -72,11 +72,9 @@ try {
     await poll(() => plain().includes(`/${name}`), "command entered")
     child.terminal.write("\r")
   }
-  await open("goal TUI_GOAL complete the objective")
-  await rendered("Objective · Tab switches fields")
-  assert.equal(control.calls.length, 0)
+  // Like Grok Build, `/goal <objective>` starts immediately without a confirmation form.
   control.hold = Promise.withResolvers()
-  child.terminal.write("\r")
+  await open("goal TUI_GOAL complete the objective")
   await rendered("active · executing")
   const info = await runtime.api(root)
   assert.ok(info.launch.messageID)
@@ -84,7 +82,7 @@ try {
     (await runtime.api(`/session/${session.id}/message`)).filter((item) => item.info.role === "user").length,
     1,
   )
-  checks.push("empty-session-create-with-selected-model")
+  checks.push("inline-goal-starts-immediately-with-selected-model")
   child.terminal.write("\x1b[27u")
   await poll(() => plain().includes(fullscreen ? "0 running" : "ctrl+p cmd"), "Goal panel closed")
   assert.equal((await runtime.api(root)).status, "active")
