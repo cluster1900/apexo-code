@@ -16,7 +16,12 @@ export const ProjectCopyApi = HttpApi.make("projectCopyName").add(
         params: { projectID: ProjectV2.ID },
         query: WorkspaceRoutingQuery,
         payload: GenerateNamePayload,
-        success: Schema.Struct({ name: Schema.String }),
+        success: Schema.Struct({
+          name: Schema.String,
+          // Default parent for git_worktree copies (same place the TUI uses), so clients without filesystem
+          // access (Desktop) can ask the server to create the worktree.
+          directory: Schema.optional(Schema.String),
+        }),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "experimental.projectCopy.generateName",

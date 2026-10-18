@@ -1825,6 +1825,8 @@ export const dict = {
   "memory.operations.partial_publication":
     "The plan was partly published. Review an explicit clear instead of discarding it.",
   "memory.operations.scope_empty": "The selected scope has no Memory store to clear.",
+  "grok.move.new": "New worktree",
+  "grok.move.creating": "Creating worktree…",
   "grok.move": "Move session to another project directory",
   "grok.move.none": "No other directories are known for this project",
   "grok.move.failed": "Move failed",

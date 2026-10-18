@@ -12401,6 +12401,7 @@ export type ExperimentalProjectCopyGenerateNameResponses = {
    */
   200: {
     name: string
+    directory?: string
   }
 }
 

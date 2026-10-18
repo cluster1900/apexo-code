@@ -288,12 +288,47 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       .then((result) => result.data ?? [])
       .catch(() => [])
     const targets = listed.filter((item) => item.directory !== session.directory)
-    if (!targets.length) return info(language.t("grok.move.none"))
+    const NEW = "\u0000new"
+    // New worktree: the server names it and creates it in the same place as the TUI; Desktop never touches disk.
+    const createWorktree = async () => {
+      const context = [session.title].filter(Boolean).join("\n") || undefined
+      const named = await sdk()
+        .client.experimental.projectCopy.generateName({ projectID: session.projectID, context }, { throwOnError: true })
+        .then((result) => result.data)
+      if (!named?.directory) throw new Error("server did not return a worktree location")
+      const created = await sdk().client.v2.projectCopy.create(
+        {
+          projectID: session.projectID,
+          location: { directory: session.directory },
+          strategy: "git_worktree",
+          directory: named.directory,
+          name: named.name,
+        },
+        { throwOnError: true },
+      )
+      const directory = created.data?.directory
+      if (!directory) throw new Error("No project copy directory returned")
+      await sdk().client.path.get({ directory }, { throwOnError: true })
+      return directory
+    }
     dialog.show(() => (
       <DialogGrokList
         title={language.t("grok.move")}
-        items={targets.map((item) => ({ title: item.directory, value: item.directory, detail: item.strategy }))}
-        onSelect={async (target) => {
+        items={[
+          ...targets.map((item) => ({ title: item.directory, value: item.directory, detail: item.strategy })),
+          { title: language.t("grok.move.new"), value: NEW },
+        ]}
+        onSelect={async (picked) => {
+          const target = { value: picked.value }
+          if (picked.value === NEW) {
+            info(language.t("grok.move.creating"))
+            const created = await createWorktree().catch((error: unknown) => {
+              showToast({ title: language.t("grok.move.failed"), description: String(error) })
+              return undefined
+            })
+            if (!created) return
+            target.value = created
+          }
           const status = await sdk()
             .client.vcs.status({ directory: session.directory })
             .then((result) => result.data ?? [])

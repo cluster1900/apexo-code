@@ -1833,6 +1833,8 @@ export const dict = {
   "memory.operations.capture_active": "采集占用仍活跃或无法验证。清除不可用。",
   "memory.operations.partial_publication": "计划已部分发布。请审阅显式清除操作，而不要丢弃计划。",
   "memory.operations.scope_empty": "所选范围没有可清除的记忆存储。",
+  "grok.move.new": "新建工作树",
+  "grok.move.creating": "正在创建工作树…",
   "grok.move": "将会话移动到项目的其他目录",
   "grok.move.none": "此项目没有其他已知目录",
   "grok.move.failed": "移动失败",

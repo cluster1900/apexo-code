@@ -21,7 +21,8 @@ const importFlow = process.argv.includes("--import-claude")
 // --edit-prompt: checks the Desktop prompt editor dialog only.
 const editFlow = process.argv.includes("--edit-prompt")
 // --move: Desktop /move moves the session to another worktree of the project, optionally with its changes.
-const moveFlow = process.argv.includes("--move")
+const moveFlow = process.argv.includes("--move") || process.argv.includes("--move-new")
+const moveNew = process.argv.includes("--move-new")
 // --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
 const cycleFlow = process.argv.includes("--mode-cycle")
 const mod = process.platform === "darwin" ? "Meta" : "Control"
@@ -175,6 +176,33 @@ try {
     await step("Normal mode")
     await poll(async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "normal")
     checks.push("shift-tab-returns-to-normal")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (moveNew) {
+    const { join } = await import("node:path")
+    const { existsSync, writeFileSync } = await import("node:fs")
+    writeFileSync(join(runtime.directory, "dirty.txt"), "uncommitted\n")
+    const body = () => command("get", "text", "body")
+    await command("click", editor)
+    await command("keyboard", "type", "/move")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await poll(async () => (await body()).includes("New worktree"), "dialog offers a new worktree", 20_000)
+    await command("find", "text", "New worktree", "click")
+    await poll(async () => (await body()).includes("uncommitted change"), "asks about changes", 60_000)
+    await command("find", "text", "Yes, move the changes", "click")
+    let moved
+    await poll(async () => {
+      moved = (await runtime.api(`/session/${session.id}`)).directory
+      return moved !== runtime.directory
+    }, "session moved to the new worktree", 60_000)
+    const project = (await runtime.api(`/session/${session.id}`)).projectID
+    assert.ok(moved.startsWith(join(runtime.env.XDG_DATA_HOME, "apexo", "worktree", project.slice(0, 6))), `server-side location: ${moved}`)
+    checks.push("move-new-worktree-created-by-server-in-cli-location")
+    const listed = await runtime.api(`/project/${project}/directories`)
+    assert.ok(listed.some((item) => item.directory === moved), "new worktree is a known project directory")
+    checks.push("new-worktree-registered")
+    await poll(async () => existsSync(join(moved, "dirty.txt")), "changes moved along", 20_000)
+    checks.push("move-new-carries-changes")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (moveFlow) {
     const { dirname, join } = await import("node:path")

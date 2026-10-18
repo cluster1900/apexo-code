@@ -1580,6 +1580,8 @@ export const dict = {
   "memory.operations.capture_active": "擷取占用仍在使用中或無法驗證。無法清除。",
   "memory.operations.partial_publication": "計畫已部分發佈。請檢閱明確清除操作，而不要捨棄計畫。",
   "memory.operations.scope_empty": "所選範圍沒有可清除的記憶儲存區。",
+  "grok.move.new": "新增工作樹",
+  "grok.move.creating": "正在建立工作樹…",
   "grok.move": "將工作階段移到專案的其他目錄",
   "grok.move.none": "此專案沒有其他已知目錄",
   "grok.move.failed": "移動失敗",
