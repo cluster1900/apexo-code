@@ -108,6 +108,27 @@ export const autoReviewFixture = {
   },
 }
 
+// Shared by the CLI and Desktop --bash-prefix flows: bash asks, and "Allow always" saves a Grok Build scoped prefix.
+export const bashPrefixFixture = {
+  config: { permission: { "*": "allow", bash: "ask" } },
+  commands: {
+    PREFIX_FIRST: "git status",
+    PREFIX_AGAIN: "cd . && git status --short",
+    PREFIX_OTHER: "git log -1 --oneline",
+    PREFIX_RM: "rm -rf prefix-flow-dir",
+    PREFIX_RM_AGAIN: "rm -rf prefix-flow-other",
+  },
+  next: ({ text, finished, ancillary }) => {
+    if (ancillary) return
+    const key = Object.keys(bashPrefixFixture.commands)
+      .sort((a, b) => b.length - a.length)
+      .find((item) => text.includes(item))
+    if (!key) return
+    if (finished) return { content: `${key}_DONE` }
+    return { tool: "run_terminal_cmd", args: { command: bashPrefixFixture.commands[key], description: "prefix check" } }
+  },
+}
+
 // Shared by the CLI and Desktop /import-claude flows: a ~/.claude with every importable section.
 export async function seedClaude(runtime) {
   const { mkdir, writeFile } = await import("node:fs/promises")
