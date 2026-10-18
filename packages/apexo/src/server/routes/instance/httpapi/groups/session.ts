@@ -71,6 +71,8 @@ export const ShellPayload = Schema.Struct(Struct.omit(SessionPrompt.ShellInput.f
 export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput.fields, ["sessionID"]))
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
+  /** "always" only: one of the save sets offered in metadata.alwaysChoices (scope picker). */
+  always: Schema.optional(Schema.Array(Schema.String)),
 })
 
 export const SessionPaths = {

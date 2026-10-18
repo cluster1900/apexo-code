@@ -13,6 +13,8 @@ const root = "/permission"
 const ReplyPayload = Schema.Struct({
   reply: PermissionV1.Reply,
   message: Schema.optional(Schema.String),
+  /** "always" only: one of the save sets offered in metadata.alwaysChoices (scope picker). */
+  always: Schema.optional(Schema.Array(Schema.String)),
 })
 
 export const PermissionApi = HttpApi.make("permission")
