@@ -32,7 +32,7 @@ const windowModels = {
 }
 const { runtime, control } = await startGoalFixture(
   kind,
-  autoFlow
+  autoFlow || cycleFlow
     ? autoReviewFixture
     : vimConfig
       ? { config: { ui: { vim_mode: true } } }
@@ -144,9 +144,25 @@ try {
       await poll(async () => (await body()).includes(toast), toast)
       await command("wait", "300")
     }
+    const messages = async () => runtime.api(`/session/${session.id}/message`)
+    const agentOf = async (text) =>
+      (await messages()).find((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text))?.info.agent
+    const sendText = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "300")
+      await command("press", "Enter")
+      await poll(async () => (await agentOf(text)) !== undefined, `${text} sent`)
+      await poll(async () => (await messages()).at(-1)?.info.time?.completed, "turn finished", 30_000)
+    }
     await step("Plan mode")
-    checks.push("shift-tab-enters-plan")
+    await sendText("PLAN_MARK")
+    assert.equal(await agentOf("PLAN_MARK"), "plan", "Plan-mode prompt carries the plan agent")
+    checks.push("shift-tab-plan-prompt-uses-plan-agent")
     await step("Auto-review mode")
+    await sendText("BUILD_MARK")
+    assert.equal(await agentOf("BUILD_MARK"), "build", "leaving Plan restores the previous agent")
+    checks.push("leaving-plan-restores-agent")
     await poll(async () => /review[^}]*true/.test(await store()), "review on")
     checks.push("shift-tab-enters-auto-review")
     await step("Always-approve mode")

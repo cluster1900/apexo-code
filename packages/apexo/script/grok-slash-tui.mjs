@@ -21,7 +21,7 @@ const editFlow = process.argv.includes("--edit-prompt")
 const cycleFlow = process.argv.includes("--mode-cycle")
 const { runtime } = await startGoalFixture(
   "cli",
-  autoFlow
+  autoFlow || cycleFlow
     ? autoReviewFixture
     : vimConfig
       ? { config: { ui: { vim_mode: true } } }
@@ -103,29 +103,62 @@ try {
   }
 
   if (cycleFlow) {
-    const shiftTab = async (toast) => {
-      child.terminal.write("\x1b[Z")
-      await rendered(toast)
-      await Bun.sleep(300)
+    // Asserts real state: the agent recorded on the sent message and what the permission layer actually does.
+    const messages = async () => runtime.api(`/session/${session.id}/message`)
+    const pending = async () => runtime.api(`/permission`)
+    const completed = async (marker) =>
+      (await messages()).flatMap((item) => item.parts).filter(
+        (part) => part.type === "tool" && part.state.status === "completed" && JSON.stringify(part.state.input).includes(marker),
+      ).length
+    const idle = () => poll(async () => (await messages()).at(-1)?.info.time?.completed, "turn finished", 30_000)
+    const prompt = async (text) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+      await poll(async () => (await messages()).some((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text)), `${text} sent`)
     }
-    await shiftTab("Plan mode")
-    await rendered("Plan ")
-    checks.push("shift-tab-enters-plan")
-    await shiftTab("Auto-review mode")
-    await rendered("auto ·")
-    assert.ok(!plain().includes("Plan ·"))
-    checks.push("shift-tab-enters-auto-review-and-leaves-plan")
-    await shiftTab("Always-approve mode")
-    await rendered("always-approve ·")
-    checks.push("shift-tab-enters-always-approve")
-    await shiftTab("Normal mode")
-    await poll(() => !plain().includes("always-approve ·") && !plain().includes("auto ·"), "back to normal")
-    checks.push("shift-tab-returns-to-normal")
+    const agentOf = async (text) =>
+      (await messages()).find((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text))?.info.agent
+    const shiftTab = async () => {
+      child.terminal.write("\x1b[Z")
+      await Bun.sleep(600)
+    }
+    await shiftTab()
+    await prompt("PLAN_MARK")
+    assert.equal(await agentOf("PLAN_MARK"), "plan", "Plan-mode prompt carries the plan agent")
+    await idle()
+    checks.push("shift-tab-plan-prompt-uses-plan-agent")
+    await shiftTab()
+    const safe = await completed("git status")
+    await prompt("AUTO_SAFE one")
+    assert.equal(await agentOf("AUTO_SAFE one"), "build", "leaving Plan restores the previous agent")
+    await poll(async () => (await completed("git status")) > safe, "auto mode auto-approves safe command", 30_000)
+    await idle()
+    checks.push("shift-tab-auto-review-approves-safe-and-restores-agent")
+    await shiftTab()
+    await prompt("AUTO_RISKY one")
+    await poll(async () => (await completed("rm -rf auto-risky-dir")) > 0, "always-approve runs risky command", 30_000)
+    assert.equal((await pending()).length, 0)
+    await idle()
+    checks.push("shift-tab-always-approve-runs-risky-without-prompt")
+    await shiftTab()
+    await prompt("AUTO_SAFE two")
+    await poll(async () => (await pending()).length > 0, "normal mode asks again", 30_000)
+    checks.push("shift-tab-normal-asks-again")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await idle()
+    await Bun.sleep(500)
     child.terminal.write("\x0f")
-    await rendered("always-approve ·")
-    checks.push("ctrl-o-toggles-always-approve")
+    await Bun.sleep(600)
+    await prompt("AUTO_RISKY two")
+    await poll(async () => (await completed("rm -rf auto-risky-dir")) > 1, "ctrl+o always-approve", 30_000)
+    await idle()
+    checks.push("ctrl-o-enables-always-approve")
     child.terminal.write("\t")
-    await rendered("Plan ")
+    await Bun.sleep(600)
+    await prompt("TAB_MARK")
+    assert.equal(await agentOf("TAB_MARK"), "plan", "Tab still cycles agents")
     checks.push("tab-still-cycles-agents")
     console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
   } else if (editFlow) {
