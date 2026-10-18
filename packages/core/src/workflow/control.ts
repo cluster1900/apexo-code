@@ -19,6 +19,9 @@ import { LocationServiceMap } from "../location-service-map"
 import { WorkflowSources } from "./sources"
 import { WorkflowStore } from "./store"
 
+const RESUMABLE = new Set<Workflow.Info["status"]>(["paused", "budget_limited", "cancelled"])
+const RESUME_SETTLE_TIMEOUT = "5 seconds"
+
 const make = Effect.gen(function* () {
   const lifecycle = yield* SessionLifecycle.Service
   const tasks = yield* SessionManagedChild.Service
@@ -70,6 +73,22 @@ const make = Effect.gen(function* () {
           Effect.fail(new WorkflowStore.Failure({ code: "missing", message: "Session is being deleted" })),
         ),
       )
+  // The engine persists (and announces) a paused / budget-limited / cancelled outcome before its execution claim and
+  // the Session drain that ran it are released. A resume sent in that window must not see "still closing" or
+  // "already executing": wait, bounded, for that closing execution to settle before admitting the resume.
+  const settled = (sessionID: SessionID, id: Workflow.ID) =>
+    Effect.gen(function* () {
+      const state = yield* Effect.exit(store.read(sessionID, id))
+      if (state._tag === "Failure" || !RESUMABLE.has(state.value.info.status)) return
+      while (true) {
+        if ((yield* execution.active).has(sessionID)) {
+          yield* execution.wait(sessionID).pipe(Effect.ignore)
+          continue
+        }
+        if (!store.owns(id)) return
+        yield* Effect.sleep("10 millis")
+      }
+    }).pipe(Effect.timeout(RESUME_SETTLE_TIMEOUT), Effect.ignore)
   const schedule = (sessionID: SessionID) =>
     Effect.gen(function* () {
       const action = yield* lifecycle
@@ -221,16 +240,19 @@ const make = Effect.gen(function* () {
         ),
       ),
     resume: (sessionID: SessionID, id: Workflow.ID, budget?: number) =>
-      control(
-        admitted(
-          sessionID,
-          Effect.gen(function* () {
-            yield* store.checkResumeOwner(sessionID, id)
-            yield* eligible(sessionID)
-            const state = yield* store.resume(sessionID, id, budget)
-            yield* schedule(sessionID)
-            return store.info(state)
-          }),
+      Effect.andThen(
+        settled(sessionID, id),
+        control(
+          admitted(
+            sessionID,
+            Effect.gen(function* () {
+              yield* store.checkResumeOwner(sessionID, id)
+              yield* eligible(sessionID)
+              const state = yield* store.resume(sessionID, id, budget)
+              yield* schedule(sessionID)
+              return store.info(state)
+            }),
+          ),
         ),
       ),
     stop: (sessionID: SessionID, id: Workflow.ID, cancel = false) =>
