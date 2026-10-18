@@ -174,7 +174,8 @@ const TIPS: Tip[] = [
   (shortcuts) => `Use ${commandText("/models", shortcuts.modelList())} to switch between available AI models`,
   (shortcuts) => `Use ${commandText("/themes", shortcuts.themeList())} to switch between ${themeCount} built-in themes`,
   (shortcuts) => `Use ${commandText("/new", shortcuts.sessionNew())} to start a fresh conversation session`,
-  (shortcuts) => `Use ${commandText("/sessions", shortcuts.sessionList())} to list, pin, and continue sessions`,
+  (shortcuts) =>
+    `Use ${commandText("/resume", shortcuts.sessionList())} to list, pin, and continue sessions; /dashboard peeks and replies to live agents`,
   (shortcuts) => press(shortcuts.sessionPinToggle(), "in the session list to pin one at the top"),
   (shortcuts) =>
     shortcuts.sessionQuickSwitch1() && shortcuts.sessionQuickSwitch9()

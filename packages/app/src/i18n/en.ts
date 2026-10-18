@@ -1827,6 +1827,7 @@ export const dict = {
   "memory.operations.scope_empty": "The selected scope has no Memory store to clear.",
   "grok.move.new": "New worktree",
   "grok.move.creating": "Creating worktree…",
+  "grok.dashboard": "Agent dashboard",
   "grok.move": "Move session to another project directory",
   "grok.move.none": "No other directories are known for this project",
   "grok.move.failed": "Move failed",

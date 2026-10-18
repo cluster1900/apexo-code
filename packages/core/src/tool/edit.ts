@@ -15,6 +15,8 @@ import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
+import { LSP } from "../lsp"
+import { LspDiagnostics } from "../lsp-diagnostics"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -40,6 +42,8 @@ export const Input = Schema.Struct({
 export const Output = Schema.Struct({
   files: Schema.Array(FileDiff.Info),
   replacements: Schema.Number,
+  /** Grok Build `<lsp-diagnostics>` summary from running language servers, model-facing only. */
+  diagnostics: Schema.optional(Schema.String),
 })
 export type Output = typeof Output.Type
 
@@ -75,21 +79,25 @@ const previewLines = (value: string, prefix: "+" | "-") => {
 }
 
 export const toModelOutput = (output: Output, oldString: string, newString: string) =>
-  [
-    `Edited file successfully: ${output.files[0]?.file}`,
-    `Replacements: ${output.replacements}`,
-    "```diff",
-    ...previewLines(oldString, "-"),
-    ...previewLines(newString, "+"),
-    "```",
-  ].join("\n")
+  LspDiagnostics.withReminder(
+    [
+      `Edited file successfully: ${output.files[0]?.file}`,
+      `Replacements: ${output.replacements}`,
+      "```diff",
+      ...previewLines(oldString, "-"),
+      ...previewLines(newString, "+"),
+      "```",
+    ].join("\n"),
+    output.diagnostics,
+  )
 
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
 // TODO: Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.
-// TODO: Add formatter integration after V2 formatter runtime exists.
+// No formatter runs after native edits: Grok Build has none either (search_replace/apply_patch only notify LSP).
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
-// TODO: Add LSP notification and diagnostics after V2 LSP runtime exists.
+
+const withDiagnostics = (diagnostics: string | undefined) => (diagnostics ? { diagnostics } : {})
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -99,6 +107,7 @@ const layer = Layer.effectDiscard(
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
     const sandbox = yield* CommandSandbox.Service
+    const lsp = yield* LSP.Service
 
     yield* tools
       .register({
@@ -214,6 +223,7 @@ const layer = Layer.effectDiscard(
                     },
                   ],
                   replacements,
+                  ...withDiagnostics(yield* lsp.diagnose([{ file: target.canonical, text: next.text }])),
                 } satisfies Output
               })
             },
@@ -235,5 +245,6 @@ export const node = makeLocationNode({
     FSUtil.node,
     PermissionV2.node,
     CommandSandbox.node,
+    LSP.node,
   ],
 })

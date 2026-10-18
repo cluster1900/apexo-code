@@ -30,6 +30,7 @@ import { multiline, setMultiline } from "@apexo/session-ui/v2/prompt-input/multi
 import { setVimMode, vimMode } from "@/utils/vim-mode"
 import { applyCompactMode, compactMode, setCompactMode } from "@/utils/compact-mode"
 import { contextWindowChoice, setContextWindowChoice } from "@/utils/context-window"
+import { DialogAgentDashboard, useDashboardReplyPump } from "@/components/agent-dashboard"
 
 type Item<T> = { title: string; value: T; detail?: string }
 
@@ -135,6 +136,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
   const sync = useSync()
   const providers = useProviders(() => sdk().directory)
   const info = (description: string) => showToast({ title: description })
+  useDashboardReplyPump()
   const text = (title: string, lines: string[]) => dialog.show(() => <DialogGrokText title={title} lines={lines} />)
 
   const effort = (level = "") => {
@@ -547,6 +549,16 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       slash: "doctor",
       slashAliases: ["terminal-setup", "terminal-check", "terminal-info"],
       onSelect: () => void doctor(),
+    },
+    {
+      // Grok Build agent dashboard: live roster with peek/reply. `/sessions` is its alias there; `/resume` is the picker.
+      id: "grok.dashboard",
+      title: language.t("grok.dashboard"),
+      category: "Session",
+      slash: "dashboard",
+      slashAliases: ["agents-dashboard", "sessions"],
+      keybind: "ctrl+\\",
+      onSelect: () => dialog.show(() => <DialogAgentDashboard />),
     },
     {
       id: "grok.multiline",

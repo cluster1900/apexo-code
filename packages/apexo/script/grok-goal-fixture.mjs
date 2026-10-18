@@ -165,6 +165,62 @@ export async function importedClaude(runtime) {
   }
 }
 
+// Shared by the CLI and Desktop /dashboard flows: DASH_IDLE answers, DASH_PERM asks for bash permission, DASH_BUSY
+// holds its turn until `dashboardFixture.release()`, peek replies (DASH_REPLY) and dispatches (DASH_DISPATCH) ack.
+const dashboardGate = Promise.withResolvers()
+export const dashboardFixture = {
+  config: { permission: { "*": "allow", bash: "ask" } },
+  release: () => dashboardGate.resolve(),
+  next: async ({ text, finished, ancillary }) => {
+    if (ancillary) return
+    if (text.includes("DASH_REPLY")) return { content: `DASH_REPLY_ACK ${/DASH_REPLY (\w+)/.exec(text)?.[1] ?? ""}` }
+    if (text.includes("DASH_DISPATCH")) return { content: "DASH_DISPATCH_ACK" }
+    if (text.includes("DASH_BUSY")) {
+      await dashboardGate.promise
+      return { content: "DASH_BUSY_DONE" }
+    }
+    if (text.includes("DASH_PERM"))
+      return finished
+        ? { content: "DASH_PERM_DONE" }
+        : { tool: "run_terminal_cmd", args: { command: "echo dash-perm", description: "dashboard permission" } }
+    if (text.includes("DASH_IDLE")) return { content: "DASH_IDLE_ANSWER first line\nsecond line" }
+  },
+}
+
+/** Seeds the three roster states the dashboard flows assert on and returns their session ids. */
+export async function seedDashboard(runtime) {
+  const model = { providerID: "xai", id: "grok-4.7" }
+  const create = (title) => runtime.api("/session", { title, agent: "build", model })
+  const send = (id, text, endpoint = "message") =>
+    runtime.api(`/session/${id}/${endpoint}`, {
+      agent: "build",
+      model: { providerID: "xai", modelID: "grok-4.7" },
+      parts: [{ type: "text", text }],
+    })
+  const idle = await create("Dash idle")
+  await send(idle.id, "DASH_IDLE first")
+  const perm = await create("Dash perm")
+  // prompt_async: a held synchronous request would abort the turn when the fixture's request timeout fires.
+  await send(perm.id, "DASH_PERM go", "prompt_async")
+  const busy = await create("Dash busy")
+  await send(busy.id, "DASH_BUSY hold", "prompt_async")
+  const { poll } = await import("./grok-shell-fixture.mjs")
+  await poll(
+    async () => (await runtime.api("/permission")).some((item) => item.sessionID === perm.id),
+    "perm pending",
+    30_000,
+  )
+  await poll(async () => (await runtime.api("/session/status"))[busy.id]?.type === "busy", "busy running", 30_000)
+  return { idle: idle.id, perm: perm.id, busy: busy.id }
+}
+
+/** Text of every message in a session, for asserting what the server actually received and produced. */
+export async function dashboardTexts(runtime, id) {
+  return (await runtime.api(`/session/${id}/message`)).flatMap((item) =>
+    item.parts.filter((part) => part.type === "text").map((part) => `${item.info.role}:${part.text}`),
+  )
+}
+
 // Shared by the CLI and Desktop MCP flows: a real stdio MCP server ("linear") with deferred discovery (the default).
 // MCP_FLOW: search_tool → use_tool inline; MCP_FILE: use_tool with an invocation file written in the workspace.
 export function mcpFixture() {
