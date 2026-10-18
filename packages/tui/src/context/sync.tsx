@@ -713,6 +713,20 @@ export const {
             sdk.client.session.status({ workspace }).then((x) => {
               setStore("session_status", reconcile(x.data ?? {}))
             }),
+            // Requests raised before this client attached never arrive as events;
+            // seed them so a session (or the dashboard) can still answer them.
+            sdk.client.permission.list({ workspace }).then((x) => {
+              for (const request of x.data ?? [])
+                setStore("permission", request.sessionID, (items = []) =>
+                  items.some((item) => item.id === request.id) ? items : [...items, request],
+                )
+            }),
+            sdk.client.question.list({ workspace }).then((x) => {
+              for (const request of x.data ?? [])
+                setStore("question", request.sessionID, (items = []) =>
+                  items.some((item) => item.id === request.id) ? items : [...items, request],
+                )
+            }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),

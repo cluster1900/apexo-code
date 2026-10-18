@@ -897,8 +897,8 @@ export default function LegacyLayout(props: ParentProps) {
         id: "sessions.open",
         title: language.t("command.sessions.open"),
         category: language.t("command.category.session"),
-        slash: "sessions",
-        slashAliases: ["resume", "continue", "dashboard", "agents-dashboard"],
+        slash: "resume",
+        slashAliases: ["continue"],
         onSelect: () => layout.sidebar.open(),
       },
       {
