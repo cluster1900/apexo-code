@@ -1,4 +1,5 @@
 import { DialogWorkflow } from "../../component/dialog-workflow"
+import { canonicalToolInput, canonicalToolName } from "@apexo/core/util/grok-tool-display"
 import { DialogSideQuestion } from "../../component/dialog-side-question"
 import { DialogHooks } from "../../component/dialog-hooks"
 import { DialogFeedback } from "../../component/dialog-feedback"
@@ -1831,7 +1832,7 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
       return props.part.state.status === "pending" ? {} : (props.part.state.metadata ?? {})
     },
     get input() {
-      return props.part.state.input ?? {}
+      return canonicalToolInput(props.part.tool, props.part.state.input ?? {})
     },
     get output() {
       return props.part.state.status === "completed" ? props.part.state.output : undefined
@@ -2757,7 +2758,8 @@ const toolDisplays = new Set([
 ])
 
 export function toolDisplay(tool: string) {
-  return toolDisplays.has(tool) ? tool : "generic"
+  const name = canonicalToolName(tool)
+  return toolDisplays.has(name) ? name : "generic"
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

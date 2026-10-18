@@ -108,6 +108,35 @@ export const autoReviewFixture = {
   },
 }
 
+// Shared by the CLI and Desktop --edit-fuzzy flows: search_replace with a whitespace-drifted old_string
+// (applied by the line-trimmed strategy), then a miss that must carry the nearest-match hint.
+export const editFixture = {
+  file: "fuzzy.ts",
+  original: 'function greet() {\n    return "hi"   \n}\nconst greetingMessageValue = 1\n',
+  applied: 'function greet() {\n  return "FUZZY_APPLIED"\n}\nconst greetingMessageValue = 1\n',
+  next: ({ text, finished, ancillary }) => {
+    if (ancillary) return
+    if (text.includes("EDIT_FUZZY"))
+      return finished
+        ? { content: "EDIT_FUZZY_DONE" }
+        : {
+            tool: "search_replace",
+            args: {
+              file_path: editFixture.file,
+              old_string: 'function greet() {\n  return "hi"\n}',
+              new_string: 'function greet() {\n  return "FUZZY_APPLIED"\n}',
+            },
+          }
+    if (text.includes("EDIT_MISS"))
+      return finished
+        ? { content: "EDIT_MISS_DONE" }
+        : {
+            tool: "search_replace",
+            args: { file_path: editFixture.file, old_string: "const greetingMessageValue = 2", new_string: "x" },
+          }
+  },
+}
+
 // Shared by the CLI and Desktop --bash-prefix flows: bash asks, and "Allow always" saves a Grok Build scoped prefix.
 export const bashPrefixFixture = {
   config: { permission: { "*": "allow", bash: "ask" } },

@@ -11,6 +11,7 @@ import { FileDiff } from "@apexo/schema/file-diff"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Effect, Layer, Schema } from "effect"
 import { CommandSandbox } from "../command-sandbox"
+import { EditReplace } from "./edit-replace"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
@@ -60,17 +61,6 @@ const decodeUtf8 = (content: Uint8Array) => {
   return { bom, content, text: new TextDecoder().decode(bom ? content.slice(3) : content) }
 }
 
-const countOccurrences = (content: string, search: string) => {
-  if (search === "") return content.length + 1
-  let count = 0
-  let offset = 0
-  while ((offset = content.indexOf(search, offset)) !== -1) {
-    count++
-    offset += search.length
-  }
-  return count
-}
-
 const previewLines = (value: string, prefix: "+" | "-") => {
   const lines = normalizeLineEndings(value).split("\n")
   const shown = lines.slice(0, 6).map((line) => `${prefix}${line.length > 240 ? `${line.slice(0, 240)}...` : line}`)
@@ -91,8 +81,14 @@ export const toModelOutput = (output: Output, oldString: string, newString: stri
     output.diagnostics,
   )
 
+/**
+ * Matching: exact first, then the shared V1 fuzzy correction strategies
+ * (line-trimmed, block-anchor with similarity thresholds, whitespace and
+ * indentation correction, escape normalization, trimmed boundaries, context
+ * anchors) from ./edit-replace. Misses carry Grok Build's nearest-match and
+ * Unicode-typography guidance.
+ */
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
-// TODO: Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.
 // No formatter runs after native edits: Grok Build has none either (search_replace/apply_patch only notify LSP).
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
@@ -180,24 +176,16 @@ const layer = Layer.effectDiscard(
                 const ending = detectLineEnding(source.text)
                 const oldString = convertToLineEnding(input.oldString, ending)
                 const newString = convertToLineEnding(input.newString, ending)
-                const replacements = countOccurrences(source.text, oldString)
-                if (replacements === 0) {
-                  return yield* new ToolFailure({
-                    message:
-                      "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
-                  })
-                }
-                if (replacements > 1 && input.replaceAll !== true) {
-                  return yield* new ToolFailure({
-                    message:
-                      "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
-                  })
-                }
-
-                const replaced =
-                  input.replaceAll === true
-                    ? source.text.replaceAll(oldString, newString)
-                    : source.text.replace(oldString, newString)
+                const match = yield* Effect.try({
+                  try: () => EditReplace.replaceDetailed(source.text, oldString, newString, input.replaceAll === true),
+                  catch: (error) =>
+                    new ToolFailure({
+                      message:
+                        error instanceof Error ? error.message : `Unable to edit ${input.path ?? input.filePath}`,
+                    }),
+                })
+                const replacements = match.replacements
+                const replaced = match.content
                 const counts = diffLines(source.text, replaced).reduce(
                   (result, item) => ({
                     additions: result.additions + (item.added ? (item.count ?? 0) : 0),

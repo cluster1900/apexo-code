@@ -12,6 +12,7 @@ import {
   bashPrefixFixture,
   dashboardFixture,
   dashboardTexts,
+  editFixture,
   importedClaude,
   mcpFixture,
   runMcpFlow,
@@ -43,6 +44,8 @@ const prefixFlow = process.argv.includes("--bash-prefix")
 // --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
 const mcpFlow = process.argv.includes("--mcp")
 const mcpSetup = mcpFlow ? mcpFixture() : undefined
+// --edit-fuzzy: same model script as the CLI flow (search_replace with drifted whitespace, then a miss).
+const fuzzyFlow = process.argv.includes("--edit-fuzzy")
 const mod = process.platform === "darwin" ? "Meta" : "Control"
 const windowModels = {
   "grok-4.7": {
@@ -57,6 +60,8 @@ const { runtime, control } = await startGoalFixture(
     ? dashboardFixture
     : mcpFlow
     ? mcpSetup
+    : fuzzyFlow
+    ? editFixture
     : prefixFlow
     ? bashPrefixFixture
     : autoFlow || cycleFlow
@@ -446,6 +451,55 @@ try {
       "changes stayed",
     )
     checks.push("move-leaves-changes-when-asked")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (fuzzyFlow) {
+    const { readFile, writeFile } = await import("node:fs/promises")
+    const target = join(runtime.directory, editFixture.file)
+    await writeFile(target, editFixture.original)
+    const body = () => command("get", "text", "body")
+    const messages = async () => runtime.api(`/session/${session.id}/message`)
+    const tool = async (marker) =>
+      (await messages())
+        .flatMap((item) => item.parts)
+        .find((part) => part.type === "tool" && JSON.stringify(part.state.input ?? {}).includes(marker))
+    const send = async (text, done) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "300")
+      await command("press", "Enter")
+      await poll(async () => (await body()).includes(done), done, 30_000)
+    }
+    await send("EDIT_FUZZY run", "EDIT_FUZZY_DONE")
+    assert.equal(await readFile(target, "utf8"), editFixture.applied)
+    assert.equal((await tool("FUZZY_APPLIED"))?.state.status, "completed")
+    await poll(async () => {
+      const row = JSON.parse(
+        await command("eval", `document.querySelector('[data-component="edit-tool"]')?.textContent ?? ""`),
+      )
+      return row.includes("fuzzy.ts") && row.includes("+1") && row.includes("-1")
+    }, "edit row renders file and diff counts")
+    checks.push("fuzzy-search-replace-applies-and-renders-diff")
+    await send("EDIT_MISS run", "EDIT_MISS_DONE")
+    const miss = await tool("greetingMessageValue = 2")
+    assert.equal(miss?.state.status, "error")
+    assert.match(miss.state.error, /Nearest match: line 4: const greetingMessageValue = 1/)
+    assert.equal(await readFile(target, "utf8"), editFixture.applied)
+    // The failed edit renders as an Edit error card (same title as the CLI row); opening it shows the full hint.
+    await poll(async () => (await body()).includes("EDIT_MISS_DONE"), "miss turn rendered")
+    const titles = JSON.parse(
+      await command(
+        "eval",
+        `[...document.querySelectorAll('[data-kind="tool-error-card"] [data-slot="basic-tool-tool-title"]')].map((e) => e.textContent)`,
+      ),
+    )
+    assert.deepEqual(titles, ["Edit"])
+    await command("click", '[data-kind="tool-error-card"] [data-component="tool-trigger"]')
+    await poll(
+      async () => /Nearest match: line 4: const greetingMessageValue = 1/.test(await body()),
+      "miss hint rendered",
+      15_000,
+    )
+    checks.push("miss-renders-nearest-match-hint-and-keeps-file")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (editFlow) {
     const area = '[data-component="grok-edit-prompt"]'

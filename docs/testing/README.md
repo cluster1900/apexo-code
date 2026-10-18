@@ -6,6 +6,8 @@ Each record must include: a stable ID, affected scope, observed vs. expected beh
 
 | Category       | Record                                                                                          | Status                        | Verified Occurrences |
 | -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- | -------------------- |
+| UI | [Grok tool name rendering parity](ui/grok-tool-name-rendering.md) | Fixed; CLI and Desktop --edit-fuzzy 2/2 each, shell/slash regressions and mapping4/4 pass | 1 confirmed defect |
+| Runtime | [Edit newString replacement patterns](runtime/edit-replacement-patterns.md) | Fixed; shared engine16/16, native edit1/1, compatibility edit29/29 and types pass | 1 confirmed defect |
 | Runtime | [Native batch Dream automatic admission binding](runtime/native-batch-dream-trigger.md) | Corrected; final affected57/279 pass; final UI/types separate | 1 observed draft defect |
 | Runtime | [Native batch read pagination](runtime/native-batch-pagination.md) | Both before probes fail; corrected2/4 and aggregate57/279 pass | 1 review episode, two distinct mechanisms |
 | Permissions | [TUI attach misses pending requests](permissions/attach-pending-requests.md) | Fixed; CLI dashboard flow 12/12 | 1 observed episode |

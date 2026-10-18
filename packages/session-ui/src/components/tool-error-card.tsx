@@ -57,6 +57,17 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
       patch: "ui.tool.patch",
       apply_patch: "ui.tool.patch",
       question: "ui.tool.questions",
+      edit: "ui.messagePart.title.edit",
+      write: "ui.messagePart.title.write",
+      // Grok Build tool names share the Apexo titles (the CLI TUI renders them as the same tools).
+      search_replace: "ui.messagePart.title.edit",
+      run_terminal_cmd: "ui.tool.shell",
+      run_terminal_command: "ui.tool.shell",
+      read_file: "ui.tool.read",
+      list_dir: "ui.tool.list",
+      web_fetch: "ui.tool.webfetch",
+      spawn_subagent: "ui.tool.task",
+      ask_user_question: "ui.tool.questions",
     }
     const key = map[split.tool]
     if (!key) return split.tool
@@ -71,20 +82,23 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     return value
   })
 
+  // "Kind: details" errors show the kind as the subtitle. A multi-sentence message (for example edit misses that
+  // contain "Nearest match: line N: ...") is shown whole so its own colons are not mistaken for that split.
+  const errorKind = createMemo(() => {
+    const parts = tail().split(": ")
+    const head = (parts[0] ?? "").trim()
+    if (parts.length <= 1 || !head || head.length > 60 || /[.!?]\s/.test(head)) return undefined
+    return { head, rest: parts.slice(1).join(": ").trim() }
+  })
+
   const subtitle = createMemo(() => {
     if (split.subtitle) return split.subtitle
-    const parts = tail().split(": ")
-    if (parts.length <= 1) return i18n.t("ui.toolErrorCard.failed")
-    const head = (parts[0] ?? "").trim()
+    const head = errorKind()?.head
     if (!head) return i18n.t("ui.toolErrorCard.failed")
     return head[0] ? head[0].toUpperCase() + head.slice(1) : i18n.t("ui.toolErrorCard.failed")
   })
 
-  const body = createMemo(() => {
-    const parts = tail().split(": ")
-    if (parts.length <= 1) return cleaned()
-    return parts.slice(1).join(": ").trim() || cleaned()
-  })
+  const body = createMemo(() => errorKind()?.rest || cleaned())
 
   const copy = async () => {
     const text = cleaned()

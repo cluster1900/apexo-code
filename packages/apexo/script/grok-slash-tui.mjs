@@ -10,6 +10,7 @@ import {
   bashPrefixFixture,
   dashboardFixture,
   dashboardTexts,
+  editFixture,
   importedClaude,
   mcpFixture,
   runMcpFlow,
@@ -37,12 +38,16 @@ const prefixFlow = process.argv.includes("--bash-prefix")
 // --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
 const mcpFlow = process.argv.includes("--mcp")
 const mcpSetup = mcpFlow ? mcpFixture() : undefined
+// --edit-fuzzy: the model sends search_replace with drifted whitespace, then a miss; checks the edit and the hint.
+const fuzzyFlow = process.argv.includes("--edit-fuzzy")
 const { runtime } = await startGoalFixture(
   "cli",
   dashFlow
     ? dashboardFixture
     : mcpFlow
     ? mcpSetup
+    : fuzzyFlow
+    ? editFixture
     : prefixFlow
     ? bashPrefixFixture
     : autoFlow || cycleFlow
@@ -329,6 +334,41 @@ try {
     await prompt("TAB_MARK")
     assert.equal(await agentOf("TAB_MARK"), "plan", "Tab still cycles agents")
     checks.push("tab-still-cycles-agents")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (fuzzyFlow) {
+    const { readFile } = await import("node:fs/promises")
+    const target = join(runtime.directory, editFixture.file)
+    await writeFile(target, editFixture.original)
+    const messages = async () => runtime.api(`/session/${session.id}/message`)
+    const tool = async (marker) =>
+      (await messages())
+        .flatMap((item) => item.parts)
+        .find((part) => part.type === "tool" && JSON.stringify(part.state.input ?? {}).includes(marker))
+    const prompt = async (text, done) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+      await rendered(done, 30_000)
+    }
+    await prompt("EDIT_FUZZY run", "EDIT_FUZZY_DONE")
+    assert.equal(await readFile(target, "utf8"), editFixture.applied)
+    assert.equal((await tool("FUZZY_APPLIED"))?.state.status, "completed")
+    await poll(() => /\+\s+return "FUZZY_APPLIED"/.test(plain()) && /-\s+return "hi"/.test(plain()), "diff rendered")
+    checks.push("fuzzy-search-replace-applies-and-renders-diff")
+    await prompt("EDIT_MISS run", "EDIT_MISS_DONE")
+    const miss = await tool("greetingMessageValue = 2")
+    assert.equal(miss?.state.status, "error")
+    assert.match(miss.state.error, /Nearest match: line 4: const greetingMessageValue = 1/)
+    assert.equal(await readFile(target, "utf8"), editFixture.applied)
+    // A failed row expands its error on click (same as every TUI tool row).
+    const lines = plain().split("\n")
+    const row = lines.findLastIndex((line) => line.includes("Edit fuzzy.ts"))
+    assert.ok(row >= 0, "failed edit row rendered")
+    const col = lines[row].indexOf("Edit fuzzy.ts") + 2
+    child.terminal.write(`\x1b[<0;${col};${row + 1}M\x1b[<0;${col};${row + 1}m`)
+    await poll(() => /Nearest match: line 4/.test(plain()), "miss hint rendered", 15_000)
+    checks.push("miss-renders-nearest-match-hint-and-keeps-file")
     console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
   } else if (editFlow) {
     child.terminal.write("DRAFT_TUI")
