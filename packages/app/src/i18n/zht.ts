@@ -1580,6 +1580,8 @@ export const dict = {
   "memory.operations.capture_active": "擷取占用仍在使用中或無法驗證。無法清除。",
   "memory.operations.partial_publication": "計畫已部分發佈。請檢閱明確清除操作，而不要捨棄計畫。",
   "memory.operations.scope_empty": "所選範圍沒有可清除的記憶儲存區。",
+  "grok.editPrompt": "編輯提示詞",
+  "grok.editPrompt.hint": "Ctrl/⌘+Enter 儲存並取代草稿 · Esc 取消",
   "grok.importClaude": "匯入 Claude 設定",
   "grok.importClaude.failed": "讀取 Claude 設定失敗",
   "grok.importClaude.none": "未在 ~/.claude 中找到 Claude 設定",

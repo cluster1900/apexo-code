@@ -1,4 +1,5 @@
 import { For, type Accessor } from "solid-js"
+import { Button } from "@apexo/ui/button"
 import type { TextPart } from "@apexo/sdk/v2/client"
 import {
   contextUsage,
@@ -57,6 +58,52 @@ export function DialogGrokList<T>(props: { title: string; items: Item<T>[]; onSe
           </div>
         )}
       </List>
+    </Dialog>
+  )
+}
+
+// Desktop `/edit-prompt`: Grok Build opens the draft in $VISUAL/$EDITOR; a browser cannot spawn a terminal editor, so
+// Desktop opens the draft in a full editor dialog. Saving replaces the draft; cancelling (Esc) keeps it unchanged.
+export function DialogEditPrompt(props: { value: string; onSave: (value: string) => void }) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  let area: HTMLTextAreaElement | undefined
+  const save = () => {
+    props.onSave(area?.value ?? props.value)
+    dialog.close()
+  }
+  return (
+    <Dialog title={language.t("grok.editPrompt")} size="large">
+      <div class="px-4 pb-4 flex flex-col gap-3 min-h-0">
+        <textarea
+          ref={(element) => {
+            area = element
+            requestAnimationFrame(() => {
+              element.focus()
+              element.setSelectionRange(element.value.length, element.value.length)
+            })
+          }}
+          data-component="grok-edit-prompt"
+          class="w-full min-h-[50vh] rounded-md border border-border-base bg-background-base p-3 font-mono text-14-regular resize-y outline-none"
+          value={props.value}
+          spellcheck={false}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault()
+              save()
+            }
+          }}
+        />
+        <div class="flex justify-end gap-2">
+          <span class="text-text-weak text-12-regular self-center flex-1">{language.t("grok.editPrompt.hint")}</span>
+          <Button variant="ghost" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button variant="primary" data-action="grok-edit-prompt-save" onClick={save}>
+            {language.t("common.save")}
+          </Button>
+        </div>
+      </div>
     </Dialog>
   )
 }
@@ -228,6 +275,21 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
         />
       ))
     show()
+  }
+
+  const editPrompt = () => {
+    const parts = prompt.current()
+    const text = parts.flatMap((part) => (part.type === "text" ? [part.content] : [])).join("")
+    const others = parts.filter((part) => part.type !== "text")
+    dialog.show(() => (
+      <DialogEditPrompt
+        value={text}
+        onSave={(value) => {
+          const next = [{ type: "text" as const, content: value, start: 0, end: value.length }, ...others]
+          prompt.set(next as typeof parts, value.length)
+        }}
+      />
+    ))
   }
 
   const context = () => {
@@ -418,6 +480,13 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
         applyCompactMode(sync().data.config)
         info(language.t(next ? "grok.compact.enabled" : "grok.compact.disabled"))
       },
+    },
+    {
+      id: "grok.edit-prompt",
+      title: language.t("grok.editPrompt"),
+      category: "Prompt",
+      slash: "edit-prompt",
+      onSelect: editPrompt,
     },
     {
       id: "grok.import-claude",

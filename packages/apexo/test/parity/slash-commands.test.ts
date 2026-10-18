@@ -10,7 +10,6 @@ const packages = path.resolve(import.meta.dir, "../../..")
 const cliOnly: Record<string, string> = {
   editor: "opens $EDITOR for the prompt inside the terminal",
   q: "terminal shorthand for exit",
-  "edit-prompt": "alias of editor ($EDITOR inside the terminal)",
   warp: "experimental-workspaces flag only; changes the attached TUI workspace",
   move: "copies a session into another project directory; Desktop dialog not ported yet",
   slash: "TUI-internal slash palette",
@@ -81,7 +80,6 @@ const grokBuild = (
 // /logout removes stored provider credentials through the existing auth API (same as `apexo auth logout`); neither
 // replicates Grok Build's xAI account login.
 const grokSurfaceOnly: Record<string, string> = {
-  "edit-prompt": "CLI only: opens $EDITOR for the prompt; the Desktop prompt is already a full editor",
   minimal: "terminal inline vs alt-screen switch; chosen at launch with --fullscreen, cannot change at runtime",
   fullscreen: "same as minimal",
   full: "alias of fullscreen",

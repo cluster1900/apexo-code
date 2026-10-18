@@ -18,6 +18,9 @@ const windowFlow = process.argv.includes("--context-window")
 const autoFlow = process.argv.includes("--auto")
 // --import-claude: a seeded ~/.claude; checks the import modal and the written config and hooks.
 const importFlow = process.argv.includes("--import-claude")
+// --edit-prompt: checks the Desktop prompt editor dialog only.
+const editFlow = process.argv.includes("--edit-prompt")
+const mod = process.platform === "darwin" ? "Meta" : "Control"
 const windowModels = {
   "grok-4.7": {
     name: "Restart parity",
@@ -128,7 +131,55 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (importFlow) {
+  if (editFlow) {
+    const area = '[data-component="grok-edit-prompt"]'
+    const value = async () => JSON.parse(await command("eval", `document.querySelector('${area}')?.value ?? null`))
+    const draft = async () => (await command("get", "text", editor)).trim()
+    await command("click", editor)
+    await command("keyboard", "type", "DRAFT_ONE")
+    await command("press", `${mod}+Shift+p`)
+    await command("wait", "400")
+    await command("keyboard", "type", "Edit prompt")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await command("wait", area)
+    assert.equal(await value(), "DRAFT_ONE")
+    checks.push("palette-opens-editor-with-draft")
+    await command(
+      "eval",
+      `(() => { const a = document.querySelector('${area}'); a.value = 'EDITED_ONE line'; a.dispatchEvent(new Event('input', { bubbles: true })) })()`,
+    )
+    await command("click", '[data-action="grok-edit-prompt-save"]')
+    await poll(
+      async () => (await draft()).includes("EDITED_ONE line") && !(await draft()).includes("DRAFT_ONE"),
+      "saved replaces",
+    )
+    checks.push("save-replaces-draft")
+    await command("press", `${mod}+Shift+p`)
+    await command("wait", "400")
+    await command("keyboard", "type", "Edit prompt")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await command("wait", area)
+    await command("eval", `document.querySelector('${area}').value = 'DISCARDED'`)
+    await command("press", "Escape")
+    await command("wait", "400")
+    assert.equal(await value(), null)
+    assert.ok((await draft()).includes("EDITED_ONE line"))
+    checks.push("escape-keeps-draft")
+    await command("click", editor)
+    await command("press", `${mod}+a`)
+    await command("press", "Backspace")
+    await command("keyboard", "type", "/edit-prompt")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await command("wait", area)
+    await command("keyboard", "type", "FROM_SLASH")
+    await command("press", `${mod}+Enter`)
+    await poll(async () => (await draft()).includes("FROM_SLASH"), "slash + mod+enter save")
+    checks.push("slash-opens-editor-and-mod-enter-saves")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (importFlow) {
     await seedClaude(runtime)
     const body = () => command("get", "text", "body")
     const slash = async (text) => {

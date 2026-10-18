@@ -1833,6 +1833,8 @@ export const dict = {
   "memory.operations.capture_active": "采集占用仍活跃或无法验证。清除不可用。",
   "memory.operations.partial_publication": "计划已部分发布。请审阅显式清除操作，而不要丢弃计划。",
   "memory.operations.scope_empty": "所选范围没有可清除的记忆存储。",
+  "grok.editPrompt": "编辑提示词",
+  "grok.editPrompt.hint": "Ctrl/⌘+Enter 保存并替换草稿 · Esc 取消",
   "grok.importClaude": "导入 Claude 设置",
   "grok.importClaude.failed": "读取 Claude 设置失败",
   "grok.importClaude.none": "未在 ~/.claude 中找到 Claude 设置",

@@ -1825,6 +1825,8 @@ export const dict = {
   "memory.operations.partial_publication":
     "The plan was partly published. Review an explicit clear instead of discarding it.",
   "memory.operations.scope_empty": "The selected scope has no Memory store to clear.",
+  "grok.editPrompt": "Edit prompt",
+  "grok.editPrompt.hint": "Ctrl/⌘+Enter saves and replaces the draft · Esc cancels",
   "grok.importClaude": "Import Claude settings",
   "grok.importClaude.failed": "Failed to read Claude settings",
   "grok.importClaude.none": "No Claude settings found in ~/.claude",

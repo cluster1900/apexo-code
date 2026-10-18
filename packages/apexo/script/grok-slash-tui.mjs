@@ -15,6 +15,8 @@ const windowFlow = process.argv.includes("--context-window")
 const autoFlow = process.argv.includes("--auto")
 // --import-claude: a seeded ~/.claude; checks the import modal and the written config.
 const importFlow = process.argv.includes("--import-claude")
+// --edit-prompt: a scripted $EDITOR; checks /edit-prompt and the palette entry.
+const editFlow = process.argv.includes("--edit-prompt")
 const { runtime } = await startGoalFixture(
   "cli",
   autoFlow
@@ -49,6 +51,12 @@ try {
     model: { providerID: "xai", modelID: "grok-4.7" },
     parts: [{ type: "text", text: "SLASH_HELLO first prompt" }],
   })
+  if (editFlow) {
+    const { chmod } = await import("node:fs/promises")
+    const script = join(runtime.output, "editor.sh")
+    await writeFile(script, `#!/bin/sh\nprintf '%s EDITED_TUI' "$(cat "$1")" > "$1"\n`)
+    await chmod(script, 0o755)
+  }
   const decoder = new TextDecoder()
   child = Bun.spawn(
     [
@@ -62,7 +70,12 @@ try {
       session.id,
     ],
     {
-      env: { ...runtime.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+      env: {
+        ...runtime.env,
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        ...(editFlow ? { VISUAL: "", EDITOR: join(runtime.output, "editor.sh") } : {}),
+      },
       terminal: {
         cols: 120,
         rows: 40,
@@ -87,7 +100,23 @@ try {
     await Bun.sleep(300)
   }
 
-  if (importFlow) {
+  if (editFlow) {
+    child.terminal.write("DRAFT_TUI")
+    await rendered("DRAFT_TUI")
+    child.terminal.write("\x10")
+    await rendered("Commands")
+    child.terminal.write("Open editor")
+    await Bun.sleep(400)
+    child.terminal.write("\r")
+    await rendered("DRAFT_TUI EDITED_TUI", 15_000)
+    checks.push("palette-entry-edits-draft-in-editor")
+    for (let index = 0; index < 25; index++) child.terminal.write("\x7f")
+    await poll(() => !plain().includes("EDITED_TUI"), "draft cleared")
+    await run("edit-prompt")
+    await poll(() => plain().includes(" EDITED_TUI") && !plain().includes("DRAFT_TUI"), "slash opens editor", 15_000)
+    checks.push("slash-opens-editor-and-saving-replaces-draft")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (importFlow) {
     await seedClaude(runtime)
     await run("import-claude")
     await rendered("Import Claude settings")
