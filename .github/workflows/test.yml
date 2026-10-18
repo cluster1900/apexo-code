@@ -103,13 +103,21 @@ jobs:
         run: bun run check:generated
 
   httpapi:
-    name: httpapi (${{ matrix.mode }})
+    name: httpapi (${{ matrix.mode }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        mode: [coverage, auth, effect]
+        # effect mode runs ~346 live scenarios serially (~15 min), so it is split
+        # into 4 interleaved shards; coverage/auth are fast and run whole.
+        include:
+          - mode: coverage
+          - mode: auth
+          - { mode: effect, shard: 1/4 }
+          - { mode: effect, shard: 2/4 }
+          - { mode: effect, shard: 3/4 }
+          - { mode: effect, shard: 4/4 }
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -123,9 +131,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
 
       # Same flags as `bun run test:httpapi`, one mode per job.
-      - name: Run HttpApi exerciser (${{ matrix.mode }})
+      - name: Run HttpApi exerciser
         working-directory: packages/apexo
-        run: bun run script/httpapi-exercise.ts --mode ${{ matrix.mode }} --fail-on-missing --fail-on-skip
+        env:
+          SHARD_ARGS: ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }}
+        run: bun run script/httpapi-exercise.ts --mode ${{ matrix.mode }} --fail-on-missing --fail-on-skip $SHARD_ARGS
 
   # Required status check on main. Aggregates every test job above.
   unit:

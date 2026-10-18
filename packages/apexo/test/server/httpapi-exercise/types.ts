@@ -29,6 +29,8 @@ export type Options = {
   failOnSkip: boolean
   scenarioTimeout: Duration.Duration
   progress: boolean
+  /** Run only every n-th selected scenario: `{ index: 0-based, total }`. */
+  shard?: { index: number; total: number }
   trace: boolean
 }
 
