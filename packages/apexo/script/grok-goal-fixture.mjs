@@ -8,6 +8,7 @@ export async function startGoalFixture(kind, options = {}) {
   const control = { hold: undefined, calls: [], reject: options.reject ?? 0, plan, progressNote }
   const runtime = await startShellFixture(kind, {
     goalReports: true,
+    git: options.git,
     config: options.config,
     models: options.models,
     next: async (request) => {

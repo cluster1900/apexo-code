@@ -27,6 +27,15 @@ export async function startShellFixture(kind, options = {}) {
   const output = await mkdtemp(join(tmpdir(), `apexo-shell-${kind}-`))
   await mkdir(join(output, "workspace"))
   const directory = await realpath(join(output, "workspace"))
+  // options.git: make the workspace a git repo with one commit and a second worktree (for /move flows).
+  if (options.git) {
+    const git = (...args) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: directory })
+    await writeFile(join(directory, "README.md"), "move fixture\n")
+    git("init", "-q", "-b", "main")
+    git("add", ".")
+    git("commit", "-qm", "init")
+    git("worktree", "add", "-q", join(output, "worktree-b"), "-b", "b")
+  }
   const calls = []
   const reports = new Map()
   const fixture = createServer(async (request, response) => {

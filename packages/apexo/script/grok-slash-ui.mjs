@@ -20,6 +20,8 @@ const autoFlow = process.argv.includes("--auto")
 const importFlow = process.argv.includes("--import-claude")
 // --edit-prompt: checks the Desktop prompt editor dialog only.
 const editFlow = process.argv.includes("--edit-prompt")
+// --move: Desktop /move moves the session to another worktree of the project, optionally with its changes.
+const moveFlow = process.argv.includes("--move")
 // --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
 const cycleFlow = process.argv.includes("--mode-cycle")
 const mod = process.platform === "darwin" ? "Meta" : "Control"
@@ -38,7 +40,9 @@ const { runtime, control } = await startGoalFixture(
       ? { config: { ui: { vim_mode: true } } }
       : windowFlow
         ? { models: windowModels }
-        : {},
+        : moveFlow
+          ? { git: true }
+          : {},
 )
 const session = await runtime.api("/session", {
   title: "Slash UI",
@@ -171,6 +175,47 @@ try {
     await step("Normal mode")
     await poll(async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "normal")
     checks.push("shift-tab-returns-to-normal")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (moveFlow) {
+    const { dirname, join } = await import("node:path")
+    const { realpathSync, writeFileSync } = await import("node:fs")
+    const target = realpathSync(join(dirname(runtime.directory), "worktree-b"))
+    await fetch(`${runtime.url}/path?directory=${encodeURIComponent(target)}`)
+    writeFileSync(join(runtime.directory, "dirty.txt"), "uncommitted\n")
+    const body = () => command("get", "text", "body")
+    await command("click", editor)
+    await command("keyboard", "type", "/move")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await poll(async () => (await body()).includes(target), "dialog lists the other worktree", 20_000)
+    checks.push("move-lists-project-worktrees")
+    await command("find", "text", target, "click")
+    await poll(async () => (await body()).includes("uncommitted change"), "asks about changes", 20_000)
+    checks.push("move-asks-about-uncommitted-changes")
+    await command("find", "text", "No, leave them here", "click")
+    await poll(async () => (await runtime.api(`/session/${session.id}`)).directory === target, "session moved", 30_000)
+    checks.push("move-moves-session-directory")
+    await poll(async () => (await body()).includes("Session moved to"), "moved toast", 20_000)
+    assert.ok((await command("get", "url")).includes(session.id), "view stays on the session")
+    await command("click", editor)
+    await command("keyboard", "type", "AFTER_MOVE")
+    await command("press", "Enter")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).some(
+          (item) => item.info.role === "user" && JSON.stringify(item.parts).includes("AFTER_MOVE"),
+        ),
+      "prompt after move reaches the session",
+      30_000,
+    )
+    const reminder = (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+      JSON.stringify(item.parts).includes(`changed the current working directory to \\"${target}`),
+    )
+    assert.ok(reminder, "cwd reminder recorded")
+    checks.push("move-follows-session")
+    const { existsSync } = await import("node:fs")
+    assert.ok(existsSync(join(runtime.directory, "dirty.txt")) && !existsSync(join(target, "dirty.txt")), "changes stayed")
+    checks.push("move-leaves-changes-when-asked")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (editFlow) {
     const area = '[data-component="grok-edit-prompt"]'

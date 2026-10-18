@@ -11,7 +11,6 @@ const cliOnly: Record<string, string> = {
   editor: "opens $EDITOR for the prompt inside the terminal",
   q: "terminal shorthand for exit",
   warp: "experimental-workspaces flag only; changes the attached TUI workspace",
-  move: "copies a session into another project directory; Desktop dialog not ported yet",
   slash: "TUI-internal slash palette",
   y: "TUI-internal confirmation binding",
   minimal: "switches the terminal session to the inline renderer; Desktop has no terminal renderer",

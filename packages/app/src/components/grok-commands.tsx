@@ -277,6 +277,73 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     show()
   }
 
+  // `/move`: same flow as the TUI — pick another known directory of this project, choose whether uncommitted changes
+  // travel along, move the session server-side and leave the model a cwd reminder.
+  const move = async () => {
+    const id = sessionID()
+    const session = id ? sync().session.get(id) : undefined
+    if (!id || !session) return info(language.t("grok.auto.noSession"))
+    const listed = await sdk()
+      .client.project.directories({ projectID: session.projectID })
+      .then((result) => result.data ?? [])
+      .catch(() => [])
+    const targets = listed.filter((item) => item.directory !== session.directory)
+    if (!targets.length) return info(language.t("grok.move.none"))
+    dialog.show(() => (
+      <DialogGrokList
+        title={language.t("grok.move")}
+        items={targets.map((item) => ({ title: item.directory, value: item.directory, detail: item.strategy }))}
+        onSelect={async (target) => {
+          const status = await sdk()
+            .client.vcs.status({ directory: session.directory })
+            .then((result) => result.data ?? [])
+            .catch(() => [])
+          const go = async (moveChanges: boolean) => {
+            dialog.close()
+            const moved = await sdk()
+              .client.experimental.controlPlane.moveSession(
+                { sessionID: id, destination: { directory: target.value }, moveChanges },
+                { throwOnError: true },
+              )
+              .then(() => true)
+              .catch((error: unknown) => {
+                showToast({ title: language.t("grok.move.failed"), description: String(error) })
+                return false
+              })
+            if (!moved) return
+            await sdk()
+              .client.session.promptAsync({
+                sessionID: id,
+                directory: target.value,
+                noReply: true,
+                parts: [
+                  {
+                    type: "text",
+                    text: `<system-reminder>The user has changed the current working directory to "${target.value}". This is still the same project but at a possibly new location; take this into account when working with any files from now on.</system-reminder>`,
+                    synthetic: true,
+                  },
+                ],
+              })
+              .catch(() => undefined)
+            // Session routes are keyed by server + session id, so the open view follows the moved session as-is.
+            info(language.t("grok.move.done", { directory: target.value }))
+          }
+          if (!status.length) return go(false)
+          dialog.show(() => (
+            <DialogGrokList
+              title={language.t("grok.move.changes", { count: status.length })}
+              items={[
+                { title: language.t("grok.move.changes.yes"), value: true },
+                { title: language.t("grok.move.changes.no"), value: false },
+              ]}
+              onSelect={(choice) => void go(choice.value)}
+            />
+          ))
+        }}
+      />
+    ))
+  }
+
   const editPrompt = () => {
     const parts = prompt.current()
     const text = parts.flatMap((part) => (part.type === "text" ? [part.content] : [])).join("")
@@ -487,6 +554,13 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       category: "Prompt",
       slash: "edit-prompt",
       onSelect: editPrompt,
+    },
+    {
+      id: "grok.move",
+      title: language.t("grok.move"),
+      category: "Session",
+      slash: "move",
+      onSelect: () => void move(),
     },
     {
       id: "grok.import-claude",

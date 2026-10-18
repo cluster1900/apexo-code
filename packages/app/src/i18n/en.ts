@@ -1825,6 +1825,13 @@ export const dict = {
   "memory.operations.partial_publication":
     "The plan was partly published. Review an explicit clear instead of discarding it.",
   "memory.operations.scope_empty": "The selected scope has no Memory store to clear.",
+  "grok.move": "Move session to another project directory",
+  "grok.move.none": "No other directories are known for this project",
+  "grok.move.failed": "Move failed",
+  "grok.move.done": "Session moved to {{directory}}",
+  "grok.move.changes": "Move {{count}} uncommitted change(s) along?",
+  "grok.move.changes.yes": "Yes, move the changes",
+  "grok.move.changes.no": "No, leave them here",
   "grok.mode.cycle": "Cycle session mode (Normal → Plan → Auto → Always-approve)",
   "grok.mode.normal": "Normal mode",
   "grok.mode.plan": "Plan mode",
