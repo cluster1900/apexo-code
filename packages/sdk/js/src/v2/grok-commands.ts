@@ -209,3 +209,11 @@ export function vimScrollAction(key: {
 export function resolveVimMode(local: boolean | undefined, config: { ui?: { vim_mode?: boolean } } | undefined) {
   return local ?? config?.ui?.vim_mode ?? false
 }
+
+/** `ui.compact_mode` from config is the default; the local /compact-mode toggle overrides it once set. */
+export function resolveCompactMode(
+  local: boolean | undefined,
+  config: { ui?: { compact_mode?: boolean } } | undefined,
+) {
+  return local ?? config?.ui?.compact_mode ?? false
+}

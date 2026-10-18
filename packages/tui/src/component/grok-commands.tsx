@@ -23,6 +23,7 @@ import { useRoute } from "../context/route"
 import { usePromptRef } from "../context/prompt"
 import { useKV } from "../context/kv"
 import { useVimMode } from "../context/vim-mode"
+import { useCompactMode } from "../context/compact-mode"
 import { DialogVariant } from "./dialog-variant"
 import { DialogThemeList } from "./dialog-theme-list"
 import { DialogModel } from "./dialog-model"
@@ -44,6 +45,7 @@ export function useGrokCommands() {
   const kv = useKV()
   const [multiline, setMultiline] = kv.signal<boolean>("multiline", false)
   const vimMode = useVimMode()
+  const compactMode = useCompactMode()
   const vim = vimMode.enabled
   const sessionID = () => (route.data.type === "session" ? route.data.sessionID : undefined)
   const alert = (title: string, message: string) =>
@@ -368,6 +370,18 @@ export function useGrokCommands() {
             ? "Vim mode on: Esc on an empty prompt enters the scrollback (j/k, h/l, g/G, y/Y, Ctrl+D/U; i to type)"
             : "Vim mode off",
         })
+        dialog.clear()
+      },
+    },
+    {
+      name: "grok.compact-mode",
+      title: compactMode.enabled() ? "Turn off compact display" : "Turn on compact display",
+      category: "Session",
+      slashName: "compact-mode",
+      run: () => {
+        const next = compactMode.toggle()
+        compactMode.sync()
+        toast.show({ variant: "info", message: next ? "Compact display on" : "Compact display off" })
         dialog.clear()
       },
     },

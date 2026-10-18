@@ -57,6 +57,10 @@ export const Info = Schema.Struct({
   watcher: Schema.optional(Schema.Struct({ ignore: Schema.optional(Schema.mutable(Schema.Array(Schema.String))) })),
   ui: Schema.optional(
     Schema.Struct({
+      compact_mode: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Compact display: less padding and tighter spacing. The /compact-mode toggle overrides it locally.",
+      }),
       vim_mode: Schema.optional(Schema.Boolean).annotate({
         description: "Vim-style scrollback keys (Grok Build [ui] vim_mode). The /vim-mode toggle overrides it locally.",
       }),

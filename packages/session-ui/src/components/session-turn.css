@@ -241,3 +241,23 @@ body:not([data-new-layout]) [data-component="session-turn"] {
 [data-slot="session-turn-list"] {
   gap: 24px;
 }
+
+/* /compact-mode: denser timeline. */
+:root[data-compact="on"] {
+  [data-slot="session-turn-list"] {
+    gap: 6px;
+  }
+  /* !important: Tailwind utilities (h-6) sit in a later cascade layer than this component sheet. */
+  [data-timeline-row="TurnGap"] {
+    height: 6px !important;
+  }
+  [data-message-id] {
+    padding-top: 0 !important;
+  }
+  [data-slot="session-turn-thinking"] {
+    margin-top: 4px;
+  }
+  [data-component="session-turn"] [data-slot="session-turn-message-container"] {
+    gap: 4px;
+  }
+}

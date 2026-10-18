@@ -2016,6 +2016,7 @@ export type Config = {
     ignore?: Array<string>
   }
   ui?: {
+    compact_mode?: boolean
     vim_mode?: boolean
   }
   snapshot?: boolean

@@ -1825,6 +1825,10 @@ export const dict = {
   "memory.operations.partial_publication":
     "The plan was partly published. Review an explicit clear instead of discarding it.",
   "memory.operations.scope_empty": "The selected scope has no Memory store to clear.",
+  "grok.compact.on": "Turn on compact display",
+  "grok.compact.off": "Turn off compact display",
+  "grok.compact.enabled": "Compact display on",
+  "grok.compact.disabled": "Compact display off",
   "grok.vim.on": "Turn on vim scrollback keys",
   "grok.vim.off": "Turn off vim scrollback keys",
   "grok.vim.enabled": "Vim mode on: Esc on an empty prompt enters the scrollback (j/k, h/l, g/G, y/Y, Ctrl+D/U; i to type)",

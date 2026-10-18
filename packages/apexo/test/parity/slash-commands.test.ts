@@ -84,7 +84,6 @@ const grokSurfaceOnly: Record<string, string> = {
   "edit-prompt": "CLI only: opens $EDITOR for the prompt; the Desktop prompt is already a full editor",
   "context-window": "no runtime-selectable context window: the window is fixed by the selected model",
   auto: "auto-approve classifier mode needs a safety classifier this build does not ship; /always-approve exists",
-  "compact-mode": "Grok Build TUI density toggle; no compact renderer in this TUI or Desktop",
   minimal: "terminal inline vs alt-screen switch; chosen at launch with --fullscreen, cannot change at runtime",
   fullscreen: "same as minimal",
   full: "alias of fullscreen",

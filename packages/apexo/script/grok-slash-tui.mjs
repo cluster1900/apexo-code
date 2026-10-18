@@ -160,6 +160,26 @@ try {
     await run("vim-mode")
     await rendered("Vim mode off")
 
+    // /compact-mode removes the blank spacer rows between transcript blocks.
+    const rows = () => {
+      const lines = plain().split("\n")
+      const user = lines.findIndex((line) => line.includes("SLASH_HELLO"))
+      const reply = lines.findIndex((line, index) => index > user && line.includes("GOAL_UI_WORK_COMPLETED"))
+      return reply - user
+    }
+    await run("view-plan")
+    await Bun.sleep(300)
+    child.terminal.write("\x1b")
+    await Bun.sleep(300)
+    const before = rows()
+    await run("compact-mode")
+    await rendered("Compact display on")
+    await poll(() => rows() < before, `compact spacing (${before} rows before)`)
+    checks.push(`compact-mode-tightens-spacing:${before}->${rows()}`)
+    await run("compact-mode")
+    await rendered("Compact display off")
+    await poll(() => rows() === before, "spacing restored")
+
     await run("delete")
     await rendered("Delete this session's history?")
     child.terminal.write("\r")

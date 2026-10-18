@@ -232,6 +232,26 @@ try {
     assert.equal((await command("eval", "document.activeElement?.isContentEditable === true")).trim(), "true")
     assert.match(await command("get", "text", editor), /^\s*x\s*$/)
     checks.push("vim-mode-escape-scrollback-y-and-typing-returns-to-prompt")
+    const height = async () =>
+      Number(
+        (
+          await command(
+            "eval",
+            `(() => { let e = document.querySelector("[data-message-id]")?.parentElement; while (e && !(/(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight)) e = e.parentElement; return e.scrollHeight })()`,
+          )
+        ).trim(),
+      )
+    await command("press", "Backspace")
+    const loose = await height()
+    await command("keyboard", "type", "/compact-mode")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await poll(async () => (await command("get", "text", "body")).includes("Compact display on"), "compact toast")
+    await command("wait", "400")
+    const dense = await height()
+    assert.ok(dense < loose, `compact timeline is shorter (${loose} -> ${dense})`)
+    assert.equal((await command("eval", "document.documentElement.dataset.compact")).trim(), '"on"')
+    checks.push(`compact-mode-denser-timeline:${loose}->${dense}`)
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   }
 } finally {

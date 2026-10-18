@@ -25,6 +25,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { showToast } from "@/utils/toast"
 import { multiline, setMultiline } from "@apexo/session-ui/v2/prompt-input/multiline"
 import { setVimMode, vimMode } from "@/utils/vim-mode"
+import { applyCompactMode, compactMode, setCompactMode } from "@/utils/compact-mode"
 
 type Item<T> = { title: string; value: T; detail?: string }
 
@@ -316,6 +317,18 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
         const next = !vimMode(sync().data.config)
         setVimMode(next)
         info(language.t(next ? "grok.vim.enabled" : "grok.vim.disabled"))
+      },
+    },
+    {
+      id: "grok.compact-mode",
+      title: language.t(compactMode(sync().data.config) ? "grok.compact.off" : "grok.compact.on"),
+      category: "Session",
+      slash: "compact-mode",
+      onSelect: () => {
+        const next = !compactMode(sync().data.config)
+        setCompactMode(next)
+        applyCompactMode(sync().data.config)
+        info(language.t(next ? "grok.compact.enabled" : "grok.compact.disabled"))
       },
     },
     { id: "grok.logout", title: language.t("grok.logout"), category: "Provider", slash: "logout", onSelect: logout },

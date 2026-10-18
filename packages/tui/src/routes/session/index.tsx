@@ -62,6 +62,7 @@ import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
 import { scrollback, setScrollback } from "../../context/scrollback"
 import { useVimMode } from "../../context/vim-mode"
+import { space, useCompactMode } from "../../context/compact-mode"
 import { vimScrollAction, type VimScrollAction } from "@apexo/sdk/v2/grok-commands"
 import { useKeyboard } from "@opentui/solid"
 import stripAnsi from "strip-ansi"
@@ -340,6 +341,8 @@ export function Session() {
 
   // /vim-mode: Esc on an empty, idle prompt moves focus to the scrollback, where vim keys drive the transcript.
   const vim = useVimMode().enabled
+  const compactMode = useCompactMode()
+  createEffect(() => compactMode.sync())
   const vimCommands: Record<Exclude<VimScrollAction, "prompt">, string> = {
     "line.down": "session.line.down",
     "line.up": "session.line.up",
@@ -1273,7 +1276,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+          <box flexGrow={1} minHeight={0} paddingBottom={space()} paddingLeft={2} paddingRight={2} gap={1}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1319,15 +1322,15 @@ export function Session() {
                               onMouseOver={() => setHover(true)}
                               onMouseOut={() => setHover(false)}
                               onMouseUp={handleUnrevert}
-                              marginTop={1}
+                              marginTop={space()}
                               flexShrink={0}
                               border={["left"]}
                               customBorderChars={SplitBorder.customBorderChars}
                               borderColor={theme.backgroundPanel}
                             >
                               <box
-                                paddingTop={1}
-                                paddingBottom={1}
+                                paddingTop={space()}
+                                paddingBottom={space()}
                                 paddingLeft={2}
                                 backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
                               >
@@ -1336,7 +1339,7 @@ export function Session() {
                                   <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
                                 </text>
                                 <Show when={revert()!.diffFiles?.length}>
-                                  <box marginTop={1}>
+                                  <box marginTop={space()}>
                                     <For each={revert()!.diffFiles}>
                                       {(file) => (
                                         <text fg={theme.text}>
@@ -1500,7 +1503,7 @@ function UserMessage(props: {
           border={["left"]}
           borderColor={color()}
           customBorderChars={SplitBorder.customBorderChars}
-          marginTop={props.index === 0 ? 0 : 1}
+          marginTop={props.index === 0 ? 0 : space()}
         >
           <box
             onMouseOver={() => {
@@ -1510,15 +1513,21 @@ function UserMessage(props: {
               setHover(false)
             }}
             onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
+            paddingTop={space()}
+            paddingBottom={space()}
             paddingLeft={2}
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
           >
             <text fg={theme.text}>{text()}</text>
             <Show when={files().length}>
-              <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
+              <box
+                flexDirection="row"
+                paddingBottom={metadataVisible() ? 1 : 0}
+                paddingTop={space()}
+                gap={1}
+                flexWrap="wrap"
+              >
                 <For each={files()}>
                   {(file) => {
                     const directory = file.mime === "application/x-directory"
@@ -1555,7 +1564,7 @@ function UserMessage(props: {
       </Show>
       <Show when={compaction()}>
         <box
-          marginTop={1}
+          marginTop={space()}
           border={["top"]}
           title=" Compaction "
           titleAlignment="center"
@@ -1607,7 +1616,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         }}
       </For>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
-        <box paddingTop={1} paddingLeft={3}>
+        <box paddingTop={space()} paddingLeft={3}>
           <text fg={theme.text}>
             {childShortcut()}
             <span style={{ fg: theme.textMuted }}> view subagents</span>
@@ -1634,10 +1643,10 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         <box
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
           border={["left"]}
-          paddingTop={1}
-          paddingBottom={1}
+          paddingTop={space()}
+          paddingBottom={space()}
           paddingLeft={2}
-          marginTop={1}
+          marginTop={space()}
           backgroundColor={theme.backgroundPanel}
           customBorderChars={SplitBorder.customBorderChars}
           borderColor={theme.error}
@@ -1648,7 +1657,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
           <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
+            <text marginTop={space()}>
               <span
                 style={{
                   fg:
@@ -1716,7 +1725,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
         paddingLeft={3}
-        marginTop={1}
+        marginTop={space()}
         flexDirection="column"
         flexShrink={0}
       >
@@ -1731,7 +1740,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
           />
         </box>
         <Show when={!opaque() && (!inMinimal() || expanded()) && summary().body}>
-          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
+          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={space()}>
             <code
               filetype="markdown"
               drawUnstyledText={false}
@@ -1788,7 +1797,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const { theme, syntax } = useTheme()
   return (
     <Show when={props.part.text.trim()}>
-      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
+      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={space()} flexShrink={0}>
         <markdown
           syntaxStyle={syntax()}
           streaming={true}
@@ -2106,10 +2115,10 @@ function BlockTool(props: {
     <box
       ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
       border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
+      paddingTop={space()}
+      paddingBottom={space()}
       paddingLeft={2}
-      marginTop={1}
+      marginTop={space()}
       gap={1}
       backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
       customBorderChars={SplitBorder.customBorderChars}

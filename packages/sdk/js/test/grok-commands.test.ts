@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  resolveCompactMode,
   resolveVimMode,
   vimScrollAction,
   contextUsage,
@@ -86,5 +87,13 @@ describe("resolveVimMode", () => {
     expect(resolveVimMode(undefined, { ui: { vim_mode: true } })).toBe(true)
     expect(resolveVimMode(false, { ui: { vim_mode: true } })).toBe(false)
     expect(resolveVimMode(true, { ui: {} })).toBe(true)
+  })
+})
+
+describe("resolveCompactMode", () => {
+  test("config is the default and the local toggle overrides it", () => {
+    expect(resolveCompactMode(undefined, undefined)).toBe(false)
+    expect(resolveCompactMode(undefined, { ui: { compact_mode: true } })).toBe(true)
+    expect(resolveCompactMode(false, { ui: { compact_mode: true } })).toBe(false)
   })
 })

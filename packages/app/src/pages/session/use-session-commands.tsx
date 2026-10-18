@@ -30,6 +30,8 @@ import { createSessionOwnership } from "./session-ownership"
 import { useLocal } from "@/context/local"
 import { useGrokCommands } from "@/components/grok-commands"
 import { vimKeydown } from "@/utils/vim-mode"
+import { applyCompactMode } from "@/utils/compact-mode"
+import { createEffect } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 
 export type SessionCommandContext = {
@@ -195,6 +197,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       await navigator.clipboard.writeText(text)
       showToast({ variant: "success", icon: "circle-check", title: language.t("grok.vim.copied") })
     })
+  createEffect(() => applyCompactMode(sync().data.config))
   // Capture phase: timeline/list handlers stop propagation of bare letter keys before they reach window.
   makeEventListener(
     window,
