@@ -97,8 +97,12 @@ async function runGrokBuildAgent(cwd: string, signal: AbortSignal) {
   const command = process.env.APEXO_GROK_BUILD_BIN ?? "grok"
   const stop = new AbortController()
   const interrupt = () => stop.abort()
-  process.once("SIGINT", interrupt)
-  process.once("SIGTERM", interrupt)
+  // Use `on`, not `once`: some dependencies install a signal "guard" that re-raises
+  // the signal on the next tick if no other listener remains. A `once` listener
+  // removes itself before that check, so the proxy would die with 143 before the
+  // child finished shutting down. The listeners are removed in `finally` below.
+  process.on("SIGINT", interrupt)
+  process.on("SIGTERM", interrupt)
   const abort = AbortSignal.any([signal, stop.signal])
   const agent = Process.spawn([command, "agent", "stdio"], {
     cwd,
