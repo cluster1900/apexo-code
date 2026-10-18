@@ -75,14 +75,20 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return store.responding === perm.id
   })
 
-  const decide = (response: "once" | "always" | "reject") => {
+  const decide = (response: "once" | "always" | "reject", save?: readonly string[]) => {
     const perm = permissionRequest()
     if (!perm) return
     if (store.responding === perm.id) return
 
     setStore("responding", perm.id)
     sdk()
-      .api.permission.reply({ sessionID: perm.sessionID, requestID: perm.id, reply: response })
+      .api.permission.reply({
+        sessionID: perm.sessionID,
+        requestID: perm.id,
+        reply: response,
+        // Scope picker selection (one of metadata.alwaysChoices); the server ignores anything it did not offer.
+        ...(response === "always" && save ? ({ always: [...save] } as {}) : {}),
+      })
       .catch((err: unknown) => {
         const description = err instanceof Error ? err.message : String(err)
         showToast({ title: language.t("common.requestFailed"), description })

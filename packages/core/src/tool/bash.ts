@@ -1,6 +1,7 @@
 import { SessionExecutionPolicy } from "../session/execution-policy"
 export * as BashTool from "./bash"
 
+import os from "os"
 import path from "path"
 import { SessionProcess } from "@apexo/schema/session-process"
 import { optional } from "@apexo/schema/schema"
@@ -20,6 +21,8 @@ import { NonNegativeInt } from "../schema"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { BashApproval } from "./bash-approval"
+import { ShellPath } from "./shell-path"
 
 export const name = "bash"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -102,27 +105,31 @@ const isTimeout = (error: AppProcess.AppProcessError) =>
  * Minimal V2 core shell boundary. Keep parity debt visible without pulling the
  * legacy shell runtime into core.
  */
-// TODO: Port tree-sitter bash / PowerShell parser-based approval reduction.
-// TODO: Port BashArity reusable command-prefix approvals.
+// Parser-based approval reduction and BashArity prefix grants live in ./bash-approval.
+// PowerShell runs with an explicit non-interactive -Command argv; cmd keeps Node's /d /s /c shell handling.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
-// TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
+// cmd/PowerShell/MSYS path translation for external-directory advisories lives in ./shell-path.
 // TODO: Add plugin shell.env environment augmentation once V2 plugin hooks exist.
 // TODO: Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.
 // TODO: Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.
 // TODO: Revisit binary output handling if stdout/stderr decoding is text-only.
 // TODO: Stream full shell output into managed storage while retaining only a bounded in-memory preview.
 
-const shellTokens = (command: string) => command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? []
-const unquote = (value: string) => value.replace(/^(['"])(.*)\1$/, "$2")
 const externalCommandDirectories = Effect.fn("BashTool.externalCommandDirectories")(function* (
   fs: FSUtil.Interface,
   command: string,
   cwd: string,
+  shell: string,
 ) {
   const directories = new Set<string>()
-  for (const token of shellTokens(command)) {
-    const value = unquote(token).replace(/[;,|&]+$/, "")
-    if (!path.isAbsolute(value)) continue
+  for (const value of ShellPath.paths(command, {
+    kind: BashApproval.shellKind(shell),
+    cwd,
+    home: os.homedir(),
+    shell,
+    env: process.env,
+    platform: process.platform,
+  })) {
     const resolved = yield* fs.resolve(value)
     if (FSUtil.contains(cwd, resolved)) continue
     directories.add(yield* fs.resolve(path.dirname(resolved)))
@@ -216,18 +223,35 @@ const layer = Layer.effectDiscard(
                     agent: context.agent,
                     source,
                   })
-                const warnings = (yield* externalCommandDirectories(fs, rawCommand, target.canonical)).map(
+                const warnings = (yield* externalCommandDirectories(fs, rawCommand, target.canonical, shell)).map(
                   (directory) =>
                     `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. This scan is advisory only; permission checks and any selected native command sandbox policy still apply.`,
                 )
-                yield* permission.assert({
-                  action: name,
-                  resources: [rawCommand],
-                  save: [rawCommand],
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source,
-                })
+                const kind = BashApproval.shellKind(shell)
+                const parsed = yield* Effect.promise(() => BashApproval.analyze(rawCommand, kind))
+                const whole = rawCommand.trim()
+                const decomposed = !parsed.opaque
+                const check = yield* permission.inspect(context.sessionID, context.agent)
+                // Rules written against the whole script keep their deny power after per-command reduction.
+                const wholeDenied = decomposed && check(name, [rawCommand]) === "deny"
+                // Grok Build whole_script_grant: a literal grant saved for this exact script still replays,
+                // unless a per-command rule denies.
+                const wholeGranted =
+                  decomposed &&
+                  !wholeDenied &&
+                  check(name, parsed.resources) !== "deny" &&
+                  (yield* permission.exact(context.sessionID, name, whole))
+                const approval = wholeDenied ? { resources: [rawCommand], save: [rawCommand] } : parsed
+                if (!wholeGranted)
+                  yield* permission.assert({
+                    action: name,
+                    resources: [...approval.resources],
+                    save: [...approval.save],
+                    metadata: { command: rawCommand, ...(wholeDenied ? {} : BashApproval.metadata(parsed)) },
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
 
                 if ((yield* fs.stat(target.canonical)).type !== "Directory")
                   return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
@@ -266,8 +290,18 @@ const layer = Layer.effectDiscard(
                   command: rawCommand,
                   cwd: target.canonical,
                 })
+                const powershell = kind === "powershell"
+                const invocation = BashApproval.invocation(shell, rawCommand)
                 const command =
                   confined?.command ??
+                  (powershell
+                    ? ChildProcess.make(invocation.file, [...invocation.args], {
+                        cwd: target.canonical,
+                        stdin: "ignore",
+                        detached: process.platform !== "win32",
+                        forceKillAfter: Duration.seconds(3),
+                      })
+                    : undefined) ??
                   ChildProcess.make(rawCommand, [], {
                     cwd: target.canonical,
                     shell,
