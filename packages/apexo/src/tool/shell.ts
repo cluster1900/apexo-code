@@ -443,8 +443,10 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
+      const configured = (yield* config.get()).env ?? {}
       return {
         ...process.env,
+        ...configured,
         ...extra.env,
       }
     })

@@ -178,6 +178,57 @@ export function useGrokCommands() {
     ))
   }
 
+  // /import-claude: Grok Build's Claude settings import modal. Pick sections, then import into the global config.
+  const sectionTitles: Record<string, string> = {
+    permissions: "Permissions",
+    env: "Environment variables",
+    mcp: "MCP servers",
+    hooks: "Hooks",
+    paths: "Rule paths (~/.claude/rules)",
+  }
+  const importClaude = async () => {
+    const result = await sdk.client.config.claudeImport.preview()
+    const preview = result.data
+    if (!preview) return toast.show({ variant: "error", message: "Failed to read Claude settings" })
+    const available = preview.sections.filter((section) => Number(section.count) > 0)
+    if (!preview.found || !available.length)
+      return toast.show({ variant: "info", message: "No Claude settings found in ~/.claude" })
+    const chosen = new Set(available.map((section) => section.id))
+    const show = (current?: string) =>
+      dialog.replace(() => (
+        <DialogSelect
+          title="Import Claude settings"
+          current={current}
+          options={[
+            ...available.map((section) => ({
+              title: `${chosen.has(section.id) ? "[x]" : "[ ]"} ${sectionTitles[section.id]} (${section.count})`,
+              value: section.id as string,
+              description: section.items.slice(0, 4).join(", ") + (section.items.length > 4 ? ", …" : ""),
+            })),
+            { title: `Import ${chosen.size} selected`, value: "import" },
+          ]}
+          onSelect={async (option) => {
+            if (option.value !== "import") {
+              if (chosen.has(option.value as never)) chosen.delete(option.value as never)
+              else chosen.add(option.value as never)
+              return show(option.value)
+            }
+            if (!chosen.size) return toast.show({ variant: "info", message: "Select at least one section" })
+            const applied = await sdk.client.config.claudeImport.apply({ sections: [...chosen] })
+            if (!applied.data) return toast.show({ variant: "error", message: "Claude settings import failed" })
+            dialog.clear()
+            toast.show({
+              variant: "info",
+              message:
+                `Imported Claude settings: ${applied.data.applied.map((section) => `${sectionTitles[section.id]} (${section.count})`).join(", ")}` +
+                (applied.data.skipped.length ? ` · skipped ${applied.data.skipped.length}` : ""),
+            })
+          }}
+        />
+      ))
+    show()
+  }
+
   const remove = () => {
     const id = requireSession()
     if (!id) return
@@ -409,6 +460,13 @@ export function useGrokCommands() {
         })
         dialog.clear()
       },
+    },
+    {
+      name: "grok.import-claude",
+      title: "Import Claude settings",
+      category: "System",
+      slashName: "import-claude",
+      run: () => void importClaude(),
     },
     {
       name: "grok.auto",

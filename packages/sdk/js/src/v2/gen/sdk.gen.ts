@@ -18,6 +18,10 @@ import type {
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
+  ConfigClaudeImportApplyErrors,
+  ConfigClaudeImportApplyResponses,
+  ConfigClaudeImportPreviewErrors,
+  ConfigClaudeImportPreviewResponses,
   ConfigGetErrors,
   ConfigGetResponses,
   ConfigProvidersErrors,
@@ -2128,6 +2132,83 @@ export class Event extends HeyApiClient {
   }
 }
 
+export class ClaudeImport extends HeyApiClient {
+  /**
+   * Preview Claude settings import
+   *
+   * List the permissions, environment, MCP servers, hooks and rule paths /import-claude can bring over.
+   */
+  public preview<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ConfigClaudeImportPreviewResponses,
+      ConfigClaudeImportPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/config/import-claude",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Import Claude settings
+   *
+   * Write the chosen Claude settings sections into the global apexo config and hooks.
+   */
+  public apply<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      sections?: Array<"permissions" | "env" | "mcp" | "hooks" | "paths">
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "sections" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ConfigClaudeImportApplyResponses,
+      ConfigClaudeImportApplyErrors,
+      ThrowOnError
+    >({
+      url: "/config/import-claude",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Config2 extends HeyApiClient {
   /**
    * Get configuration
@@ -2224,6 +2305,11 @@ export class Config2 extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  private _claudeImport?: ClaudeImport
+  get claudeImport(): ClaudeImport {
+    return (this._claudeImport ??= new ClaudeImport({ client: this.client }))
   }
 }
 

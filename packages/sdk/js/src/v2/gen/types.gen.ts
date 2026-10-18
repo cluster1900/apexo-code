@@ -2121,6 +2121,9 @@ export type Config = {
               }
             }
       }
+  env?: {
+    [key: string]: string
+  }
   instructions?: Array<string>
   memory?: {
     embedding?: {
@@ -9262,6 +9265,82 @@ export type ConfigUpdateResponses = {
 }
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
+
+export type ConfigClaudeImportPreviewData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/import-claude"
+}
+
+export type ConfigClaudeImportPreviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigClaudeImportPreviewError = ConfigClaudeImportPreviewErrors[keyof ConfigClaudeImportPreviewErrors]
+
+export type ConfigClaudeImportPreviewResponses = {
+  /**
+   * Claude settings found under ~/.claude
+   */
+  200: {
+    found: boolean
+    sources: Array<string>
+    sections: Array<{
+      id: "permissions" | "env" | "mcp" | "hooks" | "paths"
+      count: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      items: Array<string>
+    }>
+    skipped: Array<string>
+  }
+}
+
+export type ConfigClaudeImportPreviewResponse =
+  ConfigClaudeImportPreviewResponses[keyof ConfigClaudeImportPreviewResponses]
+
+export type ConfigClaudeImportApplyData = {
+  body?: {
+    sections: Array<"permissions" | "env" | "mcp" | "hooks" | "paths">
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/import-claude"
+}
+
+export type ConfigClaudeImportApplyErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigClaudeImportApplyError = ConfigClaudeImportApplyErrors[keyof ConfigClaudeImportApplyErrors]
+
+export type ConfigClaudeImportApplyResponses = {
+  /**
+   * Imported sections
+   */
+  200: {
+    applied: Array<{
+      id: "permissions" | "env" | "mcp" | "hooks" | "paths"
+      count: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      items: Array<string>
+    }>
+    skipped: Array<string>
+    hooksFile?: string
+  }
+}
+
+export type ConfigClaudeImportApplyResponse = ConfigClaudeImportApplyResponses[keyof ConfigClaudeImportApplyResponses]
 
 export type ConfigProvidersData = {
   body?: never

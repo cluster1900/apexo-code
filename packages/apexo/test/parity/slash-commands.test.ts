@@ -87,7 +87,6 @@ const grokSurfaceOnly: Record<string, string> = {
   full: "alias of fullscreen",
   privacy:
     "intentionally kept as opencode: no xAI account; account/privacy settings follow the opencode provider auth model",
-  "import-claude": "imports Claude Code config into Grok Build; this build already reads Claude-compatible config",
 }
 
 test("every Grok Build slash command is available in both CLI and Desktop", async () => {

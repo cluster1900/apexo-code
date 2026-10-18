@@ -5,7 +5,7 @@ import { writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { Terminal } from "@xterm/headless"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
-import { autoReviewFixture, startGoalFixture } from "./grok-goal-fixture.mjs"
+import { autoReviewFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
 
 // --vim-config: start with config ui.vim_mode = true and check the config default plus the local override only.
 const vimConfig = process.argv.includes("--vim-config")
@@ -13,6 +13,8 @@ const vimConfig = process.argv.includes("--vim-config")
 const windowFlow = process.argv.includes("--context-window")
 // --auto: bash asks for permission; checks Auto-review approves a safe command and escalates a risky one.
 const autoFlow = process.argv.includes("--auto")
+// --import-claude: a seeded ~/.claude; checks the import modal and the written config.
+const importFlow = process.argv.includes("--import-claude")
 const { runtime } = await startGoalFixture(
   "cli",
   autoFlow
@@ -85,7 +87,33 @@ try {
     await Bun.sleep(300)
   }
 
-  if (autoFlow) {
+  if (importFlow) {
+    await seedClaude(runtime)
+    await run("import-claude")
+    await rendered("Import Claude settings")
+    for (const text of ["Permissions (4)", "Environment variables (1)", "MCP servers (1)", "Hooks (1)", "Rule paths"])
+      await rendered(text)
+    checks.push("modal-lists-claude-sections")
+    // Untick hooks (4th row), then import the rest.
+    for (let index = 0; index < 3; index++) child.terminal.write("\x1b[B")
+    child.terminal.write("\r")
+    await rendered("[ ] Hooks")
+    await rendered("Import 4 selected")
+    checks.push("sections-toggle")
+    for (let index = 0; index < 2; index++) child.terminal.write("\x1b[B")
+    child.terminal.write("\r")
+    await rendered("Imported Claude settings", 20_000)
+    const imported = await poll(async () => {
+      const value = await importedClaude(runtime)
+      return Object.values(value).every(Boolean) && value
+    }, "config written")
+    assert.ok(imported)
+    checks.push("chosen-sections-written-to-global-config")
+    const { existsSync } = await import("node:fs")
+    assert.ok(!existsSync(join(runtime.env.APEXO_TEST_HOME, ".grok", "hooks", "claude-import.json")))
+    checks.push("unticked-hooks-not-imported")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (autoFlow) {
     const pending = async () => runtime.api(`/permission`)
     const prompt = async (text) => {
       child.terminal.write(`\x1b[200~${text}\x1b[201~`)

@@ -183,6 +183,53 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     ))
   }
 
+  // /import-claude: Grok Build's Claude settings import modal. Toggle sections, then import into the global config.
+  const sectionTitle = (id: string) => language.t(`grok.importClaude.section.${id}` as never)
+  const importClaude = async () => {
+    const preview = (await sdk().client.config.claudeImport.preview()).data
+    if (!preview) return info(language.t("grok.importClaude.failed"))
+    const available = preview.sections.filter((section) => Number(section.count) > 0)
+    if (!preview.found || !available.length) return info(language.t("grok.importClaude.none"))
+    const chosen = new Set<string>(available.map((section) => section.id))
+    const show = () =>
+      dialog.show(() => (
+        <DialogGrokList
+          title={language.t("grok.importClaude")}
+          items={[
+            ...available.map((section) => ({
+              title: `${chosen.has(section.id) ? "☑" : "☐"} ${sectionTitle(section.id)}`,
+              value: section.id as string,
+              detail: `${section.count} · ${section.items.slice(0, 3).join(", ")}${section.items.length > 3 ? ", …" : ""}`,
+            })),
+            { title: language.t("grok.importClaude.apply", { count: chosen.size }), value: "import" },
+          ]}
+          onSelect={async (item) => {
+            if (item.value !== "import") {
+              if (chosen.has(item.value)) chosen.delete(item.value)
+              else chosen.add(item.value)
+              return show()
+            }
+            if (!chosen.size) return info(language.t("grok.importClaude.empty"))
+            const result = (
+              await sdk().client.config.claudeImport.apply({
+                sections: [...chosen] as ("permissions" | "env" | "mcp" | "hooks" | "paths")[],
+              })
+            ).data
+            if (!result) return info(language.t("grok.importClaude.failed"))
+            info(
+              language.t("grok.importClaude.done", {
+                sections: result.applied.map((section) => `${sectionTitle(section.id)} (${section.count})`).join(", "),
+              }) +
+                (result.skipped.length
+                  ? ` · ${language.t("grok.importClaude.skipped", { count: result.skipped.length })}`
+                  : ""),
+            )
+          }}
+        />
+      ))
+    show()
+  }
+
   const context = () => {
     const id = sessionID()
     if (!id) return
@@ -371,6 +418,13 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
         applyCompactMode(sync().data.config)
         info(language.t(next ? "grok.compact.enabled" : "grok.compact.disabled"))
       },
+    },
+    {
+      id: "grok.import-claude",
+      title: language.t("grok.importClaude"),
+      category: "System",
+      slash: "import-claude",
+      onSelect: () => void importClaude(),
     },
     {
       id: "grok.context-window",

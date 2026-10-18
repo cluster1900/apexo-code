@@ -90,3 +90,36 @@ export const autoReviewFixture = {
     return { tool: "run_terminal_cmd", args: { command, description: "auto review check" } }
   },
 }
+
+// Shared by the CLI and Desktop /import-claude flows: a ~/.claude with every importable section.
+export async function seedClaude(runtime) {
+  const { mkdir, writeFile } = await import("node:fs/promises")
+  const { join } = await import("node:path")
+  const home = runtime.env.APEXO_TEST_HOME
+  await mkdir(join(home, ".claude", "rules"), { recursive: true })
+  await writeFile(
+    join(home, ".claude", "settings.json"),
+    JSON.stringify({
+      permissions: { allow: ["Bash(git *)", "Read"], deny: ["Bash(rm -rf *)"], defaultMode: "auto" },
+      env: { CLAUDE_IMPORT_FLOW: "1" },
+      hooks: { Stop: [{ hooks: [{ type: "command", command: "true" }] }] },
+    }),
+  )
+  await writeFile(
+    join(home, ".claude.json"),
+    JSON.stringify({ mcpServers: { imported: { url: "http://127.0.0.1:9/mcp" } } }),
+  )
+  await writeFile(join(home, ".claude", "rules", "style.md"), "# style\n")
+  return home
+}
+
+export async function importedClaude(runtime) {
+  const config = await runtime.api("/global/config")
+  return {
+    env: config.env?.CLAUDE_IMPORT_FLOW === "1",
+    mcp: config.mcp?.imported?.type === "remote",
+    permission: config.permission?.bash?.["rm -rf *"] === "deny",
+    mode: config.ui?.permission_mode === "auto",
+    paths: (config.instructions ?? []).some((item) => item.includes(".claude/rules")),
+  }
+}

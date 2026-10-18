@@ -131,6 +131,9 @@ export const Info = Schema.Struct({
     description:
       "Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
   }),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description: "Environment variables added to shell commands (imported from Claude settings by /import-claude)",
+  }),
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",
   }),

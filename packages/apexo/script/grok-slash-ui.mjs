@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { poll } from "./grok-shell-fixture.mjs"
-import { autoReviewFixture, startGoalFixture } from "./grok-goal-fixture.mjs"
+import { autoReviewFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
 const kind = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 // --vim-config: config ui.vim_mode = true; checks the config default and the local override only.
@@ -16,6 +16,8 @@ const vimConfig = process.argv.includes("--vim-config")
 const windowFlow = process.argv.includes("--context-window")
 // --auto: bash asks; checks Auto-review approves a safe command and escalates a risky one.
 const autoFlow = process.argv.includes("--auto")
+// --import-claude: a seeded ~/.claude; checks the import modal and the written config and hooks.
+const importFlow = process.argv.includes("--import-claude")
 const windowModels = {
   "grok-4.7": {
     name: "Restart parity",
@@ -126,7 +128,40 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (autoFlow) {
+  if (importFlow) {
+    await seedClaude(runtime)
+    const body = () => command("get", "text", "body")
+    const slash = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "400")
+      await command("press", "Enter")
+    }
+    await slash("/import-claude")
+    await poll(async () => {
+      const text = await body()
+      return ["Permissions", "Environment variables", "MCP servers", "Hooks", "Rule paths", "Import 5 selected"].every(
+        (item) => text.includes(item),
+      )
+    }, "import modal sections")
+    checks.push("modal-lists-claude-sections")
+    await command("click", '[data-grok-item="☑ Rule paths (~/.claude/rules)"]')
+    await poll(async () => (await body()).includes("Import 4 selected"), "untick paths")
+    await command("click", '[data-grok-item="☐ Rule paths (~/.claude/rules)"]')
+    await poll(async () => (await body()).includes("Import 5 selected"), "tick paths")
+    checks.push("sections-toggle")
+    await command("click", '[data-grok-item="Import 5 selected"]')
+    await poll(async () => (await body()).includes("Imported Claude settings"), "import toast", 20_000)
+    await poll(async () => Object.values(await importedClaude(runtime)).every(Boolean), "config written")
+    checks.push("chosen-sections-written-to-global-config")
+    const { readFile } = await import("node:fs/promises")
+    const hooks = JSON.parse(
+      await readFile(join(runtime.env.APEXO_TEST_HOME, ".grok", "hooks", "claude-import.json"), "utf8"),
+    )
+    assert.equal(hooks.hooks.Stop.length, 1)
+    checks.push("hooks-written-to-grok-hooks-dir")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (autoFlow) {
     const body = () => command("get", "text", "body")
     const slash = async (text) => {
       await command("click", editor)
