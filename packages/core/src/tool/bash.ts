@@ -21,6 +21,7 @@ import { NonNegativeInt } from "../schema"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { BashApproval } from "./bash-approval"
 
 export const name = "bash"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -103,10 +104,10 @@ const isTimeout = (error: AppProcess.AppProcessError) =>
  * Minimal V2 core shell boundary. Keep parity debt visible without pulling the
  * legacy shell runtime into core.
  */
-// TODO: Port tree-sitter bash / PowerShell parser-based approval reduction.
-// TODO: Port BashArity reusable command-prefix approvals.
+// Parser-based approval reduction and BashArity prefix grants live in ./bash-approval.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
-// TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
+// PowerShell runs with an explicit non-interactive -Command argv; cmd keeps Node's /d /s /c shell handling.
+// TODO: Restore cmd/PowerShell-specific path translation (cygpath, provider paths) for external-directory advisories on Windows.
 // TODO: Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.
 // TODO: Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.
 // TODO: Revisit binary output handling if stdout/stderr decoding is text-only.
@@ -221,10 +222,16 @@ const layer = Layer.effectDiscard(
                   (directory) =>
                     `Command argument references external directory ${path.join(directory, "*").replaceAll("\\", "/")}. This scan is advisory only; permission checks and any selected native command sandbox policy still apply.`,
                 )
+                const parsed = BashApproval.approval(rawCommand, BashApproval.shellKind(shell))
+                // Rules written against the whole script keep their deny power after per-command reduction.
+                const wholeDenied =
+                  !(parsed.resources.length === 1 && parsed.resources[0] === rawCommand.trim()) &&
+                  (yield* permission.inspect(context.sessionID, context.agent))(name, [rawCommand]) === "deny"
+                const approval = wholeDenied ? { resources: [rawCommand], save: [rawCommand] } : parsed
                 yield* permission.assert({
                   action: name,
-                  resources: [rawCommand],
-                  save: [rawCommand],
+                  resources: [...approval.resources],
+                  save: [...approval.save],
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
@@ -275,15 +282,27 @@ const layer = Layer.effectDiscard(
                       sessionID: context.sessionID,
                       callID: context.toolCallID,
                     })
+                const extraEnv = Object.keys(env).length ? { env, extendEnv: true } : {}
+                const powershell = BashApproval.shellKind(shell) === "powershell"
+                const invocation = BashApproval.invocation(shell, rawCommand)
                 const command =
                   confined?.command ??
+                  (powershell
+                    ? ChildProcess.make(invocation.file, [...invocation.args], {
+                        cwd: target.canonical,
+                        stdin: "ignore",
+                        detached: process.platform !== "win32",
+                        forceKillAfter: Duration.seconds(3),
+                        ...extraEnv,
+                      })
+                    : undefined) ??
                   ChildProcess.make(rawCommand, [], {
                     cwd: target.canonical,
                     shell,
                     stdin: "ignore",
                     detached: process.platform !== "win32",
                     forceKillAfter: Duration.seconds(3),
-                    ...(Object.keys(env).length ? { env, extendEnv: true } : {}),
+                    ...extraEnv,
                   })
                 const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
                 const result = yield* appProcess
