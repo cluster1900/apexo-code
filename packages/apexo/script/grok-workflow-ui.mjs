@@ -214,6 +214,17 @@ try {
   await command("wait", '[data-action="session-workflow"]')
   await command("click", '[data-action="session-workflow"]')
   await command("wait", '[data-testid="workflow-panel"]')
+  // Saved sources load after the panel mounts; selecting before they arrive finds no options.
+  await poll(
+    async () =>
+      (
+        await command(
+          "eval",
+          `[...document.querySelectorAll('[data-testid="workflow-source"] option')].some((o) => o.value === "saved:ui-flow")`,
+        )
+      ).includes("true"),
+    "saved workflow source listed",
+  )
   await command("select", '[data-testid="workflow-source"]', "saved:ui-flow")
   await command("click", '[data-testid="workflow-validate"]')
   await command(
