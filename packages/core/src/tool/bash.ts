@@ -11,6 +11,7 @@ import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { CommandSandbox } from "../command-sandbox"
 import { Config } from "../config"
+import { ShellEnvironment } from "../shell-environment"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
@@ -106,7 +107,6 @@ const isTimeout = (error: AppProcess.AppProcessError) =>
 // TODO: Port BashArity reusable command-prefix approvals.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
 // TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
-// TODO: Add plugin shell.env environment augmentation once V2 plugin hooks exist.
 // TODO: Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.
 // TODO: Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.
 // TODO: Revisit binary output handling if stdout/stderr decoding is text-only.
@@ -138,6 +138,7 @@ const layer = Layer.effectDiscard(
     const appProcess = yield* AppProcess.Service
     const sandbox = yield* CommandSandbox.Service
     const config = yield* Config.Service
+    const shellEnvironment = yield* ShellEnvironment.Service
     const permission = yield* PermissionV2.Service
     const processes = yield* SessionProcessExecution.Service
     const completions = yield* SessionProcessCompletion.Service
@@ -266,6 +267,14 @@ const layer = Layer.effectDiscard(
                   command: rawCommand,
                   cwd: target.canonical,
                 })
+                // Plugin shell.env variables extend the host environment; sandboxed commands keep their fixed environment.
+                const env = confined
+                  ? {}
+                  : yield* shellEnvironment.resolve({
+                      cwd: target.canonical,
+                      sessionID: context.sessionID,
+                      callID: context.toolCallID,
+                    })
                 const command =
                   confined?.command ??
                   ChildProcess.make(rawCommand, [], {
@@ -274,6 +283,7 @@ const layer = Layer.effectDiscard(
                     stdin: "ignore",
                     detached: process.platform !== "win32",
                     forceKillAfter: Duration.seconds(3),
+                    ...(Object.keys(env).length ? { env, extendEnv: true } : {}),
                   })
                 const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
                 const result = yield* appProcess
@@ -338,6 +348,7 @@ export const node = makeLocationNode({
     AppProcess.node,
     CommandSandbox.node,
     Config.node,
+    ShellEnvironment.node,
     PermissionV2.node,
     SessionProcessExecution.node,
     SessionProcessCompletion.node,

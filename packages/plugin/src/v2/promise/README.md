@@ -74,6 +74,12 @@ await ctx.aisdk.language((event) => {
   if (event.model.providerID !== "xai") return
   event.language = event.sdk.responses(event.model.api.id)
 })
+
+await ctx.shell.env((event) => {
+  // Added to native bash foreground and owned background commands at spawn time.
+  // Sandboxed commands keep their fixed environment; values are never persisted.
+  event.env.MY_TOKEN_HINT = "set-by-plugin"
+})
 ```
 
 ## Reloading A Domain

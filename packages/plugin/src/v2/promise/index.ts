@@ -9,4 +9,5 @@ export type { CatalogDraft, CatalogHooks, CatalogProviderRecord } from "./catalo
 export type { CommandDraft, CommandHooks } from "./command.js"
 export type { IntegrationDraft, IntegrationHooks, IntegrationMethodRegistration } from "./integration.js"
 export type { ReferenceDraft, ReferenceHooks } from "./reference.js"
+export type { ShellHooks } from "./shell.js"
 export type { SkillDraft, SkillHooks } from "./skill.js"

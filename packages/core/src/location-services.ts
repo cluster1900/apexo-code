@@ -23,6 +23,7 @@ import { LocationMutation } from "./location-mutation"
 import { LocationServiceMap } from "./location-service-map"
 import { PermissionV2 } from "./permission"
 import { PluginV2 } from "./plugin"
+import { ShellEnvironment } from "./shell-environment"
 import { PluginInternal } from "./plugin/internal"
 import { PluginBundleRuntime } from "./plugin-bundle-runtime"
 import { MCP } from "./mcp"
@@ -64,6 +65,7 @@ export const locationServices = LayerNode.group([
   Catalog.node,
   AISDK.node,
   PluginV2.node,
+  ShellEnvironment.node,
   PluginInternal.node,
   PluginBundleRuntime.node,
   MCP.node,

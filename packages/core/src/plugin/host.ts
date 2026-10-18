@@ -13,6 +13,7 @@ import { PluginV2 } from "../plugin"
 import { ProviderV2 } from "../provider"
 import { Reference } from "../reference"
 import type { DeepMutable } from "../schema"
+import { ShellEnvironment } from "../shell-environment"
 import { SkillV2 } from "../skill"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
@@ -25,6 +26,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
   const integration = yield* Integration.Service
   const reference = yield* Reference.Service
   const skill = yield* SkillV2.Service
+  const shell = yield* ShellEnvironment.Service
 
   return {
     options: {},
@@ -204,6 +206,9 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
             list: draft.list,
           }),
         ),
+    },
+    shell: {
+      env: (callback) => shell.hook.env((event) => callback(event)),
     },
     skill: {
       reload: skill.reload,

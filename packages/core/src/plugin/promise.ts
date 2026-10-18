@@ -54,6 +54,10 @@ export function fromPromise(plugin: Plugin) {
             language: (callback) =>
               register(host.aisdk.language((event) => Effect.promise(() => Promise.resolve(callback(event))))),
           },
+          shell: {
+            env: (callback) =>
+              register(host.shell.env((event) => Effect.promise(() => Promise.resolve(callback(event))))),
+          },
           catalog: {
             transform: transform(host.catalog),
             reload: () => run(host.catalog.reload()),
