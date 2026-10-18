@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { fetch } from "bun"
 import { createServer } from "node:http"
 import { createApexoClient } from "@apexo/sdk/v2/client"
+import { nativeFetch } from "./fixtures/native-fetch"
 import {
   taskActions,
   taskItem,
@@ -55,7 +55,7 @@ for (const native of [true, false]) {
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("Missing fixture address")
     try {
-      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
       const actions = taskActions(client, "parent", Promise.resolve(native ? "v2" : "v1"))
       const signal = AbortSignal.timeout(5_000)
       const snapshot = await actions.list(signal)
@@ -104,7 +104,7 @@ for (const status of [409, 404, 503, 500]) {
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("Missing fixture address")
     try {
-      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
       const native = true
       const actions = taskActions(client, "parent", Promise.resolve(native ? "v2" : "v1"))
       const error = await actions.cancel({ id: "child", source: "native-task" }, AbortSignal.timeout(5_000)).then(
@@ -178,7 +178,7 @@ test("native Task and Process IDs route through explicit domains; waits are boun
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing fixture address")
   try {
-    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
     const actions = taskActions(client, "parent", Promise.resolve("v2"))
     const signal = AbortSignal.timeout(5000)
     const snapshot = await actions.list(signal)
@@ -244,7 +244,7 @@ for (const failed of ["task", "process"] as const) {
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("Missing fixture address")
     try {
-      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
       const snapshot = await taskActions(client, "parent", Promise.resolve("v2")).list(AbortSignal.timeout(5000))
       expect(snapshot.items).toHaveLength(100)
       expect(snapshot.items[0]?.title).toBe("Row 99")
@@ -271,7 +271,7 @@ for (const status of [404, 409, 503, 500])
       const address = server.address()
       if (!address || typeof address === "string") throw new Error("Missing fixture address")
       try {
-        const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+        const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
         const error = await taskActions(client, "parent", Promise.resolve("v2"))
           [operation]({ id: "proc", source: "native-process" }, AbortSignal.timeout(5000))
           .then(
@@ -350,7 +350,7 @@ test("schedule rows keep their own identity and controls only change future inte
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing fixture address")
   try {
-    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
     const actions = taskActions(client, "parent", Promise.resolve("v2"))
     const signal = AbortSignal.timeout(5000)
     const snapshot = await actions.list(signal)
@@ -415,7 +415,7 @@ test("schedule discovery failure preserves Task data without fallback or model w
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing fixture address")
   try {
-    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch, throwOnError: true })
     const actions = taskActions(client, "parent", Promise.resolve("v2"))
     const snapshot = await actions.list(AbortSignal.timeout(5000))
     expect(snapshot.issues).toEqual(["schedules"])

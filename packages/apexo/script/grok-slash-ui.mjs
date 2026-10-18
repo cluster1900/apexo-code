@@ -1,8 +1,10 @@
 // Desktop (web app in Chrome via agent-browser) check of Grok Build slash commands: /multiline.
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
+import { existsSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import http from "node:http"
+import { tmpdir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
@@ -141,17 +143,22 @@ const server = http.createServer((request, response) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
 const browserSession = `slash-${kind}-${basename(runtime.output)}`
 const history = []
+const cachedBin =
+  typeof process.getuid === "function"
+    ? join(tmpdir(), `bunx-${process.getuid()}-agent-browser@latest`, "node_modules", ".bin", "agent-browser")
+    : undefined
 const command = async (...args) => {
+  const direct = Boolean(cachedBin && existsSync(cachedBin))
+  const browserArgs = [
+    "--session",
+    browserSession,
+    "--executable-path",
+    process.env.CHROMIUM_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ...args,
+  ]
   const result = await promisify(execFile)(
-    "bunx",
-    [
-      "agent-browser",
-      "--session",
-      browserSession,
-      "--executable-path",
-      process.env.CHROMIUM_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      ...args,
-    ],
+    direct ? cachedBin : "bunx",
+    direct ? browserArgs : ["agent-browser", ...browserArgs],
     { timeout: 45_000, maxBuffer: 4 * 1024 * 1024 },
   )
   history.push({ args, output: result.stdout })

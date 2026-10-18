@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { fetch } from "bun"
 import { createServer } from "node:http"
 import { createApexoClient } from "@apexo/sdk/v2/client"
+import { nativeFetch } from "./fixtures/native-fetch"
 import { memoryOperationActions } from "./memory-operations"
 import { MemoryActionError } from "./session-memory"
 
@@ -39,7 +39,7 @@ test("native operation adapter retains original previews/IDs, one Session, and b
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing server address")
   try {
-    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch })
+    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch })
     const identities: string[] = []
     const owner = new AbortController()
     const actions = memoryOperationActions(
@@ -129,7 +129,7 @@ test("operation owner cancellation while Session resolution is pending prevents 
   if (!address || typeof address === "string") throw new Error("Missing server address")
   try {
     const owner = new AbortController()
-    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch })
+    const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch })
     const actions = memoryOperationActions(
       client,
       () => {
@@ -169,7 +169,7 @@ for (const status of [403, 404, 409, 503]) {
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("Missing server address")
     try {
-      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch })
+      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch })
       const actions = memoryOperationActions(client, async () => "session", AbortSignal.timeout(5000))
       const failure = await actions
         .execute({ kind: "retry", id: "mop_retry", retryOf: "mop_original" }, AbortSignal.timeout(5000))

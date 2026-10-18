@@ -118,13 +118,22 @@
   [data-slot="session-turn-diffs-toggle"] {
     color: var(--text-interactive-base);
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-regular);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    background-color: color-mix(in srgb, var(--surface-base-hover) 60%, transparent);
+    transition:
+      opacity 0.15s ease,
+      background-color 0.15s ease;
     margin-left: 4px;
+
+    &:hover {
+      background-color: var(--surface-base-hover);
+    }
   }
 
   [data-component="session-turn-diffs-group"]:hover [data-slot="session-turn-diffs-toggle"] {

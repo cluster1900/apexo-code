@@ -29,3 +29,10 @@ The new held Resume adapter test used exported Bun fetch but retained HappyDOM R
 The corrected test runs the actual `taskActions` implementation in a native Bun child with matching Request/fetch/AbortController and a real held `node:http` endpoint. Owner cancellation settles with the exact abort reason and sends no detail request. The App test retains its normal preload and joins the child; no globals are replaced.
 
 Verification: from `packages/app`, `bun test --conditions=solid --preload ./happydom.ts src/utils/session-tasks.test.ts src/utils/server-native-prompt.test.ts src/i18n/scheduler.test.ts` passes 31 tests / 367 assertions. [RULE-20261015-009](../../rules/native-http-fixture-globals.md) already requires matching transport/abort realms or native-child isolation; no new rule is proposed.
+
+## Fifth independent occurrence: Bun fetch vs. HappyDOM Request realm in App transport tests (2026-10-18)
+
+When passing `fetch` from `"bun"` directly to `@apexo/sdk/v2/client` (`createApexoClient`) or `detectServerProtocol` in `packages/app` unit tests (`memory-operations.test.ts`, `session-memory.test.ts`, `session-tasks.test.ts`, `server-protocol.test.ts`), the generated SDK client and test fixtures construct `new Request(...)` and `AbortSignal.timeout(...)` using the global HappyDOM constructors registered by `packages/app/happydom.ts` and pass them to `Bun.fetch`, which under Bun 1.4.2 rejects cross-realm `Request` and `AbortSignal` instances.
+
+Fix: keep `packages/app/happydom.ts` unmodified per [RULE-20261015-009](../../rules/native-http-fixture-globals.md) and introduce a test-local `nativeFetch` adapter (`packages/app/src/utils/fixtures/native-fetch.ts`) that unwraps HappyDOM `Request` inputs into plain URL, method, headers, body, and abort listeners before invoking `Bun.fetch`. Verified with `bun test` in `packages/app` (74 pass, 0 fail across 18 files).
+

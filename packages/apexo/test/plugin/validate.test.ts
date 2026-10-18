@@ -94,16 +94,25 @@ describe("plugin tag", () => {
     await $`git init -q --bare ${remote}`.quiet()
     await plugin(repo)
     await plugin(path.join(repo, "plugins", "nested"), { name: "nested", version: "0.3.1" })
-    await $`git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm init && git remote add origin ${remote}`
+    await $`git init -q && git config commit.gpgsign false && git config tag.gpgSign false && git config user.email t@t && git add -A && git -c commit.gpgsign=false -c user.email=t@t -c user.name=t commit -qm init && git remote add origin ${remote}`
       .cwd(repo)
       .quiet()
-    const env = { GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" }
-    Object.assign(process.env, env)
-    expect(await PluginStore.tag(repo)).toMatchObject({ tag: "v1.2.0", pushed: false })
-    await expect(PluginStore.tag(repo)).rejects.toThrow("tag v1.2.0 already exists")
-    const pushed = await cli(repo, "plugin", "tag", "plugins/nested", "--push")
-    expect(pushed.stdout).toContain("Tagged nested-v0.3.1 and pushed it to origin.")
-    expect((await $`git tag --list`.cwd(remote).text()).trim().split("\n")).toEqual(["nested-v0.3.1"])
-    await expect(PluginStore.tag(path.join(tmp.path, "nope"))).rejects.toThrow("is not a directory")
+    const prevName = process.env.GIT_COMMITTER_NAME
+    const prevEmail = process.env.GIT_COMMITTER_EMAIL
+    delete process.env.GIT_COMMITTER_NAME
+    delete process.env.GIT_COMMITTER_EMAIL
+    try {
+      expect(await PluginStore.tag(repo)).toMatchObject({ tag: "v1.2.0", pushed: false })
+      await expect(PluginStore.tag(repo)).rejects.toThrow("tag v1.2.0 already exists")
+      const pushed = await cli(repo, "plugin", "tag", "plugins/nested", "--push")
+      expect(pushed.stdout).toContain("Tagged nested-v0.3.1 and pushed it to origin.")
+      expect((await $`git tag --list`.cwd(remote).text()).trim().split("\n")).toEqual(["nested-v0.3.1"])
+      await expect(PluginStore.tag(path.join(tmp.path, "nope"))).rejects.toThrow("is not a directory")
+    } finally {
+      if (prevName === undefined) delete process.env.GIT_COMMITTER_NAME
+      else process.env.GIT_COMMITTER_NAME = prevName
+      if (prevEmail === undefined) delete process.env.GIT_COMMITTER_EMAIL
+      else process.env.GIT_COMMITTER_EMAIL = prevEmail
+    }
   }, 60_000)
 })

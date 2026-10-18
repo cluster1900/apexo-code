@@ -950,10 +950,22 @@ export async function tag(input: string, options: { push?: boolean } = {}) {
   const top = await git("rev-parse", "--show-toplevel").catch(() => {
     throw new Error("invalid", `${result.path} is not inside a git repository`)
   })
+  const [realTop, realPlugin] = await Promise.all([
+    fs.realpath(top).catch(() => path.resolve(top)),
+    fs.realpath(result.path).catch(() => result.path),
+  ])
   // A plugin at the repository root is tagged v1.2.3; one inside a marketplace repo is tagged name-v1.2.3.
-  const name = path.resolve(top) === result.path ? `v${result.version}` : `${result.name}-v${result.version}`
+  const name = realTop === realPlugin ? `v${result.version}` : `${result.name}-v${result.version}`
   if (await git("tag", "--list", name)) throw new Error("invalid", `tag ${name} already exists`)
-  await git("tag", "-a", name, "-m", `${result.name} ${result.version}`)
+  const [userName, userEmail] = await Promise.all([
+    git("config", "user.name").catch(() => ""),
+    git("config", "user.email").catch(() => ""),
+  ])
+  const identityArgs = [
+    ...(userName || process.env.GIT_COMMITTER_NAME ? [] : ["-c", "user.name=apexo"]),
+    ...(userEmail || process.env.GIT_COMMITTER_EMAIL ? [] : ["-c", "user.email=plugin@apexo.local"]),
+  ]
+  await git(...identityArgs, "-c", "tag.gpgSign=false", "tag", "-a", name, "-m", `${result.name} ${result.version}`)
   if (options.push) await git("push", "origin", name)
   return { tag: name, pushed: !!options.push, name: result.name, version: result.version }
 }

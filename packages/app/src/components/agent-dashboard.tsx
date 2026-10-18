@@ -278,12 +278,12 @@ export function DialogAgentDashboard() {
         class="flex flex-col gap-3 px-4 pb-4 min-h-0 outline-none"
         onKeyDown={onKeyDown}
       >
-        <div class="flex items-center justify-between text-12-regular">
-          <span class="text-text-weak truncate">
+        <div class="flex items-center justify-between gap-3 rounded-lg border border-border-weak-base bg-surface-base/50 px-3 py-1.5 text-12-regular">
+          <span class="text-text-weak truncate font-mono">
             {sync().data.vcs?.branch ? `${sync().data.vcs?.branch} ` : ""}
             {sdk().directory}
           </span>
-          <span data-dashboard-chips class="flex gap-1 shrink-0">
+          <span data-dashboard-chips class="flex gap-1.5 shrink-0 font-mono">
             <For each={dashboardChips(rows())}>
               {(chip, index) => (
                 <span class={tone(chip.state)}>
@@ -294,12 +294,15 @@ export function DialogAgentDashboard() {
             </For>
           </span>
         </div>
-        <div class="flex flex-col overflow-y-auto max-h-[45vh] font-mono text-13-regular" data-dashboard-rows>
+        <div
+          class="flex flex-col gap-0.5 overflow-y-auto max-h-[45vh] rounded-lg border border-border-weak-base bg-surface-inset-base/30 p-1.5 font-mono text-13-regular"
+          data-dashboard-rows
+        >
           <button
             type="button"
             data-dashboard-new
             data-selected={ui().selected ? undefined : ""}
-            class="text-left px-2 py-0.5 rounded"
+            class="text-left px-2.5 py-1.5 rounded-md transition-colors hover:bg-surface-base-hover"
             classList={{ "bg-surface-base-active text-text-strong": !ui().selected, "text-text-weak": !!ui().selected }}
             onClick={() => setUI({ ...ui(), selected: undefined, reply: "", option: 0, answers: [] })}
           >
@@ -312,7 +315,7 @@ export function DialogAgentDashboard() {
                 data-dashboard-row={row.id}
                 data-state={row.state}
                 data-selected={ui().selected === row.id ? "" : undefined}
-                class="flex items-center gap-2 text-left px-2 py-0.5 rounded"
+                class="flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md transition-colors hover:bg-surface-base-hover"
                 classList={{ "bg-surface-base-active": ui().selected === row.id }}
                 onClick={() =>
                   setUI(
@@ -329,35 +332,38 @@ export function DialogAgentDashboard() {
                     <span class="text-text-weak"> · {row.subtitle}</span>
                   </Show>
                 </span>
-                <span class="text-text-weak shrink-0">{formatTimeAgo(now() - row.updated)}</span>
+                <span class="text-text-weak shrink-0 text-12-regular">{formatTimeAgo(now() - row.updated)}</span>
               </button>
             )}
           </For>
           <Show when={!rows().length}>
-            <span class="px-2 text-text-weak">{ui().query ? "No agents match the filter" : "No agents yet"}</span>
+            <span class="px-2.5 py-2 text-text-weak">{ui().query ? "No agents match the filter" : "No agents yet"}</span>
           </Show>
         </div>
         <Show when={peek()}>
           {(view) => (
-            <div data-dashboard-peek class="flex flex-col gap-1 border-t border-border-weak-base pt-2 text-13-regular">
-              <div class="flex justify-between">
+            <div
+              data-dashboard-peek
+              class="flex flex-col gap-1.5 rounded-lg border border-border-weak-base bg-surface-base/60 p-3 text-13-regular"
+            >
+              <div class="flex items-center justify-between">
                 <span
                   data-peek-type
-                  class={view().responseType === "Idle" ? "text-text-weak" : "text-text-interactive-base"}
+                  class={view().responseType === "Idle" ? "text-text-weak font-medium" : "text-text-interactive-base font-medium"}
                 >
                   {view().responseType}
                 </span>
-                <span class="text-text-weak">{view().time}</span>
+                <span class="text-text-weak text-12-regular font-mono">{view().time}</span>
               </div>
-              <div data-peek-body class="text-text-base whitespace-pre-wrap line-clamp-3">
+              <div data-peek-body class="text-text-base whitespace-pre-wrap line-clamp-3 leading-5">
                 {view().body || "(no response yet)"}
               </div>
               <Show when={view().question}>
                 {(question) => (
-                  <div data-peek-question class="flex flex-col">
-                    <span class="text-icon-warning-base">{question().text}</span>
+                  <div data-peek-question class="flex flex-col gap-1 rounded-md border border-border-weak-base bg-surface-inset-base/40 p-2">
+                    <span class="text-icon-warning-base font-medium">{question().text}</span>
                     <Show when={question().multiple}>
-                      <span class="text-text-weak">
+                      <span class="text-text-weak text-12-regular">
                         Multi-select question — press Enter to open the agent and answer
                       </span>
                     </Show>
@@ -367,9 +373,9 @@ export function DialogAgentDashboard() {
                           type="button"
                           data-peek-option={option.label}
                           data-selected={ui().option === index() && ui().focus === "input" ? "" : undefined}
-                          class="text-left"
+                          class="text-left rounded px-1.5 py-0.5 transition-colors hover:bg-surface-base-hover"
                           classList={{
-                            "text-text-strong": ui().option === index() && ui().focus === "input",
+                            "text-text-strong bg-surface-base-active": ui().option === index() && ui().focus === "input",
                             "text-text-weak": !(ui().option === index() && ui().focus === "input"),
                           }}
                           onClick={() => {
@@ -390,7 +396,7 @@ export function DialogAgentDashboard() {
                   </div>
                 )}
               </Show>
-              <span data-peek-model class="text-text-weak text-12-regular">
+              <span data-peek-model class="text-text-weak text-12-regular font-mono">
                 {view().model ?? ""}
                 {view().agent ? ` · ${view().agent}` : ""}
               </span>
@@ -398,13 +404,13 @@ export function DialogAgentDashboard() {
           )}
         </Show>
         <div
-          class="flex items-start gap-2 rounded-md border px-2 py-1"
+          class="flex items-start gap-2 rounded-lg border bg-surface-inset-base/40 px-3 py-2 transition-colors"
           classList={{
             "border-border-focus": ui().focus === "input",
             "border-border-weak-base": ui().focus !== "input",
           }}
         >
-          <span class={ui().search ? "text-icon-warning-base" : "text-text-interactive-base"}>
+          <span class={ui().search ? "text-icon-warning-base font-mono" : "text-text-interactive-base font-mono"}>
             {ui().search ? "Search:" : "❯"}
           </span>
           <textarea
@@ -426,7 +432,7 @@ export function DialogAgentDashboard() {
             onInput={(event) => setUI(setActiveText(ui(), event.currentTarget.value))}
           />
         </div>
-        <span data-dashboard-hints class="text-12-regular text-text-weak">
+        <span data-dashboard-hints class="text-12-regular text-text-weak font-mono px-0.5">
           {ui().search
             ? dashboardHints.search
             : ui().selected || ui().focus === "list"

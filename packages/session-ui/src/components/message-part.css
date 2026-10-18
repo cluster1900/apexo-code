@@ -140,9 +140,9 @@
     overflow: hidden;
     unicode-bidi: plaintext;
     background: var(--v2-background-bg-layer-02);
-    border: none;
-    padding: 8px 12px;
-    border-radius: 10px;
+    border: 0.5px solid var(--v2-border-border-muted);
+    padding: 9px 14px;
+    border-radius: 14px;
 
     [data-highlight="file"] {
       color: var(--syntax-property);
@@ -373,8 +373,8 @@
   unicode-bidi: isolate;
   width: 100%;
   border: 0.5px solid var(--v2-border-border-base);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--v2-background-bg-layer-01) 65%, transparent);
   position: relative;
   overflow: hidden;
 
