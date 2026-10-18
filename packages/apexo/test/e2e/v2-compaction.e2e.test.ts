@@ -191,7 +191,10 @@ it.instance(
       ).toBe(200)
       yield* llm.wait(8)
       const budgetCompact = yield* post(`${budgetRoot}/compact`).pipe(Effect.forkChild)
-      yield* Effect.sleep("30 millis")
+      // The compaction control must be queued before the held worker turn ends; otherwise the Goal's
+      // completion evaluator runs first and adds an LLM call. The queue is not observable over HTTP,
+      // and 30ms was not enough on loaded runners; the worker stays held, so waiting longer is safe.
+      yield* Effect.sleep("1 second")
       workerGate.resolve()
       expect((yield* Fiber.join(budgetCompact)).status).toBe(204)
       const budget = yield* pollWithTimeout(
