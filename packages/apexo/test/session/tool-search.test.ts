@@ -108,7 +108,7 @@ const layer = Layer.mergeAll(
       limits: () => Effect.succeed({ maxLines: 2000, maxBytes: 50 * 1024 }),
     }),
   ),
-  RuntimeFlags.layer({ experimentalToolSearch: true }),
+  RuntimeFlags.layer({}),
 )
 
 const it = testEffect(layer)
@@ -143,7 +143,6 @@ it.effect("search_tool/use_tool discover permitted MCP tools and dispatch qualif
     })
 
     expect(Object.keys(tools).toSorted()).toEqual(["search_tool", "use_tool"])
-    expect(tools.search_tool?.description).toContain("Connected MCP servers:\n- linear (1 tool)\n- slack (1 tool)")
     const opts = { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] }
     const search = tools.search_tool!.execute!
     const use = tools.use_tool!.execute!

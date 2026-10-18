@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { poll } from "./grok-shell-fixture.mjs"
-import { autoReviewFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
+import { mcpFixture, runMcpFlow, autoReviewFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
 const kind = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 // --vim-config: config ui.vim_mode = true; checks the config default and the local override only.
@@ -25,6 +25,9 @@ const moveFlow = process.argv.includes("--move") || process.argv.includes("--mov
 const moveNew = process.argv.includes("--move-new")
 // --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
 const cycleFlow = process.argv.includes("--mode-cycle")
+// --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
+const mcpFlow = process.argv.includes("--mcp")
+const mcpSetup = mcpFlow ? mcpFixture() : undefined
 const mod = process.platform === "darwin" ? "Meta" : "Control"
 const windowModels = {
   "grok-4.7": {
@@ -35,7 +38,9 @@ const windowModels = {
 }
 const { runtime, control } = await startGoalFixture(
   kind,
-  autoFlow || cycleFlow
+  mcpFlow
+    ? mcpSetup
+    : autoFlow || cycleFlow
     ? autoReviewFixture
     : vimConfig
       ? { config: { ui: { vim_mode: true } } }
@@ -138,7 +143,16 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (cycleFlow) {
+  if (mcpFlow) {
+    const send = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "300")
+      await command("press", "Enter")
+    }
+    checks.push(...(await runMcpFlow(runtime, session, mcpSetup, send, poll)))
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (cycleFlow) {
     const body = () => command("get", "text", "body")
     const store = () =>
       command("eval", "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))")
