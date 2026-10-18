@@ -7,7 +7,18 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { poll } from "./grok-shell-fixture.mjs"
-import { mcpFixture, runMcpFlow, autoReviewFixture, bashPrefixFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
+import {
+  autoReviewFixture,
+  bashPrefixFixture,
+  dashboardFixture,
+  dashboardTexts,
+  importedClaude,
+  mcpFixture,
+  runMcpFlow,
+  seedClaude,
+  seedDashboard,
+  startGoalFixture,
+} from "./grok-goal-fixture.mjs"
 const kind = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 // --vim-config: config ui.vim_mode = true; checks the config default and the local override only.
@@ -25,6 +36,8 @@ const moveFlow = process.argv.includes("--move") || process.argv.includes("--mov
 const moveNew = process.argv.includes("--move-new")
 // --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
 const cycleFlow = process.argv.includes("--mode-cycle")
+// --dashboard: /dashboard roster, peek, reply, permission answer, dispatch, search, delete (Grok Build agent dashboard).
+const dashFlow = process.argv.includes("--dashboard")
 // --bash-prefix: bash asks; the dock shows the Grok Build scoped "Allow always" prefix, which then covers chained reuse.
 const prefixFlow = process.argv.includes("--bash-prefix")
 // --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
@@ -40,7 +53,9 @@ const windowModels = {
 }
 const { runtime, control } = await startGoalFixture(
   kind,
-  mcpFlow
+  dashFlow
+    ? dashboardFixture
+    : mcpFlow
     ? mcpSetup
     : prefixFlow
     ? bashPrefixFixture
@@ -59,6 +74,7 @@ const session = await runtime.api("/session", {
   agent: "build",
   model: { providerID: "xai", id: "grok-4.7" },
 })
+const seeded = dashFlow ? await seedDashboard(runtime) : undefined
 const replacementView = { frozen: undefined }
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, "http://localhost")
@@ -147,7 +163,152 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (mcpFlow) {
+  if (dashFlow) {
+    // Mirrors the --dashboard TUI flow in grok-slash-tui.mjs step for step.
+    const dash = "[data-dashboard]"
+    const view = () => command("get", "text", "body")
+    const shown = (text, timeout) => poll(async () => (await view()).includes(text), `render ${text}`, timeout)
+    const open = async () => (await command("eval", `!!document.querySelector("[data-dashboard]")`)).trim() === "true"
+    const order = async () =>
+      JSON.parse(
+        JSON.parse(
+          await command(
+            "eval",
+            `JSON.stringify([...document.querySelectorAll("[data-dashboard-row]")].map((e) => e.textContent))`,
+          ),
+        ),
+      )
+    const lineOf = async (text) => (await order()).findIndex((line) => line.includes(text))
+    const key = async (name, wait = 300) => {
+      await command("press", name)
+      await command("wait", String(wait))
+    }
+    const type = async (text) => {
+      await command("keyboard", "type", text)
+      await command("wait", "300")
+    }
+    const texts = (id) => dashboardTexts(runtime, id)
+    const search = async (query) => {
+      await key("Control+/")
+      await poll(async () => (await command("get", "text", dash)).includes("Search:"), "search box")
+      await type(query)
+      await key("Enter")
+    }
+    await command("click", editor)
+    await command("keyboard", "type", "/dashboard")
+    await command("wait", "400")
+    await command("press", "Enter")
+    await shown("+ New Agent", 20_000)
+    for (const chip of ["◆ 1 awaiting", "⋮ 1 working", "◇ 2 idle"]) await shown(chip)
+    await shown("Pending: Bash echo dash-perm")
+    assert.ok((await lineOf("Dash perm")) < (await lineOf("Dash busy")), "Awaiting sorts above Working")
+    assert.ok((await lineOf("Dash busy")) < (await lineOf("Dash idle")), "Working sorts above Idle")
+    checks.push("roster-sorted-by-state-with-header-chips")
+
+    await key("ArrowDown")
+    await shown("1. Allow once")
+    await shown("3. Reject")
+    checks.push("peek-shows-pending-permission-options")
+    await key("1")
+    await poll(
+      async () => (await texts(seeded.perm)).includes("assistant:DASH_PERM_DONE"),
+      "permission answered",
+      30_000,
+    )
+    checks.push("peek-number-key-answers-permission")
+
+    await search("busy")
+    await poll(
+      async () => (await lineOf("Dash idle")) === -1 && (await lineOf("Dash busy")) !== -1,
+      "filter keeps only the busy row",
+    )
+    checks.push("ctrl-slash-search-filters-rows")
+    await key("ArrowDown")
+    await poll(
+      async () => (await command("get", "text", "[data-dashboard-peek]").catch(() => "")).includes("Working"),
+      "peek Working",
+    )
+    await type("DASH_REPLY one")
+    await key("Enter")
+    await shown("Reply queued")
+    assert.ok(!(await texts(seeded.busy)).some((text) => text.includes("DASH_REPLY one")), "queued while busy")
+    dashboardFixture.release()
+    await poll(
+      async () => (await texts(seeded.busy)).includes("assistant:DASH_REPLY_ACK one"),
+      "queued reply delivered",
+      30_000,
+    )
+    const busy = await texts(seeded.busy)
+    assert.ok(
+      busy.indexOf("assistant:DASH_BUSY_DONE") < busy.indexOf("user:DASH_REPLY one"),
+      "delivered after the turn",
+    )
+    checks.push("peek-reply-to-busy-agent-queues-until-idle")
+
+    await key("Escape")
+    await key("Escape")
+    await poll(async () => (await lineOf("Dash idle")) !== -1, "filter cleared by Esc")
+    await search("Dash idle")
+    await key("ArrowDown")
+    await shown("DASH_IDLE_ANSWER first line")
+    assert.equal((await command("get", "text", "[data-peek-type]")).trim(), "Response")
+    checks.push("peek-shows-response-type-and-last-response")
+    await type("DASH_REPLY two")
+    await key("Control+s")
+    await poll(
+      async () => (await texts(seeded.idle)).includes("assistant:DASH_REPLY_ACK two"),
+      "idle reply sent",
+      30_000,
+    )
+    await poll(
+      async () => !(await open()) && (await command("get", "url")).includes(seeded.idle),
+      "Ctrl+S opened the agent",
+    )
+    await shown("DASH_REPLY_ACK two", 15_000)
+    checks.push("ctrl-s-replies-and-opens-agent")
+    await key("Control+\\", 600)
+    await shown("+ New Agent")
+    checks.push("ctrl-backslash-opens-dashboard")
+    await key("Control+\\", 600)
+    await poll(async () => !(await open()), "Ctrl+\\ inside the dashboard exits it")
+    await key("Control+\\", 600)
+    await shown("+ New Agent")
+    checks.push("ctrl-backslash-toggles-dashboard-closed")
+
+    const before = (await runtime.api("/session")).length
+    await key("Tab")
+    await type("DASH_DISPATCH new")
+    await key("Enter")
+    const created = await poll(async () => {
+      const list = await runtime.api("/session")
+      return list.length > before && list.find((item) => ![session.id, ...Object.values(seeded)].includes(item.id))
+    }, "dispatched session")
+    await poll(
+      async () => (await texts(created.id)).includes("assistant:DASH_DISPATCH_ACK"),
+      "dispatch answered",
+      30_000,
+    )
+    await shown("Agent dispatched")
+    assert.ok(await open(), "plain Enter stays on the dashboard")
+    checks.push("dispatch-spawns-session-and-stays")
+
+    await search("Dash perm")
+    await key("ArrowDown")
+    await key("Control+x")
+    await shown("Press Ctrl+X again")
+    await key("Control+x")
+    await poll(
+      async () => (await fetch(`${runtime.url}/session/${seeded.perm}`)).status === 404,
+      "session deleted",
+      15_000,
+    )
+    checks.push("ctrl-x-twice-deletes-settled-row")
+
+    for (let index = 0; index < 4 && (await open()); index++) await key("Escape", 500)
+    await poll(async () => !(await open()), "Esc closes the dashboard")
+    checks.push("esc-steps-back-then-exits")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (mcpFlow) {
     const send = async (text) => {
       await command("click", editor)
       await command("keyboard", "type", text)
@@ -159,7 +320,10 @@ try {
   } else if (cycleFlow) {
     const body = () => command("get", "text", "body")
     const store = () =>
-      command("eval", "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))")
+      command(
+        "eval",
+        "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))",
+      )
     await command("click", editor)
     const step = async (toast) => {
       await command("click", editor)
@@ -169,7 +333,8 @@ try {
     }
     const messages = async () => runtime.api(`/session/${session.id}/message`)
     const agentOf = async (text) =>
-      (await messages()).find((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text))?.info.agent
+      (await messages()).find((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text))?.info
+        .agent
     const sendText = async (text) => {
       await command("click", editor)
       await command("keyboard", "type", text)
@@ -189,10 +354,16 @@ try {
     await poll(async () => /review[^}]*true/.test(await store()), "review on")
     checks.push("shift-tab-enters-auto-review")
     await step("Always-approve mode")
-    await poll(async () => /autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "always on")
+    await poll(
+      async () => /autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()),
+      "always on",
+    )
     checks.push("shift-tab-enters-always-approve")
     await step("Normal mode")
-    await poll(async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "normal")
+    await poll(
+      async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()),
+      "normal",
+    )
     checks.push("shift-tab-returns-to-normal")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (moveNew) {
@@ -209,15 +380,25 @@ try {
     await poll(async () => (await body()).includes("uncommitted change"), "asks about changes", 60_000)
     await command("find", "text", "Yes, move the changes", "click")
     let moved
-    await poll(async () => {
-      moved = (await runtime.api(`/session/${session.id}`)).directory
-      return moved !== runtime.directory
-    }, "session moved to the new worktree", 60_000)
+    await poll(
+      async () => {
+        moved = (await runtime.api(`/session/${session.id}`)).directory
+        return moved !== runtime.directory
+      },
+      "session moved to the new worktree",
+      60_000,
+    )
     const project = (await runtime.api(`/session/${session.id}`)).projectID
-    assert.ok(moved.startsWith(join(runtime.env.XDG_DATA_HOME, "apexo", "worktree", project.slice(0, 6))), `server-side location: ${moved}`)
+    assert.ok(
+      moved.startsWith(join(runtime.env.XDG_DATA_HOME, "apexo", "worktree", project.slice(0, 6))),
+      `server-side location: ${moved}`,
+    )
     checks.push("move-new-worktree-created-by-server-in-cli-location")
     const listed = await runtime.api(`/project/${project}/directories`)
-    assert.ok(listed.some((item) => item.directory === moved), "new worktree is a known project directory")
+    assert.ok(
+      listed.some((item) => item.directory === moved),
+      "new worktree is a known project directory",
+    )
     checks.push("new-worktree-registered")
     await poll(async () => existsSync(join(moved, "dirty.txt")), "changes moved along", 20_000)
     checks.push("move-new-carries-changes")
@@ -260,7 +441,10 @@ try {
     assert.ok(reminder, "cwd reminder recorded")
     checks.push("move-follows-session")
     const { existsSync } = await import("node:fs")
-    assert.ok(existsSync(join(runtime.directory, "dirty.txt")) && !existsSync(join(target, "dirty.txt")), "changes stayed")
+    assert.ok(
+      existsSync(join(runtime.directory, "dirty.txt")) && !existsSync(join(target, "dirty.txt")),
+      "changes stayed",
+    )
     checks.push("move-leaves-changes-when-asked")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (editFlow) {
@@ -467,9 +651,15 @@ try {
     assert.ok(autoReviewFixture.classified.some((item) => item.includes("terraform plan")))
     checks.push("model-classifier-approves-unknown-safe-command")
     await slash("AUTO_MODEL_ASK")
-    await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "model escalates")
+    await poll(
+      async () => (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")),
+      "model escalates",
+    )
     await Bun.sleep(1500)
-    assert.ok((await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "still pending")
+    assert.ok(
+      (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")),
+      "still pending",
+    )
     checks.push("model-classifier-escalates-risky-command")
     for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
     await slash("/always-approve")
