@@ -440,7 +440,10 @@ it.instance(
       yield* Effect.promise(() => rm(worktree, { recursive: true, force: true }))
     }),
   { git: true },
-  30000,
+  // Three full Task lifecycles (create worktree, delete it, reconstruct twice from the settled snapshot),
+  // each polled for up to 20s. A 30s cap was smaller than the test's own polling budget and failed on
+  // loaded CI runners even though every phase finished.
+  60000,
 )
 
 it.instance(
