@@ -264,6 +264,7 @@ export type UserMessage = {
     providerID: string
     modelID: string
     variant?: string
+    contextWindow?: number
   }
   system?: string
   tools?: {
@@ -1896,6 +1897,7 @@ export type ProviderConfig = {
         context: number
         input?: number
         output: number
+        context_options?: Array<number>
       }
       modalities?: {
         input?: Array<"text" | "audio" | "image" | "video" | "pdf">
@@ -2355,6 +2357,7 @@ export type Model = {
     context: number
     input?: number
     output: number
+    context_options?: Array<number>
   }
   status: "alpha" | "beta" | "deprecated" | "active"
   options: {
@@ -13272,6 +13275,7 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    contextWindow?: number
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -13543,6 +13547,7 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    contextWindow?: number
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

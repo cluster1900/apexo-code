@@ -9,7 +9,24 @@ import { startGoalFixture } from "./grok-goal-fixture.mjs"
 
 // --vim-config: start with config ui.vim_mode = true and check the config default plus the local override only.
 const vimConfig = process.argv.includes("--vim-config")
-const { runtime } = await startGoalFixture("cli", vimConfig ? { config: { ui: { vim_mode: true } } } : {})
+// --context-window: the model lists several sizes; checks /context-window only.
+const windowFlow = process.argv.includes("--context-window")
+const { runtime } = await startGoalFixture(
+  "cli",
+  vimConfig
+    ? { config: { ui: { vim_mode: true } } }
+    : windowFlow
+      ? {
+          models: {
+            "grok-4.7": {
+              name: "Restart parity",
+              tool_call: true,
+              limit: { context: 100000, output: 10000, context_options: [100000, 50000, 100] },
+            },
+          },
+        }
+      : {},
+)
 const terminal = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
 const plain = () =>
   Array.from({ length: terminal.rows }, (_, row) =>
@@ -64,7 +81,41 @@ try {
     await Bun.sleep(300)
   }
 
-  if (vimConfig) {
+  if (windowFlow) {
+    await run("context-window")
+    await rendered("Context window")
+    assert.ok(plain().includes("100k") && plain().includes("50k") && plain().includes("100 "))
+    checks.push("context-window-lists-model-sizes")
+    child.terminal.write("\x1b")
+    await Bun.sleep(300)
+    await run("context-window 2M")
+    await rendered("Unsupported context window")
+    checks.push("context-window-rejects-unsupported")
+    await run("context-window 50000")
+    await rendered("Context window set to 50k")
+    child.terminal.write("CW_PROMPT")
+    await rendered("CW_PROMPT")
+    child.terminal.write("\r")
+    const users = async () =>
+      (await runtime.api(`/session/${session.id}/message`)).filter((item) => item.info.role === "user")
+    await poll(
+      async () => (await users()).some((item) => item.info.model.contextWindow === 50000),
+      "prompt carries 50k",
+    )
+    checks.push("prompt-carries-session-window")
+    await poll(async () => (await runtime.api(`/session/${session.id}/message`)).at(-1)?.info.time?.completed, "reply")
+    await run("context-window 100")
+    await rendered("compacting to fit")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+          item.parts.some((part) => part.type === "compaction"),
+        ),
+      "auto-compact started",
+    )
+    checks.push("smaller-than-usage-starts-auto-compact")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (vimConfig) {
     await Bun.sleep(500)
     child.terminal.write("\x1b")
     await rendered("Scrollback: j/k scroll")

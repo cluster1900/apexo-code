@@ -64,6 +64,7 @@ type LegacyPrompt = {
   agent?: string
   model?: { providerID: string; modelID: string }
   variant?: string
+  contextWindow?: number
   legacyParts?: (TextPartInput | FilePartInput | AgentPartInput)[]
 }
 type LegacyLocation = { directory?: string }
@@ -301,6 +302,7 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
           agent: value.agent,
           model: value.model,
           variant: value.variant,
+          ...(value.contextWindow ? { contextWindow: value.contextWindow } : {}),
           parts: value.legacyParts ?? [
             { type: "text", text: value.text },
             ...(value.files ?? []).map((file) => ({

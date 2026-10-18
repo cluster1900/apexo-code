@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
+  contextWindowLabel,
+  effectiveContextWindow,
+  parseContextWindow,
   resolveCompactMode,
   resolveVimMode,
   vimScrollAction,
@@ -95,5 +98,29 @@ describe("resolveCompactMode", () => {
     expect(resolveCompactMode(undefined, undefined)).toBe(false)
     expect(resolveCompactMode(undefined, { ui: { compact_mode: true } })).toBe(true)
     expect(resolveCompactMode(false, { ui: { compact_mode: true } })).toBe(false)
+  })
+})
+
+describe("context window", () => {
+  const options = [256_000, 500_000, 2_000_000]
+  test("labels", () => {
+    expect(options.map(contextWindowLabel)).toEqual(["256k", "500k", "2M"])
+  })
+  test("accepts labels and raw token counts", () => {
+    expect(parseContextWindow("500k", options)).toEqual({ size: 500_000 })
+    expect(parseContextWindow("2M", options)).toEqual({ size: 2_000_000 })
+    expect(parseContextWindow("256000", options)).toEqual({ size: 256_000 })
+    expect(parseContextWindow("256,000", options)).toEqual({ size: 256_000 })
+  })
+  test("rejects unsupported sizes with the available list", () => {
+    expect(parseContextWindow("1M", options)).toEqual({
+      error: 'Unsupported context window "1M". Available: 256k, 500k, 2M',
+    })
+    expect("error" in parseContextWindow("", options)).toBe(true)
+  })
+  test("carries over only to models that support the same size", () => {
+    expect(effectiveContextWindow(500_000, [128_000, 500_000])).toBe(500_000)
+    expect(effectiveContextWindow(500_000, [128_000])).toBeUndefined()
+    expect(effectiveContextWindow(undefined, options)).toBeUndefined()
   })
 })

@@ -9,6 +9,7 @@ export async function startGoalFixture(kind, options = {}) {
   const runtime = await startShellFixture(kind, {
     goalReports: true,
     config: options.config,
+    models: options.models,
     next: async ({ body, ancillary }) => {
       const text = JSON.stringify(body)
       const phase = text.includes("independent goal planner")

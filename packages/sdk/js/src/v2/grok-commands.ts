@@ -217,3 +217,32 @@ export function resolveCompactMode(
 ) {
   return local ?? config?.ui?.compact_mode ?? false
 }
+
+/** Short label for a context window size: 256000 → "256k", 2000000 → "2M". */
+export function contextWindowLabel(size: number) {
+  if (size >= 1_000_000) return `${Number((size / 1_000_000).toFixed(1))}M`
+  if (size < 1000) return String(size)
+  return `${Number((size / 1000).toFixed(1))}k`
+}
+
+/**
+ * `/context-window <size>`: accepts the short label ("500k", "2M") or the raw token count, and must name one of the
+ * sizes the current model supports.
+ */
+export function parseContextWindow(input: string, options: readonly number[]): { size: number } | { error: string } {
+  const text = input.trim().toLowerCase().replace(/,/g, "")
+  const available = `Available: ${options.map(contextWindowLabel).join(", ")}`
+  if (!text) return { error: `Usage: /context-window <size>. ${available}` }
+  const byLabel = options.find((size) => contextWindowLabel(size).toLowerCase() === text)
+  if (byLabel) return { size: byLabel }
+  const match = /^(\d+(?:\.\d+)?)([km])?$/.exec(text)
+  const value = match ? Number(match[1]) * (match[2] === "m" ? 1_000_000 : match[2] === "k" ? 1000 : 1) : NaN
+  const size = options.find((option) => option === value)
+  if (size) return { size }
+  return { error: `Unsupported context window "${input.trim()}". ${available}` }
+}
+
+/** Whether a session's chosen window applies to a model: only when the model lists that size (carry-over rule). */
+export function effectiveContextWindow(choice: number | undefined, options: readonly number[] | undefined) {
+  return choice && options?.includes(choice) ? choice : undefined
+}

@@ -1,5 +1,7 @@
 import {
   contextUsage,
+  contextWindowLabel,
+  parseContextWindow,
   docsGuides,
   docsURL,
   parseSlashInput,
@@ -24,6 +26,7 @@ import { usePromptRef } from "../context/prompt"
 import { useKV } from "../context/kv"
 import { useVimMode } from "../context/vim-mode"
 import { useCompactMode } from "../context/compact-mode"
+import { contextWindowChoice, setContextWindowChoice } from "../context/context-window"
 import { DialogVariant } from "./dialog-variant"
 import { DialogThemeList } from "./dialog-theme-list"
 import { DialogModel } from "./dialog-model"
@@ -279,6 +282,54 @@ export function useGrokCommands() {
     ))
   }
 
+  // /context-window: listed only when the current model supports more than one size.
+  const windowOptions = () => {
+    const current = local.model.current()
+    if (!current) return []
+    return (
+      sync.data.provider.find((item) => item.id === current.providerID)?.models[current.modelID]?.limit
+        .context_options ?? []
+    )
+  }
+  const setWindow = (size: number) => {
+    const id = requireSession()
+    const current = local.model.current()
+    if (!id || !current) return
+    setContextWindowChoice(id, size)
+    const usage = contextUsage((sync.data.message[id] ?? []) as Parameters<typeof contextUsage>[0], size)
+    if (usage && usage.used > size) {
+      toast.show({ variant: "info", message: `Context window set to ${contextWindowLabel(size)}; compacting to fit` })
+      void sdk.client.session.summarize({ sessionID: id, providerID: current.providerID, modelID: current.modelID })
+      return
+    }
+    toast.show({ variant: "info", message: `Context window set to ${contextWindowLabel(size)}` })
+  }
+  const contextWindow = (arg?: string) => {
+    const options = windowOptions()
+    if (options.length < 2)
+      return toast.show({ variant: "info", message: "The current model supports a single context window." })
+    if (arg) {
+      const parsed = parseContextWindow(arg, options)
+      if ("error" in parsed) return toast.show({ variant: "error", message: parsed.error })
+      return setWindow(parsed.size)
+    }
+    const chosen = contextWindowChoice(sessionID())
+    dialog.replace(() => (
+      <DialogSelect
+        title="Context window"
+        options={options.map((size) => ({
+          title: contextWindowLabel(size),
+          value: size,
+          description: size === chosen ? "current" : `${size.toLocaleString()} tokens`,
+        }))}
+        onSelect={(option) => {
+          dialog.clear()
+          setWindow(option.value)
+        }}
+      />
+    ))
+  }
+
   const commands = [
     {
       name: "grok.context",
@@ -385,6 +436,14 @@ export function useGrokCommands() {
         dialog.clear()
       },
     },
+    {
+      name: "grok.context-window",
+      title: "Set the context window",
+      category: "Session",
+      slashName: "context-window",
+      hidden: windowOptions().length < 2,
+      run: () => contextWindow(),
+    },
     { name: "grok.logout", title: "Log out of a provider", category: "Provider", slashName: "logout", run: logout },
   ]
 
@@ -393,6 +452,7 @@ export function useGrokCommands() {
     const input = parseSlashInput(text)
     if (!input?.args) return { handled: false }
     if (input.name === "effort") return (effort(input.args), { handled: true })
+    if (input.name === "context-window") return (contextWindow(input.args), { handled: true })
     if (["docs", "howto", "guides"].includes(input.name)) return (docs(input.args), { handled: true })
     if (input.name === "plan") {
       const description = plan(input.args)

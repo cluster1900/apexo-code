@@ -257,6 +257,7 @@ const ProviderLimit = Schema.Struct({
   context: Schema.Finite,
   input: optional(Schema.Finite),
   output: Schema.Finite,
+  context_options: optional(Schema.Array(Schema.Finite)),
 })
 
 export const Model = Schema.Struct({
@@ -730,6 +731,7 @@ const layer = Layer.effect(
                 context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
                 input: model.limit?.input ?? existingModel?.limit?.input,
                 output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
+                context_options: model.limit?.context_options ?? existingModel?.limit?.context_options,
               },
               headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
               family: model.family ?? existingModel?.family ?? "",

@@ -835,6 +835,12 @@ const layer = Layer.effect(
               .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
           : undefined
       const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
+      const windowModel = input.contextWindow
+        ? (full ??
+          (yield* provider
+            .getModel(model.providerID, model.modelID)
+            .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))))
+        : undefined
 
       const info: SessionV1.User = {
         id: input.messageID ?? MessageID.ascending(),
@@ -847,6 +853,9 @@ const layer = Layer.effect(
           providerID: model.providerID,
           modelID: model.modelID,
           variant,
+          ...(input.contextWindow && windowModel?.limit.context_options?.includes(input.contextWindow)
+            ? { contextWindow: input.contextWindow }
+            : {}),
         },
         system: input.system,
         format: input.format,
@@ -1504,7 +1513,13 @@ const layer = Layer.effect(
             history: msgs,
           }).pipe(Effect.provideService(SessionGoalUsage.Current, goalAttempt), Effect.ignore, Effect.forkIn(scope))
 
-        const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+        const resolved = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+        // /context-window: the session's chosen size is the effective limit for overflow and auto-compaction.
+        const window = lastUser.model.contextWindow
+        const model =
+          window && resolved.limit.context_options?.includes(window)
+            ? { ...resolved, limit: { ...resolved.limit, context: window } }
+            : resolved
         const task = tasks.pop()
 
         if (task?.type === "subtask") {
@@ -2003,6 +2018,7 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(SessionV1.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  contextWindow: Schema.optional(Schema.Finite),
   parts: Schema.Array(
     Schema.Union([
       SessionV1.TextPartInput,

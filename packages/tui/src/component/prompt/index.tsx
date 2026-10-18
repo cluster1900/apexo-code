@@ -52,6 +52,8 @@ import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { scrollback } from "../../context/scrollback"
+import { contextWindowChoice } from "../../context/context-window"
+import { effectiveContextWindow } from "@apexo/sdk/v2/grok-commands"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
@@ -1354,6 +1356,11 @@ export function Prompt(props: PromptProps) {
       agentName: agent.name,
       model: selectedModel,
       variant,
+      contextWindow: effectiveContextWindow(
+        contextWindowChoice(sessionID),
+        sync.data.provider.find((item) => item.id === selectedModel.providerID)?.models[selectedModel.modelID]?.limit
+          .context_options,
+      ),
       mode: currentMode,
       inputText,
       nonTextParts,

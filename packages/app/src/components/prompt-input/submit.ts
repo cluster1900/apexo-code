@@ -1,3 +1,5 @@
+import { effectiveContextWindow } from "@apexo/sdk/v2/grok-commands"
+import { contextWindowChoice } from "@/utils/context-window"
 import type { SandboxProfile } from "@apexo/sdk/v2/client"
 import type { GoalStart } from "@apexo/sdk/v2/client"
 import type { Message, Session } from "@apexo/sdk/v2/client"
@@ -42,6 +44,7 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
+  contextWindow?: number
 }
 
 type FollowupSendInput = {
@@ -174,6 +177,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       agent: input.draft.agent,
       model: input.draft.model,
       variant: input.draft.variant,
+      contextWindow: input.draft.contextWindow,
       legacyParts: requestParts,
       text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
       files: requestParts.flatMap((part) => {
@@ -522,6 +526,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      contextWindow: effectiveContextWindow(contextWindowChoice(session.id), currentModel.limit.context_options),
     }
 
     const clearInput = () => {

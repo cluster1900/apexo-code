@@ -12,7 +12,19 @@ const kind = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 // --vim-config: config ui.vim_mode = true; checks the config default and the local override only.
 const vimConfig = process.argv.includes("--vim-config")
-const { runtime, control } = await startGoalFixture(kind, vimConfig ? { config: { ui: { vim_mode: true } } } : {})
+// --context-window: the model lists several sizes; checks /context-window only.
+const windowFlow = process.argv.includes("--context-window")
+const windowModels = {
+  "grok-4.7": {
+    name: "Restart parity",
+    tool_call: true,
+    limit: { context: 100000, output: 10000, context_options: [100000, 50000, 100] },
+  },
+}
+const { runtime, control } = await startGoalFixture(
+  kind,
+  vimConfig ? { config: { ui: { vim_mode: true } } } : windowFlow ? { models: windowModels } : {},
+)
 const session = await runtime.api("/session", {
   title: "Slash UI",
   agent: "build",
@@ -106,7 +118,47 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (vimConfig) {
+  if (windowFlow) {
+    const body = () => command("get", "text", "body")
+    const slash = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "400")
+      await command("press", "Enter")
+    }
+    await slash("/context-window")
+    await poll(async () => /100k[\s\S]*50k/.test(await body()), "window dialog sizes")
+    checks.push("context-window-lists-model-sizes")
+    await command("press", "Escape")
+    await command("wait", "300")
+    await slash("/context-window 2M ")
+    await poll(async () => (await body()).includes("Unsupported context window"), "rejects 2M")
+    checks.push("context-window-rejects-unsupported")
+    await slash("/context-window 50000 ")
+    await poll(async () => (await body()).includes("Context window set to 50k"), "set 50k")
+    await command("click", editor)
+    await command("keyboard", "type", "CW_PROMPT")
+    await command("press", "Enter")
+    const users = async () =>
+      (await runtime.api(`/session/${session.id}/message`)).filter((item) => item.info.role === "user")
+    await poll(
+      async () => (await users()).some((item) => item.info.model.contextWindow === 50000),
+      "prompt carries 50k",
+    )
+    checks.push("prompt-carries-session-window")
+    await poll(async () => (await runtime.api(`/session/${session.id}/message`)).at(-1)?.info.time?.completed, "reply")
+    await slash("/context-window 100 ")
+    await poll(async () => (await body()).includes("compacting to fit"), "compacting toast")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+          item.parts.some((part) => part.type === "compaction"),
+        ),
+      "auto-compact started",
+    )
+    checks.push("smaller-than-usage-starts-auto-compact")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (vimConfig) {
     await runtime.api(`/session/${session.id}/message`, {
       agent: "build",
       model: { providerID: "xai", modelID: "grok-4.7" },

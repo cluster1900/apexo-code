@@ -2,6 +2,8 @@ import { For, type Accessor } from "solid-js"
 import type { TextPart } from "@apexo/sdk/v2/client"
 import {
   contextUsage,
+  contextWindowLabel,
+  parseContextWindow,
   docsGuides,
   docsURL,
   parseSlashInput,
@@ -26,6 +28,7 @@ import { showToast } from "@/utils/toast"
 import { multiline, setMultiline } from "@apexo/session-ui/v2/prompt-input/multiline"
 import { setVimMode, vimMode } from "@/utils/vim-mode"
 import { applyCompactMode, compactMode, setCompactMode } from "@/utils/compact-mode"
+import { contextWindowChoice, setContextWindowChoice } from "@/utils/context-window"
 
 type Item<T> = { title: string; value: T; detail?: string }
 
@@ -140,6 +143,44 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     text(`${language.t("grok.plan.view")} · ${path}`, [
       content.length > 20_000 ? content.slice(0, 20_000) + "\n…" : content,
     ])
+  }
+
+  // /context-window: listed only when the current model supports more than one size.
+  const windowOptions = () => local.model.current()?.limit.context_options ?? []
+  const setWindow = (size: number) => {
+    const id = sessionID()
+    const current = local.model.current()
+    if (!id || !current) return
+    setContextWindowChoice(id, size)
+    const label = contextWindowLabel(size)
+    const usage = contextUsage(sync().data.message[id] ?? [], size)
+    if (usage && usage.used > size) {
+      info(language.t("grok.contextWindow.compacting", { size: label }))
+      void sdk().client.session.summarize({ sessionID: id, providerID: current.provider.id, modelID: current.id })
+      return
+    }
+    info(language.t("grok.contextWindow.set", { size: label }))
+  }
+  const contextWindow = (arg?: string) => {
+    const options = windowOptions()
+    if (options.length < 2) return info(language.t("grok.contextWindow.single"))
+    if (arg) {
+      const parsed = parseContextWindow(arg, options)
+      if ("error" in parsed) return info(parsed.error)
+      return setWindow(parsed.size)
+    }
+    const chosen = contextWindowChoice(sessionID())
+    dialog.show(() => (
+      <DialogGrokList
+        title={language.t("grok.contextWindow")}
+        items={options.map((size) => ({
+          title: contextWindowLabel(size),
+          value: size,
+          detail: size === chosen ? language.t("grok.contextWindow.current") : size.toLocaleString(language.intl()),
+        }))}
+        onSelect={(item) => setWindow(item.value)}
+      />
+    ))
   }
 
   const context = () => {
@@ -331,6 +372,14 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
         info(language.t(next ? "grok.compact.enabled" : "grok.compact.disabled"))
       },
     },
+    {
+      id: "grok.context-window",
+      title: language.t("grok.contextWindow"),
+      category: "Session",
+      slash: "context-window",
+      hidden: windowOptions().length < 2,
+      onSelect: () => contextWindow(),
+    },
     { id: "grok.logout", title: language.t("grok.logout"), category: "Provider", slash: "logout", onSelect: logout },
   ]
 
@@ -339,6 +388,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     const parsed = parseSlashInput(input)
     if (!parsed?.args) return { handled: false }
     if (parsed.name === "effort") return (effort(parsed.args), { handled: true })
+    if (parsed.name === "context-window") return (contextWindow(parsed.args), { handled: true })
     if (["docs", "howto", "guides"].includes(parsed.name)) return (docs(parsed.args), { handled: true })
     if (parsed.name === "plan") return plan(parsed.args) ? { handled: false, text: parsed.args } : { handled: true }
     return { handled: false }
