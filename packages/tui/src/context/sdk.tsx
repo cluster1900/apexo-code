@@ -218,12 +218,15 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         requestID: string
         reply: "once" | "always" | "reject"
         message?: string
+        /** Scope picker selection for "always" (one of metadata.alwaysChoices). */
+        always?: string[]
         directory?: string
         workspace?: string
       }) {
         const selected = await transport()
+        const { always, ...rest } = input
         return selected.kind === "native"
-          ? selected.replyPermission(input)
+          ? selected.replyPermission({ ...rest, ...(always ? { save: always } : {}) })
           : sdk.permission.reply(input, { throwOnError: true })
       },
       event: emitter,

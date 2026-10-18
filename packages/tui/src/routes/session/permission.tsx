@@ -117,8 +117,32 @@ export function PermissionPrompt(props: {
   const sync = useSync()
   const [store, setStore] = createStore({
     stage: "permission" as PermissionStage,
+    scope: undefined as number | undefined,
   })
   const pathFormatter = usePathFormatter()
+  // Grok Build "Always allow" scope picker: each choice is a complete save set for the primary command.
+  const choices = createMemo(() => {
+    const value = props.request.metadata?.alwaysChoices
+    if (!Array.isArray(value)) return []
+    return value.filter(
+      (item): item is { label: string; save: string[] } => typeof item?.label === "string" && Array.isArray(item?.save),
+    )
+  })
+  const scope = createMemo(() => {
+    const list = choices()
+    if (!list.length) return undefined
+    const fallback = Number(props.request.metadata?.alwaysDefault ?? 0)
+    return Math.min(list.length - 1, Math.max(0, store.scope ?? fallback))
+  })
+  const alwaysPatterns = createMemo(() => {
+    const index = scope()
+    return index === undefined ? props.request.always : choices()[index]!.save
+  })
+  const moveScope = (delta: number) => {
+    const index = scope()
+    if (index === undefined) return
+    setStore("scope", Math.min(choices().length - 1, Math.max(0, index + delta)))
+  }
 
   const session = createMemo(() => sync.data.session.find((s) => s.id === props.request.sessionID))
 
@@ -141,37 +165,48 @@ export function PermissionPrompt(props: {
       <Match when={store.stage === "always"}>
         <Prompt
           title="Always allow"
+          onLeft={choices().length > 1 ? () => moveScope(-1) : undefined}
+          onRight={choices().length > 1 ? () => moveScope(1) : undefined}
           body={
-            <Switch>
-              <Match when={props.request.approvalLifetime === "saved"}>
-                <box paddingLeft={1} gap={1}>
+            <box gap={1}>
+              <Show when={choices().length > 1}>
+                <box paddingLeft={1}>
                   <text fg={theme.textMuted}>
-                    {props.request.always.length
-                      ? "Save approval for these resources:"
-                      : "This request does not offer a saved approval scope."}
+                    {`Scope ${(scope() ?? 0) + 1}/${choices().length}: ← narrower · wider → (${choices()[scope() ?? 0]?.label})`}
                   </text>
-                  <For each={props.request.always}>{(pattern) => <text fg={theme.text}>{"- " + pattern}</text>}</For>
                 </box>
-              </Match>
-              <Match when={props.request.always.length === 1 && props.request.always[0] === "*"}>
-                <TextBody title={"This will allow " + props.request.permission + " until Apexo is restarted."} />
-              </Match>
-              <Match when={true}>
-                <box paddingLeft={1} gap={1}>
-                  <text fg={theme.textMuted}>This will allow the following patterns until Apexo is restarted</text>
-                  <box>
-                    <For each={props.request.always}>
-                      {(pattern) => (
-                        <text fg={theme.text}>
-                          {"- "}
-                          {pattern}
-                        </text>
-                      )}
-                    </For>
+              </Show>
+              <Switch>
+                <Match when={props.request.approvalLifetime === "saved"}>
+                  <box paddingLeft={1} gap={1}>
+                    <text fg={theme.textMuted}>
+                      {alwaysPatterns().length
+                        ? "Save approval for these resources:"
+                        : "This request does not offer a saved approval scope."}
+                    </text>
+                    <For each={alwaysPatterns()}>{(pattern) => <text fg={theme.text}>{"- " + pattern}</text>}</For>
                   </box>
-                </box>
-              </Match>
-            </Switch>
+                </Match>
+                <Match when={alwaysPatterns().length === 1 && alwaysPatterns()[0] === "*"}>
+                  <TextBody title={"This will allow " + props.request.permission + " until Apexo is restarted."} />
+                </Match>
+                <Match when={true}>
+                  <box paddingLeft={1} gap={1}>
+                    <text fg={theme.textMuted}>This will allow the following patterns until Apexo is restarted</text>
+                    <box>
+                      <For each={alwaysPatterns()}>
+                        {(pattern) => (
+                          <text fg={theme.text}>
+                            {"- "}
+                            {pattern}
+                          </text>
+                        )}
+                      </For>
+                    </box>
+                  </box>
+                </Match>
+              </Switch>
+            </box>
           }
           options={{ confirm: "Confirm", cancel: "Cancel" }}
           escapeKey="cancel"
@@ -182,6 +217,7 @@ export function PermissionPrompt(props: {
               sessionID: props.request.sessionID,
               reply: "always",
               requestID: props.request.id,
+              ...(scope() === undefined ? {} : { always: [...alwaysPatterns()] }),
               directory: props.directory,
               workspace: project.workspace.current(),
             })
@@ -546,6 +582,9 @@ function Prompt<const T extends Record<string, string>>(props: {
   options: T
   escapeKey?: keyof T
   fullscreen?: boolean
+  /** When set, the left/right arrows drive this instead of cycling options (h/l still cycle). */
+  onLeft?: () => void
+  onRight?: () => void
   onSelect: (option: keyof T) => void
 }) {
   const { theme } = useTheme()
@@ -587,6 +626,7 @@ function Prompt<const T extends Record<string, string>>(props: {
         desc: "Previous permission option",
         group: "Permission",
         cmd: () => {
+          if (props.onLeft) return props.onLeft()
           const idx = keys.indexOf(store.selected)
           const next = keys[(idx - 1 + keys.length) % keys.length]
           setStore("selected", next)
@@ -607,6 +647,7 @@ function Prompt<const T extends Record<string, string>>(props: {
         desc: "Next permission option",
         group: "Permission",
         cmd: () => {
+          if (props.onRight) return props.onRight()
           const idx = keys.indexOf(store.selected)
           const next = keys[(idx + 1) % keys.length]
           setStore("selected", next)

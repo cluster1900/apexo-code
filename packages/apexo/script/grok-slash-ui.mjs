@@ -378,16 +378,36 @@ try {
     }
     await send("PREFIX_FIRST")
     await alwaysViaDock("git status", ["git status *"])
-    checks.push("dock-shows-arity-prefix:git status *")
+    checks.push("dock-shows-grok-scope:git status *")
     await send("PREFIX_AGAIN")
     await poll(() => ran("cd . && git status --short"), "chained reuse ran without a prompt", 30_000)
     checks.push("saved-prefix-covers-cd-chain-and-flags")
     await send("PREFIX_OTHER")
     await poll(() => asked("git log -1 --oneline"), "other subcommand still asks", 30_000)
-    assert.deepEqual((await asked("git log -1 --oneline")).always, ["git log *"])
-    checks.push("other-subcommand-still-asks")
-    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
-    await poll(async () => (await pending()).length === 0, "rejected")
+    const other = await asked("git log -1 --oneline")
+    assert.deepEqual(other.always, ["git log *"])
+    assert.deepEqual(
+      other.metadata.alwaysChoices.map((item) => item.label),
+      ["git *", "git log *", "git log -1 *", "git log -1 --oneline *"],
+    )
+    checks.push("other-subcommand-asks-with-grok-scope-choices")
+    await poll(async () => (await body()).includes("2/4"), "dock scope 2/4")
+    await command("eval", `document.querySelector('[data-action="scope-narrower"]').click()`)
+    await poll(async () => (await body()).includes("1/4"), "dock scope 1/4")
+    const shown = await command(
+      "eval",
+      `JSON.stringify([...document.querySelectorAll('[data-slot="permission-always"] code')].map((n) => n.textContent))`,
+    )
+    assert.deepEqual(JSON.parse(JSON.parse(shown.trim())), ["git *"], "dock shows the narrowed scope")
+    await command(
+      "eval",
+      `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Allow always').click()`,
+    )
+    await poll(() => ran("git log -1 --oneline"), "narrowed grant ran", 30_000)
+    checks.push("scope-picker-narrows-to:git *")
+    await send("PREFIX_WIDE")
+    await poll(() => ran("git diff --stat"), "picked scope covers git diff", 30_000)
+    checks.push("picked-scope-covers-other-git-subcommand")
     await Bun.sleep(800)
     await send("PREFIX_RM")
     await alwaysViaDock("rm -rf prefix-flow-dir", ["rm -rf prefix-flow-dir"])
@@ -396,6 +416,21 @@ try {
     await poll(() => asked("rm -rf prefix-flow-other"), "different rm still asks", 30_000)
     checks.push("different-rm-still-asks")
     for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await poll(async () => (await pending()).length === 0, "rm rejected")
+    await Bun.sleep(800)
+    await send("PREFIX_OPAQUE")
+    await alwaysViaDock("echo $(git rev-parse --short HEAD) | wc -c", ["echo $(git rev-parse --short HEAD) | wc -c"])
+    checks.push("opaque-script-saved-as-exact-whole-script")
+    await send("PREFIX_OPAQUE_AGAIN")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).flatMap((item) =>
+          item.parts.filter((part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === "echo $(git rev-parse --short HEAD) | wc -c"),
+        ).length >= 2,
+      "exact whole-script grant replays",
+      30_000,
+    )
+    checks.push("exact-whole-script-grant-replays")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (autoFlow) {
     const body = () => command("get", "text", "body")
