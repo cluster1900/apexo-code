@@ -57,6 +57,18 @@ const cacheDir = path.join(dir, "cache", "apexo")
 await fs.mkdir(cacheDir, { recursive: true })
 await fs.writeFile(path.join(cacheDir, "version"), "14")
 
+// Config.loadInstanceState forks a background `npm install @apexo/plugin` (Arborist reify against the
+// real registry) for every config dir that lacks node_modules, and Plugin init joins that fiber
+// whenever a plugin is configured. Project fixtures mark their .apexo dir ready, but the isolated
+// global config dir did not, so the first plugin test in each process waited on a live registry
+// install and timed out on slow CI runners. Mark it ready here so no test touches the network.
+const globalConfigDir = path.join(dir, "config", "apexo")
+await fs.mkdir(path.join(globalConfigDir, "node_modules"), { recursive: true })
+await fs.writeFile(
+  path.join(globalConfigDir, "package-lock.json"),
+  JSON.stringify({ packages: { "": { dependencies: { "@apexo/plugin": "0.0.0" } } } }),
+)
+
 // Clear provider and server auth env vars to ensure clean test state
 delete process.env["ANTHROPIC_API_KEY"]
 delete process.env["OPENAI_API_KEY"]
