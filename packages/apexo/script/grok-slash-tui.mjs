@@ -5,7 +5,7 @@ import { writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { Terminal } from "@xterm/headless"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
-import { autoReviewFixture, bashPrefixFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
+import { mcpFixture, runMcpFlow, autoReviewFixture, bashPrefixFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
 
 // --vim-config: start with config ui.vim_mode = true and check the config default plus the local override only.
 const vimConfig = process.argv.includes("--vim-config")
@@ -21,9 +21,14 @@ const editFlow = process.argv.includes("--edit-prompt")
 const cycleFlow = process.argv.includes("--mode-cycle")
 // --bash-prefix: bash asks; "Allow always" shows and saves the Grok Build scoped prefix, which then covers chained reuse.
 const prefixFlow = process.argv.includes("--bash-prefix")
+// --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
+const mcpFlow = process.argv.includes("--mcp")
+const mcpSetup = mcpFlow ? mcpFixture() : undefined
 const { runtime } = await startGoalFixture(
   "cli",
-  prefixFlow
+  mcpFlow
+    ? mcpSetup
+    : prefixFlow
     ? bashPrefixFixture
     : autoFlow || cycleFlow
     ? autoReviewFixture
@@ -106,7 +111,16 @@ try {
     await Bun.sleep(300)
   }
 
-  if (cycleFlow) {
+  if (mcpFlow) {
+    const send = async (text) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+    }
+    checks.push(...(await runMcpFlow(runtime, session, mcpSetup, send, poll)))
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (cycleFlow) {
     // Asserts real state: the agent recorded on the sent message and what the permission layer actually does.
     const messages = async () => runtime.api(`/session/${session.id}/message`)
     const pending = async () => runtime.api(`/permission`)

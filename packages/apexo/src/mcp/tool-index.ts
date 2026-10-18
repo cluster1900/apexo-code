@@ -65,7 +65,7 @@ export function search(entries: Entry[], query: string, limit = 5) {
 }
 
 /** search_tool output, grouped by server in score order (same shape as Grok Build). */
-export function render(entries: Entry[], query: string, limit = 5) {
+export function render(entries: Entry[], query: string, limit = 5, ready = true) {
   const results = search(entries, query, limit)
   const groups: { server: string; score: number; tools: unknown[] }[] = []
   for (const { entry, score } of results) {
@@ -83,9 +83,10 @@ export function render(entries: Entry[], query: string, limit = 5) {
   return {
     results: groups.map((group) => ({ server: group.server, tools: group.tools })),
     total_hidden_tools: entries.length,
-    status: "ready" as const,
-    note:
-      entries.length === 0
+    status: ready ? ("ready" as const) : ("partial" as const),
+    note: !ready
+      ? "Some MCP servers are still connecting. Results may be incomplete."
+      : entries.length === 0
         ? "No MCP tools are available in this session. Connect MCP servers here, or if this is a subagent, check the agent's mcpInheritance."
         : null,
     count: results.length,
@@ -134,4 +135,89 @@ export function normalizeArguments(input: unknown): Record<string, unknown> {
   }
   if (typeof input === "object" && !Array.isArray(input)) return input as Record<string, unknown>
   throw new Error("tool_input must be an object")
+}
+
+export const MAX_INPUT_FILE = 8 * 1024 * 1024
+
+export type UseToolInput =
+  | { form: "inline"; toolName: string; toolInput: unknown }
+  | { form: "arguments-file"; toolName: string; path: string }
+  | { form: "invocation-file"; path: string }
+
+/** Exactly one of {tool_name,tool_input}, {tool_name,tool_input_file} or {file} (Grok Build use_tool/input.rs). */
+export function parseUseToolInput(args: Record<string, unknown>): UseToolInput {
+  const has = (key: string) => args[key] !== undefined
+  const path = (key: string) => {
+    const value = args[key]
+    if (typeof value !== "string" || !value) throw new Error("MCP source path must be a nonempty string")
+    return value
+  }
+  const name = () => {
+    if (typeof args.tool_name !== "string") throw new Error("tool_name must be a string")
+    return args.tool_name
+  }
+  const form = [has("tool_name"), has("tool_input"), has("tool_input_file"), has("file")].join()
+  if (form === "true,true,false,false") return { form: "inline", toolName: name(), toolInput: args.tool_input }
+  // Inline call with no arguments: Grok requires tool_input; an omitted one is treated as {} for tolerance.
+  if (form === "true,false,false,false") return { form: "inline", toolName: name(), toolInput: {} }
+  if (form === "true,false,true,false") return { form: "arguments-file", toolName: name(), path: path("tool_input_file") }
+  if (form === "false,false,false,true") return { form: "invocation-file", path: path("file") }
+  throw new Error("use exactly one of {tool_name,tool_input}, {tool_name,tool_input_file}, or {file}")
+}
+
+export function parseArgumentsFile(json: string): Record<string, unknown> {
+  let value: unknown
+  try {
+    value = JSON.parse(json)
+  } catch (error) {
+    throw new Error(`Invalid MCP arguments JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("MCP arguments file must contain a JSON object")
+  return value as Record<string, unknown>
+}
+
+export function parseInvocationFile(json: string): { toolName: string; toolInput: Record<string, unknown> } {
+  const value = parseArgumentsFile(json)
+  if (typeof value.tool_name !== "string") throw new Error("MCP invocation file needs a string tool_name")
+  const input = value.tool_input ?? {}
+  if (typeof input !== "object" || Array.isArray(input)) throw new Error("MCP invocation file tool_input must be an object")
+  return { toolName: value.tool_name, toolInput: input as Record<string, unknown> }
+}
+
+export type ServerSummary = { name: string; toolCount: number; toolNames: string[]; description?: string }
+export type Fingerprint = Record<string, string>
+
+export function summaries(entries: Entry[]): ServerSummary[] {
+  const servers = [...new Set(entries.map((entry) => entry.server))].toSorted()
+  return servers.map((name) => {
+    const tools = entries.filter((entry) => entry.server === name).map((entry) => entry.name).toSorted()
+    return { name, toolCount: tools.length, toolNames: tools }
+  })
+}
+
+export const fingerprint = (servers: ServerSummary[]): Fingerprint =>
+  Object.fromEntries(servers.map((server) => [server.name, JSON.stringify([server.toolCount, server.description ?? "", server.toolNames])]))
+
+const line = (server: ServerSummary) =>
+  `- ${server.name} (${server.toolCount} ${server.toolCount === 1 ? "tool" : "tools"})${server.description ? `: ${truncateDescription(sanitizeDescription(server.description))}` : ""}`
+
+/** Full list, sent as its own system reminder (Grok `build_server_reminder`). */
+export function fullReminder(servers: ServerSummary[]) {
+  if (!servers.length) return undefined
+  return ["Connected MCP servers:", ...servers.map(line)].join("\n")
+}
+
+/** Connect / update / disconnect delta (Grok `build_delta_reminder`). */
+export function deltaReminder(old: Fingerprint, servers: ServerSummary[]) {
+  const next = fingerprint(servers)
+  const added = servers.filter((server) => !(server.name in old))
+  const updated = servers.filter((server) => server.name in old && old[server.name] !== next[server.name])
+  const removed = Object.keys(old).filter((name) => !(name in next)).toSorted()
+  if (!added.length && !updated.length && !removed.length) return undefined
+  const blocks: string[] = []
+  const s = (n: number) => (n === 1 ? "" : "s")
+  if (added.length) blocks.push([`MCP server${s(added.length)} connected:`, ...added.map(line)].join("\n"))
+  if (updated.length) blocks.push([`MCP server${s(updated.length)} updated:`, ...updated.map(line)].join("\n"))
+  if (removed.length) blocks.push(`MCP server${s(removed.length)} disconnected: ${removed.join(", ")}`)
+  return blocks.join("\n\n")
 }

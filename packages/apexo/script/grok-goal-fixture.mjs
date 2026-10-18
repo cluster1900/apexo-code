@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import { startShellFixture } from "./grok-shell-fixture.mjs"
 
 export async function startGoalFixture(kind, options = {}) {
@@ -159,4 +160,74 @@ export async function importedClaude(runtime) {
     mode: config.ui?.permission_mode === "auto",
     paths: (config.instructions ?? []).some((item) => item.includes(".claude/rules")),
   }
+}
+
+// Shared by the CLI and Desktop MCP flows: a real stdio MCP server ("linear") with deferred discovery (the default).
+// MCP_FLOW: search_tool → use_tool inline; MCP_FILE: use_tool with an invocation file written in the workspace.
+export function mcpFixture() {
+  const server = fileURLToPath(new URL("./fixtures/mcp-linear.mjs", import.meta.url))
+  const fixture = {
+    requests: [],
+    config: {
+      permission: { "*": "allow" },
+      mcp: { linear: { type: "local", command: [process.execPath, server] } },
+    },
+    next: ({ body, input, text, ancillary }) => {
+      if (ancillary) return
+      const flow = text.includes("MCP_FLOW") ? "inline" : text.includes("MCP_FILE") ? "file" : text.includes("MCP_AFTER") ? "after" : undefined
+      if (!flow) return
+      fixture.requests.push(body)
+      const lastUser = input.findLastIndex((item) => item.role === "user")
+      const outputs = input.slice(lastUser + 1).filter((item) => item.role === "tool" || item.type === "function_call_output")
+      if (flow === "inline") {
+        if (outputs.length === 0) return { tool: "search_tool", args: { query: "linear create issue" } }
+        if (outputs.length === 1) return { tool: "use_tool", args: { tool_name: "linear__create_issue", tool_input: { title: "T1" } } }
+        return { content: "MCP_DONE" }
+      }
+      if (flow === "after") return { content: "MCP_AFTER_DONE" }
+      if (outputs.length === 0) return { tool: "use_tool", args: { file: "call.json" } }
+      return { content: "MCP_FILE_DONE" }
+    },
+  }
+  return fixture
+}
+
+// Shared assertions for the MCP flows; `send(text)` submits a prompt through the real UI.
+export async function runMcpFlow(runtime, session, fixture, send, poll) {
+  const { writeFile } = await import("node:fs/promises")
+  const { join } = await import("node:path")
+  const assert = (await import("node:assert/strict")).default
+  const checks = []
+  const parts = async () => (await runtime.api(`/session/${session.id}/message`)).flatMap((item) => item.parts)
+  const tool = async (name, needle) =>
+    (await parts()).find(
+      (part) => part.type === "tool" && part.tool === name && part.state.status === "completed" && JSON.stringify(part.state).includes(needle),
+    )
+  const status = await runtime.api("/mcp")
+  assert.equal(status.linear?.status, "connected", "stdio MCP server connected")
+  await send("MCP_FLOW create an issue")
+  await poll(() => tool("use_tool", "ISSUE_CREATED:T1"), "use_tool ran the real MCP tool", 60_000)
+  const found = await tool("search_tool", "linear__create_issue")
+  assert.ok(found, "search_tool found linear__create_issue")
+  assert.ok(JSON.parse(found.state.output).results[0].tools[0].input_schema.required.includes("title"))
+  checks.push("search-tool-discovers-real-mcp-tool")
+  checks.push("use-tool-calls-real-mcp-tool")
+  const first = JSON.stringify(fixture.requests[0])
+  const names = (fixture.requests[0].tools ?? []).map((item) => item.function?.name ?? item.name)
+  assert.ok(names.includes("search_tool") && names.includes("use_tool"), "wrappers sent")
+  assert.ok(!names.some((name) => name.startsWith("linear_")), "MCP tools not sent up front")
+  checks.push("mcp-tools-deferred-by-default")
+  assert.ok(first.includes("Connected MCP servers:\\n- linear (2 tools)"), "server list reminder")
+  checks.push("connected-servers-system-reminder")
+  await writeFile(join(runtime.directory, "call.json"), JSON.stringify({ tool_name: "linear__create_issue", tool_input: { title: "T2" } }))
+  await send("MCP_FILE create from file")
+  await poll(() => tool("use_tool", "ISSUE_CREATED:T2"), "use_tool invocation file", 60_000)
+  checks.push("use-tool-invocation-file")
+  await runtime.api("/mcp/linear/disconnect", {})
+  const before = fixture.requests.length
+  await send("MCP_AFTER disconnected")
+  await poll(async () => fixture.requests.length > before && (await parts()).some((part) => part.type === "text" && part.text === "MCP_AFTER_DONE"), "turn after disconnect", 60_000)
+  assert.ok(JSON.stringify(fixture.requests.at(-1)).includes("MCP server disconnected: linear"), "disconnect delta reminder")
+  checks.push("disconnect-delta-reminder")
+  return checks
 }

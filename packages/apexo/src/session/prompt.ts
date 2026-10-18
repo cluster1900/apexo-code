@@ -71,6 +71,10 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "@apexo/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { McpToolIndex } from "@/mcp/tool-index"
+
+// Last MCP server fingerprint seen per session, for Grok-style connect/update/disconnect reminders.
+const mcpFingerprints = new Map<string, McpToolIndex.Fingerprint>()
 import { LLMEvent } from "@apexo/llm"
 import { Goal } from "@apexo/schema/goal"
 import { HookObserver } from "@apexo/core/hook-observer"
@@ -1573,6 +1577,32 @@ const layer = Layer.effect(
           Effect.provideService(Session.Service, sessions),
         )
 
+        // Grok Build deferred MCP: the connected-server list rides as its own system reminder every turn, and
+        // connect / update / disconnect deltas are recorded once on the turn where they are first seen.
+        const mcpServers = flags.mcpEagerTools
+          ? []
+          : McpToolIndex.summaries(
+              SessionTools.mcpEntries(
+                Permission.visibleTools(yield* mcp.tools(), Permission.merge(agent.permission, session.permission ?? [])),
+              ),
+            )
+        const mcpReminder = McpToolIndex.fullReminder(mcpServers)
+        const mcpPrevious = mcpFingerprints.get(sessionID)
+        mcpFingerprints.set(sessionID, McpToolIndex.fingerprint(mcpServers))
+        const mcpDelta = mcpPrevious ? McpToolIndex.deltaReminder(mcpPrevious, mcpServers) : undefined
+        const deltaUser = mcpDelta ? msgs.findLast((item) => item.info.role === "user") : undefined
+        if (mcpDelta && deltaUser) {
+          const part = yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: deltaUser.info.id,
+            sessionID,
+            type: "text",
+            text: `<system-reminder>\n${mcpDelta}\n</system-reminder>`,
+            synthetic: true,
+          })
+          deltaUser.parts.push(part)
+        }
+
         const msg: SessionV1.Assistant = {
           id: MessageID.ascending(),
           parentID: lastUser.id,
@@ -1662,6 +1692,7 @@ const layer = Layer.effect(
             ...(stopState.reason ? [SessionHookStop.render(stopState.reason)] : []),
             ...(recalled ? [recalled] : []),
             ...(mcpInstructions ? [mcpInstructions] : []),
+            ...(mcpReminder ? [`<system-reminder>\n${mcpReminder}\n</system-reminder>`] : []),
             ...(skills ? [skills] : []),
             ...(goal ? [goal.system()] : []),
             ...(goalRole ? [goalRole.system, `Original goal objective: ${goalRole.objective}`] : []),

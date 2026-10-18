@@ -45,3 +45,42 @@ describe("McpToolIndex", () => {
     expect(() => McpToolIndex.resolve(entries, "read_thread", new Set())).toThrow("server__tool")
   })
 })
+
+describe("McpToolIndex use_tool forms and reminders", () => {
+  test("accepts exactly one of the three Grok input forms", () => {
+    expect(McpToolIndex.parseUseToolInput({ tool_name: "a__b", tool_input: { x: 1 } })).toEqual({
+      form: "inline",
+      toolName: "a__b",
+      toolInput: { x: 1 },
+    })
+    expect(McpToolIndex.parseUseToolInput({ tool_name: "a__b", tool_input_file: "args.json" })).toEqual({
+      form: "arguments-file",
+      toolName: "a__b",
+      path: "args.json",
+    })
+    expect(McpToolIndex.parseUseToolInput({ file: "call.json" })).toEqual({ form: "invocation-file", path: "call.json" })
+    expect(() => McpToolIndex.parseUseToolInput({ tool_name: "a__b", tool_input: {}, file: "x" })).toThrow("exactly one")
+    expect(() => McpToolIndex.parseUseToolInput({ file: "" })).toThrow("nonempty")
+    expect(McpToolIndex.parseInvocationFile('{"tool_name":"a__b","tool_input":{"q":1}}')).toEqual({
+      toolName: "a__b",
+      toolInput: { q: 1 },
+    })
+    expect(() => McpToolIndex.parseArgumentsFile("[]")).toThrow("JSON object")
+  })
+  test("full and delta server reminders", () => {
+    const before = McpToolIndex.summaries(entries)
+    expect(McpToolIndex.fullReminder(before)).toBe(
+      "Connected MCP servers:\n- github (1 tool)\n- linear (2 tools)\n- slack (1 tool)",
+    )
+    const old = McpToolIndex.fingerprint(before)
+    expect(McpToolIndex.deltaReminder(old, before)).toBeUndefined()
+    const after = McpToolIndex.summaries([
+      ...entries.filter((item) => item.server !== "github" && item.key !== "linear_list_issues"),
+      entry("notion", "search", "Search pages"),
+    ])
+    expect(McpToolIndex.deltaReminder(old, after)).toBe(
+      "MCP server connected:\n- notion (1 tool)\n\nMCP server updated:\n- linear (1 tool)\n\nMCP server disconnected: github",
+    )
+    expect(McpToolIndex.render(entries, "issue", 5, false)).toMatchObject({ status: "partial" })
+  })
+})
