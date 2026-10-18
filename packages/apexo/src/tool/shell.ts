@@ -20,7 +20,7 @@ import { Plugin } from "@/plugin"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
-import { BashArity } from "@/permission/arity"
+import { BashApproval } from "@apexo/core/tool/bash-approval"
 
 export { Parameters } from "./shell/prompt"
 
@@ -406,7 +406,12 @@ export const ShellTool = Tool.define(
 
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
           scan.patterns.add(source(node))
-          scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
+          // Grok Build scope: BashArity prefix, dangerous verbs and exec vehicles pinned to the exact command,
+          // wrapped or argv-ambiguous commands saved only as their exact text.
+          const kind = ps ? "powershell" : shellKind === "cmd" ? "cmd" : "posix"
+          const unwrapped = BashApproval.unwrap(tokens)
+          const key = unwrapped.length === tokens.length ? BashApproval.grant(tokens, kind) : undefined
+          scan.always.add(key ?? source(node))
         }
       }
 

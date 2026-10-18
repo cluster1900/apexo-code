@@ -5,7 +5,7 @@ import { writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { Terminal } from "@xterm/headless"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
-import { autoReviewFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
+import { autoReviewFixture, bashPrefixFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
 
 // --vim-config: start with config ui.vim_mode = true and check the config default plus the local override only.
 const vimConfig = process.argv.includes("--vim-config")
@@ -19,9 +19,13 @@ const importFlow = process.argv.includes("--import-claude")
 const editFlow = process.argv.includes("--edit-prompt")
 // --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
 const cycleFlow = process.argv.includes("--mode-cycle")
+// --bash-prefix: bash asks; "Allow always" shows and saves the Grok Build scoped prefix, which then covers chained reuse.
+const prefixFlow = process.argv.includes("--bash-prefix")
 const { runtime } = await startGoalFixture(
   "cli",
-  autoFlow || cycleFlow
+  prefixFlow
+    ? bashPrefixFixture
+    : autoFlow || cycleFlow
     ? autoReviewFixture
     : vimConfig
       ? { config: { ui: { vim_mode: true } } }
@@ -202,6 +206,55 @@ try {
     const { existsSync } = await import("node:fs")
     assert.ok(!existsSync(join(runtime.env.APEXO_TEST_HOME, ".grok", "hooks", "claude-import.json")))
     checks.push("unticked-hooks-not-imported")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (prefixFlow) {
+    const pending = async () => runtime.api(`/permission`)
+    const prompt = async (text) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+    }
+    const ran = async (command) =>
+      (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+        item.parts.some(
+          (part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === command,
+        ),
+      )
+    const asked = async (command) => (await pending()).find((item) => item.metadata?.command === command || item.patterns?.includes(command))
+    const alwaysViaPrompt = async (command, expected) => {
+      await poll(() => asked(command), `asks for ${command}`, 30_000)
+      const request = await asked(command)
+      assert.deepEqual(request.always, expected, `always scope for ${command}`)
+      await rendered("Permission required")
+      child.terminal.write("\x1b[C")
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+      await rendered("Always allow")
+      for (const pattern of expected) await rendered("- " + pattern)
+      child.terminal.write("\r")
+      await poll(() => ran(command), `${command} ran`, 30_000)
+    }
+    await prompt("PREFIX_FIRST")
+    await alwaysViaPrompt("git status", ["git status *"])
+    checks.push("prompt-shows-arity-prefix:git status *")
+    await prompt("PREFIX_AGAIN")
+    await poll(() => ran("cd . && git status --short"), "chained reuse ran without a prompt", 30_000)
+    checks.push("saved-prefix-covers-cd-chain-and-flags")
+    await prompt("PREFIX_OTHER")
+    await poll(() => asked("git log -1 --oneline"), "other subcommand still asks", 30_000)
+    assert.deepEqual((await asked("git log -1 --oneline")).always, ["git log *"])
+    checks.push("other-subcommand-still-asks")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await poll(async () => (await pending()).length === 0, "rejected")
+    await Bun.sleep(800)
+    await prompt("PREFIX_RM")
+    await alwaysViaPrompt("rm -rf prefix-flow-dir", ["rm -rf prefix-flow-dir"])
+    checks.push("dangerous-command-pinned-to-exact")
+    await prompt("PREFIX_RM_AGAIN")
+    await poll(() => asked("rm -rf prefix-flow-other"), "different rm still asks", 30_000)
+    checks.push("different-rm-still-asks")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
     console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
   } else if (autoFlow) {
     const pending = async () => runtime.api(`/permission`)

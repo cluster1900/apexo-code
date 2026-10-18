@@ -172,6 +172,7 @@ export const dict = {
 
   "ui.permission.deny": "拒绝",
   "ui.permission.allowAlways": "始终允许",
+  "ui.permission.alwaysScope": "始终允许将保存以下授权：",
   "ui.permission.allowOnce": "允许一次",
 
   "ui.message.expand": "展开消息",
