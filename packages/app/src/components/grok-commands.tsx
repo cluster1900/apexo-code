@@ -309,11 +309,11 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     },
     {
       id: "grok.vim-mode",
-      title: language.t(vimMode() ? "grok.vim.off" : "grok.vim.on"),
+      title: language.t(vimMode(sync().data.config) ? "grok.vim.off" : "grok.vim.on"),
       category: "Prompt",
       slash: "vim-mode",
       onSelect: () => {
-        const next = !vimMode()
+        const next = !vimMode(sync().data.config)
         setVimMode(next)
         info(language.t(next ? "grok.vim.enabled" : "grok.vim.disabled"))
       },

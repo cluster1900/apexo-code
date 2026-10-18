@@ -22,6 +22,7 @@ import { useLocal } from "../context/local"
 import { useRoute } from "../context/route"
 import { usePromptRef } from "../context/prompt"
 import { useKV } from "../context/kv"
+import { useVimMode } from "../context/vim-mode"
 import { DialogVariant } from "./dialog-variant"
 import { DialogThemeList } from "./dialog-theme-list"
 import { DialogModel } from "./dialog-model"
@@ -42,7 +43,8 @@ export function useGrokCommands() {
   const promptRef = usePromptRef()
   const kv = useKV()
   const [multiline, setMultiline] = kv.signal<boolean>("multiline", false)
-  const [vim, setVim] = kv.signal<boolean>("vim_mode", false)
+  const vimMode = useVimMode()
+  const vim = vimMode.enabled
   const sessionID = () => (route.data.type === "session" ? route.data.sessionID : undefined)
   const alert = (title: string, message: string) =>
     dialog.replace(() => <DialogAlert title={title} message={message} />)
@@ -359,8 +361,7 @@ export function useGrokCommands() {
       category: "Prompt",
       slashName: "vim-mode",
       run: () => {
-        const next = !vim()
-        setVim(() => next)
+        const next = vimMode.toggle()
         toast.show({
           variant: "info",
           message: next

@@ -2015,6 +2015,9 @@ export type Config = {
   watcher?: {
     ignore?: Array<string>
   }
+  ui?: {
+    vim_mode?: boolean
+  }
   snapshot?: boolean
   plugin?: Array<
     | string

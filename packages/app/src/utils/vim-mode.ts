@@ -1,11 +1,17 @@
 import { createSignal } from "solid-js"
-import { vimScrollAction } from "@apexo/sdk/v2/grok-commands"
+import { resolveVimMode, vimScrollAction } from "@apexo/sdk/v2/grok-commands"
 
 // Grok Build `/vim-mode`: vim-style scrollback keys. Persisted per browser profile like the TUI kv `vim_mode`.
 const KEY = "apexo.vim_mode"
 export const VIM_SCROLL_EVENT = "apexo:vim-scroll"
-const [vimMode, set] = createSignal(globalThis.localStorage?.getItem(KEY) === "on")
-export { vimMode }
+const read = () => {
+  const value = globalThis.localStorage?.getItem(KEY)
+  return value === "on" ? true : value === "off" ? false : undefined
+}
+const [local, set] = createSignal<boolean | undefined>(read())
+type Config = Parameters<typeof resolveVimMode>[1]
+/** Config `ui.vim_mode` is the default; the local /vim-mode toggle overrides it once set. */
+export const vimMode = (config?: Config) => resolveVimMode(local(), config)
 export function setVimMode(value: boolean) {
   set(value)
   globalThis.localStorage?.setItem(KEY, value ? "on" : "off")
@@ -43,8 +49,12 @@ export function promptEditor() {
  * Keydown handler for the session page. Esc on an empty prompt moves focus to the scrollback; outside an editable
  * element the vim keys drive the timeline, and any other printable key returns to the prompt and types it.
  */
-export function vimKeydown(event: KeyboardEvent, copy: { message: () => void; transcript: () => void }) {
-  if (!vimMode() || event.defaultPrevented || event.metaKey || event.isComposing) return
+export function vimKeydown(
+  event: KeyboardEvent,
+  copy: { message: () => void; transcript: () => void },
+  config?: Config,
+) {
+  if (!vimMode(config) || event.defaultPrevented || event.metaKey || event.isComposing) return
   if (document.querySelector('[role="dialog"]')) return
   const active = document.activeElement
   if (editable(active)) {

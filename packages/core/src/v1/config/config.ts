@@ -55,6 +55,13 @@ export const Info = Schema.Struct({
     description: "@deprecated Use 'references' field instead. Named git or local directory references",
   }),
   watcher: Schema.optional(Schema.Struct({ ignore: Schema.optional(Schema.mutable(Schema.Array(Schema.String))) })),
+  ui: Schema.optional(
+    Schema.Struct({
+      vim_mode: Schema.optional(Schema.Boolean).annotate({
+        description: "Vim-style scrollback keys (Grok Build [ui] vim_mode). The /vim-mode toggle overrides it locally.",
+      }),
+    }),
+  ).annotate({ description: "Interface defaults shared by the TUI and Desktop" }),
   snapshot: Schema.optional(Schema.Boolean).annotate({
     description:
       "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",

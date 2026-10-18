@@ -201,7 +201,11 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     "keydown",
     (event) => {
       if (params.id)
-        vimKeydown(event, { message: () => void copyLastMessage(), transcript: () => void copyTranscript() })
+        vimKeydown(
+          event,
+          { message: () => void copyLastMessage(), transcript: () => void copyTranscript() },
+          sync().data.config,
+        )
     },
     { capture: true },
   )

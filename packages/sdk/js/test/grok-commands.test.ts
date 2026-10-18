@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  resolveVimMode,
   vimScrollAction,
   contextUsage,
   parseSlashInput,
@@ -76,5 +77,14 @@ describe("vimScrollAction", () => {
     expect(vimScrollAction({ char: "?" })).toEqual({ action: "prompt", type: "?" })
     expect(vimScrollAction({ name: "escape" })).toBeUndefined()
     expect(vimScrollAction({ name: "x", alt: true })).toBeUndefined()
+  })
+})
+
+describe("resolveVimMode", () => {
+  test("config is the default and the local toggle overrides it", () => {
+    expect(resolveVimMode(undefined, undefined)).toBe(false)
+    expect(resolveVimMode(undefined, { ui: { vim_mode: true } })).toBe(true)
+    expect(resolveVimMode(false, { ui: { vim_mode: true } })).toBe(false)
+    expect(resolveVimMode(true, { ui: {} })).toBe(true)
   })
 })

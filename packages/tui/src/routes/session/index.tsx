@@ -61,6 +61,7 @@ import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
 import { scrollback, setScrollback } from "../../context/scrollback"
+import { useVimMode } from "../../context/vim-mode"
 import { vimScrollAction, type VimScrollAction } from "@apexo/sdk/v2/grok-commands"
 import { useKeyboard } from "@opentui/solid"
 import stripAnsi from "strip-ansi"
@@ -338,7 +339,7 @@ export function Session() {
   const keymap = useApexoKeymap()
 
   // /vim-mode: Esc on an empty, idle prompt moves focus to the scrollback, where vim keys drive the transcript.
-  const [vim] = kv.signal<boolean>("vim_mode", false)
+  const vim = useVimMode().enabled
   const vimCommands: Record<Exclude<VimScrollAction, "prompt">, string> = {
     "line.down": "session.line.down",
     "line.up": "session.line.up",

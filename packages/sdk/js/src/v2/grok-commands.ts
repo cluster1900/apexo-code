@@ -204,3 +204,8 @@ export function vimScrollAction(key: {
   if (char === "i" || char === "a") return { action: "prompt" }
   if (char >= " " && char !== "\x7f") return { action: "prompt", type: char }
 }
+
+/** `[ui] vim_mode` from config is the default; the local /vim-mode toggle overrides it once set. */
+export function resolveVimMode(local: boolean | undefined, config: { ui?: { vim_mode?: boolean } } | undefined) {
+  return local ?? config?.ui?.vim_mode ?? false
+}
