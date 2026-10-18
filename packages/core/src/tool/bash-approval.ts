@@ -1,6 +1,6 @@
 export * as BashApproval from "./bash-approval"
 
-import { BashArity } from "../permission/arity"
+import { ShellParser } from "./shell-parser"
 
 /**
  * Parser-based approval reduction for the V2 bash tool, modelled on Grok Build's
@@ -23,15 +23,6 @@ import { BashArity } from "../permission/arity"
 export type ShellKind = "posix" | "powershell" | "cmd"
 
 export type Segment = { readonly words: readonly string[]; readonly text: string }
-
-export type Approval = {
-  /** Permission resources: one per non-setup command, or the raw script when opaque. */
-  readonly resources: readonly string[]
-  /** Patterns persisted by "Always allow". */
-  readonly save: readonly string[]
-  /** Parsed segments; undefined when the script could not be decomposed. */
-  readonly segments?: readonly Segment[]
-}
 
 export function shellKind(shell: string): ShellKind {
   const base = shell
@@ -318,6 +309,8 @@ export function split(command: string, kind: ShellKind = "posix"): Segment[] | u
         inWord = true
         continue
       }
+      // Background `&` is not word-only in POSIX shells (Grok Build fails it closed); cmd uses `&` as a separator.
+      if (ch === "&" && posix && next !== "&") return undefined
       flushSegment(i)
       if ((ch === "&" || ch === "|") && next === ch) i++
       start = i + 1
@@ -362,53 +355,318 @@ export function split(command: string, kind: ShellKind = "posix"): Segment[] | u
 }
 
 /** Whether `words.join(" ")` is a safe grant key: re-splitting yields the same argv, and no wildcard characters leak into the rule. */
-const unambiguous = (words: readonly string[], kind: ShellKind) => {
-  if (words.some((w) => w === "" || /[\s*?]/.test(w))) return false
+export function unambiguous(words: readonly string[], kind: ShellKind = "posix") {
+  if (words.length === 0 || words.some((w) => w === "" || /[\s*?]/.test(w))) return false
   const again = split(words.join(" "), kind)
   return again?.length === 1 && again[0]!.words.join("\u0000") === words.join("\u0000")
 }
 
-/** "Always allow" scope (word count) for one command, per Grok Build's default_always_allow_scope with BashArity as the base scope. */
-export function scope(words: readonly string[]): { readonly size: number; readonly prefix: boolean } {
-  if (words.length === 0) return { size: 0, prefix: false }
-  if (isDangerous(words) || isExecVehicle(words)) return { size: words.length, prefix: false }
-  if (head(words) === "gh") {
-    const [, group, verb] = words
-    if (group && verb && !group.startsWith("-") && !verb.startsWith("-")) return { size: 3, prefix: true }
-    return { size: words.length, prefix: false }
+// Grok Build exec_risk.rs SAFE_GIT_SUBCOMMANDS / GIT_QUERY_UNSAFE_OPTIONS.
+const SAFE_GIT = new Set([
+  "status",
+  "branch",
+  "log",
+  "diff",
+  "ls-files",
+  "show",
+  "rev-parse",
+  "blame",
+  "grep",
+  "describe",
+  "merge-base",
+  "check-ignore",
+  "check-attr",
+  "cat-file",
+  "ls-tree",
+  "show-ref",
+  "for-each-ref",
+  "rev-list",
+  "name-rev",
+  "count-objects",
+  "shortlog",
+])
+const GIT_UNSAFE_OPTIONS = ["--filters", "--textconv", "--output", "--ext-diff", "--open-files-in-pager"]
+const RG_UNSAFE = new Set(["--pre", "--hostname-bin"])
+const KUBECTL_UNSAFE = new Set([
+  "--kubeconfig",
+  "--context",
+  "--cluster",
+  "--server",
+  "-s",
+  "--token",
+  "--user",
+  "--as",
+  "--as-group",
+  "--as-uid",
+  "--as-user-extra",
+  "--username",
+  "--password",
+  "--client-certificate",
+  "--client-key",
+  "--certificate-authority",
+])
+const SAFE_PREFIXES = [
+  "ls",
+  "cat",
+  "pwd",
+  "date",
+  "whoami",
+  "hostname",
+  "uptime",
+  "grep",
+  "rg",
+  "kubectl get",
+  "kubectl logs",
+  "kubectl describe",
+  "ps",
+  "head",
+  "tail",
+  "wc",
+  "sort",
+  "uniq",
+  "tr",
+  "cut",
+  "echo",
+  "printf",
+]
+
+const matchesPrefix = (command: string, prefix: string) => command === prefix || command.startsWith(prefix + " ")
+const flagName = (word: string) => word.split("=")[0]!
+
+function gitVerbIndex(words: readonly string[]) {
+  let i = 1
+  while (true) {
+    const token = words[i]
+    if (token === undefined || token === "-" || token === "--") return undefined
+    if (!token.startsWith("-")) return i
+    if (token === "-C") {
+      i += 2
+      continue
+    }
+    if ((token.startsWith("-C") && !token.startsWith("--")) || token === "--no-pager" || token === "-P") {
+      i++
+      continue
+    }
+    return undefined
   }
-  return { size: BashArity.prefix([...words]).length, prefix: true }
 }
 
-/** The pattern "Always allow" persists for one command. */
-export function grant(words: readonly string[], kind: ShellKind = "posix"): string | undefined {
-  const s = scope(words)
-  const selected = words.slice(0, s.size)
+/** Grok Build git_words_are_read_only_query. */
+export function gitReadOnly(words: readonly string[]) {
+  if (words[0] !== "git") return false
+  const verb = gitVerbIndex(words)
+  if (verb === undefined || !SAFE_GIT.has(words[verb]!)) return false
+  if (
+    words
+      .slice(1)
+      .some((w) => flagName(w).length > 2 && GIT_UNSAFE_OPTIONS.some((full) => full.startsWith(flagName(w))))
+  )
+    return false
+  if (words[verb] === "grep" && words.slice(1).some((w) => w.startsWith("-O"))) return false
+  return true
+}
+
+function psDumpsEnvironment(words: readonly string[]) {
+  if (head(words) !== "ps") return false
+  let skip = false
+  for (const s of words.slice(1)) {
+    if (skip) {
+      skip = false
+      continue
+    }
+    if (s.startsWith("--format=") || s.startsWith("--sort=")) continue
+    if (
+      [
+        "-o",
+        "-O",
+        "--format",
+        "--sort",
+        "-p",
+        "-q",
+        "-t",
+        "-u",
+        "-U",
+        "-g",
+        "-G",
+        "-C",
+        "-s",
+        "--pid",
+        "--ppid",
+        "--sid",
+        "--tty",
+        "--user",
+        "--group",
+        "--cols",
+        "--columns",
+        "--width",
+        "o",
+        "O",
+      ].includes(s)
+    ) {
+      skip = true
+      continue
+    }
+    if (s.startsWith("-o") || s.startsWith("-O")) continue
+    const bsd = s.startsWith("-") && !s.startsWith("--") && /[ax]/.test(s)
+    if (s.includes("E") || (s.includes("e") && (!s.startsWith("-") || bsd))) return true
+    if (s.startsWith("-") && !s.startsWith("--") && /[oO]$/.test(s)) skip = true
+  }
+  return false
+}
+
+/** Grok Build is_safe_command_words: the full invocation is a read-only safe-listed command. */
+export function isSafe(words: readonly string[]) {
+  if (words.length === 0) return false
+  const name = head(words)
+  if (name === "rg" && words.slice(1).some((w) => RG_UNSAFE.has(flagName(w)))) return false
+  if (name === "kubectl" && words.slice(1).some((w) => KUBECTL_UNSAFE.has(flagName(w)))) return false
+  if (psDumpsEnvironment(words)) return false
+  if (words[0] === "git") return gitReadOnly(words)
+  return SAFE_PREFIXES.some((prefix) => matchesPrefix(words.join(" "), prefix))
+}
+
+const isSafeString = (command: string) =>
+  SAFE_PREFIXES.some((prefix) => matchesPrefix(command, prefix)) ||
+  (command.startsWith("git ") && SAFE_GIT.has(command.slice(4).split(" ")[0]!))
+
+/** Grok Build always_allow_scope_pinned: dangerous verbs, exec vehicles and `sed` offer only the full command. */
+export function pinned(words: readonly string[]) {
+  return isDangerous(words) || isExecVehicle(words) || head(words) === "sed"
+}
+
+function ghScope(words: readonly string[]) {
+  if (head(words) !== "gh") return undefined
+  const [, group, verb] = words
+  return group && verb && !group.startsWith("-") && !verb.startsWith("-") ? 3 : words.length
+}
+
+/** Grok Build base_scope: safe-listed one/two-word command, else verb plus subcommand plus the flags that follow. */
+export function baseScope(words: readonly string[]) {
+  if (isSafe(words)) {
+    if (words[0] && isSafeString(words[0])) return 1
+    if (words.length >= 2 && isSafeString(words.slice(0, 2).join(" "))) return 2
+  }
+  let n = Math.min(words.length, 2)
+  while (n < words.length && words[n]!.startsWith("-")) n++
+  return n
+}
+
+/** Grok Build default_always_allow_scope. */
+export function defaultScope(words: readonly string[]) {
+  if (words.length === 0) return 0
+  if (pinned(words)) return words.length
+  return ghScope(words) ?? baseScope(words)
+}
+
+/** Grok Build minimum_always_allow_scope: the narrowest scope the picker may offer. */
+export function minimumScope(words: readonly string[]) {
+  if (pinned(words)) return words.length
+  return ghScope(words) ?? 1
+}
+
+/** Grant key for the first `n` words. Non-pinned keys match by word-boundary prefix (`git status *`); pinned keys are exact. */
+export function key(words: readonly string[], n: number, kind: ShellKind = "posix"): string | undefined {
+  const selected = words.slice(0, n)
   if (!unambiguous(selected, kind)) return undefined
-  const key = kind === "posix" ? selected.join(" ") : [selected[0]!.toLowerCase(), ...selected.slice(1)].join(" ")
-  return s.prefix ? `${key} *` : key
+  const joined = kind === "posix" ? selected.join(" ") : [selected[0]!.toLowerCase(), ...selected.slice(1)].join(" ")
+  return pinned(words) ? joined : `${joined} *`
 }
 
-export function approval(command: string, kind: ShellKind = "posix"): Approval {
+/** Persistable scopes for one command, narrowest first (the Always allow picker's left/right range). */
+export function scopes(words: readonly string[], kind: ShellKind = "posix") {
+  const out: { readonly size: number; readonly key: string }[] = []
+  for (let n = minimumScope(words); n <= words.length; n++) {
+    const value = key(words, n, kind)
+    if (value && !out.some((item) => item.key === value)) out.push({ size: n, key: value })
+  }
+  return out
+}
+
+/** The pattern "Always allow" persists by default for one command, or undefined when no scope round-trips. */
+export function grant(words: readonly string[], kind: ShellKind = "posix"): string | undefined {
+  const options = scopes(words, kind)
+  if (!options.length) return undefined
+  const wanted = defaultScope(words)
+  return (options.find((item) => item.size >= wanted) ?? options.at(-1)!).key
+}
+
+export type Choice = { readonly label: string; readonly save: readonly string[] }
+
+export type Approval = {
+  /** Permission resources: one per non-setup command, or the raw script when opaque. */
+  readonly resources: readonly string[]
+  /** Patterns persisted by "Always allow" at the default scope. */
+  readonly save: readonly string[]
+  /** Scope picker for the primary command: each choice is a complete save set; `save` equals choices[defaultChoice]. */
+  readonly choices?: readonly Choice[]
+  readonly defaultChoice?: number
+  /** True when the whole raw script is the only resource and grant (undecomposable or no grantable command). */
+  readonly opaque: boolean
+  /** Parsed segments; undefined when the script could not be decomposed. */
+  readonly segments?: readonly Segment[]
+}
+
+export function fromSegments(
+  command: string,
+  segments: readonly Segment[] | undefined,
+  kind: ShellKind = "posix",
+): Approval {
   const raw = command.trim()
-  const opaque: Approval = { resources: [raw], save: [raw] }
-  const segments = split(raw, kind)
-  if (!segments || segments.length === 0) return opaque
-  const resources: string[] = []
-  const save: string[] = []
+  const opaque: Approval = { resources: [raw], save: [raw], opaque: true }
+  if (!segments || segments.length === 0 || segments.length > MAX_SEGMENTS) return opaque
+  const commands: { words: readonly string[]; options: ReturnType<typeof scopes>; default: string }[] = []
   for (const segment of segments) {
     const words = unwrap(segment.words)
     if (isSetup(words)) continue
     const normalized = kind === "posix" ? words : [words[0]!.toLowerCase(), ...words.slice(1)]
-    const resource = normalized.join(" ")
-    const key = grant(normalized, kind)
-    // A command whose argv cannot round-trip as a grant falls back to an exact whole-script grant.
-    if (!key || normalized.some((w) => /\s/.test(w))) return { ...opaque, segments }
-    if (!resources.includes(resource)) resources.push(resource)
-    if (!save.includes(key)) save.push(key)
+    const value = grant(normalized, kind)
+    // A command with no argv-unambiguous scope falls back to an exact whole-script grant.
+    if (!value) return { ...opaque, segments }
+    commands.push({ words: normalized, options: scopes(normalized, kind), default: value })
   }
-  if (resources.length === 0) return { ...opaque, segments }
-  return { resources, save, segments }
+  if (commands.length === 0) return { ...opaque, segments }
+  const resources = [...new Set(commands.map((item) => item.words.join(" ")))]
+  const rest = commands.slice(1).map((item) => item.default)
+  const primary = commands[0]!
+  const choices = primary.options.map((option) => ({
+    label: option.key,
+    save: [...new Set([option.key, ...rest])],
+  }))
+  const defaultChoice = Math.max(
+    0,
+    choices.findIndex((item) => item.label === primary.default),
+  )
+  return { resources, save: choices[defaultChoice]!.save, choices, defaultChoice, opaque: false, segments }
+}
+
+/** Synchronous approval using the hand parser (PowerShell/cmd, and the fallback when tree-sitter is unavailable). */
+export function approval(command: string, kind: ShellKind = "posix"): Approval {
+  return fromSegments(command, split(command.trim(), kind), kind)
+}
+
+/** Approval for a configured shell: POSIX scripts are parsed with tree-sitter bash like Grok Build; PowerShell/cmd use the hand parser. */
+export async function analyze(command: string, kind: ShellKind = "posix"): Promise<Approval> {
+  if (kind !== "posix") return approval(command, kind)
+  const segments = await ShellParser.bashSegments(command.trim()).catch(() => split(command.trim(), kind))
+  return fromSegments(command, segments, kind)
+}
+
+/** Whether a reply's chosen save set is one this request offered (a forged or widened selection persists nothing). */
+export function offered(metadata: Record<string, unknown> | undefined, save: readonly string[]) {
+  const choices = metadata?.alwaysChoices
+  if (!Array.isArray(choices)) return false
+  return choices.some(
+    (choice) =>
+      Array.isArray(choice?.save) &&
+      choice.save.length === save.length &&
+      choice.save.every((item: unknown, index: number) => item === save[index]),
+  )
+}
+
+/** Request metadata carrying the scope picker to the CLI and Desktop prompts. */
+export function metadata(approval: Approval) {
+  if (!approval.choices || approval.choices.length < 2) return {}
+  return { alwaysChoices: approval.choices, alwaysDefault: approval.defaultChoice ?? 0 }
 }
 
 /**

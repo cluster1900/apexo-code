@@ -117,6 +117,9 @@ export const bashPrefixFixture = {
     PREFIX_OTHER: "git log -1 --oneline",
     PREFIX_RM: "rm -rf prefix-flow-dir",
     PREFIX_RM_AGAIN: "rm -rf prefix-flow-other",
+    PREFIX_WIDE: "git diff --stat",
+    PREFIX_OPAQUE: "echo $(git rev-parse --short HEAD) | wc -c",
+    PREFIX_OPAQUE_AGAIN: "echo $(git rev-parse --short HEAD) | wc -c",
   },
   next: ({ text, finished, ancillary }) => {
     if (ancillary) return

@@ -5,11 +5,9 @@ import * as Tool from "./tool"
 import path from "path"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
-import { lazy } from "@/util/lazy"
-import { Language, type Node } from "web-tree-sitter"
+import type { Node } from "web-tree-sitter"
 
 import { FSUtil } from "@apexo/core/fs-util"
-import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@apexo/core/shell"
@@ -21,6 +19,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashApproval } from "@apexo/core/tool/bash-approval"
+import { ShellParser } from "@apexo/core/tool/shell-parser"
 
 export { Parameters } from "./shell/prompt"
 
@@ -79,13 +78,6 @@ type Scan = {
 type Chunk = {
   text: string
   size: number
-}
-
-const resolveWasm = (asset: string) => {
-  if (asset.startsWith("file://")) return fileURLToPath(asset)
-  if (asset.startsWith("/") || /^[a-z]:/i.test(asset)) return asset
-  const url = new URL(asset, import.meta.url)
-  return fileURLToPath(url)
 }
 
 function parts(node: Node) {
@@ -260,7 +252,11 @@ const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boole
   return tree
 })
 
-const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan, input: { command: string }) {
+const ask = Effect.fn("ShellTool.ask")(function* (
+  ctx: Tool.Context,
+  scan: Scan,
+  input: { command: string; kind: BashApproval.ShellKind },
+) {
   if (scan.dirs.size > 0) {
     const directories = Array.from(scan.dirs)
     const globs = directories.map((dir) => {
@@ -280,12 +276,18 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
   }
 
   if (scan.patterns.size === 0) return
+  // Grok Build reduction shared with the V2 bash tool: per-command resources, scoped prefixes and a scope picker.
+  const approval = yield* Effect.promise(() => BashApproval.analyze(input.command, input.kind))
+  const decomposed = !approval.opaque
   yield* ctx.ask({
     permission: ShellID.ToolID,
-    patterns: Array.from(scan.patterns),
-    always: Array.from(scan.always),
+    patterns: decomposed ? [...approval.resources] : Array.from(scan.patterns),
+    // Opaque scripts persist only the exact script, which the whole-script grant check then honors.
+    always: decomposed ? [...approval.save] : [input.command.trim()],
     metadata: {
       command: input.command,
+      wholeScript: input.command.trim(),
+      ...(decomposed ? BashApproval.metadata(approval) : {}),
     },
   })
 })
@@ -308,32 +310,8 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
     detached: process.platform !== "win32",
   })
 }
-const parser = lazy(async () => {
-  const { Parser } = await import("web-tree-sitter")
-  const { default: treeWasm } = await import("web-tree-sitter/tree-sitter.wasm" as string, {
-    with: { type: "wasm" },
-  })
-  const treePath = resolveWasm(treeWasm)
-  await Parser.init({
-    locateFile() {
-      return treePath
-    },
-  })
-  const { default: bashWasm } = await import("tree-sitter-bash/tree-sitter-bash.wasm" as string, {
-    with: { type: "wasm" },
-  })
-  const { default: psWasm } = await import("tree-sitter-powershell/tree-sitter-powershell.wasm" as string, {
-    with: { type: "wasm" },
-  })
-  const bashPath = resolveWasm(bashWasm)
-  const psPath = resolveWasm(psWasm)
-  const [bashLanguage, psLanguage] = await Promise.all([Language.load(bashPath), Language.load(psPath)])
-  const bash = new Parser()
-  bash.setLanguage(bashLanguage)
-  const ps = new Parser()
-  ps.setLanguage(psLanguage)
-  return { bash, ps }
-})
+// Shared with the V2 bash tool so both parse with the same tree-sitter grammars.
+const parser = () => ShellParser.parsers()
 
 export const ShellTool = Tool.define(
   ShellID.ToolID,
@@ -659,7 +637,8 @@ export const ShellTool = Tool.define(
                   )
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
-                  yield* ask(ctx, scan, params)
+                  const kind = ps ? "powershell" : ShellID.toKind(Shell.name(shell)) === "cmd" ? "cmd" : "posix"
+                  yield* ask(ctx, scan, { command: params.command, kind })
                 }),
               )
 

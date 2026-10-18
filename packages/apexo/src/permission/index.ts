@@ -12,6 +12,9 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@apexo/core/database/database"
 import { SessionTable } from "@apexo/core/session/sql"
 import { eq } from "drizzle-orm"
+import { BashApproval } from "@apexo/core/tool/bash-approval"
+
+const offeredChoice = BashApproval.offered
 
 export const Event = PermissionV1.Event
 
@@ -137,6 +140,20 @@ const layer = Layer.effect(
       }
 
       if (!needsAsk) return
+      // Grok Build whole_script_grant: an exact grant saved for this whole script (raw text) still replays
+      // after per-command reduction. Only literal, exactly-equal allow rules count; wildcards never do.
+      const whole = request.metadata?.wholeScript
+      if (
+        !force &&
+        typeof whole === "string" &&
+        sessionApproved.some(
+          (rule) =>
+            rule.action === "allow" &&
+            rule.pattern === whole &&
+            PermissionV1.canonicalPermission(rule.permission) === permission,
+        )
+      )
+        return
 
       const id = request.id ?? PermissionV1.ID.ascending()
       const info: PermissionV1.Request = {
@@ -218,7 +235,10 @@ const layer = Layer.effect(
 
       const sessionKey = String(existing.info.sessionID)
       const sessionApproved = approved.get(sessionKey) ?? []
-      for (const pattern of existing.info.always) {
+      // Scope picker: a chosen save set must be one this request offered; otherwise the default scope persists.
+      const always =
+        input.always && offeredChoice(existing.info.metadata, input.always) ? input.always : existing.info.always
+      for (const pattern of always) {
         sessionApproved.push({
           permission: PermissionV1.canonicalPermission(existing.info.permission),
           pattern,
@@ -226,7 +246,7 @@ const layer = Layer.effect(
         })
       }
       approved.set(sessionKey, sessionApproved)
-      if (existing.info.always.length > 0) {
+      if (always.length > 0) {
         const persisted = yield* db
           .select({ permission: SessionTable.permission })
           .from(SessionTable)
@@ -239,7 +259,7 @@ const layer = Layer.effect(
             .set({
               permission: [
                 ...(persisted.permission ?? []),
-                ...existing.info.always.map((pattern) => ({
+                ...always.map((pattern) => ({
                   permission: PermissionV1.canonicalPermission(existing.info.permission),
                   pattern,
                   action: "allow" as const,
