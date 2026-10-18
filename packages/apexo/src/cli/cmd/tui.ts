@@ -359,6 +359,7 @@ export const TuiThreadCommand = cmd({
           )
           const toMinimal = ModeSwitch.take()
           if (toMinimal?.mode !== "minimal") break
+          ModeSwitch.seedDraft(toMinimal.draft)
           const backend = await sharedServer()
           const { runMini } = await import("./run")
           await runMini({
@@ -368,7 +369,6 @@ export const TuiThreadCommand = cmd({
             session: toMinimal.sessionID,
             model: toMinimal.model,
             agent: toMinimal.agent,
-            // The mini footer has no unsent-draft seed; an initial prompt would be submitted, so the draft stays put.
             replay: noReplay ? false : undefined,
             replayLimit: args.replayLimit,
           })

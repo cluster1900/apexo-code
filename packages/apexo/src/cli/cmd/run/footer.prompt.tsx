@@ -297,7 +297,8 @@ export function createPromptState(input: PromptInput): PromptState {
   })
 
   let history = createPromptHistory(input.history)
-  let draft: RunPrompt = { text: "", parts: [] }
+  // `/minimal` carries the fullscreen prompt's unsent draft; it lands in the editor without being submitted.
+  let draft: RunPrompt = { text: ModeSwitch.takeDraft() ?? "", parts: [] }
   let stash: RunPrompt = { text: "", parts: [] }
   let area: TextareaRenderable | undefined
   let tick = false

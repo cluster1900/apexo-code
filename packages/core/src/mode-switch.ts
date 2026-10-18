@@ -8,7 +8,7 @@ export type ModeSwitchRequest = {
   model?: string
 }
 
-const state: { available: boolean; pending?: ModeSwitchRequest } = { available: false }
+const state: { available: boolean; pending?: ModeSwitchRequest; draft?: string } = { available: false }
 
 export const ModeSwitch = {
   /** True only while the local terminal entry point is looping over renderers (not attach, not headless run). */
@@ -20,6 +20,15 @@ export const ModeSwitch = {
   },
   request(value: ModeSwitchRequest) {
     state.pending = value
+  },
+  /** Unsent draft carried into the next renderer's prompt; read once by the renderer that mounts next. */
+  seedDraft(value: string | undefined) {
+    state.draft = value?.length ? value : undefined
+  },
+  takeDraft() {
+    const value = state.draft
+    state.draft = undefined
+    return value
   },
   take() {
     const value = state.pending
