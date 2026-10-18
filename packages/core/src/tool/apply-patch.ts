@@ -9,6 +9,8 @@ import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
+import { LSP } from "../lsp"
+import { LspDiagnostics } from "../lsp-diagnostics"
 import { Patch } from "../patch"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
@@ -32,16 +34,21 @@ export const Applied = Schema.Struct({
 export const Output = Schema.Struct({
   applied: Schema.Array(Applied),
   files: Schema.Array(FileDiff.Info),
+  /** Grok Build `<lsp-diagnostics>` summary from running language servers, model-facing only. */
+  diagnostics: Schema.optional(Schema.String),
 })
 export type Output = typeof Output.Type
 
 export const toModelOutput = (output: Output) =>
-  [
-    "Applied patch sequentially:",
-    ...output.applied.map(
-      (item) => `${item.type === "add" ? "A" : item.type === "delete" ? "D" : "M"} ${item.resource}`,
-    ),
-  ].join("\n")
+  LspDiagnostics.withReminder(
+    [
+      "Applied patch sequentially:",
+      ...output.applied.map(
+        (item) => `${item.type === "add" ? "A" : item.type === "delete" ? "D" : "M"} ${item.resource}`,
+      ),
+    ].join("\n"),
+    output.diagnostics,
+  )
 
 type Prepared =
   | (Extract<Patch.Hunk, { readonly type: "add" | "delete" }> & {
@@ -65,6 +72,7 @@ const layer = Layer.effectDiscard(
     const fs = yield* FSUtil.Service
     const permission = yield* PermissionV2.Service
     const sandbox = yield* CommandSandbox.Service
+    const lsp = yield* LSP.Service
 
     yield* tools
       .register({
@@ -191,7 +199,13 @@ const layer = Layer.effectDiscard(
                     }).pipe(Effect.mapError(() => fail(change.path))),
                   { discard: true },
                 )
-                return { applied, files: patchFiles }
+                const diagnostics = yield* lsp.diagnose(
+                  prepared.map((change) => ({
+                    file: change.target.canonical,
+                    ...(change.type === "delete" ? {} : { text: change.after }),
+                  })),
+                )
+                return { applied, files: patchFiles, ...(diagnostics ? { diagnostics } : {}) }
               }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail("patch"))))
             },
           }),
@@ -212,6 +226,7 @@ export const node = makeLocationNode({
     FSUtil.node,
     PermissionV2.node,
     CommandSandbox.node,
+    LSP.node,
   ],
 })
 
