@@ -191,6 +191,19 @@ const layer = Layer.effect(
 
       const cwd = path.dirname(dotgit)
       const git = run(cwd, proc)
+      // Discovery runs on most session, placement and snapshot paths, so resolve all three paths with one
+      // spawn. rev-parse prints one line per flag in argument order. It fails as a whole when
+      // --show-toplevel cannot run (bare repo or inside the git dir), so fall back to the separate calls,
+      // which tolerate a missing top level.
+      const combined = yield* git(["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"])
+      const lines = combined.exitCode === 0 ? combined.text.replace(/[\r\n]+$/, "").split(/\r?\n/) : []
+      if (lines.length === 3 && lines.every(Boolean)) {
+        return new Repository({
+          worktree: AbsolutePath.make(resolvePath(cwd, lines[0])),
+          gitDirectory: AbsolutePath.make(resolvePath(cwd, lines[1])),
+          commonDirectory: AbsolutePath.make(resolvePath(cwd, lines[2])),
+        })
+      }
       const topLevel = yield* git(["rev-parse", "--show-toplevel"])
       const gitDir = yield* git(["rev-parse", "--git-dir"])
       const commonDir = yield* git(["rev-parse", "--git-common-dir"])
