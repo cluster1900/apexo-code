@@ -1,3 +1,5 @@
+import fs from "fs/promises"
+import path from "path"
 import { policy } from "@/plugin/hook-policy"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@apexo/core/v1/session"
@@ -615,30 +617,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return output
         }),
       )
-    if (flags.experimentalToolSearch) deferred[key] = item
+    if (!flags.mcpEagerTools) deferred[key] = item
     else tools[key] = item
   }
 
   if (Object.keys(deferred).length) {
     // Grok Build deferred discovery: `search_tool` (BM25) + `use_tool` (qualified `server__tool`).
-    const entries: McpToolIndex.Entry[] = Object.entries(mcpTools)
-      .filter(([key]) => deferred[key])
-      .map(([key, entry]) => {
-        const suffix = "_" + McpCatalog.sanitize(entry.def.name)
-        return {
-          key,
-          server: key.endsWith(suffix) ? key.slice(0, -suffix.length) : key,
-          name: entry.def.name,
-          description: entry.def.description ?? "",
-          inputSchema: entry.def.inputSchema,
-        }
-      })
-    const reminder = McpToolIndex.serverReminder(entries)
+    const entries = mcpEntries(mcpTools).filter((entry) => deferred[entry.key])
     tools[McpToolIndex.SEARCH_TOOL] = tool({
       description: [
         "Search for MCP tools by keyword and retrieve their input schemas.",
         'If status is "partial", some servers may still be connecting.',
-        ...(reminder ? ["", reminder] : []),
       ].join("\n"),
       inputSchema: jsonSchema(
         ProviderTransform.schema(input.model, {
@@ -674,30 +663,72 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       },
     })
     tools[McpToolIndex.USE_TOOL] = tool({
-      description: `Call a discovered MCP integration tool with \`tool_name\` and \`tool_input\`. Arguments must match the discovered schema from \`${McpToolIndex.SEARCH_TOOL}\`.`,
+      description: [
+        "Call a discovered MCP integration tool.",
+        "",
+        "Supply exactly one form: `tool_name` plus `tool_input` inline; `tool_name` plus `tool_input_file` for a UTF-8 JSON arguments-only object; or `file` for a UTF-8 JSON document with canonical `tool_name` and object `tool_input`. File forms require Read permission, then normal MCP approval. Files must be complete regular files, at most 8 MiB. Do not mix forms or delegate to another file or native tool. Remote keys and JSON-encoded strings remain unchanged. Arguments must match the discovered schema from `search_tool`.",
+      ].join("\n"),
       inputSchema: jsonSchema(
         ProviderTransform.schema(input.model, {
           type: "object",
           properties: {
-            tool_name: { type: "string", description: "Qualified MCP tool name from search_tool (server__tool)." },
-            tool_input: { type: "object", additionalProperties: true, description: "Arguments for the tool." },
+            tool_name: { type: "string", description: "Discovered MCP target name (server__tool)" },
+            tool_input: {
+              type: "object",
+              additionalProperties: true,
+              description: "Inline remote arguments; use the discovered input schema",
+            },
+            tool_input_file: { type: "string", description: "Path to a UTF-8 JSON arguments-only object" },
+            file: { type: "string", description: "Path to a UTF-8 JSON document with tool_name and object tool_input" },
           },
-          required: ["tool_name"],
           additionalProperties: false,
         }),
       ),
       async execute(args, opts) {
-        const record = toRecord(args)
-        const target = McpToolIndex.resolve(entries, requiredString(record, "tool_name"), new Set(Object.keys(tools)))
+        const parsed = McpToolIndex.parseUseToolInput(toRecord(args))
+        // File forms need Read permission first, then normal MCP approval (Grok Build use_tool).
+        const readFile = (file: string) =>
+          run.promise(
+            Effect.gen(function* () {
+              const ctx = context(McpToolIndex.USE_TOOL, toRecord(args), opts)
+              const absolute = path.resolve(input.processor.message.path.cwd, file)
+              yield* ctx.ask({ permission: "read", patterns: [absolute], always: ["*"], metadata: { filepath: absolute } })
+              const stat = yield* Effect.promise(() => fs.stat(absolute).catch(() => undefined))
+              if (!stat?.isFile()) throw new Error(`MCP source file must be a regular file: ${absolute}`)
+              if (stat.size > McpToolIndex.MAX_INPUT_FILE) throw new Error("MCP source file exceeds 8 MiB")
+              return yield* Effect.promise(() => fs.readFile(absolute, "utf8"))
+            }),
+          )
+        const call =
+          parsed.form === "inline"
+            ? { toolName: parsed.toolName, toolInput: McpToolIndex.normalizeArguments(parsed.toolInput) }
+            : parsed.form === "arguments-file"
+              ? { toolName: parsed.toolName, toolInput: McpToolIndex.parseArgumentsFile(await readFile(parsed.path)) }
+              : McpToolIndex.parseInvocationFile(await readFile(parsed.path))
+        const target = McpToolIndex.resolve(entries, call.toolName, new Set(Object.keys(tools)))
         const execute = deferred[target.key]?.execute
         if (!execute) throw new Error(`Unknown or denied MCP tool '${target.key}'`)
         // Same permission, hooks, attachments and truncation as eager MCP tools.
-        return execute(McpToolIndex.normalizeArguments(record.tool_input), opts)
+        return execute(call.toolInput, opts)
       },
     })
   }
   return tools
 })
+
+/** Search-index entries for MCP tools (server derived from the `server_tool` key). */
+export function mcpEntries(mcpTools: Record<string, MCP.McpTool>): McpToolIndex.Entry[] {
+  return Object.entries(mcpTools).map(([key, entry]) => {
+    const suffix = "_" + McpCatalog.sanitize(entry.def.name)
+    return {
+      key,
+      server: key.endsWith(suffix) ? key.slice(0, -suffix.length) : key,
+      name: entry.def.name,
+      description: entry.def.description ?? "",
+      inputSchema: entry.def.inputSchema,
+    }
+  })
+}
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value

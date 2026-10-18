@@ -12783,6 +12783,7 @@ export type PermissionReplyData = {
   body?: {
     reply: "once" | "always" | "reject"
     message?: string
+    always?: Array<string>
   }
   path: {
     requestID: string
@@ -13884,6 +13885,7 @@ export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnre
 export type PermissionRespondData = {
   body?: {
     response: "once" | "always" | "reject"
+    always?: Array<string>
   }
   path: {
     sessionID: string
@@ -20218,6 +20220,7 @@ export type V2SessionPermissionReplyData = {
   body: {
     reply: PermissionV2Reply
     message?: string
+    save?: Array<string>
   }
   path: {
     sessionID: string

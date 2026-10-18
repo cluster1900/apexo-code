@@ -7,9 +7,12 @@ import { Terminal } from "@xterm/headless"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
 import {
   autoReviewFixture,
+  bashPrefixFixture,
   dashboardFixture,
   dashboardTexts,
   importedClaude,
+  mcpFixture,
+  runMcpFlow,
   seedClaude,
   seedDashboard,
   startGoalFixture,
@@ -29,25 +32,34 @@ const editFlow = process.argv.includes("--edit-prompt")
 const cycleFlow = process.argv.includes("--mode-cycle")
 // --dashboard: /dashboard roster, peek, reply, permission answer, dispatch, search, delete (Grok Build agent dashboard).
 const dashFlow = process.argv.includes("--dashboard")
+// --bash-prefix: bash asks; "Allow always" shows and saves the Grok Build scoped prefix, which then covers chained reuse.
+const prefixFlow = process.argv.includes("--bash-prefix")
+// --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
+const mcpFlow = process.argv.includes("--mcp")
+const mcpSetup = mcpFlow ? mcpFixture() : undefined
 const { runtime } = await startGoalFixture(
   "cli",
   dashFlow
     ? dashboardFixture
+    : mcpFlow
+    ? mcpSetup
+    : prefixFlow
+    ? bashPrefixFixture
     : autoFlow || cycleFlow
-      ? autoReviewFixture
-      : vimConfig
-        ? { config: { ui: { vim_mode: true } } }
-        : windowFlow
-          ? {
-              models: {
-                "grok-4.7": {
-                  name: "Restart parity",
-                  tool_call: true,
-                  limit: { context: 100000, output: 10000, context_options: [100000, 50000, 100] },
-                },
+    ? autoReviewFixture
+    : vimConfig
+      ? { config: { ui: { vim_mode: true } } }
+      : windowFlow
+        ? {
+            models: {
+              "grok-4.7": {
+                name: "Restart parity",
+                tool_call: true,
+                limit: { context: 100000, output: 10000, context_options: [100000, 50000, 100] },
               },
-            }
-          : {},
+            },
+          }
+        : {},
 )
 const terminal = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
 const plain = () =>
@@ -240,6 +252,15 @@ try {
     await poll(() => !plain().includes("+ New Agent"), "Esc closes the dashboard")
     checks.push("esc-steps-back-then-exits")
     console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (mcpFlow) {
+    const send = async (text) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+    }
+    checks.push(...(await runMcpFlow(runtime, session, mcpSetup, send, poll)))
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
   } else if (cycleFlow) {
     // Asserts real state: the agent recorded on the sent message and what the permission layer actually does.
     const messages = async () => runtime.api(`/session/${session.id}/message`)
@@ -350,6 +371,89 @@ try {
     const { existsSync } = await import("node:fs")
     assert.ok(!existsSync(join(runtime.env.APEXO_TEST_HOME, ".grok", "hooks", "claude-import.json")))
     checks.push("unticked-hooks-not-imported")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (prefixFlow) {
+    const pending = async () => runtime.api(`/permission`)
+    const prompt = async (text) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+    }
+    const ran = async (command) =>
+      (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+        item.parts.some(
+          (part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === command,
+        ),
+      )
+    const asked = async (command) => (await pending()).find((item) => item.metadata?.command === command || item.patterns?.includes(command))
+    const alwaysViaPrompt = async (command, expected) => {
+      await poll(() => asked(command), `asks for ${command}`, 30_000)
+      const request = await asked(command)
+      assert.deepEqual(request.always, expected, `always scope for ${command}`)
+      await rendered("Permission required")
+      child.terminal.write("\x1b[C")
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+      await rendered("Always allow")
+      for (const pattern of expected) await rendered("- " + pattern)
+      child.terminal.write("\r")
+      await poll(() => ran(command), `${command} ran`, 30_000)
+    }
+    await prompt("PREFIX_FIRST")
+    await alwaysViaPrompt("git status", ["git status *"])
+    checks.push("prompt-shows-grok-scope:git status *")
+    await prompt("PREFIX_AGAIN")
+    await poll(() => ran("cd . && git status --short"), "chained reuse ran without a prompt", 30_000)
+    checks.push("saved-prefix-covers-cd-chain-and-flags")
+    await prompt("PREFIX_OTHER")
+    await poll(() => asked("git log -1 --oneline"), "other subcommand still asks", 30_000)
+    const other = await asked("git log -1 --oneline")
+    assert.deepEqual(other.always, ["git log *"])
+    assert.deepEqual(
+      other.metadata.alwaysChoices.map((item) => item.label),
+      ["git *", "git log *", "git log -1 *", "git log -1 --oneline *"],
+    )
+    checks.push("other-subcommand-asks-with-grok-scope-choices")
+    await rendered("Permission required")
+    child.terminal.write("\x1b[C")
+    await Bun.sleep(200)
+    child.terminal.write("\r")
+    await rendered("Always allow")
+    await rendered("Scope 2/4")
+    await rendered("- git log *")
+    child.terminal.write("\x1b[D")
+    await rendered("Scope 1/4")
+    await rendered("- git *")
+    child.terminal.write("\r")
+    await poll(() => ran("git log -1 --oneline"), "narrowed grant ran", 30_000)
+    checks.push("scope-picker-narrows-to:git *")
+    await prompt("PREFIX_WIDE")
+    await poll(() => ran("git diff --stat"), "picked scope covers git diff", 30_000)
+    checks.push("picked-scope-covers-other-git-subcommand")
+    await Bun.sleep(800)
+    await prompt("PREFIX_RM")
+    await alwaysViaPrompt("rm -rf prefix-flow-dir", ["rm -rf prefix-flow-dir"])
+    checks.push("dangerous-command-pinned-to-exact")
+    await prompt("PREFIX_RM_AGAIN")
+    await poll(() => asked("rm -rf prefix-flow-other"), "different rm still asks", 30_000)
+    checks.push("different-rm-still-asks")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await poll(async () => (await pending()).length === 0, "rm rejected")
+    await Bun.sleep(800)
+    await prompt("PREFIX_OPAQUE")
+    await alwaysViaPrompt("echo $(git rev-parse --short HEAD) | wc -c", ["echo $(git rev-parse --short HEAD) | wc -c"])
+    checks.push("opaque-script-saved-as-exact-whole-script")
+    await prompt("PREFIX_OPAQUE_AGAIN")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).flatMap((item) =>
+          item.parts.filter((part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === "echo $(git rev-parse --short HEAD) | wc -c"),
+        ).length >= 2,
+      "exact whole-script grant replays",
+      30_000,
+    )
+    checks.push("exact-whole-script-grant-replays")
     console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
   } else if (autoFlow) {
     const pending = async () => runtime.api(`/permission`)

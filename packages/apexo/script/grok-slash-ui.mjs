@@ -9,9 +9,12 @@ import { promisify } from "node:util"
 import { poll } from "./grok-shell-fixture.mjs"
 import {
   autoReviewFixture,
+  bashPrefixFixture,
   dashboardFixture,
   dashboardTexts,
   importedClaude,
+  mcpFixture,
+  runMcpFlow,
   seedClaude,
   seedDashboard,
   startGoalFixture,
@@ -35,6 +38,11 @@ const moveNew = process.argv.includes("--move-new")
 const cycleFlow = process.argv.includes("--mode-cycle")
 // --dashboard: /dashboard roster, peek, reply, permission answer, dispatch, search, delete (Grok Build agent dashboard).
 const dashFlow = process.argv.includes("--dashboard")
+// --bash-prefix: bash asks; the dock shows the Grok Build scoped "Allow always" prefix, which then covers chained reuse.
+const prefixFlow = process.argv.includes("--bash-prefix")
+// --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
+const mcpFlow = process.argv.includes("--mcp")
+const mcpSetup = mcpFlow ? mcpFixture() : undefined
 const mod = process.platform === "darwin" ? "Meta" : "Control"
 const windowModels = {
   "grok-4.7": {
@@ -47,15 +55,19 @@ const { runtime, control } = await startGoalFixture(
   kind,
   dashFlow
     ? dashboardFixture
+    : mcpFlow
+    ? mcpSetup
+    : prefixFlow
+    ? bashPrefixFixture
     : autoFlow || cycleFlow
-      ? autoReviewFixture
-      : vimConfig
-        ? { config: { ui: { vim_mode: true } } }
-        : windowFlow
-          ? { models: windowModels }
-          : moveFlow
-            ? { git: true }
-            : {},
+    ? autoReviewFixture
+    : vimConfig
+      ? { config: { ui: { vim_mode: true } } }
+      : windowFlow
+        ? { models: windowModels }
+        : moveFlow
+          ? { git: true }
+          : {},
 )
 const session = await runtime.api("/session", {
   title: "Slash UI",
@@ -296,6 +308,15 @@ try {
     await poll(async () => !(await open()), "Esc closes the dashboard")
     checks.push("esc-steps-back-then-exits")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (mcpFlow) {
+    const send = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "300")
+      await command("press", "Enter")
+    }
+    checks.push(...(await runMcpFlow(runtime, session, mcpSetup, send, poll)))
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (cycleFlow) {
     const body = () => command("get", "text", "body")
     const store = () =>
@@ -506,6 +527,94 @@ try {
     )
     assert.equal(hooks.hooks.Stop.length, 1)
     checks.push("hooks-written-to-grok-hooks-dir")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (prefixFlow) {
+    const body = () => command("get", "text", "body")
+    const send = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "400")
+      await command("press", "Enter")
+    }
+    const pending = async () => runtime.api(`/permission`)
+    const ran = async (cmd) =>
+      (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+        item.parts.some(
+          (part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === cmd,
+        ),
+      )
+    const asked = async (cmd) =>
+      (await pending()).find((item) => item.metadata?.command === cmd || item.patterns?.includes(cmd))
+    const alwaysViaDock = async (cmd, expected) => {
+      await poll(() => asked(cmd), `asks for ${cmd}`, 30_000)
+      assert.deepEqual((await asked(cmd)).always, expected, `always scope for ${cmd}`)
+      await poll(async () => (await body()).includes("Allow always saves approval for:"), "dock shows always scope")
+      const shown = await command(
+        "eval",
+        `JSON.stringify([...document.querySelectorAll('[data-slot="permission-always"] code')].map((n) => n.textContent))`,
+      )
+      assert.deepEqual(JSON.parse(JSON.parse(shown.trim())), expected, "dock lists the saved scope")
+      await command(
+        "eval",
+        `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Allow always').click()`,
+      )
+      await poll(() => ran(cmd), `${cmd} ran`, 30_000)
+    }
+    await send("PREFIX_FIRST")
+    await alwaysViaDock("git status", ["git status *"])
+    checks.push("dock-shows-grok-scope:git status *")
+    await send("PREFIX_AGAIN")
+    await poll(() => ran("cd . && git status --short"), "chained reuse ran without a prompt", 30_000)
+    checks.push("saved-prefix-covers-cd-chain-and-flags")
+    await send("PREFIX_OTHER")
+    await poll(() => asked("git log -1 --oneline"), "other subcommand still asks", 30_000)
+    const other = await asked("git log -1 --oneline")
+    assert.deepEqual(other.always, ["git log *"])
+    assert.deepEqual(
+      other.metadata.alwaysChoices.map((item) => item.label),
+      ["git *", "git log *", "git log -1 *", "git log -1 --oneline *"],
+    )
+    checks.push("other-subcommand-asks-with-grok-scope-choices")
+    await poll(async () => (await body()).includes("2/4"), "dock scope 2/4")
+    await command("eval", `document.querySelector('[data-action="scope-narrower"]').click()`)
+    await poll(async () => (await body()).includes("1/4"), "dock scope 1/4")
+    const shown = await command(
+      "eval",
+      `JSON.stringify([...document.querySelectorAll('[data-slot="permission-always"] code')].map((n) => n.textContent))`,
+    )
+    assert.deepEqual(JSON.parse(JSON.parse(shown.trim())), ["git *"], "dock shows the narrowed scope")
+    await command(
+      "eval",
+      `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Allow always').click()`,
+    )
+    await poll(() => ran("git log -1 --oneline"), "narrowed grant ran", 30_000)
+    checks.push("scope-picker-narrows-to:git *")
+    await send("PREFIX_WIDE")
+    await poll(() => ran("git diff --stat"), "picked scope covers git diff", 30_000)
+    checks.push("picked-scope-covers-other-git-subcommand")
+    await Bun.sleep(800)
+    await send("PREFIX_RM")
+    await alwaysViaDock("rm -rf prefix-flow-dir", ["rm -rf prefix-flow-dir"])
+    checks.push("dangerous-command-pinned-to-exact")
+    await send("PREFIX_RM_AGAIN")
+    await poll(() => asked("rm -rf prefix-flow-other"), "different rm still asks", 30_000)
+    checks.push("different-rm-still-asks")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await poll(async () => (await pending()).length === 0, "rm rejected")
+    await Bun.sleep(800)
+    await send("PREFIX_OPAQUE")
+    await alwaysViaDock("echo $(git rev-parse --short HEAD) | wc -c", ["echo $(git rev-parse --short HEAD) | wc -c"])
+    checks.push("opaque-script-saved-as-exact-whole-script")
+    await send("PREFIX_OPAQUE_AGAIN")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).flatMap((item) =>
+          item.parts.filter((part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === "echo $(git rev-parse --short HEAD) | wc -c"),
+        ).length >= 2,
+      "exact whole-script grant replays",
+      30_000,
+    )
+    checks.push("exact-whole-script-grant-replays")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (autoFlow) {
     const body = () => command("get", "text", "body")

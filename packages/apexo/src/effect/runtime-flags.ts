@@ -80,6 +80,8 @@ export class Service extends ConfigService.Service<Service>()("@apexo/RuntimeFla
   experimentalPlanMode: planMode,
   experimentalCodeMode: enabledByExperimental("APEXO_EXPERIMENTAL_CODE_MODE"),
   experimentalToolSearch: bool("APEXO_EXPERIMENTAL_TOOL_SEARCH"),
+  // Grok Build sends MCP tools on demand (search_tool/use_tool) by default; this opts back into sending every tool.
+  mcpEagerTools: bool("APEXO_MCP_EAGER_TOOLS"),
   experimentalEventSystem: enabledByExperimental("APEXO_EXPERIMENTAL_EVENT_SYSTEM"),
   experimentalWorkspaces: enabledByExperimental("APEXO_EXPERIMENTAL_WORKSPACES"),
   experimentalIconDiscovery: enabledByExperimental("APEXO_EXPERIMENTAL_ICON_DISCOVERY"),

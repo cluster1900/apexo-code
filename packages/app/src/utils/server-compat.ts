@@ -176,12 +176,29 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
         await input.legacy(input.directory).v2.skill.reload({ location: { directory: input.directory } })
       },
     },
+    permission: {
+      ...input.current.permission,
+      // A scope-picker selection travels as `save`, which only the regenerated SDK sends.
+      async reply(value: Parameters<CompatiblePermissionApi["reply"]>[0]) {
+        const always = (value as { always?: readonly string[] }).always
+        if (!always) return input.current.permission.reply(value)
+        await input
+          .legacy(value.location?.directory ?? input.directory)
+          .v2.session.permission.reply(
+            { sessionID: value.sessionID, requestID: value.requestID, reply: value.reply, save: [...always] },
+            { throwOnError: true },
+          )
+        return undefined as unknown as Awaited<ReturnType<ServerApi["permission"]["reply"]>>
+      },
+    },
   }
   return lazyApi(
     input.protocol.then((protocol) => (protocol === "v1" ? v1 : current)),
     current,
   )
 }
+
+const chosen = (value: object) => (value as { always?: readonly string[] }).always
 
 function lazyApi<T extends object>(implementation: Promise<T>, shape: T): T {
   const cache = new Map<PropertyKey, unknown>()
@@ -615,6 +632,7 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
           sessionID: value.sessionID,
           permissionID: value.requestID,
           response: value.reply,
+          ...(chosen(value) ? { always: [...chosen(value)!] } : {}),
           directory: directory(value.location),
         })
       },

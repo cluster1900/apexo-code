@@ -4835,6 +4835,7 @@ export class Permission extends HeyApiClient {
       workspace?: string
       reply?: "once" | "always" | "reject"
       message?: string
+      always?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4848,6 +4849,7 @@ export class Permission extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "body", key: "reply" },
             { in: "body", key: "message" },
+            { in: "body", key: "always" },
           ],
         },
       ],
@@ -4910,6 +4912,7 @@ export class Permission extends HeyApiClient {
       directory?: string
       workspace?: string
       response?: "once" | "always" | "reject"
+      always?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4923,6 +4926,7 @@ export class Permission extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "response" },
+            { in: "body", key: "always" },
           ],
         },
       ],
@@ -7142,6 +7146,7 @@ export class Permission2 extends HeyApiClient {
       requestID: string
       reply?: PermissionV2Reply
       message?: string
+      save?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -7154,6 +7159,7 @@ export class Permission2 extends HeyApiClient {
             { in: "path", key: "requestID" },
             { in: "body", key: "reply" },
             { in: "body", key: "message" },
+            { in: "body", key: "save" },
           ],
         },
       ],

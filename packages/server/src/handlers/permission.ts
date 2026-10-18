@@ -72,7 +72,12 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const request = yield* permission.get(ctx.params.requestID)
           if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)
           yield* permission
-            .reply({ requestID: ctx.params.requestID, reply: ctx.payload.reply, message: ctx.payload.message })
+            .reply({
+              requestID: ctx.params.requestID,
+              reply: ctx.payload.reply,
+              message: ctx.payload.message,
+              save: ctx.payload.save,
+            })
             .pipe(Effect.catchTag("PermissionV2.NotFoundError", () => missingRequest(ctx.params.requestID)))
           return HttpApiSchema.NoContent.make()
         }),
