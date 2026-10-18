@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "build": "bun ./script/build.ts"
+    "build": "bun ./script/build.ts",
+    "check:generated": "bun ./script/build.ts && git diff --exit-code -- src/v2/gen"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -21,6 +22,9 @@
     "./v2/task-message": "./src/v2/task-message.ts",
     "./v2/mcp-attachment": "./src/v2/mcp-attachment.ts"
     ,"./v2/feedback-images": "./src/v2/feedback-images.ts"
+    ,"./v2/session-report": "./src/v2/session-report.ts"
+    ,"./v2/goal-command": "./src/v2/goal-command.ts"
+    ,"./v2/grok-commands": "./src/v2/grok-commands.ts"
   },
   "files": [
     "dist"

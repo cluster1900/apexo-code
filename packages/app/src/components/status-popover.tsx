@@ -9,6 +9,7 @@ import { ServerConnection, useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSync } from "@/context/sync"
 import { useGlobal } from "@/context/global"
+import { useCommand } from "@/context/command"
 import {
   hasNonBlockingServiceIssue,
   hasServiceNeedingAttention,
@@ -24,6 +25,15 @@ export function StatusPopover() {
   const global = useGlobal()
   const sync = useSync()
   const [shown, setShown] = createSignal(false)
+  useCommand().register("status-popover", () => [
+    {
+      id: "status.open",
+      title: language.t("status.popover.trigger"),
+      slash: "status",
+      slashAliases: ["session-info", "info"],
+      onSelect: () => setShown(true),
+    },
+  ])
   const serverHealth = () => global.servers.health[server.key]?.healthy
   const ready = createMemo(() => serverHealth() === false || (sync().data.mcp_ready && sync().data.lsp_ready))
   const attention = createMemo(() =>
@@ -93,6 +103,15 @@ function DirectoryStatusPopover() {
   const global = useGlobal()
   const sync = useSync()
   const [shown, setShown] = createSignal(false)
+  useCommand().register("status-popover", () => [
+    {
+      id: "status.open",
+      title: language.t("status.popover.trigger"),
+      slash: "status",
+      slashAliases: ["session-info", "info"],
+      onSelect: () => setShown(true),
+    },
+  ])
   const serverHealth = () => global.servers.health[ServerConnection.key(server().server)]?.healthy
   const ready = createMemo(() => serverHealth() === false || (sync().data.mcp_ready && sync().data.lsp_ready))
   const attention = createMemo(() =>

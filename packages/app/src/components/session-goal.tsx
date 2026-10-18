@@ -1,3 +1,4 @@
+import { parseGoalCommand } from "@apexo/sdk/v2/goal-command"
 import { createEffect, For, lazy, onCleanup, Show, Suspense } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import type { GoalInfo, GoalStart } from "@apexo/sdk/v2/client"
@@ -54,12 +55,14 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
   const options = { throwOnError: true as const, signal: lifetime.signal }
   const intent = props.objective?.trim()
   const control = { handled: false }
-  const operation =
-    intent === "pause" || intent === "resume" || intent === "clear" || intent === "status" ? intent : undefined
+  const parsed = parseGoalCommand(intent)
+  const operation = parsed.type === "operation" ? parsed.operation : undefined
+  // `/goal <objective> [--budget N]` starts immediately, like Grok Build; the form is only a fallback.
+  const autoCreate = parsed.type === "create"
   const [state, setState] = createStore({
     info: undefined as GoalInfo | null | undefined,
-    objective: operation ? "" : (props.objective ?? ""),
-    budget: "",
+    objective: parsed.type === "create" || parsed.type === "invalid" ? parsed.objective : "",
+    budget: parsed.type === "create" && parsed.tokenBudget ? String(parsed.tokenBudget) : "",
     pending: false,
     error: false,
     confirm: false,
@@ -81,14 +84,18 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
           if (abort.signal.aborted || state.pending) return
           // Keep report elements stable so polling preserves expansion and scroll position.
           setState("info", reconcile(result.data, { key: "callID" }))
-          if (!operation || control.handled) return
+          if ((!operation && !autoCreate) || control.handled) return
           control.handled = true
+          if (autoCreate) {
+            if (!result.data) void run("create")
+            return
+          }
           if (!result.data || operation === "status") return
           if (operation === "clear") {
             setState("confirm", true)
             return
           }
-          void run(operation)
+          if (operation) void run(operation)
         })
         .catch(() => {
           if (!abort.signal.aborted) setState("error", true)

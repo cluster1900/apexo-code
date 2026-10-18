@@ -193,6 +193,26 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: "/config", headers: ctx.headers(), body: { username: 1 } }))
     .status(400),
   http.protected.get("/config/providers", "config.providers").json(),
+  http.protected.get("/config/import-claude", "config.claudeImport.preview").json(
+    200,
+    (body) => {
+      object(body)
+      array(body.sections)
+    },
+    "status",
+  ),
+  http.protected
+    .post("/config/import-claude", "config.claudeImport.apply")
+    .mutating()
+    .at((ctx) => ({ path: "/config/import-claude", headers: ctx.headers(), body: { sections: [] } }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        array(body.applied)
+      },
+      "status",
+    ),
   http.protected.get("/plugins", "plugins.list").json(
     200,
     (body) => {
@@ -678,6 +698,13 @@ const scenarios: Scenario[] = [
       path: route("/permission/{requestID}/reply", { requestID: "per_httpapi" }),
       headers: ctx.headers(),
       body: { reply: "once" },
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/permission/{requestID}/review", "permission.review")
+    .at((ctx) => ({
+      path: route("/permission/{requestID}/review", { requestID: "per_httpapi" }),
+      headers: ctx.headers(),
     }))
     .json(404, object, "status"),
   http.protected.get("/question", "question.list").json(200, array),

@@ -30,8 +30,9 @@ const agent: Agent.Info = {
   mode: "primary",
   options: {},
   permission: [
-    { permission: "echo", pattern: "*", action: "allow" },
-    { permission: "secret", pattern: "*", action: "deny" },
+    { permission: "linear_create_issue", pattern: "*", action: "allow" },
+    { permission: "slack_read_thread", pattern: "*", action: "allow" },
+    { permission: "linear_delete_issue", pattern: "*", action: "deny" },
   ],
 }
 
@@ -42,18 +43,26 @@ const fakeClient = {
 const mcp = MCP.Service.of({
   tools: () =>
     Effect.succeed({
-      echo: {
+      linear_create_issue: {
         def: {
-          name: "echo",
-          description: "Echo a value",
-          inputSchema: { type: "object", properties: { value: { type: "string" } } },
+          name: "create_issue",
+          description: "Create a new Linear issue",
+          inputSchema: { type: "object", properties: { title: { type: "string" } } },
         },
         client: fakeClient,
       },
-      secret: {
+      slack_read_thread: {
         def: {
-          name: "secret",
-          description: "A denied tool",
+          name: "read_thread",
+          description: "Read Slack thread history",
+          inputSchema: { type: "object", properties: { channel: { type: "string" } } },
+        },
+        client: fakeClient,
+      },
+      linear_delete_issue: {
+        def: {
+          name: "delete_issue",
+          description: "Delete a Linear issue",
           inputSchema: { type: "object", properties: {} },
         },
         client: fakeClient,
@@ -99,12 +108,12 @@ const layer = Layer.mergeAll(
       limits: () => Effect.succeed({ maxLines: 2000, maxBytes: 50 * 1024 }),
     }),
   ),
-  RuntimeFlags.layer({ experimentalToolSearch: true }),
+  RuntimeFlags.layer({}),
 )
 
 const it = testEffect(layer)
 
-it.effect("catalogs only permitted MCP tools and executes an exact match", () =>
+it.effect("search_tool/use_tool discover permitted MCP tools and dispatch qualified names like Grok Build", () =>
   Effect.gen(function* () {
     const tools = yield* SessionTools.resolve({
       agent,
@@ -133,22 +142,29 @@ it.effect("catalogs only permitted MCP tools and executes an exact match", () =>
       promptOps: {} as never,
     })
 
-    expect(Object.keys(tools)).toEqual(["tool_search"])
-    const search = tools.tool_search?.execute
-    if (!search) throw new Error("tool_search is missing")
+    expect(Object.keys(tools).toSorted()).toEqual(["search_tool", "use_tool"])
+    const opts = { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] }
+    const search = tools.search_tool!.execute!
+    const use = tools.use_tool!.execute!
 
-    const catalog = (yield* Effect.promise(() =>
-      search({ query: "echo" }, { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] }),
-    )) as { output: string }
-    expect(catalog.output).toContain('"name":"echo"')
-    expect(catalog.output).not.toContain('"name":"secret"')
+    const found = (yield* Effect.promise(() => search({ query: "linear create issue" }, opts))) as { output: string }
+    const parsed = JSON.parse(found.output)
+    expect(parsed.results[0].server).toBe("linear")
+    expect(parsed.results[0].tools[0].tool_name).toBe("linear__create_issue")
+    expect(parsed.results[0].tools[0].input_schema.properties.title.type).toBe("string")
+    expect(parsed.total_hidden_tools).toBe(2)
+    expect(found.output).not.toContain("delete_issue")
 
     const result = (yield* Effect.promise(() =>
-      search(
-        { tool: "echo", arguments: { value: "hello" } },
-        { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] },
-      ),
+      use({ tool_name: "linear__create_issue", tool_input: '{"title":"x"}' }, opts),
     )) as { output: string }
     expect(result.output).toContain("echo result")
+
+    const native = yield* Effect.promise(() => Promise.resolve(use({ tool_name: "search_tool", tool_input: {} }, opts)).catch((e: Error) => e.message))
+    expect(String(native)).toContain("is a native tool")
+    const bare = yield* Effect.promise(() => Promise.resolve(use({ tool_name: "create_issue" }, opts)).catch((e: Error) => e.message))
+    expect(String(bare)).toContain("must be qualified as `server__tool`")
+    const denied = yield* Effect.promise(() => Promise.resolve(use({ tool_name: "linear__delete_issue" }, opts)).catch((e: Error) => e.message))
+    expect(String(denied)).toContain("Unknown or denied")
   }),
 )

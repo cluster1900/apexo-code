@@ -122,9 +122,15 @@ function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$infer
   })
 }
 
+// Provider metadata is `Record<provider, Record<string, JSON>>`. Local flags on the part (providerExecuted,
+// permissionDenied, hook reasons) are not provider namespaces and make the AI SDK reject the whole prompt.
 function providerMeta(metadata: Record<string, any> | undefined) {
   if (!metadata) return undefined
-  const { providerExecuted: _, ...rest } = metadata
+  const rest = Object.fromEntries(
+    Object.entries(metadata).filter(
+      ([key, value]) => key !== "providerExecuted" && value !== null && typeof value === "object" && !Array.isArray(value),
+    ),
+  )
   return Object.keys(rest).length > 0 ? rest : undefined
 }
 

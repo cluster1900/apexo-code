@@ -3663,6 +3663,57 @@ noLLMServer.instance(
   },
 )
 
+// /context-window
+
+noLLMServer.instance(
+  "keeps a context window choice only when the model supports that size",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const model = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") }
+      const supported = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        model,
+        contextWindow: 500_000,
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      if (supported.info.role !== "user") throw new Error("expected user message")
+      expect(supported.info.model.contextWindow).toBe(500_000)
+      const unsupported = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        model,
+        contextWindow: 123_000,
+        noReply: true,
+        parts: [{ type: "text", text: "hello again" }],
+      })
+      if (unsupported.info.role !== "user") throw new Error("expected user message")
+      expect(unsupported.info.model.contextWindow).toBeUndefined()
+      yield* sessions.remove(session.id)
+    }),
+  {
+    config: {
+      ...cfg,
+      provider: {
+        ...cfg.provider,
+        test: {
+          ...cfg.provider.test,
+          models: {
+            "test-model": {
+              ...cfg.provider.test.models["test-model"],
+              limit: { context: 2_000_000, output: 32_000, context_options: [256_000, 500_000, 2_000_000] },
+            },
+          },
+        },
+      },
+    },
+  },
+)
+
 // Agent / command resolution errors
 
 noLLMServer.instance(

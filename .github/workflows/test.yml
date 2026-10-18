@@ -44,6 +44,10 @@ jobs:
         working-directory: packages/client
         run: bun run check:generated
 
+      - name: Check generated legacy SDK
+        working-directory: packages/sdk/js
+        run: bun run check:generated
+
       - name: Run HttpApi exerciser gates
         working-directory: packages/apexo
         run: bun run test:httpapi

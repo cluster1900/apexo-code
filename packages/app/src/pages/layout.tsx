@@ -207,6 +207,7 @@ export default function LegacyLayout(props: ParentProps) {
   })
 
   onMount(() => {
+    if (localStorage.getItem("apexo.timestamps") === "show") document.documentElement.dataset.timestamps = "show"
     const stop = () => setState("sizing", false)
     const blur = () => reset()
     const hide = () => {
@@ -893,6 +894,22 @@ export default function LegacyLayout(props: ParentProps) {
         onSelect: () => layout.sidebar.toggle(),
       },
       {
+        id: "sessions.open",
+        title: language.t("command.sessions.open"),
+        category: language.t("command.category.session"),
+        slash: "sessions",
+        slashAliases: ["resume", "continue", "dashboard", "agents-dashboard"],
+        onSelect: () => layout.sidebar.open(),
+      },
+      {
+        id: "debug.toggle",
+        title: language.t("command.debug.toggle"),
+        category: language.t("command.category.view"),
+        slash: "debug",
+        disabled: !import.meta.env.DEV,
+        onSelect: () => setState("debugTools", (value) => !value),
+      },
+      {
         id: "project.open",
         title: language.t("command.project.open"),
         category: language.t("command.category.project"),
@@ -917,6 +934,8 @@ export default function LegacyLayout(props: ParentProps) {
         id: "provider.connect",
         title: language.t("command.provider.connect"),
         category: language.t("command.category.provider"),
+        slash: "connect",
+        slashAliases: ["login"],
         onSelect: () => connectProvider(),
       },
       {
@@ -929,6 +948,8 @@ export default function LegacyLayout(props: ParentProps) {
         id: "plugins.open",
         title: language.t("plugins.title"),
         category: language.t("command.category.settings"),
+        slash: "plugins",
+        slashAliases: ["marketplace"],
         onSelect: () => openPlugins(),
       },
       {
@@ -936,7 +957,30 @@ export default function LegacyLayout(props: ParentProps) {
         title: language.t("command.settings.open"),
         category: language.t("command.category.settings"),
         keybind: "mod+comma",
+        slash: "settings",
+        slashAliases: ["config", "preferences", "prefs"],
         onSelect: () => openSettings(),
+      },
+      {
+        id: "app.exit",
+        title: language.t("grok.exit.title"),
+        category: language.t("command.category.settings"),
+        slash: "exit",
+        slashAliases: ["quit"],
+        onSelect: () => window.close(),
+      },
+      {
+        id: "session.toggle.timestamps",
+        title: language.t("grok.timestamps.title"),
+        category: language.t("command.category.settings"),
+        slash: "timestamps",
+        slashAliases: ["toggle-timestamps"],
+        onSelect: () => {
+          const show = document.documentElement.dataset.timestamps !== "show"
+          document.documentElement.dataset.timestamps = show ? "show" : "hide"
+          localStorage.setItem("apexo.timestamps", show ? "show" : "hide")
+          showToast({ title: language.t(show ? "grok.timestamps.shown" : "grok.timestamps.hidden") })
+        },
       },
       {
         id: "session.previous",
@@ -984,6 +1028,7 @@ export default function LegacyLayout(props: ParentProps) {
         description: language.t("command.workspace.toggle.description"),
         category: language.t("command.category.workspace"),
         slash: "workspace",
+        slashAliases: ["workspaces"],
         disabled: !currentProject() || currentProject()?.vcs !== "git",
         onSelect: () => {
           const project = currentProject()
@@ -1006,7 +1051,17 @@ export default function LegacyLayout(props: ParentProps) {
         title: language.t("command.theme.cycle"),
         category: language.t("command.category.theme"),
         keybind: "mod+shift+t",
+        slash: "themes",
+        slashAliases: ["theme", "t"],
         onSelect: () => cycleTheme(1),
+      },
+      {
+        id: "reasoning.toggle",
+        title: language.t("command.reasoning.toggle"),
+        category: language.t("command.category.view"),
+        slash: "thinking",
+        slashAliases: ["toggle-thinking"],
+        onSelect: () => settings.general.setShowReasoningSummaries(!settings.general.showReasoningSummaries()),
       },
     ]
 

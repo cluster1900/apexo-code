@@ -7,6 +7,7 @@ import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { AutoReview } from "@/permission/auto-review"
 
 const root = "/permission"
 const ReplyPayload = Schema.Struct({
@@ -39,6 +40,19 @@ export const PermissionApi = HttpApi.make("permission")
             identifier: "permission.reply",
             summary: "Respond to permission request",
             description: "Approve or deny a permission request from the AI assistant.",
+          }),
+        ),
+        HttpApiEndpoint.post("review", `${root}/:requestID/review`, {
+          params: { requestID: PermissionV1.ID },
+          query: WorkspaceRoutingQuery,
+          success: described(AutoReview.Verdict, "Auto-review verdict for the pending request"),
+          error: [PermissionNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "permission.review",
+            summary: "Auto-review a permission request",
+            description:
+              "Run the Auto-review safety check (rule pre-filter, then the session model as classifier) on a pending request. Does not reply.",
           }),
         ),
       )

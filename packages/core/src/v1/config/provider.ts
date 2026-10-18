@@ -49,6 +49,9 @@ export const Model = Schema.Struct({
       context: Schema.Finite,
       input: Schema.optional(Schema.Finite),
       output: Schema.Finite,
+      context_options: Schema.optional(Schema.mutable(Schema.Array(Schema.Finite))).annotate({
+        description: "Context window sizes the model supports; enables /context-window when more than one",
+      }),
     }),
   ),
   modalities: Schema.optional(

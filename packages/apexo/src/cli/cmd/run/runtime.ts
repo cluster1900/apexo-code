@@ -942,6 +942,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       footer,
       initialInput: input.initialInput,
       trace: log,
+      getSessionID: () => state.sessionID,
       onSend: (prompt) => {
         state.shown = true
         state.history.push(prompt)

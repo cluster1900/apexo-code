@@ -264,6 +264,7 @@ export type UserMessage = {
     providerID: string
     modelID: string
     variant?: string
+    contextWindow?: number
   }
   system?: string
   tools?: {
@@ -1896,6 +1897,7 @@ export type ProviderConfig = {
         context: number
         input?: number
         output: number
+        context_options?: Array<number>
       }
       modalities?: {
         input?: Array<"text" | "audio" | "image" | "video" | "pdf">
@@ -2015,6 +2017,11 @@ export type Config = {
   watcher?: {
     ignore?: Array<string>
   }
+  ui?: {
+    compact_mode?: boolean
+    permission_mode?: "ask" | "auto" | "always-approve"
+    vim_mode?: boolean
+  }
   snapshot?: boolean
   plugin?: Array<
     | string
@@ -2114,6 +2121,9 @@ export type Config = {
               }
             }
       }
+  env?: {
+    [key: string]: string
+  }
   instructions?: Array<string>
   memory?: {
     embedding?: {
@@ -2200,12 +2210,17 @@ export type Config = {
     }
   }
   grok_media?: {
+    image_gen_model_override?: string
+    image_edit_model_override?: string
+    disable_zdr_incompatible_tools?: boolean
+    team_blocked_reasons?: Array<string>
     zdr_video_output_s3?: {
       bucket: string
       endpoint: string
       region: string
       key_prefix?: string
       expires_secs?: number
+      zdr_only?: boolean
       read_write: {
         access_key_id: string
         secret_access_key: string
@@ -2219,6 +2234,8 @@ export type Config = {
   media?: {
     image_gen_model_override?: string
     image_edit_model_override?: string
+    disable_zdr_incompatible_tools?: boolean
+    team_blocked_reasons?: Array<string>
     video_output?:
       | {
           type: "provider"
@@ -2230,6 +2247,7 @@ export type Config = {
           region: string
           key_prefix?: string
           expires_secs?: number
+          zdr_only?: boolean
           read_write: {
             access_key_id_env: string
             secret_access_key_env: string
@@ -2343,6 +2361,7 @@ export type Model = {
     context: number
     input?: number
     output: number
+    context_options?: Array<number>
   }
   status: "alpha" | "beta" | "deprecated" | "active"
   options: {
@@ -9247,6 +9266,82 @@ export type ConfigUpdateResponses = {
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
 
+export type ConfigClaudeImportPreviewData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/import-claude"
+}
+
+export type ConfigClaudeImportPreviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigClaudeImportPreviewError = ConfigClaudeImportPreviewErrors[keyof ConfigClaudeImportPreviewErrors]
+
+export type ConfigClaudeImportPreviewResponses = {
+  /**
+   * Claude settings found under ~/.claude
+   */
+  200: {
+    found: boolean
+    sources: Array<string>
+    sections: Array<{
+      id: "permissions" | "env" | "mcp" | "hooks" | "paths"
+      count: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      items: Array<string>
+    }>
+    skipped: Array<string>
+  }
+}
+
+export type ConfigClaudeImportPreviewResponse =
+  ConfigClaudeImportPreviewResponses[keyof ConfigClaudeImportPreviewResponses]
+
+export type ConfigClaudeImportApplyData = {
+  body?: {
+    sections: Array<"permissions" | "env" | "mcp" | "hooks" | "paths">
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/import-claude"
+}
+
+export type ConfigClaudeImportApplyErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigClaudeImportApplyError = ConfigClaudeImportApplyErrors[keyof ConfigClaudeImportApplyErrors]
+
+export type ConfigClaudeImportApplyResponses = {
+  /**
+   * Imported sections
+   */
+  200: {
+    applied: Array<{
+      id: "permissions" | "env" | "mcp" | "hooks" | "paths"
+      count: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      items: Array<string>
+    }>
+    skipped: Array<string>
+    hooksFile?: string
+  }
+}
+
+export type ConfigClaudeImportApplyResponse = ConfigClaudeImportApplyResponses[keyof ConfigClaudeImportApplyResponses]
+
 export type ConfigProvidersData = {
   body?: never
   path?: never
@@ -12306,6 +12401,7 @@ export type ExperimentalProjectCopyGenerateNameResponses = {
    */
   200: {
     name: string
+    directory?: string
   }
 }
 
@@ -12719,6 +12815,44 @@ export type PermissionReplyResponses = {
 }
 
 export type PermissionReplyResponse = PermissionReplyResponses[keyof PermissionReplyResponses]
+
+export type PermissionReviewData = {
+  body?: never
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/permission/{requestID}/review"
+}
+
+export type PermissionReviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * PermissionNotFoundError
+   */
+  404: PermissionNotFoundError
+}
+
+export type PermissionReviewError = PermissionReviewErrors[keyof PermissionReviewErrors]
+
+export type PermissionReviewResponses = {
+  /**
+   * Auto-review verdict for the pending request
+   */
+  200: {
+    allow: boolean
+    reason: string
+    source: "rules" | "model" | "rules-fallback"
+  }
+}
+
+export type PermissionReviewResponse = PermissionReviewResponses[keyof PermissionReviewResponses]
 
 export type ProviderListData = {
   body?: never
@@ -13260,6 +13394,7 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    contextWindow?: number
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -13531,6 +13666,7 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    contextWindow?: number
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

@@ -59,3 +59,12 @@ export function downloadSessionExport(filename: string, data: unknown) {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
+// Desktop counterparts of the CLI `/copy`, `/usage` and `/trace` surfaces share one implementation with the TUI.
+export {
+  sessionTrace,
+  sessionTranscript,
+  sessionUsage,
+  type SessionUsageModel,
+  type SessionUsageSummary,
+} from "@apexo/sdk/v2/session-report"

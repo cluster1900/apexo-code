@@ -11,6 +11,7 @@
 import * as Locale from "@/util/locale"
 import { MessageID, PartID } from "@/session/schema"
 import { isExitCommand, isNewCommand } from "./prompt.shared"
+import { ModeSwitch, modeCommand } from "@apexo/core/mode-switch"
 import type { FooterApi, FooterEvent, FooterQueuedPrompt, RunPrompt } from "./types"
 
 type Trace = {
@@ -29,6 +30,8 @@ export type QueueInput = {
   trace?: Trace
   onSend?: (prompt: RunPrompt) => void
   onNewSession?: () => void | Promise<void>
+  /** `/fullscreen` / `/full`: hand the session to the fullscreen renderer (only when the entry point loops). */
+  getSessionID?: () => string | undefined
   run: (prompt: RunPrompt, signal: AbortSignal) => Promise<void>
 }
 
@@ -271,6 +274,12 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
     }
 
     if (prompt.mode !== "shell" && isExitCommand(prompt.text)) {
+      input.footer.close()
+      return
+    }
+
+    if (prompt.mode !== "shell" && ModeSwitch.available && modeCommand(prompt.text) === "fullscreen") {
+      ModeSwitch.request({ mode: "fullscreen", sessionID: input.getSessionID?.() })
       input.footer.close()
       return
     }

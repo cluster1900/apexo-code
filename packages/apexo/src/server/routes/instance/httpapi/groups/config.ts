@@ -6,6 +6,7 @@ import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { ClaudeImport } from "@/config/claude-import"
 
 const root = "/config"
 
@@ -33,6 +34,28 @@ export const ConfigApi = HttpApi.make("config")
             identifier: "config.update",
             summary: "Update configuration",
             description: "Update Apexo configuration settings and preferences.",
+          }),
+        ),
+        HttpApiEndpoint.get("claudeImportPreview", `${root}/import-claude`, {
+          query: WorkspaceRoutingQuery,
+          success: described(ClaudeImport.Preview, "Claude settings found under ~/.claude"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.claudeImport.preview",
+            summary: "Preview Claude settings import",
+            description:
+              "List the permissions, environment, MCP servers, hooks and rule paths /import-claude can bring over.",
+          }),
+        ),
+        HttpApiEndpoint.post("claudeImportApply", `${root}/import-claude`, {
+          query: WorkspaceRoutingQuery,
+          payload: ClaudeImport.ApplyInput,
+          success: described(ClaudeImport.ApplyResult, "Imported sections"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.claudeImport.apply",
+            summary: "Import Claude settings",
+            description: "Write the chosen Claude settings sections into the global apexo config and hooks.",
           }),
         ),
         HttpApiEndpoint.get("providers", `${root}/providers`, {

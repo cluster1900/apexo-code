@@ -55,6 +55,21 @@ export const Info = Schema.Struct({
     description: "@deprecated Use 'references' field instead. Named git or local directory references",
   }),
   watcher: Schema.optional(Schema.Struct({ ignore: Schema.optional(Schema.mutable(Schema.Array(Schema.String))) })),
+  ui: Schema.optional(
+    Schema.Struct({
+      compact_mode: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Compact display: less padding and tighter spacing. The /compact-mode toggle overrides it locally.",
+      }),
+      permission_mode: Schema.optional(Schema.Literals(["ask", "auto", "always-approve"])).annotate({
+        description:
+          "Launch permission mode (Grok Build [ui] permission_mode): ask, auto (Auto-review), or always-approve. Flags and /auto, /always-approve override it.",
+      }),
+      vim_mode: Schema.optional(Schema.Boolean).annotate({
+        description: "Vim-style scrollback keys (Grok Build [ui] vim_mode). The /vim-mode toggle overrides it locally.",
+      }),
+    }),
+  ).annotate({ description: "Interface defaults shared by the TUI and Desktop" }),
   snapshot: Schema.optional(Schema.Boolean).annotate({
     description:
       "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",
@@ -115,6 +130,9 @@ export const Info = Schema.Struct({
   lsp: Schema.optional(ConfigLSPV1.Info).annotate({
     description:
       "Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
+  }),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
+    description: "Environment variables added to shell commands (imported from Claude settings by /import-claude)",
   }),
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",

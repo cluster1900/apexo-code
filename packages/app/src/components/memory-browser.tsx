@@ -101,6 +101,7 @@ export function createSessionMemory(sessionID: () => string | undefined) {
       id: "session.memory",
       title: language.t("memory.title"),
       slash: "memory",
+      slashAliases: ["mem"],
       disabled: state.native ? !state.enabled : !available(),
       onSelect: () => (state.native ? void memoryCommand("/memory", false) : open()),
     },

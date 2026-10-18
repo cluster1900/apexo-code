@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { loadavg } from "node:os"
 import { startShellFixture, poll } from "./grok-shell-fixture.mjs"
+// The app binds mod+key: Cmd on macOS, Ctrl elsewhere.
+const mod = process.platform === "darwin" ? "Meta" : "Control"
 const kind = process.argv[2] ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const runtime = await startShellFixture(kind)
@@ -155,7 +157,9 @@ try {
     await command("press", "Control+Shift+p")
     await command("snapshot", "-i")
     await command("press", "Escape")
-    await command("press", "Meta+,")
+    // On Linux Control+Shift+p really opens the palette; let it close before the next shortcut.
+    await command("wait", "300")
+    await command("press", `${mod}+,`)
     await command("wait", '[data-component="tabs-v2"], [data-component="tabs"]')
     await command(
       "wait",
@@ -267,7 +271,7 @@ try {
     await command("eval", 'localStorage.setItem("apexo.global.dat:language", JSON.stringify({locale:"zh"}))')
     await command("reload")
     await command("wait", '[data-action="session-memory"]')
-    await command("press", "Meta+,")
+    await command("press", `${mod}+,`)
     await command(
       "wait",
       "--fn",
@@ -288,7 +292,7 @@ try {
       )
       await command("reload")
       await command("wait", '[data-action="session-memory"]')
-      await command("press", "Meta+,")
+      await command("press", `${mod}+,`)
       await command(
         "wait",
         "--fn",

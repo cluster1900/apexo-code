@@ -7,6 +7,8 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { startShellFixture, poll, deadline } from "./grok-shell-fixture.mjs"
+// The app binds mod+key: Cmd on macOS, Ctrl elsewhere.
+const mod = process.platform === "darwin" ? "Meta" : "Control"
 
 const kind = process.argv[2] ?? "desktop"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -252,7 +254,7 @@ try {
     await command("reload")
   } else await command("open", url)
   await command("wait", '[data-action="session-hooks"]')
-  await command("press", "Meta+,")
+  await command("press", `${mod}+,`)
   await command("find", "role", "tab", "click", "--name", "Plugins", "--exact")
   await command("wait", '[data-component="plugins-runtime-generation"]')
   assert.equal((await runtime.api(endpoint)).active.length, 0)
@@ -391,7 +393,7 @@ try {
     )
     await command("reload")
     await command("wait", '[data-action="session-hooks"]')
-    await command("press", "Meta+,")
+    await command("press", `${mod}+,`)
     await command("find", "role", "tab", "click", "--name", phrase("title"), "--exact")
     await command("wait", '[data-component="plugins-runtime-failure"]')
     assert.ok(

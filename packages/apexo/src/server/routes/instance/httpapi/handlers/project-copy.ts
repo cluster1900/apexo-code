@@ -1,3 +1,5 @@
+import path from "path"
+import { Global } from "@apexo/core/global"
 import { Agent } from "@/agent/agent"
 import { Provider } from "@/provider/provider"
 import { LLM } from "@/session/llm"
@@ -67,7 +69,10 @@ export const projectCopyHandlers = HttpApiBuilder.group(InstanceHttpApi, "projec
             cause,
           }).pipe(Effect.as(Slug.create())),
         ),
-        Effect.map((name) => ({ name })),
+        Effect.map((name) => ({
+          name,
+          directory: path.join(Global.Path.data, "worktree", String(ctx.params.projectID).slice(0, 6)),
+        })),
       ),
     )
   }),

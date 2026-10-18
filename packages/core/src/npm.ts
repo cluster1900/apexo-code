@@ -1,5 +1,6 @@
 export * as Npm from "./npm"
 
+import { withSignalPassthrough } from "./npm-signals"
 import path from "path"
 import { createRequire } from "module"
 import { pathToFileURL } from "url"
@@ -101,12 +102,14 @@ const layer = Layer.effect(
         })
         return yield* Effect.tryPromise({
           try: () =>
-            arborist.reify({
-              ...npmOptions,
-              add,
-              save: true,
-              saveType: "prod",
-            }),
+            withSignalPassthrough(() =>
+              arborist.reify({
+                ...npmOptions,
+                add,
+                save: true,
+                saveType: "prod",
+              }),
+            ),
           catch: (cause) =>
             new InstallFailedError({
               cause,

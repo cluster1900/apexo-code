@@ -98,6 +98,7 @@ export type PromptInputV2Suggestion = {
   label: string
   title?: string
   trigger?: string
+  aliases?: string
   description?: string
   path?: string
   keybind?: string[]

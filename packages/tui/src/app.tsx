@@ -1,4 +1,5 @@
 import { mcpAttachmentParts } from "@apexo/sdk/v2/mcp-attachment"
+import { nextSessionMode, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerApexoSpinner } from "./component/register-spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
@@ -80,6 +81,7 @@ import {
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
+import { useGrokCommands } from "./component/grok-commands"
 import { createTuiAttention } from "./attention"
 import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
@@ -113,6 +115,8 @@ const appBindingCommands = [
   "mcp.list",
   "agent.cycle",
   "agent.cycle.reverse",
+  "session.mode.cycle",
+  "permission.mode",
   "variant.cycle",
   "variant.list",
   "provider.connect",
@@ -558,8 +562,10 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (workspace?.type !== "worktree" || !workspace.directory) return
     return workspace
   })
+  const grok = useGrokCommands()
   const appCommands = createMemo(() =>
     [
+      ...grok.commands,
       {
         name: COMMAND_PALETTE_COMMAND,
         title: "Show command palette",
@@ -575,7 +581,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Session",
         suggested: sync.data.session.length > 0,
         slashName: "sessions",
-        slashAliases: ["resume", "continue"],
+        slashAliases: ["resume", "continue", "dashboard", "agents-dashboard"],
         run: () => {
           dialog.replace(() => <DialogSessionList />)
         },
@@ -586,7 +592,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         suggested: route.data.type === "session",
         category: "Session",
         slashName: "new",
-        slashAliases: ["clear"],
+        slashAliases: ["clear", "home", "welcome"],
         run: () => {
           route.navigate({
             type: "home",
@@ -615,6 +621,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Workspace",
         hidden: !Flag.APEXO_EXPERIMENTAL_WORKSPACES,
         slashName: "workspaces",
+        slashAliases: ["workspace"],
         run: () => {
           dialog.replace(() => <DialogWorkspaceList />)
         },
@@ -635,7 +642,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Agent",
         slashName: "models",
         // Bias /mo toward /models over /move without changing global fuzzy scoring.
-        slashAliases: ["mo"],
+        slashAliases: ["mo", "model", "m"],
         run: () => {
           dialog.replace(() => <DialogModel />)
         },
@@ -681,6 +688,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "Switch agent",
         category: "Agent",
         slashName: "agents",
+        slashAliases: ["agent", "config-agents", "personas"],
         run: () => {
           dialog.replace(() => <DialogAgent />)
         },
@@ -690,9 +698,34 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "Toggle MCPs",
         category: "Agent",
         slashName: "mcps",
+        slashAliases: ["mcp"],
         run: () => {
           dialog.replace(() => (
             <DialogMcp
+              sessionID={() => (route.data.type === "session" ? route.data.sessionID : undefined)}
+              onAttach={(prepared) => {
+                const current = promptRef.current
+                if (!current || route.data.type !== "session") return
+                const added = mcpAttachmentParts(current.current.input, prepared)
+                current.set({
+                  ...current.current,
+                  input: added.text,
+                  parts: [...current.current.parts, ...added.parts],
+                })
+              }}
+            />
+          ))
+        },
+      },
+      {
+        name: "mcp.resources",
+        title: "Attach MCP resources",
+        category: "Agent",
+        slashName: "resources",
+        run: () => {
+          dialog.replace(() => (
+            <DialogMcp
+              openPicker
               sessionID={() => (route.data.type === "session" ? route.data.sessionID : undefined)}
               onAttach={(prepared) => {
                 const current = promptRef.current
@@ -743,6 +776,38 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         },
       },
       {
+        name: "session.mode.cycle",
+        title: "Cycle session mode",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          const agent = local.agent.current()?.name
+          const current: SessionModeName =
+            agent === "plan"
+              ? "plan"
+              : local.permission.mode === "review"
+                ? "auto"
+                : local.permission.mode === "auto"
+                  ? "always-approve"
+                  : "normal"
+          const next = nextSessionMode(current, { plan: sync.data.agent.some((item) => item.name === "plan"), auto: true })
+          if (next === "plan") {
+            if (agent && agent !== "plan") kv.set("mode_cycle_agent", agent)
+            local.agent.set("plan")
+            local.permission.set("normal")
+          } else {
+            if (agent === "plan") local.agent.set(kv.get("mode_cycle_agent", "build"))
+            local.permission.set(next === "auto" ? "review" : next === "always-approve" ? "auto" : "normal")
+          }
+          toast.show({
+            variant: "info",
+            message: { normal: "Normal mode", plan: "Plan mode", auto: "Auto-review mode", "always-approve": "Always-approve mode" }[
+              next
+            ],
+          })
+        },
+      },
+      {
         name: "agent.cycle.reverse",
         title: "Agent cycle reverse",
         category: "Agent",
@@ -756,6 +821,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         title: "Connect provider",
         suggested: !connected(),
         slashName: "connect",
+        slashAliases: ["login"],
         run: () => {
           dialog.replace(() => <DialogProviderList />)
         },
@@ -765,6 +831,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         name: "apexo.status",
         title: "View status",
         slashName: "status",
+        slashAliases: ["session-info", "info"],
         run: () => {
           dialog.replace(() => <DialogStatus />)
         },
@@ -783,6 +850,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         name: "theme.switch",
         title: "Switch theme",
         slashName: "themes",
+        slashAliases: ["theme", "t"],
         run: () => {
           dialog.replace(() => <DialogThemeList />)
         },
@@ -946,6 +1014,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "permission.mode",
+        slashName: "always-approve",
         title:
           local.permission.mode === "auto" ? "Disable auto-approve permissions" : "Enable auto-approve permissions",
         category: "System",

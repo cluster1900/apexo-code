@@ -348,6 +348,8 @@ export const User = Schema.Struct({
     providerID: Provider.ID,
     modelID: Model.ID,
     variant: Schema.optional(Schema.String),
+    // Session-scoped /context-window choice; only kept when the model lists it in limit.context_options.
+    contextWindow: Schema.optional(Schema.Finite),
   }),
   system: Schema.optional(Schema.String),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),

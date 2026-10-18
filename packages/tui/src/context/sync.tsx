@@ -1,3 +1,4 @@
+import { autoReview } from "@apexo/sdk/v2/grok-commands"
 import { terminalCatalog, terminalSession } from "../transport/native-catalog"
 import { terminalPermission, terminalQuestion, terminalRequestEvent } from "../transport/native-session-events"
 import type { nativeSessionView } from "../transport/native-session-view"
@@ -66,6 +67,26 @@ export const {
     const startup = useTuiStartup()
     const kv = useKV()
     const permission = usePermission()
+    function showPermission(request: PermissionRequest) {
+      const requests = store.permission[request.sessionID]
+      if (!requests) {
+        setStore("permission", request.sessionID, [request])
+        return
+      }
+      const match = search(requests, request.id, (r) => r.id)
+      if (match.found) {
+        setStore("permission", request.sessionID, match.index, reconcile(request))
+        return
+      }
+      setStore(
+        "permission",
+        request.sessionID,
+        produce((draft) => {
+          draft.splice(match.index, 0, request)
+        }),
+      )
+    }
+
     const [store, setStore] = createStore<{
       status: "loading" | "partial" | "complete"
       native: boolean
@@ -337,35 +358,33 @@ export const {
 
         case "permission.asked": {
           const request = event.properties
-          if (permission.mode === "auto") {
-            void sdk.client.permission.reply({
+          const approve = () =>
+            sdk.client.permission.reply({
               requestID: request.id,
               reply: "once",
               directory,
               workspace,
             })
+          if (permission.mode === "auto" || (permission.mode === "review" && autoReview(request).allow)) {
+            void approve()
             break
           }
-          const requests = store.permission[request.sessionID]
-          if (!requests) {
-            setStore("permission", request.sessionID, [request])
+          // Auto-review: calls the rules cannot clear go to the server classifier (session model); only a clear
+          // approval skips the prompt.
+          if (permission.mode === "review" && !autoReview(request).certain) {
+            void sdk.client.permission
+              .review({ requestID: request.id, directory, workspace })
+              .then((result) => result.data?.allow === true)
+              .catch(() => false)
+              .then((allow) => {
+                if (allow && permission.mode === "review") return void approve()
+                showPermission(request)
+              })
             break
           }
-          const match = search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("permission", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "permission",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
+          showPermission(request)
           break
         }
-
         case "question.replied":
         case "question.rejected": {
           const requests = store.question[event.properties.sessionID]
@@ -674,6 +693,7 @@ export const {
               setStore("capabilities", "memoryManagement", capabilities?.memoryManagement === true)
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
+              permission.applyConfig(config.ui?.permission_mode)
               if (sessions !== undefined) setStore("session", reconcile(sessions))
             })
           })

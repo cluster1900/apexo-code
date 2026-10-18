@@ -43,6 +43,7 @@ import { useEditorContext } from "../../context/editor"
 import { openEditor } from "../../editor"
 import { useDialog } from "../../ui/dialog"
 import { DialogAlert } from "../../ui/dialog-alert"
+import { sessionTrace, sessionUsage } from "@apexo/sdk/v2/session-report"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
@@ -59,6 +60,11 @@ import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
+import { scrollback, setScrollback } from "../../context/scrollback"
+import { useVimMode } from "../../context/vim-mode"
+import { space, useCompactMode } from "../../context/compact-mode"
+import { vimScrollAction, type VimScrollAction } from "@apexo/sdk/v2/grok-commands"
+import { useKeyboard } from "@opentui/solid"
 import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
 import { useEpilogue } from "../../context/epilogue"
@@ -332,6 +338,71 @@ export function Session() {
     r.set(route.prompt)
   }
   const keymap = useApexoKeymap()
+
+  // /vim-mode: Esc on an empty, idle prompt moves focus to the scrollback, where vim keys drive the transcript.
+  const vim = useVimMode().enabled
+  const compactMode = useCompactMode()
+  createEffect(() => compactMode.sync())
+  const vimCommands: Record<Exclude<VimScrollAction, "prompt">, string> = {
+    "line.down": "session.line.down",
+    "line.up": "session.line.up",
+    "half.down": "session.half.page.down",
+    "half.up": "session.half.page.up",
+    "page.down": "session.page.down",
+    "page.up": "session.page.up",
+    "message.previous": "session.message.previous",
+    "message.next": "session.message.next",
+    first: "session.first",
+    last: "session.last",
+    "copy.message": "messages.copy",
+    "copy.transcript": "session.copy",
+  }
+  createEffect(() => {
+    if (!vim()) setScrollback(false)
+  })
+  onCleanup(() => setScrollback(false))
+  useBindings(() => ({
+    priority: 2,
+    enabled:
+      vim() &&
+      !scrollback() &&
+      dialog.stack.length === 0 &&
+      promptRef.current?.current.input === "" &&
+      (sync.data.session_status[route.sessionID]?.type ?? "idle") === "idle",
+    bindings: [
+      {
+        key: "escape",
+        desc: "Scrollback (vim mode)",
+        group: "Session",
+        cmd: () => {
+          setScrollback(true)
+          toast.show({
+            variant: "info",
+            message: "Scrollback: j/k scroll, h/l messages, g/G top/bottom, y/Y copy, i to type",
+          })
+        },
+      },
+    ],
+  }))
+  useKeyboard((key) => {
+    if (!scrollback() || dialog.stack.length > 0) return
+    if (key.name === "escape") return
+    const result = vimScrollAction({
+      name: key.name,
+      char: key.sequence?.length === 1 ? key.sequence : undefined,
+      shift: key.shift,
+      ctrl: key.ctrl,
+      alt: key.meta,
+    })
+    if (!result) return
+    key.preventDefault()
+    if (result.action !== "prompt") {
+      keymap.dispatchCommand(vimCommands[result.action])
+      return
+    }
+    setScrollback(false)
+    if (result.type) promptRef.current?.set({ input: result.type, parts: [] })
+  })
   const dialog = useDialog()
   const renderer = useRenderer()
 
@@ -428,7 +499,7 @@ export function Session() {
       title: "Workflows",
       value: "session.workflow",
       category: "Session",
-      slash: { name: "workflow" },
+      slash: { name: "workflow", aliases: ["workflows"] },
       run: () => dialog.replace(() => <DialogWorkflow sessionID={route.sessionID} />),
     },
     {
@@ -472,7 +543,7 @@ export function Session() {
             title: "Browse memory",
             value: "session.memory",
             category: "Session",
-            slash: { name: "memory" },
+            slash: { name: "memory", aliases: ["mem"] },
             run: () => dialog.replace(() => <DialogMemory sessionID={route.sessionID} />),
           },
         ]
@@ -497,7 +568,7 @@ export function Session() {
       title: "Plugins",
       value: "session.plugins",
       category: "Session",
-      slash: { name: "plugins" },
+      slash: { name: "plugins", aliases: ["marketplace"] },
       run: () => dialog.replace(() => <DialogPlugins />),
     },
     {
@@ -513,6 +584,7 @@ export function Session() {
       category: "Session",
       slash: {
         name: "rename",
+        aliases: ["title"],
       },
       run: () => {
         dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
@@ -594,6 +666,7 @@ export function Session() {
       category: "Session",
       slash: {
         name: "undo",
+        aliases: ["rewind"],
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
@@ -1000,6 +1073,53 @@ export function Session() {
       },
     },
     {
+      title: "Session usage",
+      value: "session.usage",
+      category: "Session",
+      slash: { name: "usage", aliases: ["cost"] },
+      run: () => {
+        const sessionData = session()
+        if (!sessionData) return
+        const usage = sessionUsage({
+          info: sessionData,
+          messages: messages().map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+        })
+        const lines = [
+          `${usage.turns} turns · ${usage.calls} model calls · ${usage.inputTokens} input / ${usage.outputTokens} output tokens · $${usage.costUsd.toFixed(4)}`,
+          ...usage.models.map(
+            (model) =>
+              `${model.providerID}/${model.modelID}: ${model.calls} calls · ${model.inputTokens} in / ${model.outputTokens} out · $${model.costUsd.toFixed(4)}`,
+          ),
+        ]
+        void DialogAlert.show(dialog, "Session usage", lines.join("\n"))
+      },
+    },
+    {
+      title: "Export session trace",
+      value: "session.trace",
+      category: "Session",
+      slash: { name: "trace" },
+      run: async () => {
+        const sessionData = session()
+        if (!sessionData) return
+        const filename = `session-${sessionData.id.slice(0, 8)}.trace.json`
+        try {
+          const trace = sessionTrace(
+            {
+              info: sessionData,
+              messages: messages().map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+            },
+            "apexo-tui",
+          )
+          await writeExport(path.join(paths.cwd, filename), JSON.stringify(trace, null, 2))
+          toast.show({ message: `Session trace exported to ${filename}`, variant: "success" })
+        } catch {
+          toast.show({ message: "Failed to export session trace", variant: "error" })
+        }
+        dialog.clear()
+      },
+    },
+    {
       title: "Background subagents",
       value: "session.background",
       category: "Session",
@@ -1156,7 +1276,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+          <box flexGrow={1} minHeight={0} paddingBottom={space()} paddingLeft={2} paddingRight={2} gap={1}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1202,15 +1322,15 @@ export function Session() {
                               onMouseOver={() => setHover(true)}
                               onMouseOut={() => setHover(false)}
                               onMouseUp={handleUnrevert}
-                              marginTop={1}
+                              marginTop={space()}
                               flexShrink={0}
                               border={["left"]}
                               customBorderChars={SplitBorder.customBorderChars}
                               borderColor={theme.backgroundPanel}
                             >
                               <box
-                                paddingTop={1}
-                                paddingBottom={1}
+                                paddingTop={space()}
+                                paddingBottom={space()}
                                 paddingLeft={2}
                                 backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
                               >
@@ -1219,7 +1339,7 @@ export function Session() {
                                   <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
                                 </text>
                                 <Show when={revert()!.diffFiles?.length}>
-                                  <box marginTop={1}>
+                                  <box marginTop={space()}>
                                     <For each={revert()!.diffFiles}>
                                       {(file) => (
                                         <text fg={theme.text}>
@@ -1383,7 +1503,7 @@ function UserMessage(props: {
           border={["left"]}
           borderColor={color()}
           customBorderChars={SplitBorder.customBorderChars}
-          marginTop={props.index === 0 ? 0 : 1}
+          marginTop={props.index === 0 ? 0 : space()}
         >
           <box
             onMouseOver={() => {
@@ -1393,15 +1513,21 @@ function UserMessage(props: {
               setHover(false)
             }}
             onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
+            paddingTop={space()}
+            paddingBottom={space()}
             paddingLeft={2}
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
           >
             <text fg={theme.text}>{text()}</text>
             <Show when={files().length}>
-              <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
+              <box
+                flexDirection="row"
+                paddingBottom={metadataVisible() ? 1 : 0}
+                paddingTop={space()}
+                gap={1}
+                flexWrap="wrap"
+              >
                 <For each={files()}>
                   {(file) => {
                     const directory = file.mime === "application/x-directory"
@@ -1438,7 +1564,7 @@ function UserMessage(props: {
       </Show>
       <Show when={compaction()}>
         <box
-          marginTop={1}
+          marginTop={space()}
           border={["top"]}
           title=" Compaction "
           titleAlignment="center"
@@ -1490,7 +1616,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         }}
       </For>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
-        <box paddingTop={1} paddingLeft={3}>
+        <box paddingTop={space()} paddingLeft={3}>
           <text fg={theme.text}>
             {childShortcut()}
             <span style={{ fg: theme.textMuted }}> view subagents</span>
@@ -1517,10 +1643,10 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         <box
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
           border={["left"]}
-          paddingTop={1}
-          paddingBottom={1}
+          paddingTop={space()}
+          paddingBottom={space()}
           paddingLeft={2}
-          marginTop={1}
+          marginTop={space()}
           backgroundColor={theme.backgroundPanel}
           customBorderChars={SplitBorder.customBorderChars}
           borderColor={theme.error}
@@ -1531,7 +1657,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
           <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
+            <text marginTop={space()}>
               <span
                 style={{
                   fg:
@@ -1599,7 +1725,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
         paddingLeft={3}
-        marginTop={1}
+        marginTop={space()}
         flexDirection="column"
         flexShrink={0}
       >
@@ -1614,7 +1740,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
           />
         </box>
         <Show when={!opaque() && (!inMinimal() || expanded()) && summary().body}>
-          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
+          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={space()}>
             <code
               filetype="markdown"
               drawUnstyledText={false}
@@ -1671,7 +1797,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const { theme, syntax } = useTheme()
   return (
     <Show when={props.part.text.trim()}>
-      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
+      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={space()} flexShrink={0}>
         <markdown
           syntaxStyle={syntax()}
           streaming={true}
@@ -1989,10 +2115,10 @@ function BlockTool(props: {
     <box
       ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
       border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
+      paddingTop={space()}
+      paddingBottom={space()}
       paddingLeft={2}
-      marginTop={1}
+      marginTop={space()}
       gap={1}
       backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
       customBorderChars={SplitBorder.customBorderChars}

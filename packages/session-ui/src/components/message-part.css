@@ -1604,3 +1604,9 @@ body:not([data-new-layout]) {
     font-size: 12px;
   }
 }
+
+/* /timestamps keeps the user-message meta (time, model) visible instead of hover-only. */
+:root[data-timestamps="show"] [data-slot="user-message-copy-wrapper"] {
+  opacity: 1;
+  pointer-events: auto;
+}

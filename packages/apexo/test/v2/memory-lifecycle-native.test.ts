@@ -146,7 +146,10 @@ const settled = (
   pollWithTimeout(
     operations.get(session.id, id).pipe(Effect.map((info) => (info.state === "finished" ? info : undefined))),
     "Memory operation did not settle",
-    "10 seconds",
+    // Real-time wait for a worker that performs a provider round trip. One full-suite run under CPU
+    // contention needed 13.5s end to end (BUG-20261018-392); 20s still fails a genuine hang well before
+    // the 60s test timeout.
+    "20 seconds",
   )
 
 it.live(
@@ -198,7 +201,7 @@ it.live(
         expect(yield* llm.calls).toBe(2)
       }),
     ),
-  30000,
+  60000,
 )
 
 it.live(

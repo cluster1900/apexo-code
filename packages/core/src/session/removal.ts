@@ -117,7 +117,11 @@ const make = Effect.gen(function* () {
           .from(GoalCleanupTable)
           .where(and(eq(GoalCleanupTable.session_id, sessionID), eq(GoalCleanupTable.reason, "session_deleted")))
           .get()
-        if (pending) return yield* Effect.fail(new Error("Session report cleanup is still pending"))
+        // The Session is already gone. Report cleanup that cannot finish now (a live teardown barrier, a
+        // substituted directory, a locked file) stays as a durable job that the background drain retries;
+        // failing here would return a 500 for a deletion that already happened.
+        if (pending)
+          yield* Effect.logWarning("Session deleted; Goal report cleanup will retry", { sessionID, jobID: pending.id })
       }),
       expected,
     )

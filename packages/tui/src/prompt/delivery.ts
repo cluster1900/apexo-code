@@ -7,6 +7,7 @@ export type PromptDraft = {
   agentName: string
   model: { providerID: string; modelID: string }
   variant?: string
+  contextWindow?: number
   mode: "normal" | "shell"
   inputText: string
   nonTextParts: PromptInfo["parts"]
@@ -63,6 +64,7 @@ export function deliverPrompt(
       agent: draft.agentName,
       model: draft.model,
       variant: draft.variant,
+      ...(draft.contextWindow ? { contextWindow: draft.contextWindow } : {}),
       parts: [...draft.editorParts, { type: "text", text: draft.inputText }, ...draft.nonTextParts],
     },
     { throwOnError: true },

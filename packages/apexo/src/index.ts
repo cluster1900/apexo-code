@@ -28,13 +28,13 @@ import { JsonlCommand } from "./cli/cmd/jsonl"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
-import { PluginsCommand } from "./cli/cmd/plugins"
+import { PluginsCommand, grokPluginArgs } from "./cli/cmd/plugins"
 import { MemoryCommand } from "./cli/cmd/memory"
 import { GoalCommand } from "./cli/cmd/goal"
 import { UsageCommand } from "./cli/cmd/usage"
 import { TraceCommand } from "./cli/cmd/trace"
 
-const args = hideBin(process.argv)
+const args = grokPluginArgs(hideBin(process.argv))
 
 function show(out: string) {
   const text = out.trimStart()

@@ -1,4 +1,5 @@
 import { cmd } from "@/cli/cmd/cmd"
+import { ModeSwitch, type ModeSwitchRequest } from "@apexo/core/mode-switch"
 import { Rpc } from "@/util/rpc"
 import { createTuiWorker } from "../tui-worker"
 import { type rpc } from "../tui/worker"
@@ -189,6 +190,8 @@ export const TuiThreadCommand = cmd({
     }
     const noReplay = args.replay === false || args.noReplay === true
 
+    // Grok Build `/minimal` ↔ `/fullscreen`: this entry point loops over renderers while the process lives.
+    let handoff: ModeSwitchRequest | undefined
     if (args.mini) {
       const network = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].find((option) =>
         process.argv.some((arg) => arg === option || arg.startsWith(option + "=")),
@@ -200,6 +203,7 @@ export const TuiThreadCommand = cmd({
       }
 
       const { runMini } = await import("./run")
+      ModeSwitch.setAvailable(!args.demo)
       await runMini({
         directory: resolveThreadDirectory(args.project),
         continue: args.continue,
@@ -212,13 +216,14 @@ export const TuiThreadCommand = cmd({
         replayLimit: args.replayLimit,
         demo: args.demo,
       })
-      return
+      handoff = ModeSwitch.take()
+      if (!handoff) return
     }
 
     const unsupported = [
-      ["--no-replay", noReplay],
-      ["--replay-limit", args.replayLimit !== undefined],
-      ["--demo", args.demo !== undefined],
+      ["--no-replay", noReplay && !handoff],
+      ["--replay-limit", args.replayLimit !== undefined && !handoff],
+      ["--demo", args.demo !== undefined && !handoff],
     ].find((entry) => entry[1])?.[0]
     if (unsupported) {
       UI.error(`${unsupported} requires --mini`)
@@ -302,37 +307,80 @@ export const TuiThreadCommand = cmd({
         client.call("warmInstance", { directory: cwd }).catch(() => {})
       }, 1000).unref?.()
 
+      // A switch to the minimal renderer attaches to this worker over loopback, so both renderers share one backend.
+      let shared: { url: string; headers?: Record<string, string> } | undefined
+      const sharedServer = async () => {
+        if (external) return { url: transport.url, headers: headers as Record<string, string> | undefined }
+        shared ??= {
+          url: (await client.call("server", { port: 0, hostname: "127.0.0.1", mdns: false, cors: [] })).url,
+          headers: ServerAuth.headers() as Record<string, string> | undefined,
+        }
+        return shared
+      }
+      ModeSwitch.setAvailable(true)
+      let session = handoff?.sessionID ?? args.session
+      let launch = {
+        prompt: handoff ? undefined : prompt,
+        continue: handoff ? false : args.continue,
+        fork: handoff ? false : args.fork,
+      }
+      let agent = handoff?.agent ?? args.agent
+      let model = handoff?.model ?? args.model
       try {
-        const { Effect } = await import("effect")
-        const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
-        await Effect.runPromise(
-          run({
-            url: transport.url,
-            local: true,
-            async onSnapshot() {
-              const tui = writeHeapSnapshot("tui.heapsnapshot")
-              const server = await client.call("snapshot", undefined)
-              return [tui, server]
-            },
-            config,
-            pluginHost: createLegacyTuiPluginHost(),
+        while (true) {
+          const { Effect } = await import("effect")
+          const { run } = await import("../tui/layer")
+          const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
+          await Effect.runPromise(
+            run({
+              url: transport.url,
+              local: true,
+              async onSnapshot() {
+                const tui = writeHeapSnapshot("tui.heapsnapshot")
+                const server = await client.call("snapshot", undefined)
+                return [tui, server]
+              },
+              config,
+              pluginHost: createLegacyTuiPluginHost(),
+              directory: cwd,
+              fetch: transport.fetch,
+              headers: transport.headers,
+              events: transport.events,
+              args: {
+                continue: launch.continue,
+                sessionID: session,
+                agent,
+                model,
+                prompt: launch.prompt,
+                fork: launch.fork,
+                auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
+              },
+            }),
+          )
+          const toMinimal = ModeSwitch.take()
+          if (toMinimal?.mode !== "minimal") break
+          ModeSwitch.seedDraft(toMinimal.draft)
+          const backend = await sharedServer()
+          const { runMini } = await import("./run")
+          await runMini({
             directory: cwd,
-            fetch: transport.fetch,
-            headers: transport.headers,
-            events: transport.events,
-            args: {
-              continue: args.continue,
-              sessionID: args.session,
-              agent: args.agent,
-              model: args.model,
-              prompt,
-              fork: args.fork,
-              auto: args.auto || args.yolo || args["dangerously-skip-permissions"],
-            },
-          }),
-        )
+            attach: backend.url,
+            password: undefined,
+            session: toMinimal.sessionID,
+            model: toMinimal.model,
+            agent: toMinimal.agent,
+            replay: noReplay ? false : undefined,
+            replayLimit: args.replayLimit,
+          })
+          const back = ModeSwitch.take()
+          if (back?.mode !== "fullscreen") break
+          session = back.sessionID ?? toMinimal.sessionID
+          agent = toMinimal.agent ?? agent
+          model = toMinimal.model ?? model
+          launch = { prompt: undefined, continue: false, fork: false }
+        }
       } finally {
+        ModeSwitch.setAvailable(false)
         await stop()
       }
     } finally {

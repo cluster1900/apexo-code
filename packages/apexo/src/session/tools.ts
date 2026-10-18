@@ -1,3 +1,5 @@
+import fs from "fs/promises"
+import path from "path"
 import { policy } from "@/plugin/hook-policy"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@apexo/core/v1/session"
@@ -5,6 +7,7 @@ import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
+import { McpToolIndex } from "@/mcp/tool-index"
 import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
@@ -32,7 +35,6 @@ const MCP_RESOURCE_TOOLS = {
   listTemplates: "list_mcp_resource_templates",
   read: "read_mcp_resource",
 } as const
-const MCP_TOOL_SEARCH = "tool_search"
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -615,50 +617,44 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return output
         }),
       )
-    if (flags.experimentalToolSearch) deferred[key] = item
+    if (!flags.mcpEagerTools) deferred[key] = item
     else tools[key] = item
   }
 
   if (Object.keys(deferred).length) {
-    tools[MCP_TOOL_SEARCH] = tool({
-      description:
-        "Discover MCP tools by name or description. Search first to inspect their input schemas, then call again with an exact tool name and arguments to execute it.",
+    // Grok Build deferred discovery: `search_tool` (BM25) + `use_tool` (qualified `server__tool`).
+    const entries = mcpEntries(mcpTools).filter((entry) => deferred[entry.key])
+    tools[McpToolIndex.SEARCH_TOOL] = tool({
+      description: [
+        "Search for MCP tools by keyword and retrieve their input schemas.",
+        'If status is "partial", some servers may still be connecting.',
+      ].join("\n"),
       inputSchema: jsonSchema(
         ProviderTransform.schema(input.model, {
           type: "object",
           properties: {
-            query: { type: "string", description: "Text to match against MCP tool names and descriptions." },
-            tool: { type: "string", description: "Exact tool name from a catalog result to execute." },
-            arguments: { type: "object", additionalProperties: true },
+            query: {
+              type: "string",
+              description:
+                'Keywords to match against tool names, server names, and descriptions. Include the server name and action for best results (e.g. "linear create issue", "slack read thread history").',
+            },
+            limit: { type: "integer", description: "Maximum number of results to return (default 5)." },
           },
+          required: ["query"],
           additionalProperties: false,
         }),
       ),
-      async execute(args, opts) {
-        const parsed = parseToolSearchArgs(args)
-        if (parsed.tool) {
-          const execute = deferred[parsed.tool]?.execute
-          if (!execute) throw new Error(`Unknown or denied MCP tool "${parsed.tool}"`)
-          // Use the same permission, hooks, attachments and truncation as eager MCP tools.
-          return execute(parsed.arguments, opts)
-        }
-        const matches = Object.entries(mcpTools)
-          .filter(([name, entry]) =>
-            `${name}\n${entry.def.description ?? ""}`.toLowerCase().includes(parsed.query?.toLowerCase() ?? ""),
-          )
-          .toSorted(([a], [b]) => a.localeCompare(b))
-        const catalog = matches.slice(0, 20).map(([name, entry]) => ({
-          name,
-          description: entry.def.description ?? "",
-          inputSchema: entry.def.inputSchema,
-          permission: name,
-        }))
-        const truncated = await run.promise(truncate.output(JSON.stringify(catalog), {}, input.agent))
+      async execute(args) {
+        const record = toRecord(args)
+        const query = requiredString(record, "query")
+        const limit = typeof record.limit === "number" && record.limit > 0 ? Math.min(Math.floor(record.limit), 255) : 5
+        const { count, ...response } = McpToolIndex.render(entries, query, limit)
+        const truncated = await run.promise(truncate.output(JSON.stringify(response, null, 2), {}, input.agent))
         return {
-          title: "MCP tool catalog",
+          title: `search_tool: ${query}`,
           metadata: {
-            count: matches.length,
-            shown: catalog.length,
+            count,
+            total: entries.length,
             truncated: truncated.truncated,
             ...(truncated.truncated && { outputPath: truncated.outputPath }),
           },
@@ -666,9 +662,73 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }
       },
     })
+    tools[McpToolIndex.USE_TOOL] = tool({
+      description: [
+        "Call a discovered MCP integration tool.",
+        "",
+        "Supply exactly one form: `tool_name` plus `tool_input` inline; `tool_name` plus `tool_input_file` for a UTF-8 JSON arguments-only object; or `file` for a UTF-8 JSON document with canonical `tool_name` and object `tool_input`. File forms require Read permission, then normal MCP approval. Files must be complete regular files, at most 8 MiB. Do not mix forms or delegate to another file or native tool. Remote keys and JSON-encoded strings remain unchanged. Arguments must match the discovered schema from `search_tool`.",
+      ].join("\n"),
+      inputSchema: jsonSchema(
+        ProviderTransform.schema(input.model, {
+          type: "object",
+          properties: {
+            tool_name: { type: "string", description: "Discovered MCP target name (server__tool)" },
+            tool_input: {
+              type: "object",
+              additionalProperties: true,
+              description: "Inline remote arguments; use the discovered input schema",
+            },
+            tool_input_file: { type: "string", description: "Path to a UTF-8 JSON arguments-only object" },
+            file: { type: "string", description: "Path to a UTF-8 JSON document with tool_name and object tool_input" },
+          },
+          additionalProperties: false,
+        }),
+      ),
+      async execute(args, opts) {
+        const parsed = McpToolIndex.parseUseToolInput(toRecord(args))
+        // File forms need Read permission first, then normal MCP approval (Grok Build use_tool).
+        const readFile = (file: string) =>
+          run.promise(
+            Effect.gen(function* () {
+              const ctx = context(McpToolIndex.USE_TOOL, toRecord(args), opts)
+              const absolute = path.resolve(input.processor.message.path.cwd, file)
+              yield* ctx.ask({ permission: "read", patterns: [absolute], always: ["*"], metadata: { filepath: absolute } })
+              const stat = yield* Effect.promise(() => fs.stat(absolute).catch(() => undefined))
+              if (!stat?.isFile()) throw new Error(`MCP source file must be a regular file: ${absolute}`)
+              if (stat.size > McpToolIndex.MAX_INPUT_FILE) throw new Error("MCP source file exceeds 8 MiB")
+              return yield* Effect.promise(() => fs.readFile(absolute, "utf8"))
+            }),
+          )
+        const call =
+          parsed.form === "inline"
+            ? { toolName: parsed.toolName, toolInput: McpToolIndex.normalizeArguments(parsed.toolInput) }
+            : parsed.form === "arguments-file"
+              ? { toolName: parsed.toolName, toolInput: McpToolIndex.parseArgumentsFile(await readFile(parsed.path)) }
+              : McpToolIndex.parseInvocationFile(await readFile(parsed.path))
+        const target = McpToolIndex.resolve(entries, call.toolName, new Set(Object.keys(tools)))
+        const execute = deferred[target.key]?.execute
+        if (!execute) throw new Error(`Unknown or denied MCP tool '${target.key}'`)
+        // Same permission, hooks, attachments and truncation as eager MCP tools.
+        return execute(call.toolInput, opts)
+      },
+    })
   }
   return tools
 })
+
+/** Search-index entries for MCP tools (server derived from the `server_tool` key). */
+export function mcpEntries(mcpTools: Record<string, MCP.McpTool>): McpToolIndex.Entry[] {
+  return Object.entries(mcpTools).map(([key, entry]) => {
+    const suffix = "_" + McpCatalog.sanitize(entry.def.name)
+    return {
+      key,
+      server: key.endsWith(suffix) ? key.slice(0, -suffix.length) : key,
+      name: entry.def.name,
+      description: entry.def.description ?? "",
+      inputSchema: entry.def.inputSchema,
+    }
+  })
+}
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value
@@ -678,15 +738,6 @@ function toRecord(value: unknown) {
 function parseListMcpResourcesArgs(value: unknown) {
   const args = toRecord(value)
   return { server: optionalString(args, "server") }
-}
-
-function parseToolSearchArgs(value: unknown) {
-  const args = toRecord(value)
-  const query = optionalString(args, "query")
-  const tool = optionalString(args, "tool")
-  const rawArguments = args.arguments
-  if (rawArguments !== undefined && !isRecord(rawArguments)) throw new Error("arguments must be an object")
-  return { query, tool, arguments: rawArguments ?? {} }
 }
 
 function parseReadMcpResourceArgs(value: unknown) {

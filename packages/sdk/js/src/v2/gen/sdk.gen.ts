@@ -18,6 +18,10 @@ import type {
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
+  ConfigClaudeImportApplyErrors,
+  ConfigClaudeImportApplyResponses,
+  ConfigClaudeImportPreviewErrors,
+  ConfigClaudeImportPreviewResponses,
   ConfigGetErrors,
   ConfigGetResponses,
   ConfigProvidersErrors,
@@ -209,6 +213,8 @@ import type {
   PermissionReplyResponses,
   PermissionRespondErrors,
   PermissionRespondResponses,
+  PermissionReviewErrors,
+  PermissionReviewResponses,
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
@@ -2128,6 +2134,83 @@ export class Event extends HeyApiClient {
   }
 }
 
+export class ClaudeImport extends HeyApiClient {
+  /**
+   * Preview Claude settings import
+   *
+   * List the permissions, environment, MCP servers, hooks and rule paths /import-claude can bring over.
+   */
+  public preview<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ConfigClaudeImportPreviewResponses,
+      ConfigClaudeImportPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/config/import-claude",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Import Claude settings
+   *
+   * Write the chosen Claude settings sections into the global apexo config and hooks.
+   */
+  public apply<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      sections?: Array<"permissions" | "env" | "mcp" | "hooks" | "paths">
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "sections" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ConfigClaudeImportApplyResponses,
+      ConfigClaudeImportApplyErrors,
+      ThrowOnError
+    >({
+      url: "/config/import-claude",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Config2 extends HeyApiClient {
   /**
    * Get configuration
@@ -2224,6 +2307,11 @@ export class Config2 extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  private _claudeImport?: ClaudeImport
+  get claudeImport(): ClaudeImport {
+    return (this._claudeImport ??= new ClaudeImport({ client: this.client }))
   }
 }
 
@@ -4777,6 +4865,38 @@ export class Permission extends HeyApiClient {
   }
 
   /**
+   * Auto-review a permission request
+   *
+   * Run the Auto-review safety check (rule pre-filter, then the session model as classifier) on a pending request. Does not reply.
+   */
+  public review<ThrowOnError extends boolean = false>(
+    parameters: {
+      requestID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "requestID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PermissionReviewResponses, PermissionReviewErrors, ThrowOnError>({
+      url: "/permission/{requestID}/review",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Respond to permission
    *
    * Approve or deny a permission request from the AI assistant.
@@ -5416,6 +5536,7 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      contextWindow?: number
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -5436,6 +5557,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "contextWindow" },
             { in: "body", key: "parts" },
           ],
         },
@@ -5705,6 +5827,7 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      contextWindow?: number
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -5725,6 +5848,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "contextWindow" },
             { in: "body", key: "parts" },
           ],
         },

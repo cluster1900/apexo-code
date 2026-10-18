@@ -71,6 +71,10 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "@apexo/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { McpToolIndex } from "@/mcp/tool-index"
+
+// Last MCP server fingerprint seen per session, for Grok-style connect/update/disconnect reminders.
+const mcpFingerprints = new Map<string, McpToolIndex.Fingerprint>()
 import { LLMEvent } from "@apexo/llm"
 import { Goal } from "@apexo/schema/goal"
 import { HookObserver } from "@apexo/core/hook-observer"
@@ -835,6 +839,12 @@ const layer = Layer.effect(
               .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
           : undefined
       const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
+      const windowModel = input.contextWindow
+        ? (full ??
+          (yield* provider
+            .getModel(model.providerID, model.modelID)
+            .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))))
+        : undefined
 
       const info: SessionV1.User = {
         id: input.messageID ?? MessageID.ascending(),
@@ -847,6 +857,9 @@ const layer = Layer.effect(
           providerID: model.providerID,
           modelID: model.modelID,
           variant,
+          ...(input.contextWindow && windowModel?.limit.context_options?.includes(input.contextWindow)
+            ? { contextWindow: input.contextWindow }
+            : {}),
         },
         system: input.system,
         format: input.format,
@@ -1504,7 +1517,13 @@ const layer = Layer.effect(
             history: msgs,
           }).pipe(Effect.provideService(SessionGoalUsage.Current, goalAttempt), Effect.ignore, Effect.forkIn(scope))
 
-        const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+        const resolved = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+        // /context-window: the session's chosen size is the effective limit for overflow and auto-compaction.
+        const window = lastUser.model.contextWindow
+        const model =
+          window && resolved.limit.context_options?.includes(window)
+            ? { ...resolved, limit: { ...resolved.limit, context: window } }
+            : resolved
         const task = tasks.pop()
 
         if (task?.type === "subtask") {
@@ -1557,6 +1576,32 @@ const layer = Layer.effect(
           Effect.provideService(FSUtil.Service, fsys),
           Effect.provideService(Session.Service, sessions),
         )
+
+        // Grok Build deferred MCP: the connected-server list rides as its own system reminder every turn, and
+        // connect / update / disconnect deltas are recorded once on the turn where they are first seen.
+        const mcpServers = flags.mcpEagerTools
+          ? []
+          : McpToolIndex.summaries(
+              SessionTools.mcpEntries(
+                Permission.visibleTools(yield* mcp.tools(), Permission.merge(agent.permission, session.permission ?? [])),
+              ),
+            )
+        const mcpReminder = McpToolIndex.fullReminder(mcpServers)
+        const mcpPrevious = mcpFingerprints.get(sessionID)
+        mcpFingerprints.set(sessionID, McpToolIndex.fingerprint(mcpServers))
+        const mcpDelta = mcpPrevious ? McpToolIndex.deltaReminder(mcpPrevious, mcpServers) : undefined
+        const deltaUser = mcpDelta ? msgs.findLast((item) => item.info.role === "user") : undefined
+        if (mcpDelta && deltaUser) {
+          const part = yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: deltaUser.info.id,
+            sessionID,
+            type: "text",
+            text: `<system-reminder>\n${mcpDelta}\n</system-reminder>`,
+            synthetic: true,
+          })
+          deltaUser.parts.push(part)
+        }
 
         const msg: SessionV1.Assistant = {
           id: MessageID.ascending(),
@@ -1647,6 +1692,7 @@ const layer = Layer.effect(
             ...(stopState.reason ? [SessionHookStop.render(stopState.reason)] : []),
             ...(recalled ? [recalled] : []),
             ...(mcpInstructions ? [mcpInstructions] : []),
+            ...(mcpReminder ? [`<system-reminder>\n${mcpReminder}\n</system-reminder>`] : []),
             ...(skills ? [skills] : []),
             ...(goal ? [goal.system()] : []),
             ...(goalRole ? [goalRole.system, `Original goal objective: ${goalRole.objective}`] : []),
@@ -2003,6 +2049,7 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(SessionV1.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  contextWindow: Schema.optional(Schema.Finite),
   parts: Schema.Array(
     Schema.Union([
       SessionV1.TextPartInput,

@@ -356,9 +356,15 @@ export function withCliFixture<A, E>(
           }),
         ),
         (p) =>
-          Effect.promise(() => {
+          Effect.promise(async () => {
             p.kill()
-            return p.exited
+            // Bounded like the ACP release: an occasional slow graceful shutdown after SIGTERM (open item
+            // BUG-20261018-396) must not consume the whole test budget in teardown.
+            const graceful = await Promise.race([p.exited.then(() => true), Bun.sleep(5_000).then(() => false)])
+            if (graceful) return
+            console.warn(`apexo serve (pid ${p.pid}) did not exit within 5s of SIGTERM; sending SIGKILL`)
+            p.kill("SIGKILL")
+            await p.exited
           }).pipe(Effect.ignore),
       )
 

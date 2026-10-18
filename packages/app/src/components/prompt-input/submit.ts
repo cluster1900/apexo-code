@@ -1,3 +1,5 @@
+import { effectiveContextWindow } from "@apexo/sdk/v2/grok-commands"
+import { contextWindowChoice } from "@/utils/context-window"
 import type { SandboxProfile } from "@apexo/sdk/v2/client"
 import type { GoalStart } from "@apexo/sdk/v2/client"
 import type { Message, Session } from "@apexo/sdk/v2/client"
@@ -42,6 +44,7 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
+  contextWindow?: number
 }
 
 type FollowupSendInput = {
@@ -174,6 +177,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       agent: input.draft.agent,
       model: input.draft.model,
       variant: input.draft.variant,
+      contextWindow: input.draft.contextWindow,
       legacyParts: requestParts,
       text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
       files: requestParts.flatMap((part) => {
@@ -235,6 +239,7 @@ type PromptSubmitInput = {
   onWorkflow?: (command: string) => Promise<boolean>
   onBtw?: (question: string, images: ImageAttachmentPart[]) => Promise<boolean>
   onGoal?: (sessionID: string, objective: string, selection: GoalStart) => boolean
+  onGrokSlash?: (text: string) => { handled: true } | { handled: false; text?: string }
   onMemoryCommand?: (command: string, attachments: boolean) => Promise<boolean>
   onRemember?: (sessionID: string, content: string) => boolean
   onMemoryWork?: (sessionID: string, kind: "flush" | "dream") => boolean
@@ -375,6 +380,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
+    if (mode === "normal" && images.length === 0 && input.onGrokSlash) {
+      const routed = input.onGrokSlash(text.trim())
+      if (routed.handled) {
+        submission.clear()
+        input.setPopover(null)
+        return
+      }
+      if (routed.text !== undefined) {
+        // `/plan <description>` switched to the plan agent; send the description as the prompt.
+        target.set([{ type: "text", content: routed.text, start: 0, end: routed.text.length }], routed.text.length)
+        return handleSubmit(event)
+      }
+    }
+
     const modelSelection = input.model ?? local.model
     const currentModel = modelSelection.current()
     const currentAgent = local.agent.current()
@@ -507,6 +526,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      contextWindow: effectiveContextWindow(contextWindowChoice(session.id), currentModel.limit.context_options),
     }
 
     const clearInput = () => {

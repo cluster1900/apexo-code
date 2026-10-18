@@ -77,6 +77,8 @@ export function McpBrowser(props: {
     highlight: ColorInput
   }
   onClose: () => void
+  /** Open the resource/template attachment picker as soon as a native snapshot is loaded (`/resources`). */
+  openPicker?: boolean
   height?: number
 }) {
   const clipboard = useClipboard()
@@ -179,8 +181,22 @@ export function McpBrowser(props: {
       await perform()
     }
   }
+  const openPicker = () => {
+    if (!state.snapshot?.native || !props.onAttach) return
+    const owner = props.actions.attachments?.()
+    if (!owner) return
+    void (async () => {
+      const { McpResourcePicker } = await import("./mcp-resource-picker")
+      if (!abort.signal.aborted && owner.active()) {
+        setState("owner", owner)
+        setState("picker", () => McpResourcePicker)
+      }
+    })()
+  }
   onMount(() => {
-    void perform()
+    void perform().then(() => {
+      if (props.openPicker) openPicker()
+    })
     const timer = setInterval(() => {
       if (!["waiting", "exchanging"].includes(authentication()?.flow?.phase ?? "")) return
       void perform()
@@ -204,15 +220,7 @@ export function McpBrowser(props: {
     event.preventDefault()
     if (state.pending) return
     if (event.name === "b" && state.snapshot?.native && props.onAttach) {
-      const owner = props.actions.attachments?.()
-      if (owner)
-        void (async () => {
-          const { McpResourcePicker } = await import("./mcp-resource-picker")
-          if (!abort.signal.aborted && owner.active()) {
-            setState("owner", owner)
-            setState("picker", () => McpResourcePicker)
-          }
-        })()
+      openPicker()
       return
     }
     if (["pageup", "pagedown", "home", "end"].includes(event.name) && viewport) {
