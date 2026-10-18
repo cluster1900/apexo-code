@@ -20,6 +20,8 @@ const autoFlow = process.argv.includes("--auto")
 const importFlow = process.argv.includes("--import-claude")
 // --edit-prompt: checks the Desktop prompt editor dialog only.
 const editFlow = process.argv.includes("--edit-prompt")
+// --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
+const cycleFlow = process.argv.includes("--mode-cycle")
 const mod = process.platform === "darwin" ? "Meta" : "Control"
 const windowModels = {
   "grok-4.7": {
@@ -131,7 +133,30 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (editFlow) {
+  if (cycleFlow) {
+    const body = () => command("get", "text", "body")
+    const store = () =>
+      command("eval", "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))")
+    await command("click", editor)
+    const step = async (toast) => {
+      await command("click", editor)
+      await command("press", "Shift+Tab")
+      await poll(async () => (await body()).includes(toast), toast)
+      await command("wait", "300")
+    }
+    await step("Plan mode")
+    checks.push("shift-tab-enters-plan")
+    await step("Auto-review mode")
+    await poll(async () => /review[^}]*true/.test(await store()), "review on")
+    checks.push("shift-tab-enters-auto-review")
+    await step("Always-approve mode")
+    await poll(async () => /autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "always on")
+    checks.push("shift-tab-enters-always-approve")
+    await step("Normal mode")
+    await poll(async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "normal")
+    checks.push("shift-tab-returns-to-normal")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (editFlow) {
     const area = '[data-component="grok-edit-prompt"]'
     const value = async () => JSON.parse(await command("eval", `document.querySelector('${area}')?.value ?? null`))
     const draft = async () => (await command("get", "text", editor)).trim()
@@ -240,6 +265,17 @@ try {
     await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("rm -rf")), "risky asks")
     await poll(async () => (await body()).includes("rm -rf"), "permission prompt shown")
     checks.push("risky-command-escalates-to-prompt")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    assert.equal(autoReviewFixture.classified.length, 0, "rules decided safe/risky without the model")
+    await slash("AUTO_MODEL_ALLOW")
+    await poll(() => tool("terraform plan"), "model-approved command ran", 30_000)
+    assert.ok(autoReviewFixture.classified.some((item) => item.includes("terraform plan")))
+    checks.push("model-classifier-approves-unknown-safe-command")
+    await slash("AUTO_MODEL_ASK")
+    await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "model escalates")
+    await Bun.sleep(1500)
+    assert.ok((await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "still pending")
+    checks.push("model-classifier-escalates-risky-command")
     for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
     await slash("/always-approve")
     const permissionStore = () =>

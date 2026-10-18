@@ -338,13 +338,24 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return childStore.config.ui?.permission_mode === "auto"
   }
 
+  // Auto-review: the rule pre-filter clears routine calls; others go to the server classifier (session model).
+  async function classify(permission: PermissionRequest, directory?: string) {
+    const rules = autoReview(permission)
+    if (rules.allow) return true
+    if (rules.certain) return false
+    return input.sdk.client.permission
+      .review({ requestID: permission.id, directory })
+      .then((result) => result.data?.allow === true)
+      .catch(() => false)
+  }
+
   async function respondPending(
     permission: PermissionRequest,
     directory?: string,
     current: () => boolean = () => true,
   ) {
     if (!current() || !isPending(permission)) return
-    const reviewed = isReviewing(permission.sessionID, directory) && autoReview(permission).allow
+    const reviewed = isReviewing(permission.sessionID, directory) && (await classify(permission, directory))
     if (!reviewed && !(await shouldAutoRespondResolved(permission, directory))) return
     if (meta.disposed || !current() || !isPending(permission)) return
     respondOnce(permission, directory)

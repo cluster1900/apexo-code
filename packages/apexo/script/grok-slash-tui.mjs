@@ -17,6 +17,8 @@ const autoFlow = process.argv.includes("--auto")
 const importFlow = process.argv.includes("--import-claude")
 // --edit-prompt: a scripted $EDITOR; checks /edit-prompt and the palette entry.
 const editFlow = process.argv.includes("--edit-prompt")
+// --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
+const cycleFlow = process.argv.includes("--mode-cycle")
 const { runtime } = await startGoalFixture(
   "cli",
   autoFlow
@@ -100,7 +102,33 @@ try {
     await Bun.sleep(300)
   }
 
-  if (editFlow) {
+  if (cycleFlow) {
+    const shiftTab = async (toast) => {
+      child.terminal.write("\x1b[Z")
+      await rendered(toast)
+      await Bun.sleep(300)
+    }
+    await shiftTab("Plan mode")
+    await rendered("Plan ")
+    checks.push("shift-tab-enters-plan")
+    await shiftTab("Auto-review mode")
+    await rendered("auto ·")
+    assert.ok(!plain().includes("Plan ·"))
+    checks.push("shift-tab-enters-auto-review-and-leaves-plan")
+    await shiftTab("Always-approve mode")
+    await rendered("always-approve ·")
+    checks.push("shift-tab-enters-always-approve")
+    await shiftTab("Normal mode")
+    await poll(() => !plain().includes("always-approve ·") && !plain().includes("auto ·"), "back to normal")
+    checks.push("shift-tab-returns-to-normal")
+    child.terminal.write("\x0f")
+    await rendered("always-approve ·")
+    checks.push("ctrl-o-toggles-always-approve")
+    child.terminal.write("\t")
+    await rendered("Plan ")
+    checks.push("tab-still-cycles-agents")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (editFlow) {
     child.terminal.write("DRAFT_TUI")
     await rendered("DRAFT_TUI")
     child.terminal.write("\x10")
@@ -173,6 +201,19 @@ try {
     child.terminal.write("\x1b")
     await Bun.sleep(300)
     for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    assert.equal(autoReviewFixture.classified.length, 0, "rules decided safe/risky without the model")
+    await prompt("AUTO_MODEL_ALLOW")
+    await poll(() => tool("terraform plan"), "model-approved command ran", 30_000)
+    assert.ok(autoReviewFixture.classified.some((item) => item.includes("terraform plan")))
+    checks.push("model-classifier-approves-unknown-safe-command")
+    await prompt("AUTO_MODEL_ASK")
+    await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "model escalates")
+    await Bun.sleep(1500)
+    assert.ok((await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "still pending")
+    checks.push("model-classifier-escalates-risky-command")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await poll(() => plain().includes("AUTO_DONE") && !plain().includes("Permission required"), "turn finished")
+    await Bun.sleep(500)
     await run("always-approve")
     await rendered("always-approve ·")
     await run("auto")

@@ -249,7 +249,11 @@ export function effectiveContextWindow(choice: number | undefined, options: read
 
 // Auto-review (`/auto`): Grok Build's permission mode where a safety check approves routine tool calls and anything
 // it will not allow surfaces the normal permission prompt. This build ships a local heuristic classifier.
-export type AutoReviewVerdict = { allow: true } | { allow: false; reason: string }
+// `certain` marks a refusal from a known-dangerous pattern; other refusals are "not on the allowlist" and go to the
+// model classifier when one is available.
+export type AutoReviewVerdict =
+  | { allow: true; certain?: undefined }
+  | { allow: false; reason: string; certain?: boolean }
 
 const reviewSafeTools = new Set([
   "read",
@@ -300,7 +304,8 @@ const reviewRiskyPatterns: [RegExp, string][] = [
 export function autoReviewCommand(command: string): AutoReviewVerdict {
   const text = command.trim()
   if (!text) return { allow: false, reason: "empty command" }
-  for (const [pattern, reason] of reviewRiskyPatterns) if (pattern.test(text)) return { allow: false, reason }
+  for (const [pattern, reason] of reviewRiskyPatterns)
+    if (pattern.test(text)) return { allow: false, reason, certain: true }
   for (const segment of text.split(/&&|\|\||;|\||\n/)) {
     const words = segment
       .trim()
@@ -336,7 +341,8 @@ export function autoReview(request: {
     return { allow: true }
   }
   if (request.permission === "external_directory") return { allow: false, reason: "outside the project directory" }
-  if (request.permission === "doom_loop") return { allow: false, reason: "repeated identical tool calls" }
+  if (request.permission === "doom_loop")
+    return { allow: false, reason: "repeated identical tool calls", certain: true }
   if (reviewSafeTools.has(request.permission)) return { allow: true }
   return { allow: false, reason: `${request.permission} needs a review` }
 }
@@ -356,4 +362,17 @@ export function resolvePermissionMode(input: {
     return undefined
   }
   return normal(input.flagMode) ?? normal(input.config) ?? "ask"
+}
+
+// Grok Build Shift+Tab: Normal → Plan → Auto (when available) → Always-approve → Normal.
+export type SessionModeName = "normal" | "plan" | "auto" | "always-approve"
+export function nextSessionMode(
+  current: SessionModeName,
+  options: { plan: boolean; auto: boolean } = { plan: true, auto: true },
+): SessionModeName {
+  const order = (["normal", "plan", "auto", "always-approve"] as const).filter(
+    (mode) => (mode !== "plan" || options.plan) && (mode !== "auto" || options.auto),
+  )
+  const index = order.indexOf(current as never)
+  return order[(index + 1) % order.length] ?? "normal"
 }

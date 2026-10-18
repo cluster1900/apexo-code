@@ -1080,6 +1080,32 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  // BUG-397: a rejected permission stores `permissionDenied: true` on the tool part; forwarding it as provider
+  // options made the AI SDK reject every later prompt in the session ("messages do not match ModelMessage[]").
+  test("keeps only provider namespaces in tool provider options", async () => {
+    const input: SessionV1.WithParts[] = [
+      { info: userInfo("m-user"), parts: [{ ...basePart("m-user", "u1"), type: "text", text: "run" }] as SessionV1.Part[] },
+      {
+        info: assistantInfo("m-assistant", "m-user"),
+        parts: [
+          {
+            ...basePart("m-assistant", "a1"),
+            type: "tool",
+            callID: "call-1",
+            tool: "bash",
+            state: { status: "error", input: { cmd: "rm" }, error: "rejected", time: { start: 0, end: 1 }, metadata: {} },
+            metadata: { permissionDenied: true, hookReason: "x", openai: { tool: "meta" } },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+    const messages = await MessageV2.toModelMessages(input, model)
+    const options = messages.flatMap((message) =>
+      Array.isArray(message.content) ? message.content.map((part) => ("providerOptions" in part ? part.providerOptions : undefined)) : [],
+    )
+    expect(options.filter(Boolean)).toEqual([{ openai: { tool: "meta" } }, { openai: { tool: "meta" } }])
+  })
+
   test("forwards partial bash output for aborted tool calls", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  nextSessionMode,
   autoReview,
   resolvePermissionMode,
   contextWindowLabel,
@@ -155,5 +156,16 @@ describe("autoReview", () => {
     expect(resolvePermissionMode({ config: "auto" })).toBe("auto")
     expect(resolvePermissionMode({ config: "auto", flagAlwaysApprove: true })).toBe("always-approve")
     expect(resolvePermissionMode({ config: "always-approve", flagMode: "auto" })).toBe("auto")
+  })
+})
+
+describe("nextSessionMode", () => {
+  test("cycles like Grok Build Shift+Tab", () => {
+    expect(nextSessionMode("normal")).toBe("plan")
+    expect(nextSessionMode("plan")).toBe("auto")
+    expect(nextSessionMode("auto")).toBe("always-approve")
+    expect(nextSessionMode("always-approve")).toBe("normal")
+    expect(nextSessionMode("plan", { plan: true, auto: false })).toBe("always-approve")
+    expect(nextSessionMode("normal", { plan: false, auto: true })).toBe("auto")
   })
 })

@@ -77,14 +77,29 @@ export async function startGoalFixture(kind, options = {}) {
 
 // Shared by the CLI and Desktop /auto flows: bash asks, AUTO_SAFE runs `git status`, AUTO_RISKY runs `rm -rf`.
 export const autoReviewFixture = {
+  classified: [],
   config: { permission: { "*": "allow", bash: "ask" } },
-  next: ({ text, finished, ancillary }) => {
+  next: ({ body, text, finished, ancillary }) => {
+    // Mock model classifier: allows `terraform plan`, escalates everything else it is asked about.
+    const raw = JSON.stringify(body)
+    if (raw.includes("Auto-review safety classifier")) {
+      autoReviewFixture.classified.push(raw)
+      return {
+        content: raw.includes("terraform plan")
+          ? '{"decision":"allow","reason":"read-only plan"}'
+          : '{"decision":"ask","reason":"changes infrastructure"}',
+      }
+    }
     if (ancillary) return
     const command = text.includes("AUTO_SAFE")
       ? "git status"
       : text.includes("AUTO_RISKY")
         ? "rm -rf auto-risky-dir"
-        : ""
+        : text.includes("AUTO_MODEL_ALLOW")
+          ? "terraform plan"
+          : text.includes("AUTO_MODEL_ASK")
+            ? "terraform apply"
+            : ""
     if (!command) return
     if (finished) return { content: "AUTO_DONE" }
     return { tool: "run_terminal_cmd", args: { command, description: "auto review check" } }

@@ -12815,6 +12815,44 @@ export type PermissionReplyResponses = {
 
 export type PermissionReplyResponse = PermissionReplyResponses[keyof PermissionReplyResponses]
 
+export type PermissionReviewData = {
+  body?: never
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/permission/{requestID}/review"
+}
+
+export type PermissionReviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * PermissionNotFoundError
+   */
+  404: PermissionNotFoundError
+}
+
+export type PermissionReviewError = PermissionReviewErrors[keyof PermissionReviewErrors]
+
+export type PermissionReviewResponses = {
+  /**
+   * Auto-review verdict for the pending request
+   */
+  200: {
+    allow: boolean
+    reason: string
+    source: "rules" | "model" | "rules-fallback"
+  }
+}
+
+export type PermissionReviewResponse = PermissionReviewResponses[keyof PermissionReviewResponses]
+
 export type ProviderListData = {
   body?: never
   path?: never

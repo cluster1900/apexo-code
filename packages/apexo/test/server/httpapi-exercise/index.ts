@@ -700,6 +700,13 @@ const scenarios: Scenario[] = [
       body: { reply: "once" },
     }))
     .json(404, object, "status"),
+  http.protected
+    .post("/permission/{requestID}/review", "permission.review")
+    .at((ctx) => ({
+      path: route("/permission/{requestID}/review", { requestID: "per_httpapi" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
   http.protected.get("/question", "question.list").json(200, array),
   http.protected
     .post("/question/{requestID}/reply", "question.reply.invalid")

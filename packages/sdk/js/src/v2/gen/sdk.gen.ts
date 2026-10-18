@@ -213,6 +213,8 @@ import type {
   PermissionReplyResponses,
   PermissionRespondErrors,
   PermissionRespondResponses,
+  PermissionReviewErrors,
+  PermissionReviewResponses,
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
@@ -4859,6 +4861,38 @@ export class Permission extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Auto-review a permission request
+   *
+   * Run the Auto-review safety check (rule pre-filter, then the session model as classifier) on a pending request. Does not reply.
+   */
+  public review<ThrowOnError extends boolean = false>(
+    parameters: {
+      requestID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "requestID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PermissionReviewResponses, PermissionReviewErrors, ThrowOnError>({
+      url: "/permission/{requestID}/review",
+      ...options,
+      ...params,
     })
   }
 
