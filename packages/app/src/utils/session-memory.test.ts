@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { fetch } from "bun"
 import { createServer } from "node:http"
 import { createApexoClient } from "@apexo/sdk/v2/client"
+import { nativeFetch } from "./fixtures/native-fetch"
 import { memoryActions, MemoryActionError } from "./session-memory"
 
 for (const native of [true, false]) {
@@ -22,7 +22,7 @@ for (const native of [true, false]) {
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("Missing fixture address")
     try {
-      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch })
+      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch: nativeFetch })
       const actions = memoryActions(client, "parent", Promise.resolve(native ? "v2" : "v1"))
       const signal = AbortSignal.timeout(5000)
       await actions.status(signal)
@@ -72,7 +72,11 @@ for (const [status, code] of [
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("Missing fixture address")
     try {
-      const client = createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}`, fetch, throwOnError: true })
+      const client = createApexoClient({
+        baseUrl: `http://127.0.0.1:${address.port}`,
+        fetch: nativeFetch,
+        throwOnError: true,
+      })
       const actions = memoryActions(client, "managed", Promise.resolve("v2"))
       const error = await actions.status(AbortSignal.timeout(5000)).catch((error: unknown) => error)
       expect(error).toBeInstanceOf(MemoryActionError)

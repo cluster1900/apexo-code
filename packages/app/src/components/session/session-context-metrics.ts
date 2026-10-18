@@ -1,4 +1,6 @@
 import type { AssistantMessage, Message } from "@apexo/sdk/v2/client"
+import { effectiveContextWindow } from "@apexo/sdk/v2/grok-commands"
+import { contextWindowChoice } from "@/utils/context-window"
 
 type Provider = {
   id: string
@@ -10,6 +12,7 @@ type Model = {
   name?: string
   limit: {
     context: number
+    context_options?: number[]
   }
 }
 
@@ -44,7 +47,9 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
 
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
-  const limit = model?.limit.context
+  const limit =
+    effectiveContextWindow(contextWindowChoice(message.sessionID), model?.limit.context_options) ??
+    model?.limit.context
   const total = tokenTotal(message)
 
   return {

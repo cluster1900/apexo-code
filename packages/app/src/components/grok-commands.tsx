@@ -4,6 +4,7 @@ import type { TextPart } from "@apexo/sdk/v2/client"
 import {
   contextUsage,
   contextWindowLabel,
+  effectiveContextWindow,
   parseContextWindow,
   docsGuides,
   docsURL,
@@ -40,7 +41,7 @@ export function DialogGrokList<T>(props: { title: string; items: Item<T>[]; onSe
   return (
     <Dialog title={props.title}>
       <List
-        class="flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+        class="flex-1 px-3 pb-2 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
         search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("grok.empty")}
         key={(item) => item.title}
@@ -53,9 +54,13 @@ export function DialogGrokList<T>(props: { title: string; items: Item<T>[]; onSe
         }}
       >
         {(item) => (
-          <div class="w-full flex items-center gap-2" data-grok-item={item.title}>
-            <span class="truncate flex-1 min-w-0 text-left font-normal">{item.title}</span>
-            {item.detail && <span class="text-text-weak shrink-0 font-normal">{item.detail}</span>}
+          <div class="w-full flex items-center justify-between gap-3 py-0.5" data-grok-item={item.title}>
+            <span class="truncate flex-1 min-w-0 text-left font-normal text-text-strong">{item.title}</span>
+            {item.detail && (
+              <span class="text-text-weak shrink-0 rounded-full border border-border-weak-base bg-surface-base/60 px-2 py-0.5 text-11-regular font-mono">
+                {item.detail}
+              </span>
+            )}
           </div>
         )}
       </List>
@@ -85,7 +90,7 @@ export function DialogEditPrompt(props: { value: string; onSave: (value: string)
             })
           }}
           data-component="grok-edit-prompt"
-          class="w-full min-h-[50vh] rounded-md border border-border-base bg-background-base p-3 font-mono text-14-regular resize-y outline-none"
+          class="w-full min-h-[50vh] rounded-lg border border-border-weak-base bg-surface-inset-base/40 p-3.5 font-mono text-13-regular leading-5 text-text-base resize-y outline-none transition-colors focus:border-border-focus"
           value={props.value}
           spellcheck={false}
           onKeyDown={(event) => {
@@ -95,8 +100,8 @@ export function DialogEditPrompt(props: { value: string; onSave: (value: string)
             }
           }}
         />
-        <div class="flex justify-end gap-2">
-          <span class="text-text-weak text-12-regular self-center flex-1">{language.t("grok.editPrompt.hint")}</span>
+        <div class="flex items-center justify-end gap-2">
+          <span class="text-text-weak text-12-regular self-center flex-1 font-mono">{language.t("grok.editPrompt.hint")}</span>
           <Button variant="ghost" onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </Button>
@@ -113,7 +118,7 @@ export function DialogGrokText(props: { title: string; lines: string[] }) {
   return (
     <Dialog title={props.title}>
       <div
-        class="px-4 pb-4 flex flex-col gap-1 text-14-regular whitespace-pre-wrap break-words"
+        class="mx-4 mb-4 flex flex-col gap-1.5 rounded-lg border border-border-weak-base bg-surface-inset-base/30 p-3.5 font-mono text-13-regular leading-5 text-text-base whitespace-pre-wrap break-words"
         data-component="grok-text"
       >
         <For each={props.lines}>{(line) => <div>{line}</div>}</For>
@@ -195,17 +200,27 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
   }
 
   // /context-window: listed only when the current model supports more than one size.
-  const windowOptions = () => local.model.current()?.limit.context_options ?? []
+  const activeModel = () => {
+    const selected = local.model.current()
+    if (selected) return { providerID: selected.provider.id, modelID: selected.id, limit: selected.limit }
+    const id = sessionID()
+    const messages = id ? (sync().data.message[id] ?? []) : []
+    const last = messages.findLast((message) => message.role === "assistant" && "modelID" in message && message.modelID)
+    if (!last || !("providerID" in last)) return undefined
+    const found = sync().data.provider.all.get(last.providerID)?.models[last.modelID]
+    return found ? { providerID: last.providerID, modelID: last.modelID, limit: found.limit } : undefined
+  }
+  const windowOptions = () => activeModel()?.limit.context_options ?? []
   const setWindow = (size: number) => {
     const id = sessionID()
-    const current = local.model.current()
+    const current = activeModel()
     if (!id || !current) return
     setContextWindowChoice(id, size)
     const label = contextWindowLabel(size)
     const usage = contextUsage(sync().data.message[id] ?? [], size)
     if (usage && usage.used > size) {
       info(language.t("grok.contextWindow.compacting", { size: label }))
-      void sdk().client.session.summarize({ sessionID: id, providerID: current.provider.id, modelID: current.id })
+      void sdk().client.session.summarize({ sessionID: id, providerID: current.providerID, modelID: current.modelID })
       return
     }
     info(language.t("grok.contextWindow.set", { size: label }))
@@ -399,7 +414,11 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
   const context = () => {
     const id = sessionID()
     if (!id) return
-    const usage = contextUsage(sync().data.message[id] ?? [], local.model.current()?.limit.context ?? 0)
+    const messages = sync().data.message[id] ?? []
+    const model = activeModel()
+    const limit =
+      effectiveContextWindow(contextWindowChoice(id), model?.limit.context_options) ?? model?.limit.context ?? 0
+    const usage = contextUsage(messages, limit)
     if (!usage) return text(language.t("grok.context"), [language.t("grok.context.empty")])
     const number = (value: number) => value.toLocaleString(language.intl())
     const pct = (value: number) => (usage.limit ? ` (${Math.round((value / usage.limit) * 100)}%)` : "")
@@ -630,7 +649,15 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
   /** Handles `/effort <level>`, `/docs <target>` and `/plan <description>` typed with arguments. */
   const submit = (input: string): { handled: true } | { handled: false; text?: string } => {
     const parsed = parseSlashInput(input)
-    if (!parsed?.args) return { handled: false }
+    if (!parsed) return { handled: false }
+    if (!parsed.args) {
+      const match = commands().find(
+        (cmd) => !cmd.disabled && (cmd.slash === parsed.name || cmd.slashAliases?.includes(parsed.name)),
+      )
+      if (!match) return { handled: false }
+      match.onSelect?.("slash")
+      return { handled: true }
+    }
     if (parsed.name === "effort") return (effort(parsed.args), { handled: true })
     if (parsed.name === "context-window") return (contextWindow(parsed.args), { handled: true })
     if (["docs", "howto", "guides"].includes(parsed.name)) return (docs(parsed.args), { handled: true })

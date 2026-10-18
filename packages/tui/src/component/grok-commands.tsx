@@ -1,6 +1,7 @@
 import {
   contextUsage,
   contextWindowLabel,
+  effectiveContextWindow,
   parseContextWindow,
   docsGuides,
   docsURL,
@@ -132,10 +133,15 @@ export function useGrokCommands() {
       tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
     }>
     const last = messages.findLast((message) => message.role === "assistant" && message.modelID)
-    const model = last
-      ? sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID!]
-      : undefined
-    const usage = contextUsage(messages, model?.limit.context ?? 0)
+    const current = local.model.current()
+    const model =
+      (current
+        ? sync.data.provider.find((item) => item.id === current.providerID)?.models[current.modelID]
+        : undefined) ??
+      (last ? sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID!] : undefined)
+    const limit =
+      effectiveContextWindow(contextWindowChoice(id), model?.limit.context_options) ?? model?.limit.context ?? 0
+    const usage = contextUsage(messages, limit)
     if (!usage) return alert("Context", "No model response yet in this session.")
     const pct = (value: number) => (usage.limit ? ` (${Math.round((value / usage.limit) * 100)}%)` : "")
     alert(

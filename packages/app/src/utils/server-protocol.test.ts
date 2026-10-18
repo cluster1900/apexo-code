@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import { fetch } from "bun"
 import { createServer } from "node:http"
+import { nativeFetch } from "./fixtures/native-fetch"
 import { detectServerProtocol } from "./server-protocol"
 
 for (const mode of ["legacy", "native", "historical-native"] as const) {
@@ -26,7 +26,7 @@ for (const mode of ["legacy", "native", "historical-native"] as const) {
       expect(
         await detectServerProtocol(
           { url: `http://127.0.0.1:${address.port}`, username: "apexo", password: "test-password" },
-          fetch,
+          nativeFetch,
         ),
       ).toBe(mode === "legacy" ? "v1" : "v2")
       expect(paths).toEqual(mode === "legacy" ? ["/global/health"] : ["/global/health", "/api/health"])
