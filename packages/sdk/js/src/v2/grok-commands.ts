@@ -246,3 +246,114 @@ export function parseContextWindow(input: string, options: readonly number[]): {
 export function effectiveContextWindow(choice: number | undefined, options: readonly number[] | undefined) {
   return choice && options?.includes(choice) ? choice : undefined
 }
+
+// Auto-review (`/auto`): Grok Build's permission mode where a safety check approves routine tool calls and anything
+// it will not allow surfaces the normal permission prompt. This build ships a local heuristic classifier.
+export type AutoReviewVerdict = { allow: true } | { allow: false; reason: string }
+
+const reviewSafeTools = new Set([
+  "read",
+  "glob",
+  "grep",
+  "list",
+  "lsp",
+  "todowrite",
+  "todoread",
+  "websearch",
+  "webfetch",
+  "skill",
+  "edit",
+  "write",
+  "patch",
+  "plan_enter",
+  "update_goal",
+])
+const reviewSafePrograms = new Set(
+  (
+    "ls cat head tail wc pwd echo printf true false which whoami date env printenv rg grep egrep fgrep find fd tree " +
+    "stat file du df diff cmp sort uniq cut tr basename dirname realpath readlink jq sed awk less more nl seq test " +
+    "tsc tsgo eslint prettier biome node bun deno python python3 pytest go cargo rustc make npm pnpm yarn npx bunx"
+  ).split(" "),
+)
+const reviewSafeGit = new Set(
+  "status diff log show branch rev-parse ls-files blame grep describe remote tag stash add commit fetch switch checkout restore".split(
+    " ",
+  ),
+)
+const reviewRiskyPatterns: [RegExp, string][] = [
+  [/(^|\s)sudo\s|(^|\s)su\s/, "runs as another user"],
+  [/\brm\s|\brmdir\b|\bshred\b|\bunlink\b/, "deletes files"],
+  [
+    /\bgit\s+(push|reset\s+--hard|clean|rebase|filter-branch|update-ref)\b|--force\b|\s-f\s*$/,
+    "rewrites or publishes git history",
+  ],
+  [/\b(curl|wget)\b[^|]*\|\s*(ba|z)?sh\b/, "pipes a download into a shell"],
+  [/\b(chmod|chown|mkfs|dd|kill|pkill|killall|shutdown|reboot|crontab|systemctl|launchctl)\b/, "changes the system"],
+  [/\bfind\b.*\s-(delete|exec|execdir)\b/, "find with -delete/-exec"],
+  [/\bsed\b.*\s-i\b/, "edits files in place outside the edit tool"],
+  [/\b(npm|pnpm|yarn|bun)\s+(publish|login|logout|adduser)\b|\bcargo\s+publish\b/, "publishes a package"],
+  [/\b(ssh|scp|rsync|nc|ncat|telnet|ftp)\b/, "opens a remote connection"],
+  [/(^|[^0-9&])>{1,2}\s*(?!\/dev\/null)/, "writes files through shell redirection"],
+  [/\$\(|`|\beval\b/, "runs a dynamically built command"],
+]
+
+export function autoReviewCommand(command: string): AutoReviewVerdict {
+  const text = command.trim()
+  if (!text) return { allow: false, reason: "empty command" }
+  for (const [pattern, reason] of reviewRiskyPatterns) if (pattern.test(text)) return { allow: false, reason }
+  for (const segment of text.split(/&&|\|\||;|\||\n/)) {
+    const words = segment
+      .trim()
+      .split(/\s+/)
+      .filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
+    const program = words[0]?.split("/").at(-1)
+    if (!program) continue
+    if (program === "git") {
+      const sub = words.slice(1).find((word) => !word.startsWith("-"))
+      if (!sub || reviewSafeGit.has(sub)) continue
+      return { allow: false, reason: `git ${sub} is not on the review allowlist` }
+    }
+    if (program === "cd") continue
+    if (!reviewSafePrograms.has(program)) return { allow: false, reason: `${program} is not on the review allowlist` }
+  }
+  return { allow: true }
+}
+
+export function autoReview(request: {
+  permission: string
+  patterns?: readonly string[]
+  metadata?: Record<string, unknown>
+}): AutoReviewVerdict {
+  if (request.permission === "bash") {
+    // The full command line carries redirections and substitutions that per-command patterns drop.
+    const commands =
+      typeof request.metadata?.command === "string" ? [request.metadata.command] : (request.patterns ?? [])
+    if (!commands.length) return { allow: false, reason: "unknown command" }
+    for (const command of commands) {
+      const verdict = autoReviewCommand(command)
+      if (!verdict.allow) return verdict
+    }
+    return { allow: true }
+  }
+  if (request.permission === "external_directory") return { allow: false, reason: "outside the project directory" }
+  if (request.permission === "doom_loop") return { allow: false, reason: "repeated identical tool calls" }
+  if (reviewSafeTools.has(request.permission)) return { allow: true }
+  return { allow: false, reason: `${request.permission} needs a review` }
+}
+
+export type PermissionModeName = "ask" | "auto" | "always-approve"
+// Grok's `[ui] permission_mode` (legacy `approval_mode`, `yolo`); always-approve wins over auto when both are asked.
+export function resolvePermissionMode(input: {
+  flagAlwaysApprove?: boolean
+  flagMode?: string
+  config?: string
+}): PermissionModeName {
+  if (input.flagAlwaysApprove) return "always-approve"
+  const normal = (value?: string): PermissionModeName | undefined => {
+    if (value === "auto") return "auto"
+    if (value === "always-approve" || value === "bypassPermissions" || value === "yolo") return "always-approve"
+    if (value === "ask" || value === "default") return "ask"
+    return undefined
+  }
+  return normal(input.flagMode) ?? normal(input.config) ?? "ask"
+}

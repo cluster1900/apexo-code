@@ -1825,6 +1825,13 @@ export const dict = {
   "memory.operations.partial_publication":
     "The plan was partly published. Review an explicit clear instead of discarding it.",
   "memory.operations.scope_empty": "The selected scope has no Memory store to clear.",
+  "grok.auto.enable": "Turn on auto-review permissions",
+  "grok.auto.disable": "Turn off auto-review permissions",
+  "grok.auto.on.title": "Auto-review on",
+  "grok.auto.on.description": "Routine tool calls are approved; risky ones still ask",
+  "grok.auto.off.title": "Auto-review off",
+  "grok.auto.off.description": "Tool calls ask for approval",
+  "grok.auto.noSession": "Open a session first",
   "grok.contextWindow": "Set the context window",
   "grok.contextWindow.set": "Context window set to {{size}}",
   "grok.contextWindow.compacting": "Context window set to {{size}}; compacting to fit",

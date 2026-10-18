@@ -61,6 +61,10 @@ export const Info = Schema.Struct({
         description:
           "Compact display: less padding and tighter spacing. The /compact-mode toggle overrides it locally.",
       }),
+      permission_mode: Schema.optional(Schema.Literals(["ask", "auto", "always-approve"])).annotate({
+        description:
+          "Launch permission mode (Grok Build [ui] permission_mode): ask, auto (Auto-review), or always-approve. Flags and /auto, /always-approve override it.",
+      }),
       vim_mode: Schema.optional(Schema.Boolean).annotate({
         description: "Vim-style scrollback keys (Grok Build [ui] vim_mode). The /vim-mode toggle overrides it locally.",
       }),

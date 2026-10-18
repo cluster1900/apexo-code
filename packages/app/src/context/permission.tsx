@@ -14,6 +14,7 @@ import { useSettings } from "./settings"
 import { requireServerKey } from "@/utils/session-route"
 import type { ServerScope } from "@/utils/server-scope"
 import { normalizePermissionRequest } from "./global-sync/utils"
+import { autoReview } from "@apexo/sdk/v2/grok-commands"
 import {
   acceptKey,
   directoryAcceptKey,
@@ -164,6 +165,12 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       isAutoAcceptingDirectory(directory: string) {
         return selected().isAutoAcceptingDirectory(directory)
       },
+      isReviewing(sessionID: string, directory?: string) {
+        return selected().isReviewing(sessionID, directory)
+      },
+      toggleReview(sessionID: string, directory: string) {
+        return selected().toggleReview(sessionID, directory)
+      },
       toggleAutoAccept(sessionID: string, directory: string) {
         selected().toggleAutoAccept(sessionID, directory)
       },
@@ -208,6 +215,8 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     },
     createStore({
       autoAccept: {} as Record<string, boolean>,
+      // Grok Build Auto-review (`/auto`), per session like autoAccept; mutually exclusive with it.
+      review: {} as Record<string, boolean>,
     }),
   )
 
@@ -313,13 +322,30 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return shouldAutoRespond(permission, directory)
   }
 
+  function isReviewing(sessionID: string, directory?: string) {
+    const ids = sessions(directory)
+    const lineage = [sessionID]
+    for (const id of lineage) {
+      const parent = ids.find((item) => item.id === id)?.parentID
+      if (parent && !lineage.includes(parent)) lineage.push(parent)
+    }
+    for (const id of lineage) {
+      const value = store.review?.[acceptKey(id, directory)] ?? store.review?.[id]
+      if (value !== undefined) return value
+    }
+    if (!directory || isAutoAccepting(sessionID, directory)) return false
+    const [childStore] = input.sync.child(directory, { bootstrap: false })
+    return childStore.config.ui?.permission_mode === "auto"
+  }
+
   async function respondPending(
     permission: PermissionRequest,
     directory?: string,
     current: () => boolean = () => true,
   ) {
     if (!current() || !isPending(permission)) return
-    if (!(await shouldAutoRespondResolved(permission, directory))) return
+    const reviewed = isReviewing(permission.sessionID, directory) && autoReview(permission).allow
+    if (!reviewed && !(await shouldAutoRespondResolved(permission, directory))) return
     if (meta.disposed || !current() || !isPending(permission)) return
     respondOnce(permission, directory)
   }
@@ -422,8 +448,31 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     )
   }
 
+  function setReview(sessionID: string, directory: string, value: boolean) {
+    if (value && isAutoAccepting(sessionID, directory)) disable(sessionID, directory)
+    setStore(
+      produce((draft) => {
+        draft.review ??= {}
+        draft.review[acceptKey(sessionID, directory)] = value
+      }),
+    )
+    if (!value) return
+    for (const permission of input.sync.session.data.permission[sessionID] ?? [])
+      void respondPending(permission, directory)
+  }
+
   const api = {
     ready: () => !meta.disposed && ready(),
+    isReviewing(sessionID: string, directory?: string) {
+      if (meta.disposed) return false
+      return isReviewing(sessionID, directory)
+    },
+    toggleReview(sessionID: string, directory: string) {
+      if (meta.disposed) return false
+      const next = !isReviewing(sessionID, directory)
+      setReview(sessionID, directory, next)
+      return next
+    },
     respond,
     autoResponds(permission: PermissionRequest, directory?: string) {
       if (meta.disposed) return false
@@ -443,6 +492,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
         disable(sessionID, directory)
         return
       }
+      if (isReviewing(sessionID, directory)) setReview(sessionID, directory, false)
 
       enable(sessionID, directory)
     },

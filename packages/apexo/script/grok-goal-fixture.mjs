@@ -10,7 +10,10 @@ export async function startGoalFixture(kind, options = {}) {
     goalReports: true,
     config: options.config,
     models: options.models,
-    next: async ({ body, ancillary }) => {
+    next: async (request) => {
+      const custom = await options.next?.(request)
+      if (custom) return custom
+      const { body, ancillary } = request
       const text = JSON.stringify(body)
       const phase = text.includes("independent goal planner")
         ? "planning"
@@ -70,4 +73,20 @@ export async function startGoalFixture(kind, options = {}) {
     },
   })
   return { runtime, control }
+}
+
+// Shared by the CLI and Desktop /auto flows: bash asks, AUTO_SAFE runs `git status`, AUTO_RISKY runs `rm -rf`.
+export const autoReviewFixture = {
+  config: { permission: { "*": "allow", bash: "ask" } },
+  next: ({ text, finished, ancillary }) => {
+    if (ancillary) return
+    const command = text.includes("AUTO_SAFE")
+      ? "git status"
+      : text.includes("AUTO_RISKY")
+        ? "rm -rf auto-risky-dir"
+        : ""
+    if (!command) return
+    if (finished) return { content: "AUTO_DONE" }
+    return { tool: "run_terminal_cmd", args: { command, description: "auto review check" } }
+  },
 }

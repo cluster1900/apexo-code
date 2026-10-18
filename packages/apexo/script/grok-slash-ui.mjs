@@ -7,13 +7,15 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { poll } from "./grok-shell-fixture.mjs"
-import { startGoalFixture } from "./grok-goal-fixture.mjs"
+import { autoReviewFixture, startGoalFixture } from "./grok-goal-fixture.mjs"
 const kind = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 // --vim-config: config ui.vim_mode = true; checks the config default and the local override only.
 const vimConfig = process.argv.includes("--vim-config")
 // --context-window: the model lists several sizes; checks /context-window only.
 const windowFlow = process.argv.includes("--context-window")
+// --auto: bash asks; checks Auto-review approves a safe command and escalates a risky one.
+const autoFlow = process.argv.includes("--auto")
 const windowModels = {
   "grok-4.7": {
     name: "Restart parity",
@@ -23,7 +25,13 @@ const windowModels = {
 }
 const { runtime, control } = await startGoalFixture(
   kind,
-  vimConfig ? { config: { ui: { vim_mode: true } } } : windowFlow ? { models: windowModels } : {},
+  autoFlow
+    ? autoReviewFixture
+    : vimConfig
+      ? { config: { ui: { vim_mode: true } } }
+      : windowFlow
+        ? { models: windowModels }
+        : {},
 )
 const session = await runtime.api("/session", {
   title: "Slash UI",
@@ -118,7 +126,53 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (windowFlow) {
+  if (autoFlow) {
+    const body = () => command("get", "text", "body")
+    const slash = async (text) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "400")
+      await command("press", "Enter")
+    }
+    const pending = async () => runtime.api(`/permission`)
+    const tool = async (marker) =>
+      (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+        item.parts.some(
+          (part) =>
+            part.type === "tool" &&
+            part.state.status === "completed" &&
+            JSON.stringify(part.state.input).includes(marker),
+        ),
+      )
+    await slash("/auto")
+    await poll(async () => (await body()).includes("Auto-review on"), "auto toast")
+    checks.push("auto-toggles-review-mode")
+    await slash("AUTO_SAFE")
+    await poll(() => tool("git status"), "safe command ran without a prompt", 30_000)
+    checks.push("safe-command-auto-approved")
+    await slash("AUTO_RISKY")
+    await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("rm -rf")), "risky asks")
+    await poll(async () => (await body()).includes("rm -rf"), "permission prompt shown")
+    checks.push("risky-command-escalates-to-prompt")
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await slash("/always-approve")
+    const permissionStore = () =>
+      command(
+        "eval",
+        "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))",
+      )
+    await poll(async () => /autoAccept[^}]*true/.test(await permissionStore()), "always-approve on")
+    await slash("/auto")
+    await poll(async () => (await body()).includes("Auto-review on"), "auto again")
+    const store = await command(
+      "eval",
+      "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))",
+    )
+    assert.ok(/review[^}]*true/.test(store), "review persisted")
+    assert.ok(!/autoAccept[^}]*true/.test(store), "always-approve switched off")
+    checks.push("auto-replaces-always-approve")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (windowFlow) {
     const body = () => command("get", "text", "body")
     const slash = async (text) => {
       await command("click", editor)

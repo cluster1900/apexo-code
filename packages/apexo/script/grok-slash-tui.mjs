@@ -5,27 +5,31 @@ import { writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { Terminal } from "@xterm/headless"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
-import { startGoalFixture } from "./grok-goal-fixture.mjs"
+import { autoReviewFixture, startGoalFixture } from "./grok-goal-fixture.mjs"
 
 // --vim-config: start with config ui.vim_mode = true and check the config default plus the local override only.
 const vimConfig = process.argv.includes("--vim-config")
 // --context-window: the model lists several sizes; checks /context-window only.
 const windowFlow = process.argv.includes("--context-window")
+// --auto: bash asks for permission; checks Auto-review approves a safe command and escalates a risky one.
+const autoFlow = process.argv.includes("--auto")
 const { runtime } = await startGoalFixture(
   "cli",
-  vimConfig
-    ? { config: { ui: { vim_mode: true } } }
-    : windowFlow
-      ? {
-          models: {
-            "grok-4.7": {
-              name: "Restart parity",
-              tool_call: true,
-              limit: { context: 100000, output: 10000, context_options: [100000, 50000, 100] },
+  autoFlow
+    ? autoReviewFixture
+    : vimConfig
+      ? { config: { ui: { vim_mode: true } } }
+      : windowFlow
+        ? {
+            models: {
+              "grok-4.7": {
+                name: "Restart parity",
+                tool_call: true,
+                limit: { context: 100000, output: 10000, context_options: [100000, 50000, 100] },
+              },
             },
-          },
-        }
-      : {},
+          }
+        : {},
 )
 const terminal = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
 const plain = () =>
@@ -81,7 +85,45 @@ try {
     await Bun.sleep(300)
   }
 
-  if (windowFlow) {
+  if (autoFlow) {
+    const pending = async () => runtime.api(`/permission`)
+    const prompt = async (text) => {
+      child.terminal.write(`\x1b[200~${text}\x1b[201~`)
+      await rendered(text)
+      await Bun.sleep(200)
+      child.terminal.write("\r")
+    }
+    const tool = async (marker) =>
+      (await runtime.api(`/session/${session.id}/message`)).some((item) =>
+        item.parts.some(
+          (part) =>
+            part.type === "tool" &&
+            part.state.status === "completed" &&
+            JSON.stringify(part.state.input).includes(marker),
+        ),
+      )
+    await run("auto")
+    await rendered("Auto-review on")
+    await rendered("auto ·")
+    checks.push("auto-toggles-review-mode-and-status")
+    await prompt("AUTO_SAFE")
+    await poll(() => tool("git status"), "safe command ran without a prompt", 30_000)
+    checks.push("safe-command-auto-approved")
+    await prompt("AUTO_RISKY")
+    await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("rm -rf")), "risky asks")
+    await rendered("rm -rf")
+    checks.push("risky-command-escalates-to-prompt")
+    child.terminal.write("\x1b")
+    await Bun.sleep(300)
+    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await run("always-approve")
+    await rendered("always-approve ·")
+    await run("auto")
+    await rendered("auto ·")
+    assert.ok(!plain().includes("always-approve ·"))
+    checks.push("auto-replaces-always-approve")
+    console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
+  } else if (windowFlow) {
     await run("context-window")
     await rendered("Context window")
     assert.ok(plain().includes("100k") && plain().includes("50k") && plain().includes("100 "))

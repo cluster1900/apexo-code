@@ -339,6 +339,16 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  const toggleReview = () => {
+    const sessionID = params.id
+    if (!sessionID) return showToast({ title: language.t("grok.auto.noSession") })
+    const active = permission.toggleReview(sessionID, sdk().directory)
+    showToast({
+      title: active ? language.t("grok.auto.on.title") : language.t("grok.auto.off.title"),
+      description: active ? language.t("grok.auto.on.description") : language.t("grok.auto.off.description"),
+    })
+  }
+
   const undo = async () => {
     const sessionID = params.id
     if (!sessionID) return
@@ -671,6 +681,16 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "always-approve",
       disabled: false,
       onSelect: toggleAutoAccept,
+    }),
+    permissionsCommand({
+      id: "permissions.auto",
+      title:
+        params.id && permission.isReviewing(params.id, sdk().directory)
+          ? language.t("grok.auto.disable")
+          : language.t("grok.auto.enable"),
+      slash: "auto",
+      disabled: false,
+      onSelect: toggleReview,
     }),
   ]
 

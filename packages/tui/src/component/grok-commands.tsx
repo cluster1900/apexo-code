@@ -248,7 +248,9 @@ export function useGrokCommands() {
             title:
               local.permission.mode === "auto"
                 ? "Permissions: always approve (on)"
-                : "Permissions: ask (always approve off)",
+                : local.permission.mode === "review"
+                  ? "Permissions: auto-review (on)"
+                  : "Permissions: ask (always approve off)",
             value: "permission",
           },
         ]}
@@ -404,6 +406,24 @@ export function useGrokCommands() {
           message: next
             ? "Multiline on: Enter inserts a newline, Shift+Enter or Alt+Enter sends"
             : "Multiline off: Enter sends",
+        })
+        dialog.clear()
+      },
+    },
+    {
+      name: "grok.auto",
+      title:
+        local.permission.mode === "review" ? "Turn off auto-review permissions" : "Turn on auto-review permissions",
+      category: "System",
+      slashName: "auto",
+      run: () => {
+        local.permission.toggleReview()
+        toast.show({
+          variant: "info",
+          message:
+            local.permission.mode === "review"
+              ? "Auto-review on: routine tool calls are approved; risky ones still ask"
+              : "Auto-review off: tool calls ask for approval",
         })
         dialog.clear()
       },

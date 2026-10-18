@@ -2019,6 +2019,7 @@ export type Config = {
   }
   ui?: {
     compact_mode?: boolean
+    permission_mode?: "ask" | "auto" | "always-approve"
     vim_mode?: boolean
   }
   snapshot?: boolean

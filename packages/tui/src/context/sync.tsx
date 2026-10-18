@@ -1,3 +1,4 @@
+import { autoReview } from "@apexo/sdk/v2/grok-commands"
 import { terminalCatalog, terminalSession } from "../transport/native-catalog"
 import { terminalPermission, terminalQuestion, terminalRequestEvent } from "../transport/native-session-events"
 import type { nativeSessionView } from "../transport/native-session-view"
@@ -337,7 +338,7 @@ export const {
 
         case "permission.asked": {
           const request = event.properties
-          if (permission.mode === "auto") {
+          if (permission.mode === "auto" || (permission.mode === "review" && autoReview(request).allow)) {
             void sdk.client.permission.reply({
               requestID: request.id,
               reply: "once",
@@ -674,6 +675,7 @@ export const {
               setStore("capabilities", "memoryManagement", capabilities?.memoryManagement === true)
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
+              permission.applyConfig(config.ui?.permission_mode)
               if (sessions !== undefined) setStore("session", reconcile(sessions))
             })
           })
