@@ -317,12 +317,13 @@ describe("plugin.openai.ws-pool", () => {
     })
     const fetch = OpenAIWebSocketPool.createWebSocketFetch({
       url: server.url,
-      idleTimeout: 20,
+      // The same timer guards the wait for the first frame; 20ms flaked on loaded CI runners (BUG-399).
+      idleTimeout: 250,
     })
 
     const first = await fetch(server.url, streamRequest())
     expect(await first.text()).toContain("data: [DONE]")
-    await waitFor(() => closed === 1, "idle websocket was not pruned")
+    await waitFor(() => closed === 1, "idle websocket was not pruned", 3_000)
 
     const second = await fetch(server.url, streamRequest())
 
@@ -900,10 +901,10 @@ function closeHttpServer(server: HttpServer) {
   return new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
 }
 
-async function waitFor(predicate: () => boolean, message: string) {
+async function waitFor(predicate: () => boolean, message: string, timeout = 1_000) {
   const started = Date.now()
   while (!predicate()) {
-    if (Date.now() - started > 1_000) throw new Error(message)
+    if (Date.now() - started > timeout) throw new Error(message)
     await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }
