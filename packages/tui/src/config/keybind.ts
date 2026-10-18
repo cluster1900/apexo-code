@@ -125,7 +125,11 @@ export const Definitions = {
   provider_connect: keybind("none", "Connect provider"),
   agent_list: keybind("<leader>a", "List agents"),
   agent_cycle: keybind("tab", "Next agent"),
-  agent_cycle_reverse: keybind("shift+tab", "Previous agent"),
+  // Grok Build binds Shift+Tab to the session mode cycle (Normal → Plan → Auto → Always-approve) and Ctrl+O to
+  // always-approve; Tab still cycles agents and reverse agent cycling is unbound by default.
+  agent_cycle_reverse: keybind("none", "Previous agent"),
+  session_mode_cycle: keybind("shift+tab", "Cycle Normal → Plan → Auto → Always-approve"),
+  permission_always_approve: keybind("ctrl+o", "Toggle always-approve"),
   variant_cycle: keybind("ctrl+t", "Cycle model variants"),
   variant_list: keybind("none", "List model variants"),
 
@@ -331,6 +335,8 @@ export const CommandMap = {
   agent_list: "agent.list",
   agent_cycle: "agent.cycle",
   agent_cycle_reverse: "agent.cycle.reverse",
+  session_mode_cycle: "session.mode.cycle",
+  permission_always_approve: "permission.mode",
   variant_cycle: "variant.cycle",
   variant_list: "variant.list",
   messages_page_up: "session.page.up",

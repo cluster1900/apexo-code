@@ -1,4 +1,5 @@
 import { mcpAttachmentParts } from "@apexo/sdk/v2/mcp-attachment"
+import { nextSessionMode, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerApexoSpinner } from "./component/register-spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
@@ -114,6 +115,8 @@ const appBindingCommands = [
   "mcp.list",
   "agent.cycle",
   "agent.cycle.reverse",
+  "session.mode.cycle",
+  "permission.mode",
   "variant.cycle",
   "variant.list",
   "provider.connect",
@@ -770,6 +773,38 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
             })
           }
           dialog.replace(() => <DialogVariant />)
+        },
+      },
+      {
+        name: "session.mode.cycle",
+        title: "Cycle session mode",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          const agent = local.agent.current()?.name
+          const current: SessionModeName =
+            agent === "plan"
+              ? "plan"
+              : local.permission.mode === "review"
+                ? "auto"
+                : local.permission.mode === "auto"
+                  ? "always-approve"
+                  : "normal"
+          const next = nextSessionMode(current, { plan: sync.data.agent.some((item) => item.name === "plan"), auto: true })
+          if (next === "plan") {
+            if (agent && agent !== "plan") kv.set("mode_cycle_agent", agent)
+            local.agent.set("plan")
+            local.permission.set("normal")
+          } else {
+            if (agent === "plan") local.agent.set(kv.get("mode_cycle_agent", "build"))
+            local.permission.set(next === "auto" ? "review" : next === "always-approve" ? "auto" : "normal")
+          }
+          toast.show({
+            variant: "info",
+            message: { normal: "Normal mode", plan: "Plan mode", auto: "Auto-review mode", "always-approve": "Always-approve mode" }[
+              next
+            ],
+          })
         },
       },
       {

@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { nextSessionMode, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { previewSelectedLines } from "@apexo/session-ui/pierre/selection-bridge"
@@ -349,6 +350,35 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  // Grok Build Shift+Tab: Normal → Plan → Auto → Always-approve. Plan is the plan agent; the others are permission modes.
+  let modeCycleAgent = "build"
+  const cycleSessionMode = () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    const directory = sdk().directory
+    const agent = local.agent.current()?.name
+    const current: SessionModeName =
+      agent === "plan"
+        ? "plan"
+        : permission.isReviewing(sessionID, directory)
+          ? "auto"
+          : permission.isAutoAccepting(sessionID, directory)
+            ? "always-approve"
+            : "normal"
+    const next = nextSessionMode(current, { plan: local.agent.list().some((item) => item.name === "plan"), auto: true })
+    if (next === "plan") {
+      if (agent && agent !== "plan") modeCycleAgent = agent
+      local.agent.set("plan")
+    } else if (agent === "plan") local.agent.set(modeCycleAgent)
+    if (next === "auto") permission.toggleReview(sessionID, directory)
+    if (next === "always-approve") permission.toggleAutoAccept(sessionID, directory)
+    if (next === "normal" || next === "plan") {
+      if (permission.isReviewing(sessionID, directory)) permission.toggleReview(sessionID, directory)
+      if (permission.isAutoAccepting(sessionID, directory)) permission.disableAutoAccept(sessionID, directory)
+    }
+    showToast({ title: language.t(`grok.mode.${next}` as never) })
+  }
+
   const undo = async () => {
     const sessionID = params.id
     if (!sessionID) return
@@ -681,6 +711,13 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "always-approve",
       disabled: false,
       onSelect: toggleAutoAccept,
+    }),
+    permissionsCommand({
+      id: "session.mode.cycle",
+      title: language.t("grok.mode.cycle"),
+      keybind: "shift+tab",
+      disabled: !params.id,
+      onSelect: cycleSessionMode,
     }),
     permissionsCommand({
       id: "permissions.auto",
