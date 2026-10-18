@@ -39,6 +39,27 @@ const terminal = (root: string) =>
     "20 seconds",
   )
 
+// The run is persisted as paused a moment before its execution fiber releases the session, and resume answers 409
+// ("still closing" / "already executing") in that window. Retry only that transient conflict.
+const resumeSettled = (url: string, body: unknown) =>
+  pollWithTimeout(
+    post(url, body).pipe(
+      Effect.flatMap((response) =>
+        response.status !== 409
+          ? Effect.succeed(response)
+          : response.text.pipe(
+              Effect.flatMap((text) =>
+                /still closing|already executing/.test(text)
+                  ? Effect.succeed(undefined)
+                  : Effect.fail(new Error(`Workflow resume conflict: ${text}`)),
+              ),
+            ),
+      ),
+    ),
+    "Workflow execution did not release the session",
+    "10 seconds",
+  )
+
 it.instance("Workflow selected agents use native models, prompts and parent permission ceilings", () =>
   Effect.gen(function* () {
     const instance = yield* TestInstance
@@ -127,7 +148,7 @@ it.instance("Workflow selected agents use native models, prompts and parent perm
     expect(paused.status).toBe("paused")
     expect(paused.children).toHaveLength(1)
     expect(yield* llm.calls).toBe(3)
-    const resumed = yield* post(`${root}/${pending.id}/resume`, {})
+    const resumed = yield* resumeSettled(`${root}/${pending.id}/resume`, {})
     expect(resumed.status).toBe(200)
     yield* resumed.json
     const done = yield* terminal(`${root}/${pending.id}`)
