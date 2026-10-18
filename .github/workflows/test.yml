@@ -15,10 +15,17 @@ permissions:
   contents: read
 
 jobs:
-  unit:
-    name: unit (linux)
+  # apexo package tests, split into 6 shards. run-tests.ts builds 17 round-robin
+  # batches of test files; shard i/n runs the batches with index % n == i-1, so the
+  # union of all shards is exactly the full file list.
+  apexo:
+    name: apexo tests (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -36,9 +43,56 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - name: Run unit tests
-        timeout-minutes: 45
-        run: GITHUB_ACTIONS=false bun turbo test --concurrency=2 --log-order=stream --log-prefix=none
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/workflow-script
+          shared-key: workflow-script
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+
+      - name: Run apexo tests
+        timeout-minutes: 25
+        env:
+          GITHUB_ACTIONS: "false"
+          APEXO_TEST_SHARD: ${{ matrix.shard }}/6
+        run: bun turbo test --filter=apexo --concurrency=2 --log-order=stream --log-prefix=none
+
+  workflow-script:
+    name: workflow-script tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Prepare Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/workflow-script
+          shared-key: workflow-script-test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run non-apexo package tests
+        run: GITHUB_ACTIONS=false bun turbo test --filter='!apexo' --concurrency=2 --log-order=stream --log-prefix=none
+
+  generated:
+    name: generated code
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
 
       - name: Check generated client
         working-directory: packages/client
@@ -48,6 +102,56 @@ jobs:
         working-directory: packages/sdk/js
         run: bun run check:generated
 
-      - name: Run HttpApi exerciser gates
+  httpapi:
+    name: httpapi (${{ matrix.mode }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # effect mode runs ~346 live scenarios serially (~15 min), so it is split
+        # into 4 interleaved shards; coverage/auth are fast and run whole.
+        include:
+          - mode: coverage
+          - mode: auth
+          - { mode: effect, shard: 1/4 }
+          - { mode: effect, shard: 2/4 }
+          - { mode: effect, shard: 3/4 }
+          - { mode: effect, shard: 4/4 }
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      # Same flags as `bun run test:httpapi`, one mode per job.
+      - name: Run HttpApi exerciser
         working-directory: packages/apexo
-        run: bun run test:httpapi
+        env:
+          SHARD_ARGS: ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }}
+        run: bun run script/httpapi-exercise.ts --mode ${{ matrix.mode }} --fail-on-missing --fail-on-skip $SHARD_ARGS
+
+  # Required status check on main. Aggregates every test job above.
+  unit:
+    name: unit (linux)
+    if: always()
+    needs: [apexo, workflow-script, generated, httpapi]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::a test job finished with '$r'"
+              exit 1
+            fi
+          done

@@ -25,12 +25,31 @@ const batches = Array.from({ length: batchCount }, (_, batch) =>
   files.filter((_, index) => index % batchCount === batch),
 )
 
+// CI sharding: APEXO_TEST_SHARD="i/n" (1-based) keeps only batches where batchIndex % n === i - 1.
+const shardSpec = Bun.env.APEXO_TEST_SHARD?.match(/^(\d+)\/(\d+)$/)
+const shardIndex = shardSpec ? Number(shardSpec[1]) - 1 : 0
+const shardTotal = shardSpec ? Number(shardSpec[2]) : 1
+if (shardSpec && (shardTotal < 1 || shardIndex < 0 || shardIndex >= shardTotal)) {
+  throw new Error(`invalid APEXO_TEST_SHARD=${Bun.env.APEXO_TEST_SHARD}`)
+}
+const selected = batches
+  .map((batchFiles, index) => ({ index, batchFiles }))
+  .filter((b) => b.index % shardTotal === shardIndex)
+if (shardSpec) {
+  console.log(
+    `[apexo:test shard ${shardIndex + 1}/${shardTotal}] ${selected.length}/${batches.length} batches, ${selected.reduce((n, b) => n + b.batchFiles.length, 0)}/${files.length} files`,
+  )
+}
+
 const workerCount = Math.max(
   1,
-  Math.min(batches.length, Number(Bun.env.APEXO_TEST_SHARDS ?? Math.min(2, Math.max(1, os.availableParallelism())))),
+  Math.min(
+    Math.max(1, selected.length),
+    Number(Bun.env.APEXO_TEST_SHARDS ?? Math.min(2, Math.max(1, os.availableParallelism()))),
+  ),
 )
 
-const queue = batches.map((batchFiles, index) => ({ index, batchFiles }))
+const queue = [...selected]
 const failures: Array<{ index: number; exitCode: number; output: string }> = []
 
 async function runBatch(item: { index: number; batchFiles: string[] }) {
