@@ -1482,11 +1482,12 @@ type Endpoint24_6Input = {
   readonly requestID: Endpoint24_6Request["params"]["requestID"]
   readonly reply: Endpoint24_6Request["payload"]["reply"]
   readonly message?: Endpoint24_6Request["payload"]["message"]
+  readonly save?: Endpoint24_6Request["payload"]["save"]
 }
 const Endpoint24_6 = (raw: RawClient["server.permission"]) => (input: Endpoint24_6Input) =>
   raw["session.permission.reply"]({
     params: { sessionID: input["sessionID"], requestID: input["requestID"] },
-    payload: { reply: input["reply"], message: input["message"] },
+    payload: { reply: input["reply"], message: input["message"], save: input["save"] },
   }).pipe(Effect.mapError(mapClientError))
 
 const adaptGroup24 = (raw: RawClient["server.permission"]) => ({

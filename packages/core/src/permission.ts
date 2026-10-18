@@ -13,6 +13,7 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import { PermissionSaved } from "./permission/saved"
+import { BashApproval } from "./tool/bash-approval"
 import { HookObserver } from "./hook-observer"
 import { PermissionV1 } from "./v1/permission"
 
@@ -51,6 +52,8 @@ export const ReplyInput = Schema.Struct({
   requestID: ID,
   reply: Reply,
   message: Schema.String.pipe(Schema.optional),
+  /** "always" only: one of the save sets offered in metadata.alwaysChoices (scope picker); anything else is ignored. */
+  save: Schema.Array(Schema.String).pipe(Schema.optional),
 }).annotate({ identifier: "PermissionV2.ReplyInput" })
 export type ReplyInput = typeof ReplyInput.Type
 
@@ -122,6 +125,12 @@ export interface Interface {
     (action: string, resources: readonly string[]) => Permission.Effect,
     SessionV2.NotFoundError
   >
+  /** Whether a literal allow grant equal to `resource` was saved (session consent or project saved rules); wildcards never count. */
+  readonly exact: (
+    sessionID: SessionV2.ID,
+    action: string,
+    resource: string,
+  ) => EffectRuntime.Effect<boolean, SessionV2.NotFoundError>
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
   readonly reply: (input: ReplyInput) => EffectRuntime.Effect<void, NotFoundError>
@@ -239,6 +248,25 @@ const layer = Layer.effect(
     const inspect = EffectRuntime.fn("PermissionV2.inspect")(function* (sessionID: SessionV2.ID, agent?: AgentV2.ID) {
       const snapshot = yield* authority(sessionID, agent)
       return (action: string, resources: readonly string[]) => assess({ action, resources }, snapshot).effect
+    })
+
+    const exact = EffectRuntime.fn("PermissionV2.exact")(function* (
+      sessionID: SessionV2.ID,
+      action: string,
+      resource: string,
+    ) {
+      const canonical = PermissionV1.canonicalPermission(action)
+      const sessionRules = ((yield* sessions.permissions(sessionID)) ?? []).map((rule) => ({
+        action: PermissionV1.canonicalPermission(rule.permission),
+        resource: rule.pattern,
+        effect: rule.action,
+      }))
+      return [...sessionRules, ...(yield* savedRules())].some(
+        (rule) =>
+          rule.effect === "allow" &&
+          rule.resource === resource &&
+          PermissionV1.canonicalPermission(rule.action) === canonical,
+      )
     })
 
     const evaluateInput = EffectRuntime.fn("PermissionV2.evaluateInput")(function* (input: AssertInput) {
@@ -392,13 +420,17 @@ const layer = Layer.effect(
             return
           }
 
-          if (input.reply === "always" && existing.request.save?.length) {
+          const chosen =
+            input.save && BashApproval.offered(existing.request.metadata, input.save)
+              ? input.save
+              : existing.request.save
+          if (input.reply === "always" && chosen?.length) {
             const current = (yield* sessions.permissions(existing.request.sessionID)) ?? []
             yield* sessions.setPermissions({
               sessionID: existing.request.sessionID,
               permissions: [
                 ...current,
-                ...existing.request.save.map((resource) => ({
+                ...chosen.map((resource) => ({
                   permission: existing.request.action,
                   pattern: resource,
                   action: "allow" as const,
@@ -410,12 +442,12 @@ const layer = Layer.effect(
               yield* saved.add({
                 projectID: location.project.id,
                 action: existing.request.action,
-                resources: existing.request.save,
+                resources: chosen,
               })
           }
           yield* Deferred.succeed(existing.deferred, undefined)
           pending.delete(input.requestID)
-          if (input.reply !== "always" || !existing.request.save?.length) return
+          if (input.reply !== "always" || !chosen?.length) return
 
           for (const [id, item] of pending) {
             if (existing.inherited.length && item.request.sessionID !== existing.request.sessionID) continue
@@ -447,7 +479,7 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
     })
 
-    return Service.of({ capture, inspect, ask, assert, reply, get, forSession, list })
+    return Service.of({ capture, inspect, exact, ask, assert, reply, get, forSession, list })
   }),
 )
 

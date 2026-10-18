@@ -251,16 +251,35 @@ try {
     }
     await prompt("PREFIX_FIRST")
     await alwaysViaPrompt("git status", ["git status *"])
-    checks.push("prompt-shows-arity-prefix:git status *")
+    checks.push("prompt-shows-grok-scope:git status *")
     await prompt("PREFIX_AGAIN")
     await poll(() => ran("cd . && git status --short"), "chained reuse ran without a prompt", 30_000)
     checks.push("saved-prefix-covers-cd-chain-and-flags")
     await prompt("PREFIX_OTHER")
     await poll(() => asked("git log -1 --oneline"), "other subcommand still asks", 30_000)
-    assert.deepEqual((await asked("git log -1 --oneline")).always, ["git log *"])
-    checks.push("other-subcommand-still-asks")
-    for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
-    await poll(async () => (await pending()).length === 0, "rejected")
+    const other = await asked("git log -1 --oneline")
+    assert.deepEqual(other.always, ["git log *"])
+    assert.deepEqual(
+      other.metadata.alwaysChoices.map((item) => item.label),
+      ["git *", "git log *", "git log -1 *", "git log -1 --oneline *"],
+    )
+    checks.push("other-subcommand-asks-with-grok-scope-choices")
+    await rendered("Permission required")
+    child.terminal.write("\x1b[C")
+    await Bun.sleep(200)
+    child.terminal.write("\r")
+    await rendered("Always allow")
+    await rendered("Scope 2/4")
+    await rendered("- git log *")
+    child.terminal.write("\x1b[D")
+    await rendered("Scope 1/4")
+    await rendered("- git *")
+    child.terminal.write("\r")
+    await poll(() => ran("git log -1 --oneline"), "narrowed grant ran", 30_000)
+    checks.push("scope-picker-narrows-to:git *")
+    await prompt("PREFIX_WIDE")
+    await poll(() => ran("git diff --stat"), "picked scope covers git diff", 30_000)
+    checks.push("picked-scope-covers-other-git-subcommand")
     await Bun.sleep(800)
     await prompt("PREFIX_RM")
     await alwaysViaPrompt("rm -rf prefix-flow-dir", ["rm -rf prefix-flow-dir"])
@@ -269,6 +288,21 @@ try {
     await poll(() => asked("rm -rf prefix-flow-other"), "different rm still asks", 30_000)
     checks.push("different-rm-still-asks")
     for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
+    await poll(async () => (await pending()).length === 0, "rm rejected")
+    await Bun.sleep(800)
+    await prompt("PREFIX_OPAQUE")
+    await alwaysViaPrompt("echo $(git rev-parse --short HEAD) | wc -c", ["echo $(git rev-parse --short HEAD) | wc -c"])
+    checks.push("opaque-script-saved-as-exact-whole-script")
+    await prompt("PREFIX_OPAQUE_AGAIN")
+    await poll(
+      async () =>
+        (await runtime.api(`/session/${session.id}/message`)).flatMap((item) =>
+          item.parts.filter((part) => part.type === "tool" && part.state.status === "completed" && part.state.input?.command === "echo $(git rev-parse --short HEAD) | wc -c"),
+        ).length >= 2,
+      "exact whole-script grant replays",
+      30_000,
+    )
+    checks.push("exact-whole-script-grant-replays")
     console.log(JSON.stringify({ checks, output: runtime.output }, null, 2))
   } else if (autoFlow) {
     const pending = async () => runtime.api(`/permission`)

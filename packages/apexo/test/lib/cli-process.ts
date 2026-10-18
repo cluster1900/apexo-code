@@ -390,7 +390,10 @@ export function withCliFixture<A, E>(
         ),
       )
 
-      const readyTimeoutMs = opts?.readyTimeoutMs ?? 15_000
+      // Cold start transpiles the whole CLI (~5s on one idle core). On CI the two test shards share 2 vCPUs with
+      // this child, and 15s was exceeded on main and PR runs alike (same tree passed earlier), so allow most of the
+      // 60s test budget before failing.
+      const readyTimeoutMs = opts?.readyTimeoutMs ?? 45_000
       const match = yield* Deferred.await(readyDeferred).pipe(
         Effect.timeoutOrElse({
           duration: Duration.millis(readyTimeoutMs),
