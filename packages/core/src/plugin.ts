@@ -1,5 +1,6 @@
 export * as PluginV2 from "./plugin"
 
+import { ShellEnvironment } from "./shell-environment"
 import { makeLocationNode } from "./effect/app-node"
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
 import type { Plugin as PluginRuntime } from "@apexo/plugin/v2/effect"
@@ -162,6 +163,7 @@ export const node = makeLocationNode({
     CommandV2.node,
     Integration.node,
     Reference.node,
+    ShellEnvironment.node,
     SkillV2.node,
   ],
 })

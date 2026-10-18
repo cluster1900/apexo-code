@@ -9,6 +9,7 @@ import { CommandSandbox } from "../command-sandbox"
 import { makeLocationNode } from "../effect/app-node"
 import { Location } from "../location"
 import { AppProcess } from "../process"
+import { ShellEnvironment } from "../shell-environment"
 import { SessionGoalUsage } from "./goal-usage"
 import { SessionGoal } from "./goal"
 import { SessionLifecycle } from "./lifecycle"
@@ -35,6 +36,7 @@ const make = Effect.gen(function* () {
   const sandbox = yield* CommandSandbox.Service
   const appProcess = yield* AppProcess.Service
   const location = yield* Location.Service
+  const shellEnvironment = yield* ShellEnvironment.Service
   const ownerships = new Map<Scope.Closeable, SessionProcess.ID>()
   const lifetime = { closed: false }
   yield* Effect.addFinalizer(() =>
@@ -183,6 +185,14 @@ const make = Effect.gen(function* () {
                     command: input.request.command,
                     cwd: input.request.cwd,
                   })
+                  // Plugin shell.env variables are resolved at spawn time and never persisted with the request.
+                  const env = confined
+                    ? {}
+                    : yield* shellEnvironment.resolve({
+                        cwd: input.request.cwd,
+                        sessionID: input.sessionID,
+                        callID: input.callID,
+                      })
                   const command =
                     confined?.command ??
                     ChildProcess.make(input.request.command, [], {
@@ -191,6 +201,7 @@ const make = Effect.gen(function* () {
                       stdin: "ignore",
                       detached: process.platform !== "win32",
                       forceKillAfter: Duration.seconds(3),
+                      ...(Object.keys(env).length ? { env, extendEnv: true } : {}),
                     })
                   // A coalesced dirty signal gives quiet processes a trailing write without polling storage.
                   const ticker = yield* Effect.forever(
@@ -312,6 +323,7 @@ export const node = makeLocationNode({
   service: Service,
   layer: Layer.effect(Service, make),
   deps: [
+    ShellEnvironment.node,
     SessionProcessStore.node,
     SessionProcessControl.node,
     SessionProcessCompletion.node,
