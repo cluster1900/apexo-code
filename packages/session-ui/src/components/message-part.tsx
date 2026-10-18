@@ -1,3 +1,4 @@
+import { canonicalToolInput } from "@apexo/core/util/grok-tool-display"
 import {
   Component,
   createEffect,
@@ -1600,7 +1601,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const emptyInput: Record<string, any> = {}
   const emptyMetadata: Record<string, any> = {}
 
-  const input = () => part().state?.input ?? emptyInput
+  const input = createMemo(() => canonicalToolInput(part().tool, part().state?.input ?? emptyInput))
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
   const taskId = createMemo(() => {

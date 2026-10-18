@@ -7,7 +7,15 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { poll } from "./grok-shell-fixture.mjs"
-import { mcpFixture, runMcpFlow, autoReviewFixture, importedClaude, seedClaude, startGoalFixture } from "./grok-goal-fixture.mjs"
+import {
+  mcpFixture,
+  runMcpFlow,
+  autoReviewFixture,
+  editFixture,
+  importedClaude,
+  seedClaude,
+  startGoalFixture,
+} from "./grok-goal-fixture.mjs"
 const kind = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "cli"
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 // --vim-config: config ui.vim_mode = true; checks the config default and the local override only.
@@ -28,6 +36,8 @@ const cycleFlow = process.argv.includes("--mode-cycle")
 // --mcp: real stdio MCP server, deferred search_tool/use_tool discovery (default), reminders, file input.
 const mcpFlow = process.argv.includes("--mcp")
 const mcpSetup = mcpFlow ? mcpFixture() : undefined
+// --edit-fuzzy: same model script as the CLI flow (search_replace with drifted whitespace, then a miss).
+const fuzzyFlow = process.argv.includes("--edit-fuzzy")
 const mod = process.platform === "darwin" ? "Meta" : "Control"
 const windowModels = {
   "grok-4.7": {
@@ -40,6 +50,8 @@ const { runtime, control } = await startGoalFixture(
   kind,
   mcpFlow
     ? mcpSetup
+    : fuzzyFlow
+    ? editFixture
     : autoFlow || cycleFlow
     ? autoReviewFixture
     : vimConfig
@@ -155,7 +167,10 @@ try {
   } else if (cycleFlow) {
     const body = () => command("get", "text", "body")
     const store = () =>
-      command("eval", "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))")
+      command(
+        "eval",
+        "JSON.stringify(Object.entries(localStorage).filter(([k]) => k.includes('permission')).map(([,v]) => v))",
+      )
     await command("click", editor)
     const step = async (toast) => {
       await command("click", editor)
@@ -165,7 +180,8 @@ try {
     }
     const messages = async () => runtime.api(`/session/${session.id}/message`)
     const agentOf = async (text) =>
-      (await messages()).find((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text))?.info.agent
+      (await messages()).find((item) => item.info.role === "user" && JSON.stringify(item.parts).includes(text))?.info
+        .agent
     const sendText = async (text) => {
       await command("click", editor)
       await command("keyboard", "type", text)
@@ -185,10 +201,16 @@ try {
     await poll(async () => /review[^}]*true/.test(await store()), "review on")
     checks.push("shift-tab-enters-auto-review")
     await step("Always-approve mode")
-    await poll(async () => /autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "always on")
+    await poll(
+      async () => /autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()),
+      "always on",
+    )
     checks.push("shift-tab-enters-always-approve")
     await step("Normal mode")
-    await poll(async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()), "normal")
+    await poll(
+      async () => !/autoAccept[^}]*true/.test(await store()) && !/review[^}]*true/.test(await store()),
+      "normal",
+    )
     checks.push("shift-tab-returns-to-normal")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (moveNew) {
@@ -205,15 +227,25 @@ try {
     await poll(async () => (await body()).includes("uncommitted change"), "asks about changes", 60_000)
     await command("find", "text", "Yes, move the changes", "click")
     let moved
-    await poll(async () => {
-      moved = (await runtime.api(`/session/${session.id}`)).directory
-      return moved !== runtime.directory
-    }, "session moved to the new worktree", 60_000)
+    await poll(
+      async () => {
+        moved = (await runtime.api(`/session/${session.id}`)).directory
+        return moved !== runtime.directory
+      },
+      "session moved to the new worktree",
+      60_000,
+    )
     const project = (await runtime.api(`/session/${session.id}`)).projectID
-    assert.ok(moved.startsWith(join(runtime.env.XDG_DATA_HOME, "apexo", "worktree", project.slice(0, 6))), `server-side location: ${moved}`)
+    assert.ok(
+      moved.startsWith(join(runtime.env.XDG_DATA_HOME, "apexo", "worktree", project.slice(0, 6))),
+      `server-side location: ${moved}`,
+    )
     checks.push("move-new-worktree-created-by-server-in-cli-location")
     const listed = await runtime.api(`/project/${project}/directories`)
-    assert.ok(listed.some((item) => item.directory === moved), "new worktree is a known project directory")
+    assert.ok(
+      listed.some((item) => item.directory === moved),
+      "new worktree is a known project directory",
+    )
     checks.push("new-worktree-registered")
     await poll(async () => existsSync(join(moved, "dirty.txt")), "changes moved along", 20_000)
     checks.push("move-new-carries-changes")
@@ -256,8 +288,60 @@ try {
     assert.ok(reminder, "cwd reminder recorded")
     checks.push("move-follows-session")
     const { existsSync } = await import("node:fs")
-    assert.ok(existsSync(join(runtime.directory, "dirty.txt")) && !existsSync(join(target, "dirty.txt")), "changes stayed")
+    assert.ok(
+      existsSync(join(runtime.directory, "dirty.txt")) && !existsSync(join(target, "dirty.txt")),
+      "changes stayed",
+    )
     checks.push("move-leaves-changes-when-asked")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (fuzzyFlow) {
+    const { readFile, writeFile } = await import("node:fs/promises")
+    const target = join(runtime.directory, editFixture.file)
+    await writeFile(target, editFixture.original)
+    const body = () => command("get", "text", "body")
+    const messages = async () => runtime.api(`/session/${session.id}/message`)
+    const tool = async (marker) =>
+      (await messages())
+        .flatMap((item) => item.parts)
+        .find((part) => part.type === "tool" && JSON.stringify(part.state.input ?? {}).includes(marker))
+    const send = async (text, done) => {
+      await command("click", editor)
+      await command("keyboard", "type", text)
+      await command("wait", "300")
+      await command("press", "Enter")
+      await poll(async () => (await body()).includes(done), done, 30_000)
+    }
+    await send("EDIT_FUZZY run", "EDIT_FUZZY_DONE")
+    assert.equal(await readFile(target, "utf8"), editFixture.applied)
+    assert.equal((await tool("FUZZY_APPLIED"))?.state.status, "completed")
+    await poll(async () => {
+      const row = JSON.parse(
+        await command("eval", `document.querySelector('[data-component="edit-tool"]')?.textContent ?? ""`),
+      )
+      return row.includes("fuzzy.ts") && row.includes("+1") && row.includes("-1")
+    }, "edit row renders file and diff counts")
+    checks.push("fuzzy-search-replace-applies-and-renders-diff")
+    await send("EDIT_MISS run", "EDIT_MISS_DONE")
+    const miss = await tool("greetingMessageValue = 2")
+    assert.equal(miss?.state.status, "error")
+    assert.match(miss.state.error, /Nearest match: line 4: const greetingMessageValue = 1/)
+    assert.equal(await readFile(target, "utf8"), editFixture.applied)
+    // The failed edit renders as an Edit error card (same title as the CLI row); opening it shows the full hint.
+    await poll(async () => (await body()).includes("EDIT_MISS_DONE"), "miss turn rendered")
+    const titles = JSON.parse(
+      await command(
+        "eval",
+        `[...document.querySelectorAll('[data-kind="tool-error-card"] [data-slot="basic-tool-tool-title"]')].map((e) => e.textContent)`,
+      ),
+    )
+    assert.deepEqual(titles, ["Edit"])
+    await command("click", '[data-kind="tool-error-card"] [data-component="tool-trigger"]')
+    await poll(
+      async () => /Nearest match: line 4: const greetingMessageValue = 1/.test(await body()),
+      "miss hint rendered",
+      15_000,
+    )
+    checks.push("miss-renders-nearest-match-hint-and-keeps-file")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (editFlow) {
     const area = '[data-component="grok-edit-prompt"]'
@@ -375,9 +459,15 @@ try {
     assert.ok(autoReviewFixture.classified.some((item) => item.includes("terraform plan")))
     checks.push("model-classifier-approves-unknown-safe-command")
     await slash("AUTO_MODEL_ASK")
-    await poll(async () => (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "model escalates")
+    await poll(
+      async () => (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")),
+      "model escalates",
+    )
     await Bun.sleep(1500)
-    assert.ok((await pending()).some((item) => item.metadata?.command?.includes("terraform apply")), "still pending")
+    assert.ok(
+      (await pending()).some((item) => item.metadata?.command?.includes("terraform apply")),
+      "still pending",
+    )
     checks.push("model-classifier-escalates-risky-command")
     for (const item of await pending()) await runtime.api(`/permission/${item.id}/reply`, { reply: "reject" })
     await slash("/always-approve")
