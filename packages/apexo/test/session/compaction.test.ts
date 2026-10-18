@@ -1251,12 +1251,14 @@ describe("session.compaction.process", () => {
         yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
         const start = Date.now()
         yield* Fiber.interrupt(fiber)
-        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("250 millis"))
+        // The retry backoff is 10s; stopping well inside it proves the interrupt does not wait for the backoff.
+        // The bound leaves room for loaded CI runners (a 250ms bound measured 409ms there).
+        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("2 seconds"))
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
-          expect(Date.now() - start).toBeLessThan(250)
+          expect(Date.now() - start).toBeLessThan(2_000)
         }
       }).pipe(withCompaction({ llm: stub.llmLayer }))
     },
