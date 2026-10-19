@@ -23,7 +23,7 @@ import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v2/client"
 import { FormatError, FormatUnknownError } from "../error"
-import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import { INTERACTIVE_INPUT_ERROR, readPipedStdin, resolveInteractiveStdin } from "./run/runtime.stdin"
 import { GrokBuildTools } from "@/tool/grok-build"
 import { Permission } from "@/permission"
 
@@ -493,7 +493,9 @@ const CompatibilityRunCommand = effectCmd({
         }
       }
 
-      const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
+      const piped = await readPipedStdin(
+        message.trim().length > 0 || Boolean(args.command) || Boolean(args.file?.length) || interactive,
+      )
       message = resolveRunInput(message, piped) ?? ""
       const initialInput = resolveRunInput(rawMessage, piped)
 
@@ -1022,8 +1024,9 @@ const CompatibilityRunCommand = effectCmd({
                 UI.empty()
               }
 
-              if (part.type === "reasoning" && part.time?.end && thinking && args.format !== "streaming-json") {
+              if (part.type === "reasoning" && part.time?.end && args.format !== "streaming-json") {
                 if (emit("reasoning", { part })) continue
+                if (!thinking) continue
                 const text = part.text.trim()
                 if (!text) continue
                 const line = `Thinking: ${text}`
@@ -1073,10 +1076,11 @@ const CompatibilityRunCommand = effectCmd({
                   reply: "once",
                 })
               } else {
+                const rejectedMessage = `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`
+                error = error ? error + EOL + rejectedMessage : rejectedMessage
                 UI.println(
                   UI.Style.TEXT_WARNING_BOLD + "!",
-                  UI.Style.TEXT_NORMAL +
-                    `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
+                  UI.Style.TEXT_NORMAL + rejectedMessage,
                 )
                 await client.permission.reply({
                   requestID: permission.id,
@@ -1132,46 +1136,79 @@ const CompatibilityRunCommand = effectCmd({
             console.error(e)
             process.exitCode = 1
           })
+          let signalCode: number | undefined
+          const handleSignal = (sig: "SIGINT" | "SIGTERM") => {
+            if (signalCode !== undefined) return
+            signalCode = sig === "SIGINT" ? 130 : 143
+            process.exitCode = signalCode
+            void (async () => {
+              await client.session.abort({ sessionID }).catch(() => undefined)
+              await Promise.race([completed, Bun.sleep(3500)])
+              stream.abort()
+              process.exit(signalCode)
+            })()
+          }
+          const onSigint = () => handleSignal("SIGINT")
+          const onSigterm = () => handleSignal("SIGTERM")
+          process.once("SIGINT", onSigint)
+          process.once("SIGTERM", onSigterm)
           async function finish() {
             if (args.attach) return
             const error = await completed
             if (error) process.exitCode = 1
           }
 
-          if (args.command) {
-            const result = await client.session.command({
+          try {
+            if (args.command) {
+              const result = await client.session.command({
+                sessionID,
+                agent,
+                model: args.model,
+                command: args.command,
+                arguments: message,
+                variant: args.variant,
+              })
+              if (result.error) {
+                if (signalCode !== undefined) {
+                  await Promise.race([completed, Bun.sleep(3500)])
+                  return
+                }
+                if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
+                process.exitCode = 1
+                return
+              }
+              await finish()
+              return
+            }
+
+            const model = pick(args.model)
+            const result = await client.session.prompt({
               sessionID,
               agent,
-              model: args.model,
-              command: args.command,
-              arguments: message,
+              model,
               variant: args.variant,
+              // The prompt is sent as typed; only --command arguments keep their shell-style quoting.
+              parts: [...files, { type: "text", text: initialInput ?? "" }],
             })
             if (result.error) {
+              if (signalCode !== undefined) {
+                await Promise.race([completed, Bun.sleep(3500)])
+                return
+              }
               if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
               process.exitCode = 1
               return
             }
             await finish()
             return
+          } finally {
+            process.removeListener("SIGINT", onSigint)
+            process.removeListener("SIGTERM", onSigterm)
+            if (signalCode !== undefined) {
+              await Promise.race([completed, Bun.sleep(3500)])
+              process.exitCode = signalCode
+            }
           }
-
-          const model = pick(args.model)
-          const result = await client.session.prompt({
-            sessionID,
-            agent,
-            model,
-            variant: args.variant,
-            // The prompt is sent as typed; only --command arguments keep their shell-style quoting.
-            parts: [...files, { type: "text", text: initialInput ?? "" }],
-          })
-          if (result.error) {
-            if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-            process.exitCode = 1
-            return
-          }
-          await finish()
-          return
         }
 
         const model = pick(args.model)

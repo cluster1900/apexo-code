@@ -122,7 +122,7 @@ export const dict = {
   "session.plan.approveDescription": "Switch to build mode and implement the reviewed plan",
   "session.plan.keepPlanningDescription": "Stay in Plan mode and revise the plan",
   "commandSandbox.title": "Command sandbox",
-  "commandSandbox.scope": "Applies only to native commands on macOS. It does not cover all agent activity.",
+  "commandSandbox.scope": "Applies to native shell commands on macOS (seatbelt) and Linux (bubblewrap). It does not cover all agent activity.",
   "commandSandbox.limits": "Existing hard links and changes made by other processes are outside this protection.",
   "commandSandbox.immutable":
     "This Session’s stored profile cannot be changed. Create a new Session to choose another profile.",
@@ -1516,6 +1516,7 @@ export const dict = {
   "settings.desktop.wsl.description": "Run the Apexo server inside WSL on Windows.",
 
   "settings.general.section.appearance": "Appearance",
+  "settings.general.section.preferences": "Preferences",
   "settings.general.section.advanced": "Advanced",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.sounds": "Sound effects",

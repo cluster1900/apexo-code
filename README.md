@@ -158,6 +158,34 @@ Example `apexo.json`:
 }
 ```
 
+### Custom OpenAI-Compatible Providers
+
+You can configure any self-hosted or third-party OpenAI-compatible endpoint (such as vLLM, Ollama, LM Studio, or MiniMax) in `~/.config/apexo/apexo.jsonc` or your project's `apexo.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "model": "custom/MiniMax-M2.7",
+  "provider": {
+    "custom": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Custom OpenAI-Compatible",
+      "options": {
+        "baseURL": "https://api.example.com/v1",
+        "apiKey": "{env:CUSTOM_API_KEY}",
+      },
+      "models": {
+        "MiniMax-M2.7": {
+          "name": "MiniMax M2.7",
+        },
+      },
+    },
+  },
+}
+```
+
+Verify that your custom provider and models are registered by running `apexo models`.
+
 JSON schemas for editor completion live in [`schemas/`](schemas): `config.json` (apexo.json),
 `tui.json`, `theme.json` (TUI themes) and `desktop-theme.json` (app themes). Regenerate them with
 `bun script/schemas.ts`.

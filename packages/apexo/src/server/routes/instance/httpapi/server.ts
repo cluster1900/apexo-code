@@ -2,7 +2,7 @@ import { MemoryManagement } from "@/session/memory-management"
 import { SessionMemoryWork } from "@/session/memory-work"
 import { Config as EffectConfig, Context, Effect, Layer } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
-import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
+import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@apexo/core/fs-util"
 import { AppProcess } from "@apexo/core/process"
@@ -146,6 +146,51 @@ const cors = (corsOptions?: CorsOptions) =>
       allowedOrigins: (origin) => isAllowedCorsOrigin(origin, corsOptions),
       maxAge: 86_400,
     }),
+    { global: true },
+  )
+
+function isLoopbackHostname(hostname: string | undefined): boolean {
+  if (!hostname) return true
+  const normalized = hostname.trim().toLowerCase()
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized.startsWith("127.") ||
+    normalized === "::1" ||
+    normalized === "[::1]"
+  )
+}
+
+function isAllowedLoopbackHostHeader(hostHeader: string): boolean {
+  const trimmed = hostHeader.trim().toLowerCase()
+  if (!trimmed) return true
+  const host = trimmed.startsWith("[")
+    ? trimmed.slice(0, trimmed.indexOf("]") + 1)
+    : trimmed.split(":")[0] ?? ""
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host === "apexo.internal" ||
+    host === "apexo.local"
+  )
+}
+
+const hostHeaderProtection = (corsOptions?: CorsOptions & { hostname?: string }) =>
+  HttpRouter.middleware(
+    (effect) =>
+      Effect.gen(function* () {
+        if (!isLoopbackHostname(corsOptions?.hostname)) return yield* effect
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const host = request.headers.host
+        if (typeof host === "string" && !isAllowedLoopbackHostHeader(host)) {
+          return HttpServerResponse.text("Forbidden: Invalid Host header", { status: 403 })
+        }
+        return yield* effect
+      }),
     { global: true },
   )
 
@@ -299,7 +344,7 @@ const app = LayerNode.group([
 ])
 
 export function createRoutes(
-  corsOptions?: CorsOptions,
+  corsOptions?: CorsOptions & { hostname?: string },
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = AppNodeBuilderV1.locationServiceMap
 
@@ -318,6 +363,7 @@ export function createRoutes(
       corsVaryFix,
       fenceLayer,
       cors(corsOptions),
+      hostHeaderProtection(corsOptions),
       AppNodeBuilderV1.build(MoveSession.node, [[LocationServiceMap.node, locationServiceMapV2]]),
       HttpServer.layerServices,
     ]),

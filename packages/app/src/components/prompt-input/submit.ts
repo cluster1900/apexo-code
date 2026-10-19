@@ -746,6 +746,23 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
+    const prepareSubmission = async () => {
+      const ready = await waitForWorktree()
+      if (!ready) return false
+      const accepting = permissionState.isAutoAccepting(session.id, sessionDirectory)
+      await sdk()
+        .client.session.update({
+          sessionID: session.id,
+          directory: sessionDirectory,
+          permission: [
+            { permission: "edit", pattern: "*", action: accepting ? "allow" : "ask" },
+            { permission: "bash", pattern: "*", action: accepting ? "allow" : "ask" },
+          ],
+        })
+        .catch(() => undefined)
+      return true
+    }
+
     void sendFollowupDraft({
       api: sdk().api.session,
       sync: sync(),
@@ -753,7 +770,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       draft,
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
-      before: waitForWorktree,
+      before: prepareSubmission,
     }).catch((err) => {
       pending.delete(pendingKey(session.id))
       if (sessionDirectory === projectDirectory) {

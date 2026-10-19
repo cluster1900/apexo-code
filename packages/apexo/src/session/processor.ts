@@ -214,6 +214,80 @@ const layer = Layer.effect(
         delete ctx.reasoningMap[reasoningID]
       })
 
+      const INLINE_THINK_ID = "__inline_think__"
+      let inlineThink:
+        | {
+            mode: "detect" | "thinking" | "done"
+            buffer: string
+            startTime: number
+            metadata: Record<string, any> | undefined
+          }
+        | undefined
+
+      const partialCloseTagLength = (text: string) => {
+        const tag = "</think>"
+        const maxLen = Math.min(text.length, tag.length - 1)
+        for (let len = maxLen; len > 0; len--) {
+          if (tag.startsWith(text.slice(text.length - len))) return len
+        }
+        return 0
+      }
+
+      const ensureCurrentText = Effect.fnUntraced(function* () {
+        if (ctx.currentText) return ctx.currentText
+        ctx.currentText = {
+          id: PartID.ascending(),
+          messageID: ctx.assistantMessage.id,
+          sessionID: ctx.assistantMessage.sessionID,
+          type: "text",
+          text: "",
+          time: { start: inlineThink?.startTime ?? Date.now() },
+          metadata: inlineThink?.metadata,
+        }
+        yield* session.updatePart(ctx.currentText)
+        return ctx.currentText
+      })
+
+      const emitVisibleTextDelta = Effect.fnUntraced(function* (delta: string) {
+        const current = yield* ensureCurrentText()
+        if (!delta) return
+        current.text += delta
+        if (inlineThink?.metadata) current.metadata = inlineThink.metadata
+        yield* session.updatePartDelta({
+          sessionID: current.sessionID,
+          messageID: current.messageID,
+          partID: current.id,
+          field: "text",
+          delta,
+        })
+      })
+
+      const emitInlineReasoningDelta = Effect.fnUntraced(function* (delta: string) {
+        if (!delta) return
+        if (!(INLINE_THINK_ID in ctx.reasoningMap)) {
+          ctx.reasoningMap[INLINE_THINK_ID] = {
+            id: PartID.ascending(),
+            messageID: ctx.assistantMessage.id,
+            sessionID: ctx.assistantMessage.sessionID,
+            type: "reasoning",
+            text: "",
+            time: { start: inlineThink?.startTime ?? Date.now() },
+            metadata: inlineThink?.metadata,
+          }
+          yield* session.updatePart(ctx.reasoningMap[INLINE_THINK_ID])
+        }
+        const reasoningPart = ctx.reasoningMap[INLINE_THINK_ID]
+        reasoningPart.text += delta
+        if (inlineThink?.metadata) reasoningPart.metadata = inlineThink.metadata
+        yield* session.updatePartDelta({
+          sessionID: reasoningPart.sessionID,
+          messageID: reasoningPart.messageID,
+          partID: reasoningPart.id,
+          field: "text",
+          delta,
+        })
+      })
+
       const ensureToolCall = Effect.fn("SessionProcessor.ensureToolCall")(function* (input: {
         id: string
         name: string
@@ -499,32 +573,110 @@ const layer = Layer.effect(
           }
 
           case "text-start":
-            ctx.currentText = {
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.assistantMessage.sessionID,
-              type: "text",
-              text: "",
-              time: { start: Date.now() },
+            inlineThink = {
+              mode: "detect",
+              buffer: "",
+              startTime: Date.now(),
               metadata: value.providerMetadata,
             }
-            yield* session.updatePart(ctx.currentText)
+            ctx.currentText = undefined
             return
 
-          case "text-delta":
-            if (!ctx.currentText) return
-            ctx.currentText.text += value.text
-            if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
-            yield* session.updatePartDelta({
-              sessionID: ctx.currentText.sessionID,
-              messageID: ctx.currentText.messageID,
-              partID: ctx.currentText.id,
-              field: "text",
-              delta: value.text,
-            })
+          case "text-delta": {
+            if (!inlineThink) {
+              inlineThink = {
+                mode: "detect",
+                buffer: "",
+                startTime: Date.now(),
+                metadata: value.providerMetadata,
+              }
+            }
+            if (value.providerMetadata) {
+              inlineThink.metadata = value.providerMetadata
+              if (ctx.currentText) ctx.currentText.metadata = value.providerMetadata
+            }
+            if (inlineThink.mode === "done") {
+              yield* emitVisibleTextDelta(value.text)
+              return
+            }
+            inlineThink.buffer += value.text
+            if (inlineThink.mode === "detect") {
+              const trimmed = inlineThink.buffer.trimStart()
+              if (trimmed.length === 0 || ("<think>".startsWith(trimmed) && trimmed.length < "<think>".length)) {
+                return
+              }
+              if (trimmed.startsWith("<think>")) {
+                inlineThink.mode = "thinking"
+                inlineThink.buffer = trimmed.slice("<think>".length).replace(/^\r?\n/, "")
+                if (!(INLINE_THINK_ID in ctx.reasoningMap)) {
+                  ctx.reasoningMap[INLINE_THINK_ID] = {
+                    id: PartID.ascending(),
+                    messageID: ctx.assistantMessage.id,
+                    sessionID: ctx.assistantMessage.sessionID,
+                    type: "reasoning",
+                    text: "",
+                    time: { start: inlineThink.startTime },
+                    metadata: inlineThink.metadata,
+                  }
+                  yield* session.updatePart(ctx.reasoningMap[INLINE_THINK_ID])
+                }
+              } else {
+                const pending = inlineThink.buffer
+                inlineThink.buffer = ""
+                inlineThink.mode = "done"
+                yield* emitVisibleTextDelta(pending)
+                return
+              }
+            }
+            if (inlineThink.mode === "thinking") {
+              const closeIdx = inlineThink.buffer.indexOf("</think>")
+              if (closeIdx !== -1) {
+                const thinkChunk = inlineThink.buffer.slice(0, closeIdx)
+                const rest = inlineThink.buffer.slice(closeIdx + "</think>".length).replace(/^\s+/, "")
+                inlineThink.buffer = ""
+                inlineThink.mode = "done"
+                if (thinkChunk.length > 0) {
+                  yield* emitInlineReasoningDelta(thinkChunk)
+                }
+                yield* finishReasoning(INLINE_THINK_ID)
+                if (rest.length > 0) {
+                  yield* emitVisibleTextDelta(rest)
+                }
+                return
+              }
+              const holdLen = partialCloseTagLength(inlineThink.buffer)
+              const safeChunk =
+                holdLen > 0 ? inlineThink.buffer.slice(0, inlineThink.buffer.length - holdLen) : inlineThink.buffer
+              inlineThink.buffer = holdLen > 0 ? inlineThink.buffer.slice(inlineThink.buffer.length - holdLen) : ""
+              if (safeChunk.length > 0) {
+                yield* emitInlineReasoningDelta(safeChunk)
+              }
+            }
             return
+          }
 
-          case "text-end":
+          case "text-end": {
+            if (inlineThink) {
+              if (value.providerMetadata) inlineThink.metadata = value.providerMetadata
+              if (inlineThink.mode === "detect") {
+                const pending = inlineThink.buffer
+                inlineThink.buffer = ""
+                inlineThink.mode = "done"
+                yield* ensureCurrentText()
+                if (pending.length > 0) {
+                  yield* emitVisibleTextDelta(pending)
+                }
+              } else if (inlineThink.mode === "thinking") {
+                const pending = inlineThink.buffer
+                inlineThink.buffer = ""
+                inlineThink.mode = "done"
+                if (pending.length > 0) {
+                  yield* emitInlineReasoningDelta(pending)
+                }
+                yield* finishReasoning(INLINE_THINK_ID)
+              }
+              inlineThink = undefined
+            }
             if (!ctx.currentText) return
             // oxlint-disable-next-line no-self-assign -- reactivity trigger
             ctx.currentText.text = ctx.currentText.text
@@ -545,6 +697,7 @@ const layer = Layer.effect(
             yield* session.updatePart(ctx.currentText)
             ctx.currentText = undefined
             return
+          }
 
           case "finish":
             return
@@ -567,6 +720,21 @@ const layer = Layer.effect(
           ctx.snapshot = undefined
         }
 
+        if (inlineThink) {
+          if (inlineThink.mode === "detect" && inlineThink.buffer.length > 0) {
+            const pending = inlineThink.buffer
+            inlineThink.buffer = ""
+            inlineThink.mode = "done"
+            yield* emitVisibleTextDelta(pending)
+          } else if (inlineThink.mode === "thinking" && inlineThink.buffer.length > 0) {
+            const pending = inlineThink.buffer
+            inlineThink.buffer = ""
+            inlineThink.mode = "done"
+            yield* emitInlineReasoningDelta(pending)
+          }
+          inlineThink = undefined
+        }
+
         if (ctx.currentText) {
           const end = Date.now()
           ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
@@ -585,7 +753,7 @@ const layer = Layer.effect(
 
         yield* Effect.forEach(
           Object.values(ctx.toolcalls),
-          (call) => Deferred.await(call.done).pipe(Effect.timeout("250 millis"), Effect.ignore),
+          (call) => Deferred.await(call.done).pipe(Effect.timeout("3500 millis"), Effect.ignore),
           { concurrency: "unbounded" },
         )
 

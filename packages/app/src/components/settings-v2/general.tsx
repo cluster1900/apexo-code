@@ -324,6 +324,7 @@ export const SettingsGeneralV2: Component<{
 
   const GeneralSection = () => (
     <div class="settings-v2-section">
+      <h3 class="settings-v2-section-title">{language.t("settings.general.section.preferences")}</h3>
       <SettingsListV2>
         <LanguageSetting />
 
@@ -519,11 +520,11 @@ export const SettingsGeneralV2: Component<{
           <InterfaceNoticeSection />
         </Show>
 
+        <AppearanceSection controller={appearance} />
+
         <GeneralSection />
 
         <SettingsRuntimeProfile />
-
-        <AppearanceSection controller={appearance} />
 
         <NotificationsSection />
 

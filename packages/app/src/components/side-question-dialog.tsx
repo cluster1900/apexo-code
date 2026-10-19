@@ -120,42 +120,52 @@ export function SideQuestionDialog(props: {
     clearInterval(timer)
   })
   return (
-    <Dialog title={language.t("btw.title")} size="large">
-      <div data-testid="btw-panel" class="min-h-0 max-h-[65vh] overflow-y-auto px-6 pb-6 space-y-4">
-        <p>{language.t("btw.description")}</p>
-        <label class="block">
+    <Dialog title={language.t("btw.title")} size="large" fit>
+      <div data-testid="btw-panel" class="min-h-0 max-h-[65vh] overflow-y-auto px-6 pt-2 pb-6 space-y-4">
+        <p class="text-13-regular text-text-weak">{language.t("btw.description")}</p>
+        <label class="flex flex-col gap-1.5 text-13-medium text-text-strong">
           {language.t("btw.question")}
           <textarea
             data-testid="btw-question"
-            class="w-full min-h-24 border rounded p-2"
+            class="w-full min-h-24 rounded-md border border-border-base bg-surface-inset-base p-2.5 text-14-regular text-text-base"
             value={state.question}
             onInput={(event) => setState("question", event.currentTarget.value)}
           />
         </label>
-        <label class="block">
-          {language.t("btw.images")}
+        <div class="flex flex-col gap-1.5">
+          <span class="text-13-medium text-text-strong">{language.t("btw.images")}</span>
           <input
             ref={imageInput}
             data-testid="btw-images"
             type="file"
+            class="sr-only"
             accept="image/png,image/jpeg,image/webp,image/gif"
             multiple
             onChange={(event) => void attach(event.currentTarget.files)}
           />
-        </label>
-        <Show when={state.images.length}>
-          <p>{language.t("btw.attached", { count: state.images.length })}</p>
-          <Button onClick={clearImages}>{language.t("btw.clearImages")}</Button>
-        </Show>
+          <div class="flex items-center gap-2">
+            <Button variant="secondary" size="small" onClick={() => imageInput?.click()}>
+              {language.t("feedback.images.add")}
+            </Button>
+            <Show when={state.images.length}>
+              <span class="text-12-regular text-text-weak">{language.t("btw.attached", { count: state.images.length })}</span>
+              <Button variant="ghost" size="small" onClick={clearImages}>
+                {language.t("btw.clearImages")}
+              </Button>
+            </Show>
+          </div>
+        </div>
         <Show when={state.imageError}>
-          <p role="alert">{language.t("btw.imageError")}</p>
+          <p role="alert" class="text-text-critical-base">{language.t("btw.imageError")}</p>
         </Show>
-        <Button data-testid="btw-ask" disabled={state.pending || !state.question.trim()} onClick={() => void ask()}>
-          {language.t("btw.ask")}
-        </Button>
-        <Button data-testid="btw-refresh" variant="ghost" onClick={() => void refresh()}>
-          {language.t("btw.refresh")}
-        </Button>
+        <div class="flex items-center gap-2">
+          <Button data-testid="btw-ask" variant="primary" disabled={state.pending || !state.question.trim()} onClick={() => void ask()}>
+            {language.t("btw.ask")}
+          </Button>
+          <Button data-testid="btw-refresh" variant="ghost" onClick={() => void refresh()}>
+            {language.t("btw.refresh")}
+          </Button>
+        </div>
         <Show when={state.error}>
           <p role="alert">{language.t("btw.error")}</p>
         </Show>

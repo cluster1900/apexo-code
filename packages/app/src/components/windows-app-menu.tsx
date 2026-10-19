@@ -79,7 +79,31 @@ export function WindowsAppMenu(props: {
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="desktop-app-menu">
           <DropdownMenu.Group>
-            <DropdownMenu.GroupLabel class="desktop-app-menu-heading">Apexo</DropdownMenu.GroupLabel>
+            <DesktopMenuItem
+              label={language.t("sidebar.nav.projectsAndSessions")}
+              keybind={props.command.keybind("home.toggle") || props.command.keybind("sidebar.toggle")}
+              disabled={commandDisabled("home.toggle") && commandDisabled("sidebar.toggle")}
+              onSelect={() => {
+                if (!commandDisabled("home.toggle")) {
+                  runCommand("home.toggle")
+                  return
+                }
+                runCommand("sidebar.toggle")
+              }}
+            />
+            <DesktopMenuItem
+              label={language.t("desktop.menu.newSession")}
+              keybind={props.command.keybind("tab.new") || props.command.keybind("session.new")}
+              disabled={commandDisabled("tab.new") && commandDisabled("session.new")}
+              onSelect={() => {
+                if (!commandDisabled("tab.new")) {
+                  runCommand("tab.new")
+                  return
+                }
+                runCommand("session.new")
+              }}
+            />
+            <DropdownMenu.Separator />
             {DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, "windows")).map((menu) => (
               <DesktopMenuSubmenu label={language.t(menu.labelKey)}>
                 {menu.items

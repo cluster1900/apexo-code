@@ -1,5 +1,6 @@
 import { NamedError } from "@apexo/core/util/error"
 import { ConfigErrorV1 } from "@apexo/core/v1/config/error"
+import { Provider } from "@/provider/provider"
 import { Cause, Effect } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"
 
@@ -24,6 +25,36 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
         ConfigErrorV1.RemoteAuthError.isInstance(error)
       ) {
         return Effect.succeed(HttpServerResponse.jsonUnsafe(error.toObject(), { status: 400 }))
+      }
+      if (Provider.ModelNotFoundError.isInstance(error)) {
+        return Effect.succeed(
+          HttpServerResponse.jsonUnsafe(
+            {
+              name: "ProviderModelNotFoundError",
+              data: {
+                providerID: error.providerID,
+                modelID: error.modelID,
+                suggestions: error.suggestions,
+                message: `${error.message} Run \`apexo models\` to list available models.`,
+              },
+            },
+            { status: 400 },
+          ),
+        )
+      }
+      if (Provider.InitError.isInstance(error)) {
+        return Effect.succeed(
+          HttpServerResponse.jsonUnsafe(
+            {
+              name: "ProviderInitError",
+              data: {
+                providerID: error.providerID,
+                message: error.message,
+              },
+            },
+            { status: 400 },
+          ),
+        )
       }
 
       const ref = `err_${crypto.randomUUID().slice(0, 8)}`

@@ -18,6 +18,7 @@ export function createSessionHooks(sessionID: () => string | undefined) {
     {
       id: "session.hooks",
       title: language.t("hooks.title"),
+      description: language.t("hooks.description"),
       slash: "hooks",
       disabled: !sessionID(),
       onSelect: () => void open(),

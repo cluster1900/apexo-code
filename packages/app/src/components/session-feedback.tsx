@@ -18,6 +18,7 @@ export function createSessionFeedback(sessionID: () => string | undefined) {
     {
       id: "session.feedback",
       title: language.t("feedback.title"),
+      description: language.t("feedback.description"),
       slash: "feedback",
       disabled: !sessionID(),
       onSelect: () => void open(),

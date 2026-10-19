@@ -860,7 +860,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const el = node as HTMLElement
       if (el.dataset.type === "file") return true
       if (el.dataset.type === "agent") return true
-      return el.tagName === "BR"
+      if (el.tagName === "BR") return !node.nextSibling ? false : true
+      return false
     })
 
   const renderEditor = (parts: Prompt) => {
@@ -1049,6 +1050,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (shouldReset) {
       closePopover()
       resetHistoryNavigation()
+      if (editorRef.childNodes.length > 0) {
+        clearEditor()
+        if (document.activeElement === editorRef) setCursorPosition(editorRef, 0)
+      }
       if (prompt.dirty()) {
         mirror.input = true
         prompt.set(DEFAULT_PROMPT, 0)
@@ -1303,6 +1308,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (background.onKeyDown(event)) return
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a") {
+      event.preventDefault()
+      const range = document.createRange()
+      range.selectNodeContents(editorRef)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      queueScroll()
+      return
+    }
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault()
       if (store.mode !== "normal") return

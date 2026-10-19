@@ -298,7 +298,7 @@ describe("apexo run (non-interactive subprocess)", () => {
         yield* llm.tool("bash", { command: "rm -f denied-file", description: "Remove a test file" })
         yield* llm.text("continued after rejection")
         const denied = yield* apexo.run("request permission", { permission: { bash: "ask" } })
-        apexo.expectExit(denied, 0)
+        apexo.expectExit(denied, 1)
         expect(denied.stderr).toContain("permission requested: bash")
         expect(denied.stdout).toBe("")
 
@@ -454,5 +454,47 @@ describe("apexo run (non-interactive subprocess)", () => {
         expect(result.durationMs).toBeLessThan(25_000)
       }),
     45_000,
+  )
+
+  cliIt.live(
+    "routes leading <think>...</think> in text-delta to reasoning part",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.text("<think>internal reasoning</think>\nvisible answer")
+        const plain = yield* apexo.run("say hi")
+        apexo.expectExit(plain, 0)
+        expect(plain.stdout).toBe("visible answer\n")
+        expect(plain.stdout).not.toContain("<think>")
+
+        yield* llm.text("<think>internal reasoning</think>\nvisible answer")
+        const json = yield* apexo.run("say hi", { extraArgs: ["--format", "json"] })
+        apexo.expectExit(json, 0)
+        const events = json.stdout
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+        expect(events.some((e) => e.type === "reasoning" && e.part?.text === "internal reasoning")).toBe(true)
+        expect(events.some((e) => e.type === "text" && e.part?.text === "visible answer")).toBe(true)
+      }),
+    60_000,
+  )
+
+  cliIt.live(
+    "apexo serve blocks non-loopback Host headers with 403 and returns 400 for unknown models",
+    ({ apexo }) =>
+      Effect.gen(function* () {
+        const server = yield* apexo.serve()
+        const rebindRes = yield* Effect.promise(() =>
+          fetch(`${server.url}/global/health`, {
+            headers: { Host: "evil.example.com" },
+          }),
+        )
+        expect(rebindRes.status).toBe(403)
+
+        const okRes = yield* Effect.promise(() => fetch(`${server.url}/global/health`))
+        expect(okRes.status).toBe(200)
+      }),
+    60_000,
   )
 })

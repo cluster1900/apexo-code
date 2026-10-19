@@ -56,8 +56,8 @@ export function CommandSandboxDialog(props: {
   onMount(() => void load())
   onCleanup(() => lifetime.abort())
   return (
-    <Dialog title={language.t("commandSandbox.title")}>
-      <div class="flex flex-col gap-4 px-6 pb-6 text-14-regular text-text-base" data-component="command-sandbox-dialog">
+    <Dialog title={language.t("commandSandbox.title")} fit>
+      <div class="flex flex-col gap-4 px-6 pt-2 pb-6 text-14-regular text-text-base" data-component="command-sandbox-dialog">
         <p>{language.t("commandSandbox.scope")}</p>
         <p class="text-text-weak">{language.t("commandSandbox.limits")}</p>
         <Show
@@ -94,7 +94,9 @@ export function CommandSandboxDialog(props: {
                     <p>
                       {status().latestExecution
                         ? language.t("commandSandbox.receipt", { code: status().latestExecution!.exitCode })
-                        : language.t("commandSandbox.noReceipt")}
+                        : status().profile === "off"
+                          ? language.t("commandSandbox.offHint")
+                          : language.t("commandSandbox.noReceipt")}
                     </p>
                     <Show when={status().failure}>
                       {(failure) => (

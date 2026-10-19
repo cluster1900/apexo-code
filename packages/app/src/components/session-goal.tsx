@@ -27,6 +27,7 @@ export function createSessionGoal(sessionID: () => string | undefined, selection
     {
       id: "session.goal",
       title: language.t("goal.title"),
+      description: language.t("goal.createHint"),
       slash: "goal",
       disabled: !sessionID(),
       onSelect: open,
@@ -165,8 +166,8 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
       })
   }
   return (
-    <Dialog title={language.t("goal.title")} size="large" class="h-full">
-      <div data-component="session-goal" class="flex flex-1 flex-col gap-4 px-6 pb-6 min-h-0 overflow-y-auto">
+    <Dialog title={language.t("goal.title")} size="large" fit>
+      <div data-component="session-goal" class="flex flex-1 flex-col gap-4 px-6 pt-2 pb-6 min-h-0 max-h-[75vh] overflow-y-auto">
         <Show when={state.error}>
           <p role="alert" class="text-text-critical-base">
             {language.t("goal.error")}
@@ -187,7 +188,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   {language.t("goal.objective")}
                   <textarea
                     data-field="goal-objective"
-                    class="min-h-28 rounded-md border border-border-base p-3"
+                    class="min-h-28 rounded-md border border-border-base bg-surface-inset-base p-3 text-text-base"
                     maxLength={32768}
                     value={state.objective}
                     disabled={state.pending}
@@ -198,7 +199,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   {language.t("goal.budget")}
                   <input
                     data-field="goal-budget"
-                    class="rounded-md border border-border-base p-2"
+                    class="rounded-md border border-border-base bg-surface-inset-base p-2 text-text-base"
                     inputMode="numeric"
                     value={state.budget}
                     disabled={state.pending}
