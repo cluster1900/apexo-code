@@ -131,10 +131,14 @@ export function createPromptInputV2Controller(input: {
       return order.indexOf(a.category) - order.indexOf(b.category)
     },
   })
+  // `/m` must run the command whose name or alias is exactly "m", not a fuzzy neighbour such as /multiline.
+  const exactCommand = (item: PromptInputV2Suggestion, query: string) =>
+    item.trigger?.toLowerCase() === query || !!item.aliases?.split(" ").includes(query)
   const commandList = useFilteredList<PromptInputV2Suggestion>({
     items: () => input.commands(),
     key: (item) => item.id,
     filterKeys: ["trigger", "aliases", "title"],
+    exact: exactCommand,
   })
   const list = () => (state.popover.type === "context" ? contextList : commandList)
   const suggestions = () => list().flat()
@@ -157,7 +161,11 @@ export function createPromptInputV2Controller(input: {
       if (item) dispatch({ type: "popover.select", item })
       return
     }
-    if (command.type === "focus.editor") requestAnimationFrame(() => editor?.focus())
+    if (command.type === "focus.editor")
+      requestAnimationFrame(() => {
+        if (input.attachments?.isDialogActive?.() || document.querySelector('[data-component="dialog"]')) return
+        editor?.focus()
+      })
   }
 
   function dispatch(event: PromptInputV2InteractionEvent) {
@@ -262,6 +270,17 @@ export function createPromptInputV2Controller(input: {
     if (state.popover.activeID ? ids.includes(state.popover.activeID) : ids.length === 0) return
     dispatch({ type: "popover.results", ids })
   })
+
+  // The active row survives result changes while it still matches, so `/m` then `l` would keep /model active. When the
+  // results change and an exact name or alias ranks first, make it the Enter row; arrow keys still move freely.
+  createEffect(
+    on(suggestions, (items) => {
+      const first = items[0]
+      if (state.popover.type === "closed" || state.popover.type === "context" || !first) return
+      if (!exactCommand(first, commandList.filter().toLowerCase())) return
+      if (state.popover.activeID !== first.id) dispatch({ type: "popover.active", id: first.id })
+    }),
+  )
 
   const restoreFocus = (cursor = draft.state.cursor ?? promptLength(draft.state.prompt)) => {
     requestAnimationFrame(() => {

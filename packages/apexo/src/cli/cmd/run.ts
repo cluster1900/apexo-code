@@ -179,6 +179,27 @@ async function toolError(part: ToolPart) {
   }
 }
 
+/**
+ * `-s/--session` accepts a session ID or, like Grok Build's `--resume`, a title of a top-level session in this
+ * project: an exact title (ignoring case) or the same words joined by any separators. Several matches fail as
+ * ambiguous instead of guessing.
+ */
+async function resolveSession(sdk: ApexoClient, reference: string) {
+  const byID = await sdk.session.get({ sessionID: reference }).catch(() => undefined)
+  if (byID?.data) return byID.data
+  const sessions = (await sdk.session.list({ roots: true, limit: 1000 }).catch(() => undefined))?.data ?? []
+  const { resolveSessionReference, sessionMatches } = await import("@apexo/sdk/v2/grok-commands")
+  const found = resolveSessionReference(reference, sessions)
+  if (found) return found
+  const similar = sessions.filter((item) => sessionMatches(reference, item)).slice(0, 5)
+  UI.error(
+    similar.length > 1
+      ? `Session "${reference}" is ambiguous; matching sessions: ${similar.map((item) => `${item.id} (${item.title})`).join(", ")}`
+      : `Session not found: no session ID or title matches "${reference}"`,
+  )
+  process.exit(1)
+}
+
 const CompatibilityRunCommand = effectCmd({
   prepare: (args) => {
     if ((args["session-protocol"] ?? "auto") !== "auto" && !args.attach)
@@ -217,7 +238,7 @@ const CompatibilityRunCommand = effectCmd({
       })
       .option("session", {
         alias: ["s"],
-        describe: "session id to continue",
+        describe: "session id or title to continue",
         type: "string",
       })
       .option("input-id", {
@@ -287,6 +308,17 @@ const CompatibilityRunCommand = effectCmd({
       .option("thinking", {
         type: "boolean",
         describe: "show thinking blocks",
+      })
+      .option("wait-for-background", {
+        type: "boolean",
+        default: true,
+        describe:
+          "wait for background work the prompt started and print the follow-up turns it triggers (use --no-wait-for-background to exit after the first turn)",
+      })
+      .option("background-wait-timeout", {
+        type: "number",
+        default: 600,
+        describe: "seconds to wait for background work after the latest turn ends before stopping it and exiting 1",
       })
       .option("mini", {
         type: "boolean",
@@ -389,6 +421,10 @@ const CompatibilityRunCommand = effectCmd({
 
       if (interactive && !process.stdout.isTTY) {
         die("--mini requires a TTY stdout")
+      }
+
+      if (!Number.isInteger(args["background-wait-timeout"]) || args["background-wait-timeout"] <= 0) {
+        die("--background-wait-timeout must be a positive integer number of seconds")
       }
 
       if (interactive) {
@@ -494,25 +530,17 @@ const CompatibilityRunCommand = effectCmd({
       function title() {
         if (args.title === undefined) return
         if (args.title !== "") return args.title
-        return message.slice(0, 50) + (message.length > 50 ? "..." : "")
+        const text = initialInput ?? ""
+        return text.slice(0, 50) + (text.length > 50 ? "..." : "")
       }
 
       async function session(sdk: ApexoClient): Promise<SessionInfo | undefined> {
         if (args.session) {
-          const current = await sdk.session
-            .get({
-              sessionID: args.session,
-            })
-            .catch(() => undefined)
-
-          if (!current?.data) {
-            UI.error("Session not found")
-            process.exit(1)
-          }
+          const current = await resolveSession(sdk, args.session)
 
           if (args.fork) {
             const forked = await sdk.session.fork({
-              sessionID: args.session,
+              sessionID: current.id,
             })
             const id = forked.data?.id
             if (!id) {
@@ -521,15 +549,15 @@ const CompatibilityRunCommand = effectCmd({
 
             return {
               id,
-              title: forked.data?.title ?? current.data.title,
-              directory: forked.data?.directory ?? current.data.directory,
+              title: forked.data?.title ?? current.title,
+              directory: forked.data?.directory ?? current.directory,
             }
           }
 
           return {
-            id: current.data.id,
-            title: current.data.title,
-            directory: current.data.directory,
+            id: current.id,
+            title: current.title,
+            directory: current.directory,
           }
         }
 
@@ -853,10 +881,60 @@ const CompatibilityRunCommand = effectCmd({
         // to stdout/UI. `client` is passed explicitly because attach mode may
         // rebind the SDK to the session's directory after the subscription is
         // created, and replies issued from inside the loop must use that client.
-        async function loop(client: ApexoClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
+        // `stream` ends the subscription when the background wait settles without another idle event.
+        async function loop(
+          client: ApexoClient,
+          events: Awaited<ReturnType<typeof sdk.event.subscribe>>,
+          stream: AbortController,
+        ) {
           const toggles = new Map<string, boolean>()
           const sessions = new Set([sessionID])
           let error: string | undefined
+          // Grok Build headless contract: after a turn ends, keep running while background work the session started
+          // is still going, so the turn its completion wakes is printed too. The limit counts from the latest turn end
+          // and never cuts a running turn short; a completed task that wakes no turn within the grace period ends it.
+          const wait = {
+            busy: false,
+            idleAt: 0,
+            quietAt: undefined as number | undefined,
+            timer: undefined as ReturnType<typeof setInterval> | undefined,
+            stopped: undefined as string | undefined,
+          }
+          const running = async () =>
+            ((await client.experimental.task.list({ sessionID }).catch(() => undefined))?.data ?? []).filter(
+              (task) => task.status === "running" && task.background && task.type !== "scheduler",
+            )
+          const settle = async () => {
+            if (wait.busy || stream.signal.aborted) return
+            const tasks = await running()
+            if (wait.busy) return
+            if (!tasks.length) {
+              wait.quietAt ??= Date.now()
+              if (Date.now() - wait.quietAt >= 2000) stream.abort()
+              return
+            }
+            wait.quietAt = undefined
+            const seconds = args["background-wait-timeout"]
+            if (Date.now() - wait.idleAt < seconds * 1000) return
+            // Aborting first suppresses completion wakes, so stopped work never starts another model turn.
+            await client.session.abort({ sessionID }).catch(() => undefined)
+            await Promise.all(
+              tasks.map((task) =>
+                client.experimental.task.cancel({ sessionID, taskID: task.id }).catch(() => undefined),
+              ),
+            )
+            const noun = tasks.length === 1 ? "background task" : "background tasks"
+            wait.stopped = `the wait for background work ran out after ${seconds} s and exit stopped ${tasks.length} ${noun} (${tasks.map((task) => task.title ?? task.id).join(", ")})`
+            stream.abort()
+          }
+          const keepWaiting = async () => {
+            if (args.attach || !args["wait-for-background"]) return false
+            wait.idleAt = Date.now()
+            wait.quietAt = undefined
+            if (!wait.timer && !(await running()).length) return false
+            wait.timer ??= setInterval(() => void settle(), 250)
+            return true
+          }
 
           for await (const event of events.stream) {
             if (event.type === "memory.capture.activity") {
@@ -975,15 +1053,14 @@ const CompatibilityRunCommand = effectCmd({
               UI.error(err)
             }
 
-            if (
-              event.type === "session.status" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.status.type === "idle"
-            ) {
-              if (args.format === "streaming-json") {
-                emit("end", { stopReason: "end_turn", sessionId: sessionID, requestId: sessionID })
+            if (event.type === "session.status" && event.properties.sessionID === sessionID) {
+              wait.busy = event.properties.status.type !== "idle"
+              if (wait.busy) {
+                wait.quietAt = undefined
+                continue
               }
-              break
+              if (await keepWaiting()) continue
+              stream.abort()
             }
 
             if (event.type === "permission.asked") {
@@ -1007,6 +1084,16 @@ const CompatibilityRunCommand = effectCmd({
                 })
               }
             }
+            if (stream.signal.aborted) break
+          }
+          clearInterval(wait.timer)
+          if (wait.stopped) {
+            error = error ? error + EOL + wait.stopped : wait.stopped
+            if (!emit("error", { message: wait.stopped })) UI.error(wait.stopped)
+            return error
+          }
+          if (args.format === "streaming-json") {
+            emit("end", { stopReason: "end_turn", sessionId: sessionID, requestId: sessionID })
           }
           return error
         }
@@ -1039,8 +1126,9 @@ const CompatibilityRunCommand = effectCmd({
         }
 
         if (!interactive) {
-          const events = await client.event.subscribe()
-          const completed = loop(client, events).catch((e) => {
+          const stream = new AbortController()
+          const events = await client.event.subscribe(undefined, { signal: stream.signal })
+          const completed = loop(client, events, stream).catch((e) => {
             console.error(e)
             process.exitCode = 1
           })
@@ -1074,7 +1162,8 @@ const CompatibilityRunCommand = effectCmd({
             agent,
             model,
             variant: args.variant,
-            parts: [...files, { type: "text", text: message }],
+            // The prompt is sent as typed; only --command arguments keep their shell-style quoting.
+            parts: [...files, { type: "text", text: initialInput ?? "" }],
           })
           if (result.error) {
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
@@ -1236,6 +1325,10 @@ export async function runMini(input: MiniCommandInput) {
     port: undefined,
     variant: undefined,
     thinking: undefined,
+    "wait-for-background": true,
+    waitForBackground: true,
+    "background-wait-timeout": 600,
+    backgroundWaitTimeout: 600,
     mini: true,
     interactive: false,
     replay: input.replay ?? true,

@@ -20,7 +20,8 @@ import {
   type DashboardKey,
   type RowState,
 } from "@apexo/sdk/v2/agent-dashboard"
-import { useCommand } from "@/context/command"
+import { parseSlashInput } from "@apexo/sdk/v2/grok-commands"
+import { findSlashOption, runSlashOption, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLocal } from "@/context/local"
 import { useSDK } from "@/context/sdk"
@@ -204,11 +205,12 @@ export function DialogAgentDashboard() {
     }
     if (effect.type === "pin") return toggleDashboardPin(effect.id)
     if (effect.type === "slash") {
-      const name = effect.text.split(/\s/u)[0]!.slice(1)
-      const option = command.options.find((item) => item.slash === name || item.slashAliases?.includes(name))
-      if (!option) return showToast({ title: `Unknown command /${name}` })
+      const parsed = parseSlashInput(effect.text)
+      const option = parsed ? findSlashOption(command.options, parsed.name) : undefined
+      if (!parsed || !option) return showToast({ title: `Unknown command ${effect.text.split(/\s/u)[0]}` })
+      if (option.disabled) return showToast({ title: language.t("command.slash.unavailable", { name: parsed.name }) })
       dialog.close()
-      return command.trigger(option.id, "slash")
+      return runSlashOption(option, parsed.args)
     }
     if (effect.type === "stop") return sdk().api.session.interrupt({ sessionID: effect.id }).catch(fail)
     if (effect.type === "delete")

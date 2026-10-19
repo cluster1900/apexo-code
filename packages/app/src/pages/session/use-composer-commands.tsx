@@ -3,6 +3,10 @@ import { useLanguage } from "@/context/language"
 import { useLocal, type ModelSelection } from "@/context/local"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { getCursorPosition, setCursorPosition } from "@/components/prompt-input/editor-dom"
+import { DialogGrokList } from "@/components/grok-commands"
+import { resolveEffort } from "@apexo/sdk/v2/grok-commands"
+import { resolveModelArgs } from "@/utils/model-args"
+import { showToast } from "@/utils/toast"
 import { useSessionLayout } from "./session-layout"
 import { createSessionOwnership } from "./session-ownership"
 
@@ -55,6 +59,22 @@ export const useComposerCommands = (input: { model?: ModelSelection } = {}) => {
       slash: "model",
       slashAliases: ["models", "mo", "m"],
       onSelect: chooseModel,
+      onSlash: (args) => {
+        const found = resolveModelArgs(args, model.list(), model.current()?.provider.id)
+        if (!found) return showToast({ title: language.t("grok.model.missing", { query: args }) })
+        const variants = Object.keys(found.model.variants ?? {})
+        const variant = found.effort ? resolveEffort(found.effort, variants) : undefined
+        if (found.effort && !variant)
+          return showToast({
+            title: language.t("grok.effort.unavailable", { level: found.effort, levels: variants.join(", ") || "—" }),
+          })
+        model.set({ providerID: found.model.provider.id, modelID: found.model.id }, { recent: true })
+        // Both writes run as queued transitions in call order, so the variant lands on the new model.
+        if (variant) model.variant.set(variant)
+        showToast({
+          title: language.t("grok.model.set", { model: variant ? `${found.model.name} · ${variant}` : found.model.name }),
+        })
+      },
     }),
     modelCommand({
       id: "model.variant.cycle",
@@ -70,9 +90,30 @@ export const useComposerCommands = (input: { model?: ModelSelection } = {}) => {
       description: language.t("command.agent.cycle.description"),
       keybind: "mod+.",
       slash: "agent",
-      slashAliases: ["agents", "config-agents", "personas"],
       disabled: !local.agent.visible(),
       onSelect: () => local.agent.move(1),
+    }),
+    agentCommand({
+      // Grok Build `/config-agents` (alias `/agents`) opens the agents modal; nothing changes until a pick.
+      id: "agent.choose",
+      title: language.t("grok.agents"),
+      slash: "agents",
+      slashAliases: ["config-agents", "personas"],
+      onSelect: () =>
+        dialog.show(() => (
+          <DialogGrokList
+            title={language.t("grok.agents")}
+            items={local.agent.list().map((agent) => ({
+              title: agent.name,
+              value: agent.name,
+              detail:
+                agent.name === local.agent.current()?.name
+                  ? language.t("grok.agents.current")
+                  : agent.description?.split("\n")[0]?.slice(0, 60),
+            }))}
+            onSelect={(item) => local.agent.set(item.value)}
+          />
+        )),
     }),
     agentCommand({
       id: "agent.cycle.reverse",

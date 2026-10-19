@@ -30,6 +30,8 @@ import { render } from "@opentui/solid"
 import { createComponent, createSignal, type Accessor, type Setter } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { ApexoKeymapProvider } from "@apexo/tui/keymap"
+import { write } from "@apexo/tui/clipboard"
+import { copyResponse, turnResponses } from "@apexo/tui/util/slash-args"
 import { RUN_COMMAND_PANEL_ROWS, RUN_SUBAGENT_PANEL_ROWS } from "./footer.command"
 import { SUBAGENT_INSPECTOR_ROWS } from "./footer.subagent"
 import { PROMPT_MAX_ROWS, TEXTAREA_MIN_ROWS } from "./footer.prompt"
@@ -227,6 +229,8 @@ export class RunFooter implements FooterApi {
   private paletteRefreshRunning = false
   private paletteRefreshQueued = false
   private themeRefreshTimeouts: NodeJS.Timeout[] = []
+  // `/copy`: committed user turns and assistant text (progress commits are deltas), oldest first.
+  private transcript: { role: "user" | "assistant"; messageID?: string; text: string }[] = []
 
   private createScrollback(wrote: boolean): RunScrollbackStream {
     return new RunScrollbackStream(this.renderer, this.theme(), {
@@ -363,6 +367,7 @@ export class RunFooter implements FooterApi {
               onRows: footer.syncRows,
               onLayout: footer.syncLayout,
               onStatus: footer.setStatus,
+              onCopy: footer.handleCopy,
               onSubagentSelect: options.onSubagentSelect,
               onQueuedRemove: footer.handleQueuedRemove,
             })
@@ -566,6 +571,7 @@ export class RunFooter implements FooterApi {
       return
     }
 
+    this.recordTranscript(commit)
     const last = this.queue.at(-1)
     if (
       last &&
@@ -628,6 +634,7 @@ export class RunFooter implements FooterApi {
 
     this.scrollback.destroy()
     this.scrollback = this.createScrollback(wrote)
+    this.transcript = []
   }
 
   public currentTheme(): RunTheme {
@@ -675,6 +682,31 @@ export class RunFooter implements FooterApi {
 
   private setStatus = (status: string): void => {
     this.setNotice(status)
+  }
+
+  private recordTranscript(commit: StreamCommit): void {
+    if (commit.kind === "user" && commit.phase === "start") {
+      this.transcript.push({ role: "user", messageID: commit.messageID, text: commit.text })
+      return
+    }
+    if (commit.kind !== "assistant" || !commit.text) return
+    const last = this.transcript.at(-1)
+    if (last?.role === "assistant" && last.messageID === commit.messageID) {
+      last.text += commit.text
+      return
+    }
+    this.transcript.push({ role: "assistant", messageID: commit.messageID, text: commit.text })
+  }
+
+  private handleCopy = (args: string): void => {
+    void copyResponse({
+      responses: turnResponses(this.transcript),
+      args,
+      cwd: this.options.directory,
+      write,
+    }).then((result) => {
+      if (!this.isGone) this.setNotice(result.message)
+    })
   }
 
   private setNotice(status: string): void {

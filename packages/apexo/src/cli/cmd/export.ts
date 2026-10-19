@@ -7,6 +7,8 @@ import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { EOL } from "os"
 import { Effect } from "effect"
+import { writeFile } from "fs/promises"
+import { formatTranscript } from "@apexo/tui/util/transcript"
 
 function redact(kind: string, id: string, value: string) {
   return value.trim() ? `[redacted:${kind}:${id}]` : value
@@ -220,13 +222,27 @@ function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] })
 }
 
 export const ExportCommand = effectCmd({
-  command: "export [sessionID]",
-  describe: "export session data as JSON",
+  command: "export [sessionID] [output]",
+  describe: "export session data as JSON, or the transcript as Markdown",
   builder: (yargs) =>
     yargs
       .positional("sessionID", {
         describe: "session id to export",
         type: "string",
+      })
+      .positional("output", {
+        describe: "file to write, which must not exist yet (default: stdout)",
+        type: "string",
+      })
+      .option("format", {
+        describe: "json (re-importable session data) or markdown (readable transcript)",
+        choices: ["json", "markdown"] as const,
+        default: "json" as const,
+      })
+      .option("clipboard", {
+        alias: ["c"],
+        describe: "copy to the clipboard instead of writing to stdout",
+        type: "boolean",
       })
       .option("sanitize", {
         describe: "redact sensitive transcript and file data",
@@ -237,7 +253,14 @@ export const ExportCommand = effectCmd({
   }),
 })
 
-const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; sanitize?: boolean }) {
+const run = Effect.fn("Cli.export.body")(function* (args: {
+  sessionID?: string
+  output?: string
+  format?: "json" | "markdown"
+  clipboard?: boolean
+  sanitize?: boolean
+}) {
+  if (args.sanitize && args.format === "markdown") return yield* fail("--sanitize applies to JSON export only")
   const svc = yield* Session.Service
   let sessionID = args.sessionID ? SessionID.make(args.sessionID) : undefined
   process.stderr.write(`Exporting session: ${sessionID ?? "latest"}\n`)
@@ -280,13 +303,42 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
 
   // Match legacy try/catch — catches both typed failures and defects
   // (Session.Service.get throws NotFoundError as a defect, not a typed E).
-  return yield* Effect.gen(function* () {
+  const exportData = yield* Effect.gen(function* () {
     const sessionInfo = yield* svc.get(sessionID!)
     const messages = yield* svc.messages({ sessionID: sessionInfo.id })
-
-    const exportData = { info: sessionInfo, messages }
-
-    process.stdout.write(JSON.stringify(args.sanitize ? sanitize(exportData) : exportData, null, 2))
-    process.stdout.write(EOL)
+    return { info: sessionInfo, messages }
   }).pipe(Effect.catchCause(() => fail(`Session not found: ${sessionID!}`)))
+  const text =
+    args.format === "markdown"
+      ? formatTranscript(exportData.info, exportData.messages, {
+          thinking: false,
+          toolDetails: false,
+          assistantMetadata: false,
+        })
+      : JSON.stringify(args.sanitize ? sanitize(exportData) : exportData, null, 2) + EOL
+
+  // Like Grok Build, an output file must be new: an existing file is left unchanged.
+  if (args.output) {
+    const output = args.output
+    return yield* Effect.tryPromise({
+      try: () => writeFile(output, text, { flag: "wx" }),
+      catch: (error) => error,
+    }).pipe(
+      Effect.tap(() => Effect.sync(() => process.stderr.write(`Exported to ${output}${EOL}`))),
+      Effect.catch((error) =>
+        fail(
+          error instanceof Error && "code" in error && error.code === "EEXIST"
+            ? `Not exported: ${output} already exists. Choose a new file name.`
+            : `Not exported: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      ),
+    )
+  }
+  if (args.clipboard) {
+    const { write } = yield* Effect.promise(() => import("@apexo/tui/clipboard"))
+    yield* Effect.promise(() => write(text))
+    process.stderr.write(`Copied session ${exportData.info.id} to the clipboard${EOL}`)
+    return
+  }
+  process.stdout.write(text)
 })

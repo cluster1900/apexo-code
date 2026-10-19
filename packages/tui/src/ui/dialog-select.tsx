@@ -24,6 +24,8 @@ export interface DialogSelectProps<T> {
   title: string
   titleView?: JSX.Element
   placeholder?: string
+  /** Initial filter text, e.g. from a slash command's arguments. */
+  filter?: string
   footer?: JSX.Element
   emptyView?: JSX.Element
   options: DialogSelectOption<T>[]
@@ -89,7 +91,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   const [store, setStore] = createStore({
     selected: 0,
-    filter: "",
+    filter: props.filter ?? "",
     input: "keyboard" as "keyboard" | "mouse",
   })
   const [focusedAction, setFocusedAction] = createSignal<number>()
@@ -592,6 +594,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               }}
               placeholder={props.placeholder ?? "Search"}
               placeholderColor={theme.textMuted}
+              value={props.filter ?? ""}
             />
           </box>
         </Show>

@@ -328,6 +328,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     onWorkflow: workflow.open,
     onGoal: goal.show,
     onGrokSlash: grok.submit,
+    onCommandSlash: command.slash,
     onMemoryCommand: memory.command,
     onRemember: memory.review,
     onMemoryWork: memory.work,

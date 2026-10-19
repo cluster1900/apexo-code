@@ -53,12 +53,20 @@ import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { scrollback } from "../../context/scrollback"
 import { contextWindowChoice } from "../../context/context-window"
-import { effectiveContextWindow } from "@apexo/sdk/v2/grok-commands"
+import { effectiveContextWindow, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
+import { builtinSlashTarget } from "../../prompt/slash-guard"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "../../context/args"
-import { APEXO_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useApexoKeymap } from "../../keymap"
+import {
+  APEXO_BASE_MODE,
+  useBindings,
+  useCommandShortcut,
+  useCommandSlashes,
+  useLeaderActive,
+  useApexoKeymap,
+} from "../../keymap"
 import { useTuiConfig } from "../../config"
 import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
@@ -173,6 +181,7 @@ export function Prompt(props: PromptProps) {
   const stash = usePromptStash()
   const queue = usePromptQueue()
   const keymap = useApexoKeymap()
+  const slashes = useCommandSlashes()
   const agentShortcut = useCommandShortcut("agent.cycle")
   const queueShortcut = useCommandShortcut("prompt.queue")
   const queuePopShortcut = useCommandShortcut("prompt.queue.pop")
@@ -1143,6 +1152,31 @@ export function Prompt(props: PromptProps) {
         return submitInner(delivery)
       }
     }
+    const builtin =
+      store.mode === "shell"
+        ? undefined
+        : builtinSlashTarget({
+            text: trimmed,
+            slashes: slashes(),
+            serverCommands: sync.data.command,
+            native: Boolean(sync.data.native),
+            session: Boolean(props.sessionID),
+          })
+    if (builtin) {
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      if (builtin.type === "session-only") {
+        toast.show({ variant: "info", message: `Open a session first to use /${builtin.name}.` })
+        return true
+      }
+      builtin.entry.onSelect()
+      if (builtin.args)
+        toast.show({ variant: "info", message: `/${builtin.name} takes no arguments; "${builtin.args}" was ignored.` })
+      return true
+    }
     const selectedModel = local.model.current()
     if (!selectedModel) {
       void promptModelWarning()
@@ -1291,8 +1325,10 @@ export function Prompt(props: PromptProps) {
       dialog.replace(() => <DialogWorkflow sessionID={sessionID} command={command} />)
       return true
     }
-    if (store.mode !== "shell" && /^\/btw(?:\s|$)/u.test(inputText.trim())) {
-      const question = inputText.trim().replace(/^\/btw\s*/u, "")
+    // Grok Build: `/btw` anywhere in the message (`fix X first. /btw what is Y?`) asks the rest as a side question.
+    const question =
+      store.mode === "shell" ? undefined : inputText.trim() === "/btw" ? "" : sideQuestionText(inputText)
+    if (question !== undefined) {
       const images = sideQuestionImages(store.prompt.parts)
       history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
       input.extmarks.clear()
@@ -2015,6 +2051,7 @@ export function Prompt(props: PromptProps) {
         fileStyleId={fileStyleId}
         agentStyleId={agentStyleId}
         promptPartTypeId={() => promptPartTypeId}
+        onSubmit={() => void submit()}
       />
     </>
   )

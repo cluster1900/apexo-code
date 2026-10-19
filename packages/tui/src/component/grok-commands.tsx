@@ -10,6 +10,7 @@ import {
   releaseNotesURL,
   resolveDocs,
   resolveEffort,
+  resolveSessionReference,
   tutorialTopics,
 } from "@apexo/sdk/v2/grok-commands"
 import { InstallationVersion } from "@apexo/core/installation/version"
@@ -27,14 +28,19 @@ import { useLocal } from "../context/local"
 import { useRoute } from "../context/route"
 import { usePromptRef } from "../context/prompt"
 import { useKV } from "../context/kv"
+import { useClipboard } from "../context/clipboard"
+import { useTuiPaths } from "../context/runtime"
 import { useVimMode } from "../context/vim-mode"
 import { useCompactMode } from "../context/compact-mode"
 import { contextWindowChoice, setContextWindowChoice } from "../context/context-window"
+import { copyBackupFile, copyResponse, resolveModelArgs, turnResponses, writeNewFile } from "../util/slash-args"
+import { formatTranscript } from "../util/transcript"
 import { DialogVariant } from "./dialog-variant"
 import { DialogThemeList } from "./dialog-theme-list"
 import { DialogModel } from "./dialog-model"
 import { DialogAgent } from "./dialog-agent"
 import { DialogProvider as DialogProviderList } from "./dialog-provider"
+import { DialogSessionList, createDialogSessionListQuery } from "./dialog-session-list"
 
 /**
  * Grok Build slash commands (docs/user-guide/04-slash-commands.md) that had no Apexo counterpart.
@@ -54,6 +60,8 @@ export function useGrokCommands() {
   const vimMode = useVimMode()
   const compactMode = useCompactMode()
   const vim = vimMode.enabled
+  const clipboard = useClipboard()
+  const paths = useTuiPaths()
   const sessionID = () => (route.data.type === "session" ? route.data.sessionID : undefined)
   const alert = (title: string, message: string) =>
     dialog.replace(() => <DialogAlert title={title} message={message} />)
@@ -287,7 +295,9 @@ export function useGrokCommands() {
       ],
       [
         `SSH: ${env.SSH_CONNECTION ? "yes" : "no"}`,
-        env.SSH_CONNECTION ? "The local clipboard may be unreachable; /copy also writes a backup file." : "",
+        env.SSH_CONNECTION
+          ? `The local clipboard may be unreachable; /copy also writes a backup file (${copyBackupFile()}) and /copy <path> writes a new file.`
+          : "",
       ],
       [`Server: ${sync.status}`, sync.status === "complete" ? "" : "The server connection is not ready."],
     ]
@@ -392,6 +402,120 @@ export function useGrokCommands() {
     ))
   }
 
+  // `/resume <id or title>`: open the one session it names, else the picker filtered by the text (Grok 1.0.61).
+  const resume = async (query: string) => {
+    const byID = /^\S+$/u.test(query) ? await sdk.sessionInfo(query).catch(() => undefined) : undefined
+    const listed = byID
+      ? []
+      : await sdk.client.session.list(createDialogSessionListQuery({ filter: sync.session.query() })).then(
+          (result) => result.data ?? [],
+          () => [],
+        )
+    const candidates = [...listed, ...sync.data.session.filter((item) => !item.parentID)]
+    // The server list and the synced list overlap; a duplicate would make an exact title look ambiguous.
+    const found =
+      byID ??
+      resolveSessionReference(
+        query,
+        candidates.filter((item, index) => candidates.findIndex((other) => other.id === item.id) === index),
+      )
+    if (!found) return dialog.replace(() => <DialogSessionList filter={query} />)
+    void sdk
+      .restoreSession(found.id)
+      .then((notice) => {
+        if (notice) toast.show({ message: notice, variant: "warning" })
+      })
+      .catch(() =>
+        toast.show({ message: "Could not restore schedules. Check the connection and try again.", variant: "error" }),
+      )
+    route.navigate({ type: "session", sessionID: found.id })
+    dialog.clear()
+  }
+
+  const rename = async (title: string) => {
+    const id = requireSession()
+    if (!id) return
+    const result = await sdk.client.session.update({ sessionID: id, title }).catch(() => undefined)
+    if (!result || result.error) return toast.show({ variant: "error", message: "Failed to rename the session" })
+    toast.show({ variant: "info", message: `Session renamed to "${title}"` })
+  }
+
+  // `/copy [N] [path]`: the Nth-latest response's source markdown (Grok Build), not the whole transcript.
+  const copy = async (args = "") => {
+    const id = requireSession()
+    if (!id) return
+    const revert = sync.session.get(id)?.revert?.messageID
+    const messages = (sync.data.message[id] ?? []).filter((message) => !revert || message.id < revert)
+    const result = await copyResponse({
+      responses: turnResponses(
+        messages.map((message) => ({
+          role: message.role,
+          text: (sync.data.part[message.id] ?? [])
+            .flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : []))
+            .join("\n"),
+        })),
+      ),
+      args,
+      cwd: paths.cwd,
+      write: clipboard.write,
+    })
+    dialog.clear()
+    toast.show({ variant: result.ok ? "success" : "warning", message: result.message })
+  }
+
+  const model = (args: string) => {
+    const resolved = resolveModelArgs(args, sync.data.provider, local.model.current()?.providerID)
+    if ("error" in resolved) return toast.show({ variant: "warning", message: resolved.error })
+    local.model.set({ providerID: resolved.providerID, modelID: resolved.modelID }, { recent: true })
+    if (resolved.effort) local.model.variant.set(resolved.effort)
+    toast.show({
+      variant: "info",
+      message: `Model set to ${resolved.providerID}/${resolved.modelID}${resolved.effort ? ` (${resolved.effort} effort)` : ""}`,
+    })
+  }
+
+  // `/feedback <message>`: save a local draft directly; /feedback alone opens the drafts browser to review it.
+  const feedback = async (message: string) => {
+    const id = requireSession()
+    if (!id) return
+    const api = (await sdk.transport()).kind === "native" ? sdk.client.v2.feedback : sdk.client.feedback
+    const title = message.split("\n")[0]!.slice(0, 80)
+    const saved = await api
+      .save({ sessionID: id, feedbackSave: { title, details: message, type: "bug" } }, { throwOnError: true })
+      .then(
+        () => true,
+        () => false,
+      )
+    toast.show(
+      saved
+        ? { variant: "success", message: "Feedback saved as a local draft. Run /feedback to review and submit it." }
+        : { variant: "error", message: "Failed to save feedback" },
+    )
+  }
+
+  // `/export <file>`: write the transcript to a new file; a taken name is refused and left unchanged.
+  const exportTranscript = async (file: string) => {
+    const id = requireSession()
+    if (!id) return
+    const session = sync.session.get(id)
+    if (!session) return
+    const transcript = formatTranscript(
+      session,
+      (sync.data.message[id] ?? []).map((message) => ({ info: message, parts: sync.data.part[message.id] ?? [] })),
+      {
+        thinking: true,
+        toolDetails: kv.get("tool_details_visibility", true),
+        assistantMetadata: kv.get("assistant_metadata_visibility", true),
+        providers: sync.data.provider,
+      },
+    )
+    const written = await writeNewFile(file, transcript, paths.cwd)
+    toast.show({
+      variant: written.ok ? "success" : "warning",
+      message: written.ok ? `Session exported to ${written.path}` : written.message,
+    })
+  }
+
   const commands = [
     {
       name: "grok.context",
@@ -401,6 +525,13 @@ export function useGrokCommands() {
       run: context,
     },
     { name: "grok.delete", title: "Delete session", category: "Session", slashName: "delete", run: remove },
+    {
+      name: "grok.copy",
+      title: "Copy the latest response",
+      category: "Session",
+      slashName: "copy",
+      run: () => void copy(),
+    },
     { name: "grok.history", title: "Search prompt history", category: "Session", slashName: "history", run: history },
     { name: "grok.plan", title: "Enter plan mode", category: "Agent", slashName: "plan", run: () => void plan() },
     {
@@ -570,7 +701,11 @@ export function useGrokCommands() {
     { name: "grok.logout", title: "Log out of a provider", category: "Provider", slashName: "logout", run: logout },
   ]
 
-  /** Handles `/effort <level>`, `/docs <target>` and `/plan <description>` typed with arguments. */
+  /**
+   * Handles built-ins typed with arguments: `/effort <level>`, `/context-window <size>`, `/docs <target>`,
+   * `/plan <description>`, `/resume <id or title>`, `/rename <title>`, `/copy [N] [path]`, `/model <name> [effort]`,
+   * `/feedback <message>` and `/export <file>`.
+   */
   const submit = (text: string): { handled: true } | { handled: false; text?: string } => {
     const input = parseSlashInput(text)
     if (!input?.args) return { handled: false }
@@ -581,6 +716,12 @@ export function useGrokCommands() {
       const description = plan(input.args)
       return typeof description === "string" ? { handled: false, text: description } : { handled: true }
     }
+    if (["resume", "continue"].includes(input.name)) return (void resume(input.args), { handled: true })
+    if (["rename", "title"].includes(input.name)) return (void rename(input.args), { handled: true })
+    if (input.name === "copy") return (void copy(input.args), { handled: true })
+    if (["model", "models", "m", "mo"].includes(input.name)) return (model(input.args), { handled: true })
+    if (input.name === "feedback") return (void feedback(input.args), { handled: true })
+    if (input.name === "export") return (void exportTranscript(input.args), { handled: true })
     return { handled: false }
   }
 

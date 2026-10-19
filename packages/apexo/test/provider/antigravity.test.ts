@@ -605,6 +605,7 @@ test("V1 unwraps split SSE frames, preserves cancellation and removes the SDK du
   })
   expect(await response.text()).toBe('data: {"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}\n\n')
   expect(requests[0].headers.get("authorization")).toBe("Bearer fixture-access")
+  expect(requests[0].headers.get("user-agent")).toBe(Antigravity.userAgent)
   expect(requests[0].headers.has("x-goog-api-key")).toBe(false)
   expect(bodies[0]).toMatchObject({ project: "fixture-project", model: "gemini", request: { contents: [] } })
   const cancelled = new AbortController()

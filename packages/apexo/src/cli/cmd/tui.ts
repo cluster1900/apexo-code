@@ -289,19 +289,22 @@ export const TuiThreadCommand = cmd({
             events: createEventSource(client),
           }
 
-      try {
-        await validateSession({
-          url: transport.url,
-          sessionID: args.session,
-          directory: cwd,
-          fetch: transport.fetch,
-          headers,
-        })
-      } catch (error) {
-        UI.error(errorMessage(error))
-        process.exitCode = 1
-        return
-      }
+      // `-s` may name a session by title; continue with the ID it resolves to.
+      const validated = await validateSession({
+        url: transport.url,
+        sessionID: args.session,
+        directory: cwd,
+        fetch: transport.fetch,
+        headers,
+      }).then(
+        (sessionID) => ({ sessionID }),
+        (error: unknown) => {
+          UI.error(errorMessage(error))
+          process.exitCode = 1
+          return undefined
+        },
+      )
+      if (!validated) return
 
       setTimeout(() => {
         client.call("warmInstance", { directory: cwd }).catch(() => {})
@@ -318,7 +321,7 @@ export const TuiThreadCommand = cmd({
         return shared
       }
       ModeSwitch.setAvailable(true)
-      let session = handoff?.sessionID ?? args.session
+      let session = handoff?.sessionID ?? validated.sessionID
       let launch = {
         prompt: handoff ? undefined : prompt,
         continue: handoff ? false : args.continue,

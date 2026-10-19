@@ -4,6 +4,7 @@ export type DesktopMenuPlatform = "macos" | "windows"
 
 export type DesktopMenuAction =
   | "app.relaunch"
+  | "app.quit"
   | "edit.undo"
   | "edit.redo"
   | "edit.cut"

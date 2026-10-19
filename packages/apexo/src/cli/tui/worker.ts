@@ -1,4 +1,7 @@
+import { EventEmitter } from "node:events"
 import { tuiWorkerMode } from "../tui-worker"
+
+EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 100)
 
 // Keep the compiled worker entry stable while selecting the owned backend before
 // importing compatibility services. The parent supplies this private startup flag.

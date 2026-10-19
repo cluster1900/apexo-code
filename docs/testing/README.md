@@ -6,6 +6,11 @@ Each record must include: a stable ID, affected scope, observed vs. expected beh
 
 | Category       | Record                                                                                          | Status                        | Verified Occurrences |
 | -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- | -------------------- |
+| Runtime | [Provider auth reuse, Antigravity User-Agent model gating, and TUI RootRenderable listener limit](runtime/provider-auth-and-tui-listeners.md) | Fixed; `xai.test.ts` 15/15, `antigravity.test.ts` 24/24, PTY `/model` verification, Desktop Node sidecar + Chrome UI verification, and live `grok-4.7-build-fast` + `gemini-4-argon` runs pass | 4 distinct defects |
+| Runtime | [CLI headless background wait, session title resolution, prompt quoting, and export parity](runtime/cli-grok-1062-parity.md) | Fixed; `run-process` 18/18, `session-list` 12/12, `httpapi-sdk` 5/5, `export-process` 1/1, and live Grok Build 1.0.62 comparison pass | 5 distinct defects |
+| UI | [CLI inline task header defaulted omitted subagent_type to Unknown Agent](ui/cli-task-agent-label.md) | Fixed; `tool-inline.test.ts` 1/1 and types pass | 1 confirmed defect |
+| UI | [Slash commands with arguments in the terminal UIs](ui/slash-args-tui.md) | Fixed; unit tests 45/45, fullscreen PTY 12/12, minimal PTY 5/5, and types pass | 7 distinct defects |
+| UI | [Slash commands with arguments and V2 layout parity in Desktop](ui/slash-args-desktop.md) | Fixed; unit tests 17/17, real Chrome browser 20/20, and types pass | 7 distinct defects |
 | UI | [Grok tool name rendering parity](ui/grok-tool-name-rendering.md) | Fixed; CLI and Desktop --edit-fuzzy 2/2 each, shell/slash regressions and mapping4/4 pass | 1 confirmed defect |
 | Runtime | [Edit newString replacement patterns](runtime/edit-replacement-patterns.md) | Fixed; shared engine16/16, native edit1/1, compatibility edit29/29 and types pass | 1 confirmed defect |
 | Runtime | [Native batch Dream automatic admission binding](runtime/native-batch-dream-trigger.md) | Corrected; final affected57/279 pass; final UI/types separate | 1 observed draft defect |

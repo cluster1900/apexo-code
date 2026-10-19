@@ -972,9 +972,6 @@ export function Session() {
       title: "Copy session transcript",
       value: "session.copy",
       category: "Session",
-      slash: {
-        name: "copy",
-      },
       run: async () => {
         try {
           const sessionData = session()

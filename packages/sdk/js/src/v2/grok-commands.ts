@@ -144,6 +144,71 @@ function fuzzy(text: string, needle: string) {
   return true
 }
 
+/** Lowercase words of a title or query; any run of non-letter/digit characters separates words. */
+function words(text: string) {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+}
+
+/**
+ * Resume picker filter (Grok Build 1.0.61): a session matches when its title contains every typed word, in any
+ * order and regardless of separators, or when the query is a prefix of its ID.
+ */
+export function sessionMatches(query: string, session: { id: string; title?: string }) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  if (session.id.toLowerCase().startsWith(needle)) return true
+  const title = words(session.title ?? "")
+  return words(needle).every((word) => title.some((part) => part.includes(word)))
+}
+
+/**
+ * `/resume <id or title>` and `--resume <id or title>`: the one session the text names, or undefined when it names
+ * none or several (the caller then opens the picker filtered by the text). An exact ID always wins; otherwise the
+ * title must equal the text ignoring letter case, or consist of the same words joined by any separators.
+ */
+export function resolveSessionReference<T extends { id: string; title?: string }>(query: string, sessions: T[]) {
+  const needle = query.trim()
+  if (!needle) return
+  const byID = sessions.find((session) => session.id === needle)
+  if (byID) return byID
+  const exact = sessions.filter((session) => (session.title ?? "").trim().toLowerCase() === needle.toLowerCase())
+  if (exact.length) return exact.length === 1 ? exact[0] : undefined
+  const key = words(needle).join(" ")
+  if (!key) return
+  const joined = sessions.filter((session) => words(session.title ?? "").join(" ") === key)
+  return joined.length === 1 ? joined[0] : undefined
+}
+
+/**
+ * `/copy`, `/copy 2`, `/copy out.txt`, `/copy 2 ~/exports/last.md`: which response to copy (1 = latest) and an
+ * optional file to write instead of the clipboard.
+ */
+export function parseCopyArgs(args: string): { index: number; path?: string } | { error: string } {
+  const text = args.trim()
+  if (!text) return { index: 1 }
+  const match = /^(\d+)(?:\s+([\s\S]+))?$/u.exec(text)
+  if (!match) return { index: 1, path: text }
+  const index = Number(match[1])
+  if (!Number.isSafeInteger(index) || index < 1) return { error: "The response number must be 1 or greater" }
+  return match[2] ? { index, path: match[2].trim() } : { index }
+}
+
+/**
+ * `/btw` anywhere in a message (Grok Build): the whole message minus the token becomes the side question and nothing
+ * goes to the main turn. Returns undefined when the message has no standalone `/btw` token or nothing else.
+ */
+export function sideQuestionText(text: string) {
+  if (!/(^|\s)\/btw(?=\s|$)/u.test(text)) return
+  const question = text
+    .replace(/(^|\s)\/btw(?=\s|$)/gu, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim()
+  return question || undefined
+}
+
 export type VimScrollAction =
   | "line.down"
   | "line.up"

@@ -1,4 +1,6 @@
 import { For, type Accessor } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { base64Encode } from "@apexo/core/util/encode"
 import { Button } from "@apexo/ui/button"
 import type { TextPart } from "@apexo/sdk/v2/client"
 import {
@@ -13,12 +15,13 @@ import {
   releaseNotesURL,
   resolveDocs,
   resolveEffort,
+  resolveSessionReference,
   tutorialTopics,
 } from "@apexo/sdk/v2/grok-commands"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { Dialog } from "@apexo/ui/dialog"
 import { List } from "@apexo/ui/list"
-import type { CommandOption } from "@/context/command"
+import { findSlashOption, runSlashOption, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLocal } from "@/context/local"
 import { usePlatform } from "@/context/platform"
@@ -135,6 +138,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
   const dialog = useDialog()
   const language = useLanguage()
   const local = useLocal()
+  const navigate = useNavigate()
   const platform = usePlatform()
   const prompt = usePrompt()
   const sdk = useSDK()
@@ -503,7 +507,53 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     ))
   }
 
+  const resume = async (query = "") => {
+    const fetched = await sdk()
+      .client.session.list({ directory: sdk().directory, roots: true })
+      .then((result) => result.data ?? [])
+      .catch(() => [])
+    const byID = new Map(
+      [...fetched, ...sync().data.session]
+        .filter((session) => !session.parentID && !session.time?.archived)
+        .map((session) => [session.id, session] as const),
+    )
+    const sessions = [...byID.values()].sort(
+      (a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0),
+    )
+    const open = (session: { id: string; directory?: string }) =>
+      navigate(`/${base64Encode(session.directory || sdk().directory)}/session/${session.id}`)
+    const match = resolveSessionReference(query, sessions)
+    if (match) return open(match)
+    const { DialogResumeSession } = await import("@/components/dialog-resume-session")
+    dialog.show(() => <DialogResumeSession sessions={sessions} query={query} onSelect={open} />)
+  }
+
+  const sessionInfo = async () => {
+    const id = sessionID()
+    if (!id) return
+    const { DialogSessionInfo } = await import("@/components/dialog-session-info")
+    dialog.show(() => <DialogSessionInfo sessionID={id} />)
+  }
+
   const commands = (): CommandOption[] => [
+    {
+      id: "sessions.open",
+      title: language.t("command.sessions.open"),
+      category: "Session",
+      slash: "resume",
+      slashAliases: ["continue"],
+      onSelect: () => void resume(),
+      onSlash: (query) => void resume(query),
+    },
+    {
+      id: "session.info",
+      title: language.t("grok.sessionInfo"),
+      category: "Session",
+      slash: "session-info",
+      slashAliases: ["status", "info"],
+      disabled: !sessionID(),
+      onSelect: () => void sessionInfo(),
+    },
     {
       id: "grok.context",
       title: language.t("grok.context"),
@@ -536,6 +586,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       category: "Agent",
       slash: "effort",
       onSelect: () => effort(),
+      onSlash: effort,
     },
     {
       id: "grok.docs",
@@ -544,6 +595,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       slash: "docs",
       slashAliases: ["howto", "guides"],
       onSelect: () => docs(),
+      onSlash: docs,
     },
     {
       id: "grok.release-notes",
@@ -642,27 +694,25 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       slash: "context-window",
       hidden: windowOptions().length < 2,
       onSelect: () => contextWindow(),
+      onSlash: contextWindow,
     },
     { id: "grok.logout", title: language.t("grok.logout"), category: "Provider", slash: "logout", onSelect: logout },
   ]
 
-  /** Handles `/effort <level>`, `/docs <target>` and `/plan <description>` typed with arguments. */
+  /**
+   * `/plan <description>` switches to the plan agent and sends the description. Other names run this hook's own
+   * commands, so they work on pages that do not register them (the new-session page).
+   */
   const submit = (input: string): { handled: true } | { handled: false; text?: string } => {
     const parsed = parseSlashInput(input)
     if (!parsed) return { handled: false }
-    if (!parsed.args) {
-      const match = commands().find(
-        (cmd) => !cmd.disabled && (cmd.slash === parsed.name || cmd.slashAliases?.includes(parsed.name)),
-      )
-      if (!match) return { handled: false }
-      match.onSelect?.("slash")
-      return { handled: true }
-    }
-    if (parsed.name === "effort") return (effort(parsed.args), { handled: true })
-    if (parsed.name === "context-window") return (contextWindow(parsed.args), { handled: true })
-    if (["docs", "howto", "guides"].includes(parsed.name)) return (docs(parsed.args), { handled: true })
-    if (parsed.name === "plan") return plan(parsed.args) ? { handled: false, text: parsed.args } : { handled: true }
-    return { handled: false }
+    if (parsed.name === "plan" && parsed.args)
+      return plan(parsed.args) ? { handled: false, text: parsed.args } : { handled: true }
+    const match = findSlashOption(commands(), parsed.name)
+    if (!match) return { handled: false }
+    if (match.disabled) return (info(language.t("command.slash.unavailable", { name: parsed.name })), { handled: true })
+    runSlashOption(match, parsed.args)
+    return { handled: true }
   }
 
   return { commands, submit }

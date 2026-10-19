@@ -56,6 +56,6 @@ export const route = Route.make({
     baseURL: "https://daily-cloudcode-pa.googleapis.com",
   }),
   auth: Auth.none,
-  defaults: { headers: { "user-agent": "apexo-antigravity" } },
+  defaults: { headers: { "user-agent": "antigravity/cli/1.4.2" } },
   framing: Framing.sse,
 })

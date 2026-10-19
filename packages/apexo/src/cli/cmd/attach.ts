@@ -120,19 +120,22 @@ export const AttachCommand = cmd({
     const headers = ServerAuth.headers({ password: args.password, username: args.username })
     const config = await TuiConfig.get()
 
-    try {
-      await validateSession({
-        url: args.url,
-        sessionID: args.session,
-        sessionProtocol: args["session-protocol"],
-        directory,
-        headers,
-      })
-    } catch (error) {
-      UI.error(errorMessage(error))
-      process.exitCode = 1
-      return
-    }
+    // `-s` may name a session by title; continue with the ID it resolves to.
+    const validated = await validateSession({
+      url: args.url,
+      sessionID: args.session,
+      sessionProtocol: args["session-protocol"],
+      directory,
+      headers,
+    }).then(
+      (sessionID) => ({ sessionID }),
+      (error: unknown) => {
+        UI.error(errorMessage(error))
+        process.exitCode = 1
+        return undefined
+      },
+    )
+    if (!validated) return
 
     const { Effect } = await import("effect")
     const { run } = await import("../tui/layer")
@@ -144,7 +147,7 @@ export const AttachCommand = cmd({
         pluginHost: createLegacyTuiPluginHost(),
         args: {
           continue: args.continue,
-          sessionID: args.session,
+          sessionID: validated.sessionID,
           sessionProtocol: args["session-protocol"],
           fork: args.fork,
         },

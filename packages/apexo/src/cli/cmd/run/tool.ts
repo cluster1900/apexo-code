@@ -370,7 +370,7 @@ function runWebSearch(p: ToolProps<typeof WebSearchTool>): ToolInline {
 }
 
 function runTask(p: ToolProps<typeof TaskTool>): ToolInline {
-  const kind = Locale.titlecase(p.input.subagent_type || "unknown")
+  const kind = Locale.titlecase(p.input.subagent_type || "general")
   const desc = p.input.description
   const icon = p.frame.status === "error" ? "✗" : p.frame.status === "running" ? "•" : "✓"
   return {

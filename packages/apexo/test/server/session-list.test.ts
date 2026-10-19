@@ -271,6 +271,22 @@ describe("session.list", () => {
   )
 
   it.instance(
+    "search matches titles containing every word in any order",
+    () =>
+      Effect.gen(function* () {
+        yield* withSession({ title: "Fix login bug" })
+        yield* withSession({ title: "login page styles" })
+
+        const sessions = yield* SessionNs.use.list({ search: "bug  login-fix" })
+        const titles = sessions.map((session) => session.title)
+
+        expect(titles).toContain("Fix login bug")
+        expect(titles).not.toContain("login page styles")
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "respects limit parameter",
     () =>
       Effect.gen(function* () {

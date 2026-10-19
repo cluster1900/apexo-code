@@ -817,6 +817,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     items: slashCommands,
     key: (x) => x?.id,
     filterKeys: ["trigger", "aliases", "title"],
+    // `/m` must run the command whose name or alias is exactly "m", not a fuzzy neighbour such as /multiline.
+    exact: (item, query) => item.trigger.toLowerCase() === query || !!item.aliases?.split(" ").includes(query),
     onSelect: handleSlashSelect,
   })
 
@@ -1292,6 +1294,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onWorkflow: workflow.open,
       onGoal: goal.show,
       onGrokSlash: grok.submit,
+      onCommandSlash: command.slash,
       onMemoryCommand: memory.command,
       onRemember: memory.review,
       onMemoryWork: memory.work,

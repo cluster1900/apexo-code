@@ -1,10 +1,16 @@
 import { createApexoClient } from "@apexo/sdk/v2/client"
+import { resolveSessionReference, sessionMatches } from "@apexo/sdk/v2/grok-commands"
 import { SessionID } from "@/session/schema"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import { sessionTransport } from "@apexo/tui/transport/session"
 
-const decodeSessionID = Schema.decodeUnknownSync(SessionID)
+const decodeSessionID = Schema.decodeUnknownOption(SessionID)
 
+/**
+ * Checks `-s/--session` before the terminal starts and returns the session ID to open. Like Grok Build's `--resume`,
+ * an ID-shaped value always means an ID; any other value names a top-level session of this project by title (exact,
+ * ignoring case, or the same words joined by any separators). A miss or several matches fail instead of guessing.
+ */
 export async function validateSession(input: {
   url: string
   sessionID?: string
@@ -15,13 +21,6 @@ export async function validateSession(input: {
 }) {
   if (!input.sessionID) return
 
-  let sessionID: SessionID
-  try {
-    sessionID = decodeSessionID(input.sessionID)
-  } catch (error) {
-    throw new Error(`Invalid session ID: ${error instanceof Error ? error.message : "unknown error"}`, { cause: error })
-  }
-
   const client = createApexoClient({
     baseUrl: input.url,
     directory: input.directory,
@@ -30,9 +29,25 @@ export async function validateSession(input: {
   })
   const signal = AbortSignal.timeout(10_000)
   const transport = await sessionTransport(client, input.directory, input.sessionProtocol)(signal)
-  if (transport.kind === "native") {
-    await transport.get(sessionID, signal)
-    return
+  const sessionID = decodeSessionID(input.sessionID)
+  if (Option.isSome(sessionID)) {
+    if (transport.kind === "native") await transport.get(sessionID.value, signal)
+    else await client.session.get({ sessionID: sessionID.value }, { signal, throwOnError: true })
+    return sessionID.value
   }
-  await client.session.get({ sessionID }, { signal, throwOnError: true })
+
+  const sessions =
+    transport.kind === "native"
+      ? (await transport.list(undefined, signal)).data
+          .filter((item) => !item.parentID)
+          .map((item) => ({ id: item.id, title: item.title }))
+      : ((await client.session.list({ roots: true, limit: 1000 }, { signal, throwOnError: true })).data ?? [])
+  const found = resolveSessionReference(input.sessionID, sessions)
+  if (found) return found.id
+  const similar = sessions.filter((item) => sessionMatches(input.sessionID!, item)).slice(0, 5)
+  if (similar.length > 1)
+    throw new Error(
+      `Session "${input.sessionID}" is ambiguous; matching sessions: ${similar.map((item) => `${item.id} (${item.title})`).join(", ")}`,
+    )
+  throw new Error(`Session not found: no session ID or title matches "${input.sessionID}"`)
 }

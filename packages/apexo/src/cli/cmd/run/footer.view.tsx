@@ -68,6 +68,9 @@ import type {
 } from "./types"
 import type { RunTheme } from "./theme"
 import { modelInfo } from "./variant.shared"
+import { minimalSlash } from "./footer.slash"
+import { resolveEffort, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
+import { resolveModelArgs } from "@apexo/tui/util/slash-args"
 
 registerApexoSpinner()
 
@@ -132,6 +135,8 @@ type RunFooterViewProps = {
   onRows: (rows: number) => void
   onLayout: (input: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }) => void
   onStatus: (text: string) => void
+  /** `/copy [N] [path]` over the responses this footer has shown. */
+  onCopy?: (args: string) => void
   onSubagentSelect?: (sessionID: string | undefined) => void
   onQueuedRemove: (messageID: string) => Promise<boolean>
 }
@@ -348,6 +353,31 @@ export function RunFooterView(props: RunFooterViewProps) {
     props.onSubagentSelect?.(undefined)
   }
 
+  const selectModel = (args: string) => {
+    if (!args) return openModel()
+    const resolved = resolveModelArgs(args, props.providers() ?? [], props.currentModel()?.providerID)
+    if ("error" in resolved) return props.onStatus(resolved.error)
+    props.onModelSelect({ providerID: resolved.providerID, modelID: resolved.modelID })
+    props.onStatus(
+      resolved.effort
+        ? `Model set to ${resolved.modelID}; run /effort ${resolved.effort} to set its effort`
+        : `Model set to ${resolved.modelID}`,
+    )
+  }
+
+  const selectEffort = (args: string) => {
+    if (!args) return openVariant()
+    const variant = resolveEffort(args, props.variants())
+    if (!variant)
+      return props.onStatus(
+        props.variants().length
+          ? `Effort "${args}" is not available. Choose one of: ${props.variants().join(", ")}`
+          : "The current model has no effort levels",
+      )
+    props.onVariantSelect(variant)
+    props.onStatus(`Effort set to ${variant}`)
+  }
+
   const openSubagentMenu = () => {
     if (tabs().length === 0) {
       return
@@ -518,16 +548,15 @@ export function RunFooterView(props: RunFooterViewProps) {
         setRoute({ type: "workflow", command: input.text.trim() })
         return true
       }
-      if (
-        props.sideQuestionActions &&
-        input.mode !== "shell" &&
-        (/^\/btw(?:\s|$)/u.test(input.text.trim()) || input.command?.name === "btw")
-      ) {
-        setRoute({
-          type: "btw",
-          question: input.text.trim().replace(/^\/btw\s*/u, ""),
-          images: sideQuestionImages(input.parts),
-        })
+      // Grok Build: `/btw` anywhere in the message asks the whole message minus the token as a side question.
+      const question =
+        !props.sideQuestionActions || input.mode === "shell"
+          ? undefined
+          : input.text.trim() === "/btw"
+            ? ""
+            : sideQuestionText(input.text)
+      if (question !== undefined) {
+        setRoute({ type: "btw", question, images: sideQuestionImages(input.parts) })
         return true
       }
       if (
@@ -619,7 +648,16 @@ export function RunFooterView(props: RunFooterViewProps) {
         setRoute({ type: "tasks" })
         return true
       }
-      return props.onSubmit(input)
+      const slash = input.mode === "shell" || input.command ? undefined : minimalSlash(input.text)
+      if (!slash) return props.onSubmit(input)
+      if (slash.type === "new") return props.onSubmit({ ...input, text: "/new" })
+      if (slash.type === "notice") props.onStatus(slash.text)
+      if (slash.type === "copy") props.onCopy?.(slash.args)
+      if (slash.type === "skills") openSkillMenu()
+      if (slash.type === "commands") openCommand()
+      if (slash.type === "model") selectModel(slash.args)
+      if (slash.type === "effort") selectEffort(slash.args)
+      return true
     },
     onCycle: props.onCycle,
     onInterrupt: props.onInterrupt,

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { sessionTrace, sessionTranscript, sessionUsage, type SessionExportData } from "./session-export"
+import { sessionResponse, sessionTrace, sessionTranscript, sessionUsage, type SessionExportData } from "./session-export"
 
 const assistant = (id: string, parentID: string, modelID: string, input: number, output: number, cost: number) => ({
   info: {
@@ -77,4 +77,17 @@ test("sessionTrace bundles summary, events, history and metadata", () => {
     exported_at: "2026-01-01T00:00:00.000Z",
     exporter: "apexo-desktop",
   })
+})
+
+test("sessionResponse picks the Nth-latest assistant response with text", () => {
+  const toolOnly = {
+    ...assistant("msg_a4", "msg_u3", "grok", 1, 1, 0),
+    parts: [{ id: "msg_a4_t", sessionID: "ses_1", messageID: "msg_a4", type: "tool", tool: "read" }],
+  }
+  const withTool = { ...data, messages: [...data.messages, toolOnly] } as unknown as SessionExportData
+  expect(sessionResponse(withTool)).toBe("answer msg_a3")
+  expect(sessionResponse(withTool, 2)).toBe("answer msg_a2")
+  expect(sessionResponse(withTool, 3)).toBe("answer msg_a1")
+  expect(sessionResponse(withTool, 4)).toBeUndefined()
+  expect(sessionResponse(withTool, 0)).toBeUndefined()
 })

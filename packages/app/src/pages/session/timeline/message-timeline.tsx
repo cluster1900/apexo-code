@@ -696,6 +696,13 @@ export function MessageTimeline(props: {
       slashAliases: ["title"],
       disabled: !sessionID() || !!parentID(),
       onSelect: openTitleEditor,
+      onSlash: (title) => {
+        const id = sessionID()
+        if (!id) return
+        // Grok's `--auto` unpins a manual title for its local auto-titler; Apexo titles have no such pin.
+        if (title === "--auto") return showToast({ title: language.t("grok.rename.auto") })
+        titleMutation.mutate({ id, title })
+      },
     },
     {
       id: "session.delete",

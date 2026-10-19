@@ -1,4 +1,4 @@
-import { createEffect, Suspense, type ParentProps } from "solid-js"
+import { createEffect, onMount, Suspense, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DebugBar } from "@/components/debug-bar"
 import { TabsInfoPopup } from "@/components/help-button"
@@ -9,6 +9,9 @@ export default function NewLayout(props: ParentProps) {
   const [state, setState] = createStore({ debugTools: true })
 
   createEffect(() => setV2Toast(true))
+  onMount(() => {
+    if (localStorage.getItem("apexo.timestamps") === "show") document.documentElement.dataset.timestamps = "show"
+  })
 
   return (
     <div

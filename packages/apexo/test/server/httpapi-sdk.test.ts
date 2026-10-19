@@ -488,6 +488,30 @@ describe("HttpApi SDK", () => {
     ),
   )
 
+  serverPathParity("resolves -s session titles like Grok Build --resume", (serverPath) =>
+    withStandardProject(serverPath, ({ directory, sdk }) =>
+      Effect.gen(function* () {
+        const fetch = yield* serverFetch(serverPath)
+        const target = yield* call(() => sdk.session.create({ title: "Fix login bug" }))
+        yield* call(() => sdk.session.create({ title: "Deploy notes" }))
+        yield* call(() => sdk.session.create({ title: "Deploy notes" }))
+        const validate = (sessionID: string) =>
+          Effect.promise(() => validateSession({ url: "http://localhost", directory, sessionID, fetch }))
+
+        expect(yield* validate("fix-login_bug")).toBe(target.data!.id)
+        expect(yield* validate(target.data!.id)).toBe(target.data!.id)
+        const ambiguous = yield* captureThrown(() =>
+          validateSession({ url: "http://localhost", directory, sessionID: "deploy notes", fetch }),
+        )
+        expect(errorMessage(ambiguous)).toStartWith(`Session "deploy notes" is ambiguous`)
+        const missing = yield* captureThrown(() =>
+          validateSession({ url: "http://localhost", directory, sessionID: "nothing like it", fetch }),
+        )
+        expect(errorMessage(missing)).toBe(`Session not found: no session ID or title matches "nothing like it"`)
+      }),
+    ),
+  )
+
   httpapiInstance(
     "uses generated SDK basic auth behavior",
     { serverPath: "raw", setup: writeStandardFiles },

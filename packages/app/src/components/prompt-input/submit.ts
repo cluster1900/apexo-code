@@ -28,6 +28,7 @@ import { normalizeSessionInfo } from "@/utils/session"
 import { Event } from "@apexo/schema/event"
 import { blobDataUrl } from "@/utils/draft-store"
 import { shouldQueueFollowup } from "./followup-delivery"
+import { registeredSlash, sideQuestion } from "./slash-route"
 
 type PendingPrompt = {
   abort: AbortController
@@ -240,6 +241,8 @@ type PromptSubmitInput = {
   onBtw?: (question: string, images: ImageAttachmentPart[]) => Promise<boolean>
   onGoal?: (sessionID: string, objective: string, selection: GoalStart) => boolean
   onGrokSlash?: (text: string) => { handled: true } | { handled: false; text?: string }
+  /** Runs a registered command typed as `/name args`; false when no registered command has that name. */
+  onCommandSlash?: (name: string, args: string) => boolean
   onMemoryCommand?: (command: string, attachments: boolean) => Promise<boolean>
   onRemember?: (sessionID: string, content: string) => boolean
   onMemoryWork?: (sessionID: string, kind: "flush" | "dream") => boolean
@@ -360,8 +363,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    if (mode === "normal" && /^\/btw(?:\s|$)/u.test(text.trim())) {
-      const opened = await input.onBtw?.(text.trim().replace(/^\/btw\s*/u, ""), images).catch(() => false)
+    const side = mode === "normal" ? sideQuestion(text) : undefined
+    if (side !== undefined) {
+      const opened = await input.onBtw?.(side, images).catch(() => false)
       if (opened) {
         submission.clear()
         input.setPopover(null)
@@ -392,6 +396,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         target.set([{ type: "text", content: routed.text, start: 0, end: routed.text.length }], routed.text.length)
         return handleSubmit(event)
       }
+    }
+
+    // A registered Desktop command typed with arguments (or a trailing space) closes the slash menu without selecting
+    // it; run it here so a built-in never reaches the model as a prompt.
+    const slash =
+      mode === "normal" && images.length === 0
+        ? registeredSlash(
+            text,
+            sync().data.command.map((item) => item.name),
+          )
+        : undefined
+    if (slash && input.onCommandSlash?.(slash.name, slash.args)) {
+      submission.clear()
+      input.setPopover(null)
+      return
     }
 
     const modelSelection = input.model ?? local.model
