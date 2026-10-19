@@ -21,7 +21,7 @@ import {
 import { useDialog } from "@apexo/ui/context/dialog"
 import { Dialog } from "@apexo/ui/dialog"
 import { List } from "@apexo/ui/list"
-import { findSlashOption, runSlashOption, type CommandOption } from "@/context/command"
+import { findSlashOption, runSlashOption, useCommand, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLocal } from "@/context/local"
 import { usePlatform } from "@/context/platform"
@@ -135,6 +135,7 @@ export function DialogGrokText(props: { title: string; lines: string[] }) {
  * The TUI implements the same names in packages/tui/src/component/grok-commands.tsx.
  */
 export function useGrokCommands(sessionID: Accessor<string | undefined>) {
+  const command = useCommand()
   const dialog = useDialog()
   const language = useLanguage()
   const local = useLocal()
@@ -530,7 +531,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
 
   const sessionInfo = async () => {
     const id = sessionID()
-    if (!id) return
+    if (!id) return command.trigger("status.open")
     const { DialogSessionInfo } = await import("@/components/dialog-session-info")
     dialog.show(() => <DialogSessionInfo sessionID={id} />)
   }
@@ -551,7 +552,6 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       category: "Session",
       slash: "session-info",
       slashAliases: ["status", "info"],
-      disabled: !sessionID(),
       onSelect: () => void sessionInfo(),
     },
     {

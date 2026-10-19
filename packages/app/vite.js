@@ -31,6 +31,19 @@ export default [
         worker: {
           format: "es",
         },
+        optimizeDeps: {
+          include: [
+            "@apexo/ui > @shikijs/stream",
+            "@apexo/ui > @shikijs/transformers",
+            "@apexo/ui > dompurify",
+            "@apexo/ui > katex",
+            "@apexo/ui > marked",
+            "@apexo/ui > marked-shiki",
+            "@apexo/ui > morphdom",
+            "@apexo/ui > remend",
+            "@apexo/ui > shiki",
+          ],
+        },
       }
     },
   },

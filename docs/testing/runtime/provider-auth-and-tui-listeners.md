@@ -64,3 +64,37 @@
   - Pure Node.js sidecar check (`cd packages/desktop && node -e '... Server.listen ...'`) -> `/global/health`, `/provider`, `/agent`, `/config`, `/session`, `/pty/shells` all return HTTP 200; `connected: ['xai', 'antigravity']` with `grok-4.7`, `grok-4.7-build-fast`, `gemini-4-argon`, `gemini-3.8-flash` present.
   - Headless Chrome + Node.js sidecar check -> `[data-action="prompt-model"]` renders `data-control-type="popover"` with a default model selected and lists `Grok 4.7`, `Grok 4.7 Fast`, `Grok 4.6`, `Grok 4.5`, `Gemini 4 Argon`, and `Gemini 3.8 Flash` with zero server error toasts.
 
+## BUG-20261019-005 — Desktop turns into a blank white screen after the first assistant reply due to Vite late optimization of `markdown.worker.ts` dependencies
+
+- **Affected scope**: `packages/app/vite.js`, `packages/session-ui/src/components/markdown-worker.ts`, `packages/session-ui/src/components/markdown.worker.ts`
+- **Observed behavior**: In Desktop (`electron-vite dev`) or `packages/app` dev mode with a cold Vite cache, sending the first question in a session caused the entire Electron window to turn into a solid `#f8f7f7` blank white screen for 4–5 seconds immediately when the assistant reply arrived.
+- **Expected behavior**: Rendering the first assistant `<Markdown>` response must not trigger a Vite dependency re-optimization or full-page reload.
+- **Reproduction steps**:
+  1. Start Desktop (`electron-vite dev`) or `vite --force` with a cold `.vite` cache.
+  2. Send `"hello"` in a new session and wait for the assistant reply to render `<Markdown>`.
+- **Root cause**: `packages/session-ui/src/components/markdown-worker.ts` imports `./markdown.worker.ts?worker&url` and spawns `new Worker(MarkdownWorkerUrl, { type: "module" })` only when the first `<Markdown>` component mounts. Because Vite's initial esbuild dependency scanner does not traverse `?worker&url` imports across workspace packages, Vite discovered `@shikijs/stream`, `remend`, `katex`, `marked`, and `marked-shiki` for the first time when the worker started, triggered `✨ new dependencies optimized ... reloading`, and blocked `/src/index.tsx` for ~4.3s while re-bundling 250+ Shiki chunks (leaving `<div id="root"></div>` empty on a `#f8f7f7` background).
+- **Fix**: Added `optimizeDeps.include` in `packages/app/vite.js` using Vite's nested dependency syntax (`"@apexo/ui > @shikijs/stream"`, `"@apexo/ui > @shikijs/transformers"`, `"@apexo/ui > dompurify"`, `"@apexo/ui > katex"`, `"@apexo/ui > marked"`, `"@apexo/ui > marked-shiki"`, `"@apexo/ui > morphdom"`, `"@apexo/ui > remend"`, `"@apexo/ui > shiki"`) so both `packages/app` and `packages/desktop` pre-bundle all markdown worker dependencies at startup.
+- **Verification**:
+  - Cold-cache `vite --force` + headless Chrome check (`cd packages/apexo && bun -e '... vite --force ...'`) -> `reloadCount: 1`, `viteForcedReload: false`, `markdownText: "GOAL_UI_WORK_COMPLETED"`, `rootChildren: 2` (zero mid-session reloads or `new dependencies optimized` messages).
+
+## BUG-20261019-006 — `SessionGoalDialog` renders a redundant full-width bottom Close button and `status-popover.tsx` duplicates `session.info` command registration
+
+- **Affected scope**: `packages/app/src/components/session-goal.tsx`, `packages/app/src/components/memory-review.tsx`, `packages/app/src/components/status-popover.tsx`, `packages/app/src/components/grok-commands.tsx`
+- **Observed behavior**:
+  1. In `SessionGoalDialog` (`/goal`), a redundant `<Button variant="ghost" onClick={() => dialog.close()}>{language.t("common.close")}</Button>` at the bottom of `div[data-component="session-goal"]` (`flex-col`) stretched across 100% of the dialog width as a floating centered `"关闭"` / `"Close"` button even though `<Dialog title=...>` already renders a header `×` close button (`[data-slot="dialog-close-button"]`). Similarly, `[data-action="goal-create"]` and `[data-action="goal-reports-open"]` stretched across the full 800px dialog width.
+  2. Mounting a session view logged `[warn] [command] duplicate command id "session.info" registered; keeping first entry` because both `status-popover.tsx` and `grok-commands.tsx` registered `session.info`.
+- **Expected behavior**:
+  1. `SessionGoalDialog` should rely on the standard `<Dialog>` header close button, right-align `[data-action="goal-create"]` (`variant="primary"`), and left-align `[data-action="goal-reports-open"]` (`self-start`).
+  2. `session.info` should be registered once in `grok-commands.tsx` and fall back to `command.trigger("status.open")` when no session is open, while `status-popover.tsx` registers only `status.open`.
+- **Reproduction steps**:
+  1. Open a session in Desktop and click the `Goal` button (`[data-action="session-goal"]`) or run `/goal`.
+  2. Inspect the bottom of the dialog and the renderer console log.
+- **Root cause**: Unaligned `<Button>` children inside `flex-col` containers in `session-goal.tsx` (and `memory-review.tsx`), plus overlapping `session.info` command registrations in `status-popover.tsx` and `grok-commands.tsx`.
+- **Fix**:
+  1. Removed the redundant bottom Close button from `SessionGoalDialog`, wrapped `[data-action="goal-create"]` in `<div class="flex justify-end">` with `variant="primary"`, added `self-start` to `[data-action="goal-reports-open"]`, and added `self-end` to the Close button in `MemoryReviewDialog`.
+  2. Kept only `status.open` in `status-popover.tsx` and updated `sessionInfo` in `grok-commands.tsx` to trigger `status.open` when `!sessionID()`.
+- **Verification**:
+  - `cd packages/app && bun typecheck && bun run test:unit` -> 88 pass, 0 fail.
+  - `cd packages/apexo && bun run script/grok-goal-ui.mjs` -> all 12/12 Goal UI browser checks pass.
+  - Cold-cache Chrome inspection -> `duplicateSessionInfoWarn: false`, `headerClose: true`, and `goal-create` button width is `144px` inside the `800px` dialog with no redundant bottom Close button.
+

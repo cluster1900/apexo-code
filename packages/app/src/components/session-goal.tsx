@@ -50,7 +50,6 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
   const sdk = useSDK()()
   const api = sdk.protocol.then((protocol) => (protocol === "v2" ? sdk.client.v2.goal : sdk.client.goal))
   const language = useLanguage()
-  const dialog = useDialog()
   const lifetime = new AbortController()
   const options = { throwOnError: true as const, signal: lifetime.signal }
   const intent = props.objective?.trim()
@@ -214,13 +213,16 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   <p>{language.t("goal.selectModel")}</p>
                 </Show>
                 <p class="text-text-weak">{language.t("goal.createHint")}</p>
-                <Button
-                  data-action="goal-create"
-                  type="submit"
-                  disabled={state.pending || !props.selection || !state.objective.trim() || !validBudget()}
-                >
-                  {language.t("goal.create")}
-                </Button>
+                <div class="flex justify-end">
+                  <Button
+                    data-action="goal-create"
+                    variant="primary"
+                    type="submit"
+                    disabled={state.pending || !props.selection || !state.objective.trim() || !validBudget()}
+                  >
+                    {language.t("goal.create")}
+                  </Button>
+                </div>
               </form>
             }
           >
@@ -294,6 +296,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                 </Show>
                 <Button
                   data-action="goal-reports-open"
+                  class="self-start"
                   size="small"
                   variant="ghost"
                   onClick={() => setState("reports", (value) => !value)}
@@ -383,7 +386,15 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   </Button>
                 </div>
                 <Show when={state.confirm}>
-                  <div role="alert" class="flex flex-col gap-2">
+                  <div
+                    role="alert"
+                    ref={(element) =>
+                      requestAnimationFrame(() => {
+                        if (!lifetime.signal.aborted) element.scrollIntoView({ block: "nearest", behavior: "instant" })
+                      })
+                    }
+                    class="flex flex-col gap-2"
+                  >
                     <p>{language.t("goal.clearReportsConfirm")}</p>
                     <div class="flex gap-2">
                       <Button
@@ -403,10 +414,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
             )}
           </Show>
         </Show>
-        <p class="text-text-weak">{language.t("goal.closeHint")}</p>
-        <Button variant="ghost" onClick={() => dialog.close()}>
-          {language.t("common.close")}
-        </Button>
+        <p class="text-12-regular text-text-weak">{language.t("goal.closeHint")}</p>
       </div>
     </Dialog>
   )

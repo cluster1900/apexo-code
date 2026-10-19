@@ -83,7 +83,9 @@ export function MemoryReviewDialog(props: { sessionID: string; content?: string 
             <>
               <p role="status">{language.t("memory.review.saved")}</p>
               <code class="break-all">{state.saved}</code>
-              <Button onClick={() => dialog.close()}>{language.t("common.close")}</Button>
+              <Button class="self-end" onClick={() => dialog.close()}>
+                {language.t("common.close")}
+              </Button>
             </>
           }
         >

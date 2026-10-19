@@ -9,9 +9,7 @@ import { ServerConnection, useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSync } from "@/context/sync"
 import { useGlobal } from "@/context/global"
-import { useCommand, type CommandOption } from "@/context/command"
-import { useDialog } from "@apexo/ui/context/dialog"
-import { useParams } from "@solidjs/router"
+import { useCommand } from "@/context/command"
 import {
   hasNonBlockingServiceIssue,
   hasServiceNeedingAttention,
@@ -27,7 +25,9 @@ export function StatusPopover() {
   const global = useGlobal()
   const sync = useSync()
   const [shown, setShown] = createSignal(false)
-  useCommand().register("status-popover", useSessionInfoCommands(() => setShown(true)))
+  useCommand().register("status-popover", () => [
+    { id: "status.open", title: language.t("status.popover.trigger"), onSelect: () => setShown(true) },
+  ])
   const serverHealth = () => global.servers.health[server.key]?.healthy
   const ready = createMemo(() => serverHealth() === false || (sync().data.mcp_ready && sync().data.lsp_ready))
   const attention = createMemo(() =>
@@ -86,29 +86,6 @@ export function StatusPopover() {
   )
 }
 
-// Grok Build `/session-info` (aliases `/status`, `/info`) shows the open session's details; server status keeps its
-// own palette entry and is what the slash opens where no session is open.
-function useSessionInfoCommands(openStatus: () => void) {
-  const language = useLanguage()
-  const dialog = useDialog()
-  const params = useParams()
-  return (): CommandOption[] => [
-    {
-      id: "session.info",
-      title: language.t("grok.sessionInfo"),
-      slash: "session-info",
-      slashAliases: ["status", "info"],
-      onSelect: async () => {
-        const id = params.id
-        if (!id) return openStatus()
-        const { DialogSessionInfo } = await import("./dialog-session-info")
-        dialog.show(() => <DialogSessionInfo sessionID={id} />)
-      },
-    },
-    { id: "status.open", title: language.t("status.popover.trigger"), onSelect: openStatus },
-  ]
-}
-
 export function StatusPopoverV2(props: { scope?: "server" }) {
   if (props.scope === "server") return <ServerStatusPopover />
   return <DirectoryStatusPopover />
@@ -120,7 +97,9 @@ function DirectoryStatusPopover() {
   const global = useGlobal()
   const sync = useSync()
   const [shown, setShown] = createSignal(false)
-  useCommand().register("status-popover", useSessionInfoCommands(() => setShown(true)))
+  useCommand().register("status-popover", () => [
+    { id: "status.open", title: language.t("status.popover.trigger"), onSelect: () => setShown(true) },
+  ])
   const serverHealth = () => global.servers.health[ServerConnection.key(server().server)]?.healthy
   const ready = createMemo(() => serverHealth() === false || (sync().data.mcp_ready && sync().data.lsp_ready))
   const attention = createMemo(() =>
