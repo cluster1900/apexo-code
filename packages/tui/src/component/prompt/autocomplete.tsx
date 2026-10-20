@@ -83,6 +83,8 @@ export function Autocomplete(props: {
   fileStyleId: number
   agentStyleId: number
   promptPartTypeId: () => number
+  /** Submits the prompt; used to run a selected command that takes no arguments. */
+  onSubmit?: () => void
 }) {
   const editor = useEditorContext()
   const sdk = useSDK()
@@ -455,11 +457,19 @@ export function Autocomplete(props: {
         display: "/" + serverCommand.name + label,
         description: serverCommand.description,
         onSelect: () => {
-          const newText = "/" + serverCommand.name + " "
+          // Grok Build 1.0.62: a command without argument placeholders runs on Enter. Commands whose template takes
+          // arguments keep the trailing space; hints cannot tell optional from required arguments.
+          const run = serverCommand.hints.length === 0 && props.onSubmit
+          const newText = "/" + serverCommand.name + (run ? "" : " ")
           const cursor = props.input().logicalCursor
           props.input().deleteRange(0, 0, cursor.row, cursor.col)
           props.input().insertText(newText)
           props.input().cursorOffset = Bun.stringWidth(newText)
+          if (!run) return
+          props.setPrompt((draft) => {
+            draft.input = props.input().plainText
+          })
+          run()
         },
       })
     }

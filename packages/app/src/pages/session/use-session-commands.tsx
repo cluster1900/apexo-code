@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { nextSessionMode, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
+import { nextSessionMode, parseCopyArgs, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { previewSelectedLines } from "@apexo/session-ui/pierre/selection-bridge"
@@ -17,11 +17,11 @@ import {
   downloadSessionExport,
   fetchSessionExport,
   sessionExportFilename,
+  sessionResponse,
   sessionTrace,
   sessionTranscript,
   sessionUsage,
 } from "@/utils/session-export"
-import { findLast } from "@apexo/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { Message, Part, UserMessage } from "@apexo/sdk/v2"
@@ -184,19 +184,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       showToast({ variant: "success", icon: "circle-check", title: language.t("toast.session.copy.success") })
     })
 
-  const copyLastMessage = () =>
+  // Grok Build `/copy [N]` and vim `y`: the Nth-latest response's markdown (1 = latest).
+  const copyResponse = (index = 1) =>
     withExport(async (data) => {
-      const last = findLast(data.messages, (item) => item.info.role === "assistant")
-      const text = (last?.parts ?? [])
-        .flatMap((part) => (part.type === "text" ? [part.text] : []))
-        .join("\n")
-        .trim()
+      const text = sessionResponse(data, index)
       if (!text) {
-        showToast({ variant: "error", title: language.t("grok.vim.noMessage") })
+        showToast({
+          variant: "error",
+          title: index === 1 ? language.t("grok.vim.noMessage") : language.t("grok.copy.missing", { index }),
+        })
         return
       }
       await navigator.clipboard.writeText(text)
-      showToast({ variant: "success", icon: "circle-check", title: language.t("grok.vim.copied") })
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: index === 1 ? language.t("grok.vim.copied") : language.t("grok.copy.done", { index }),
+      })
     })
   createEffect(() => applyCompactMode(sync().data.config))
   // Capture phase: timeline/list handlers stop propagation of bare letter keys before they reach window.
@@ -207,7 +211,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       if (params.id)
         vimKeydown(
           event,
-          { message: () => void copyLastMessage(), transcript: () => void copyTranscript() },
+          { message: () => void copyResponse(), transcript: () => void copyTranscript() },
           sync().data.config,
         )
     },
@@ -542,7 +546,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.copy"),
       slash: "copy",
       disabled: !params.id,
-      onSelect: () => void copyTranscript(),
+      onSelect: () => void copyResponse(),
+      onSlash: (args) => {
+        const parsed = parseCopyArgs(args)
+        if ("error" in parsed) return showToast({ variant: "error", title: parsed.error })
+        // The renderer has no safe new-file write; Grok's file output stays a terminal feature.
+        if (parsed.path) return showToast({ title: language.t("grok.copy.file", { index: parsed.index }) })
+        void copyResponse(parsed.index)
+      },
     }),
     sessionCommand({
       id: "session.timeline",

@@ -1,7 +1,7 @@
 <p align="center">
   <img src="docs/assets/apexo-wordmark.png" alt="Apexo" width="420">
 </p>
-<p align="center"><b>Grok 的 UI 外壳（UI harness）。</b>开源的编程智能体，支持终端、浏览器和桌面端。</p>
+<p align="center"><b>开源的通用编程智能体（General-Purpose Coding Agent）</b>，同时支持终端（TUI）、浏览器（Web）与桌面端（Desktop）。</p>
 <p align="center">
   <a href="README.md">English</a> |
   <a href="README.zh.md">简体中文</a>
@@ -11,42 +11,20 @@
 
 ## Apexo 是什么？
 
-Apexo 是 **Grok** 的 UI 外壳。它的核心目标是支持 SpaceXAI 官方开源编程智能体
-[Grok Build](https://github.com/xai-org/grok-build)，让每个人都能更方便地使用 Grok。
-终端界面（TUI）、Web 界面和桌面应用共用同一个本地智能体服务。
+Apexo 是一个**开源的通用编程智能体**，基于统一的本地智能体运行时，同时提供终端界面（TUI）、Web 界面和 Electron 桌面应用。
 
-目前已经具备：
+Apexo 并非绑定单一模型厂商的简单外壳，而是拥有深度演进的自研智能体架构——包括持久化 V2 会话引擎、自主目标执行（`/goal`）、多会话工作流（`/workflow`）、后台任务与子智能体编排（`/tasks`）、跨会话持久记忆（`/memory`）、原生命令沙盒（`/sandbox`）、生命周期钩子（`/hooks`）以及旁路快速提问（`/btw`）——并对各大主流模型生态提供一等公民级的原生支持：
 
-- **Grok 优先。**使用 xAI 账号登录（SuperGrok；X Premium 账号以 xAI 实际开放的 Grok
-  权限为准），采用 xAI 的 OAuth 设备码流程，无需 API key；也可以使用 `XAI_API_KEY`。
-  可用 models.dev 目录中的全部 Grok 模型，例如 `grok-4.7`、`grok-4.6`、`grok-4.20`
-  和 `grok-build-0.1`。
-- **Antigravity 原生登录。**直接复用本机 Antigravity CLI（`agy`）已有的登录态，无需重复授权；
-  尚未登录时，通过 agy 完成一次 Google 授权即可。详见 [Antigravity 接入说明](docs/antigravity.md)。
-- **次要提供商（API key 方式）：**OpenAI、Anthropic（Claude）、Google（Gemini）。
-- **没有付费订阅，没有广告。**不再有托管模型网关、账号控制台、会话分享服务、升级推销或任何推广内容。
-  一切在本地运行，直接连接你配置的提供商。
-- **终端、Web、桌面三端**共用同一个本地服务和同一份会话历史。
-- **Grove 主题：**TUI 和应用的默认主题，暖黑底配绿色强调色。原有主题全部保留。
+- **Google Gemini 与 Antigravity 深度支持：** 支持直接复用本机 Antigravity CLI（`agy`）的 Google 登录态（无需重复授权），也支持通过 `GOOGLE_GENERATIVE_AI_API_KEY` 直接接入 Gemini 系列模型；完整支持思考摘要（Reasoning Summary）、多模态附件与长上下文编程。详见 [Antigravity 接入说明](docs/antigravity.md)。
+- **xAI Grok 与 Grok Build 工作流体验：** 支持使用 xAI 账号（SuperGrok 或 X Premium）通过 OAuth 设备码流程免密登录，或使用 `XAI_API_KEY`；原生支持 `grok-4.7`、`grok-4.6`、`grok-4.20`、`grok-build-0.1` 等模型与完整工具链。
+- **通用多提供商与 OpenAI 兼容生态：** 原生支持 OpenAI、Anthropic（Claude）、MiniMax、DeepSeek、Qwen 以及任意自建/第三方 OpenAI 兼容服务（vLLM、Ollama、LM Studio 等），自动提取 `<think>` 推理标签并支持增量流式输出与工具调用。
+- **纯本地运行，无中间商订阅，无广告：** 没有托管模型网关、强制账号后台、会话上传或推销内容。所有能力均在本地运行，直接连接你所配置的模型提供商。
+- **一套本地服务，三端一致体验：** 终端、Web 与桌面端共享同一个本地服务端、实时事件流和同一份持久化会话历史。
+- **Grove 主题：** TUI、Web 与桌面端的默认暖黑绿配色主题，同时保留全部经典与自定义主题支持。
 
-### OAuth 适配范围与选择理由
+### 登录与鉴权设计
 
-本项目的 OAuth 适配只面向 **Antigravity 和 Grok**，也只做**本地适配**。
-登录与授权在用户自己的机器上处理，不提供托管的 OAuth 中转或账号服务；模型请求仍直接发送给相应提供商。
-这一范围针对 OAuth 和登录态集成，下方列出的 API key 接入方式仍然保留。
-
-**作者立场：**我选择 Antigravity 和 Grok，是因为在我看来，它们对中国用户更友好，
-不会仅仅因为用户是中国人就将其拒之门外，这是我很看重的一点。
-我反对基于国籍的排斥，也认为 Claude 对中国用户的限制带有歧视性，因此不计划适配 Claude 的 OAuth。
-
-不适配 OpenAI OAuth 则是另一个原因：我觉得 OpenAI 自己的产品已经做得太好了，
-我没有把握做出超越它们的体验，因此更愿意把这个项目的精力放在 Antigravity 和 Grok 上。
-
-> [!NOTE]
-> **与 Grok Build 的集成现状：**Apexo 目前还不能驱动 Grok Build CLI。它现在用自带的智能体循环，
-> 通过你的 Grok 登录或 API key 直接调用 xAI API。把 Grok Build 本身接到 Apexo 的界面后面是我们的目标：
-> Grok Build 通过 `grok agent stdio` 提供 Agent Client Protocol（ACP）服务，而 Apexo 已经内置
-> ACP SDK。在这项集成完成之前，请把 Apexo 当作一个 Grok 优先的 UI 和智能体，而不是 Grok Build 的前端。
+Apexo 对 **Google Antigravity（`agy`）** 与 **xAI Grok** 提供**本地 OAuth / 原生 CLI 登录态复用**，同时对所有主流模型（Google Gemini、xAI、OpenAI、Anthropic、MiniMax 及任意 OpenAI 兼容接口）提供 API Key 与自定义端点直连支持。所有鉴权凭据均保存在本机，请求直达对应模型服务商。
 
 <p align="center">
   <img src="docs/assets/apexo-tui.png" alt="Apexo 终端界面" width="820">
@@ -55,9 +33,19 @@ Apexo 是 **Grok** 的 UI 外壳。它的核心目标是支持 SpaceXAI 官方�
   <img src="docs/assets/apexo-web.png" alt="Apexo Web 界面" width="820">
 </p>
 
+## 核心能力
+
+- **自主目标（`/goal`）：** 设定目标与验证标准，智能体将自动规划并持续迭代，直至验证通过、主动暂停、受阻或预算耗尽。
+- **多会话工作流（`/workflow`）：** 在独立的子会话中并行推进多步骤工作流，主会话保持随时交互。
+- **后台任务与子智能体（`/tasks`）：** 集中管理后台命令、定时循环任务（`/loop`）、子智能体（Subagents）与协调器会话。
+- **持久记忆系统（`/memory`、`/remember`、`/flush`、`/dream`）：** 跨会话审阅、沉淀与整理项目级和用户级持久记忆。
+- **原生命令沙盒（`/sandbox`）：** 基于操作系统原生机制（macOS `seatbelt`、Linux `bubblewrap`）限制命令的文件写入与网络访问（支持 `workspace` 与 `read-only` 模式）。
+- **生命周期钩子（`/hooks`）：** 查看会话钩子快照，并提供仓库级显式信任授权管理。
+- **旁路提问（`/btw`）：** 在不打断当前主线任务、不污染主上下文的前提下，随时弹窗进行旁路问答。
+
 ## 安装（从源码构建）
 
-Apexo 暂未发布到任何包管理器。构建前需要安装 [Bun](https://bun.sh) 1.3.x（仓库固定为 `bun@1.3.14`）和 git。
+构建前需要安装 [Bun](https://bun.sh) 1.3.x（仓库固定为 `bun@1.3.14`）和 git。
 
 ```bash
 git clone https://github.com/cluster1900/apexo-grok.git apexo && cd apexo
@@ -89,30 +77,28 @@ bun dev --help
 ## 使用
 
 ```bash
-apexo                     # 在当前目录启动终端界面
-apexo auth login          # 登录：选择 xAI -> "SuperGrok Subscription"（OAuth）或填写 API key
-apexo auth list           # 查看已配置的凭据
-apexo models xai          # 列出 Grok 模型
-apexo run "解释一下这个仓库"   # 一次性、非交互运行
-apexo web                 # 启动本地服务并打开 Web 界面
-apexo serve               # 无界面服务（供桌面端、编辑器、脚本使用）
-apexo acp                 # 作为 ACP 智能体运行，供 Zed 等编辑器接入
+apexo                           # 在当前目录启动终端界面（TUI）
+apexo auth login                # 登录：支持 Google Antigravity、xAI Grok（OAuth）或配置 API key
+apexo auth list                 # 查看已配置的凭据
+apexo models                    # 列出所有已配置提供商的可用模型
+apexo run "解释一下这个仓库"     # 一次性、非交互运行
+apexo web                       # 启动本地服务并打开 Web 界面
+apexo serve                     # 无界面服务（供桌面端、编辑器、脚本使用）
+apexo acp                       # 作为 ACP 智能体运行，供 Zed 等编辑器接入
 ```
 
-在 TUI 中：`/connect` 打开提供商对话框，`/models` 切换模型，`/themes` 切换主题，`ctrl+p` 打开命令面板；
-以 `!` 开头的输入会作为 shell 命令执行。
+在 TUI 与桌面端输入框中：`/connect` 打开提供商连接对话框，`/models` 切换模型，`/themes` 切换主题，`ctrl+p`（macOS 上为 `cmd+k` / `cmd+p`）打开命令面板；以 `!` 开头的输入会作为 shell 命令执行。
 
-### 提供商
+### 提供商支持
 
-| 提供商               | 连接方式                                                                        | 环境变量                       |
-| -------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
-| **xAI Grok**（主要） | `apexo auth login` -> xAI -> SuperGrok Subscription（设备码 OAuth），或 API key | `XAI_API_KEY`                  |
-| **Antigravity**      | 选择 Antigravity，复用本机 `agy` 登录态；未登录时通过 agy 完成一次 Google 授权  | —                              |
-| OpenAI               | API key                                                                         | `OPENAI_API_KEY`               |
-| Anthropic（Claude）  | API key                                                                         | `ANTHROPIC_API_KEY`            |
-| Google（Gemini）     | API key                                                                         | `GOOGLE_GENERATIVE_AI_API_KEY` |
-
-仍保留通用的 OpenAI 兼容“自定义提供商”入口，可接入自建服务。
+| 提供商                              | 连接方式                                                                          | 环境变量                       |
+| ----------------------------------- | --------------------------------------------------------------------------------- | ------------------------------ |
+| **Google Gemini**                   | API key（支持 Google AI Studio 等）                                               | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **Antigravity（Google / Gemini）**  | 选择 Antigravity，直接复用本机 `agy` 登录态；未登录时通过 `agy` 完成一次 Google 授权 | —                              |
+| **xAI Grok**                        | `apexo auth login` -> xAI -> SuperGrok Subscription（设备码 OAuth），或 API key   | `XAI_API_KEY`                  |
+| **OpenAI**                          | API key                                                                           | `OPENAI_API_KEY`               |
+| **Anthropic（Claude）**             | API key                                                                           | `ANTHROPIC_API_KEY`            |
+| **自定义 / OpenAI 兼容服务**         | 在 `apexo.jsonc` 中配置 `baseURL` 与 `apiKey`（如 MiniMax、DeepSeek、Ollama、vLLM）| 自定义 `{env:...}`             |
 
 ### 桌面应用
 
@@ -142,28 +128,53 @@ Apexo 读取 JSON/JSONC 配置文件：
 ```jsonc
 {
   "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
-  "model": "xai/grok-4.7",
+  "model": "google/gemini-2.5-pro",
   "theme": "grove",
 }
 ```
 
-编辑器补全用的 JSON Schema 位于 [`schemas/`](schemas)：`config.json`（apexo.json）、`tui.json`、
-`theme.json`（TUI 主题）和 `desktop-theme.json`（应用主题）。可用 `bun script/schemas.ts` 重新生成。
+### 自定义 OpenAI 兼容提供商（如 MiniMax / DeepSeek / Ollama）
 
-上游项目已有安装中的配置文件、目录和环境变量仍会作为后备读取（Apexo 命名优先），旧配置无需修改。
-这些兼容名称集中在 [`packages/core/src/legacy-compat.ts`](packages/core/src/legacy-compat.ts)。
+你可以在 `~/.config/apexo/apexo.jsonc` 或项目根目录的 `apexo.jsonc` 中接入任意自建或第三方 OpenAI 兼容端点（例如 MiniMax、DeepSeek、Qwen、vLLM、Ollama、LM Studio 等）：
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "model": "custom/MiniMax-M2.7",
+  "provider": {
+    "custom": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Custom OpenAI-Compatible",
+      "options": {
+        "baseURL": "https://api.minimax.cn/v1",
+        "apiKey": "{env:CUSTOM_API_KEY}",
+      },
+      "models": {
+        "MiniMax-M2.7": {
+          "name": "MiniMax M2.7",
+        },
+      },
+    },
+  },
+}
+```
+
+配置完成后，可运行 `apexo models` 验证自定义提供商与模型是否已注册成功。
+
+编辑器补全用的 JSON Schema 位于 [`schemas/`](schemas)：`config.json`（`apexo.json`）、`tui.json`、
+`theme.json`（TUI 主题）和 `desktop-theme.json`（应用主题）。可用 `bun script/schemas.ts` 重新生成。
 
 ## 主题
 
-- **TUI：**默认主题为 `grove`。可用 `/themes` 切换，或在 `tui.json`（`~/.config/apexo/tui.json`）
+- **TUI：** 默认主题为 `grove`。可用 `/themes` 切换，或在 `tui.json`（`~/.config/apexo/tui.json`）
   中设置 `"theme"`。自定义主题放在 `.apexo/themes/*.json` 或 `~/.config/apexo/themes/`。
-- **Web / 桌面应用：**在 设置 -> 外观 中默认使用 Grove，原主题显示为 “Classic”。
+- **Web / 桌面应用：** 在 设置 -> 外观 中默认使用 Grove，原有主题显示为 “Classic”。
 
 ## 开发
 
 ```bash
 bun install
-bun turbo typecheck --concurrency=1
+bun turbo typecheck --concurrency=2
 (cd packages/core && bun test)
 (cd packages/apexo && bun test)
 (cd packages/tui && bun test)
@@ -177,8 +188,4 @@ bun turbo typecheck --concurrency=1
 
 ## 许可证
 
-MIT，详见 [LICENSE](LICENSE)，原版权声明保持不变。
-
----
-
-Apexo 基于 [OpenCode](https://github.com/anomalyco/opencode) 构建，感谢 OpenCode 的作者和贡献者。
+MIT，详见 [LICENSE](LICENSE)。

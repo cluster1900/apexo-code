@@ -1,4 +1,7 @@
 import { Show, type JSX } from "solid-js"
+import { Button } from "@apexo/ui/button"
+import { Dialog } from "@apexo/ui/dialog"
+import { useDialog } from "@apexo/ui/context/dialog"
 import { DropdownMenu } from "@apexo/ui/dropdown-menu"
 import { Icon } from "@apexo/ui/icon"
 import { IconButton } from "@apexo/ui/icon-button"
@@ -17,6 +20,7 @@ export function WindowsAppMenu(props: {
 }) {
   let lastFocused: HTMLElement | undefined
   const language = useLanguage()
+  const dialog = useDialog()
 
   const rememberFocus = () => {
     const active = document.activeElement
@@ -31,12 +35,44 @@ export function WindowsAppMenu(props: {
     if (commandDisabled(id)) return
     props.command.trigger(id)
   }
+  const newSessionKeybind = () => props.command.keybind("tab.new") || props.command.keybind("session.new")
+  const newSessionDisabled = () => commandDisabled("tab.new") && commandDisabled("session.new")
+  const runNewSession = () => {
+    if (!commandDisabled("tab.new")) {
+      runCommand("tab.new")
+      return
+    }
+    runCommand("session.new")
+  }
+  const openAboutDialog = () => {
+    const version = props.platform.version ?? "dev"
+    const channel = import.meta.env.VITE_APEXO_CHANNEL ?? (import.meta.env.DEV ? "dev" : "stable")
+    dialog.show(() => (
+      <Dialog title={language.t("desktop.menu.about", { appName: "Apexo" })} class="w-full max-w-[400px] mx-auto">
+        <div class="flex flex-col gap-3 px-6 pb-6 text-13-regular text-text-base">
+          <div class="text-14-medium text-text-strong">Apexo Desktop</div>
+          <div class="text-text-weak">
+            Version {version} ({channel})
+          </div>
+          <div class="flex justify-end pt-2">
+            <Button type="button" variant="primary" size="large" onClick={() => dialog.close()}>
+              OK
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
+  }
   const runAction = (action: DesktopMenuAction) => {
     if (action.startsWith("edit.") && lastFocused?.isConnected) lastFocused.focus({ preventScroll: true })
     void props.platform.runDesktopMenuAction?.(action)
   }
   const runEntry = (entry: DesktopMenuEntry) => {
     if (entry.type === "separator") return
+    if (entry.command === "session.new") {
+      runNewSession()
+      return
+    }
     if (entry.command) {
       runCommand(entry.command)
       return
@@ -79,7 +115,26 @@ export function WindowsAppMenu(props: {
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="desktop-app-menu">
           <DropdownMenu.Group>
-            <DropdownMenu.GroupLabel class="desktop-app-menu-heading">Apexo</DropdownMenu.GroupLabel>
+            <DesktopMenuItem label={language.t("desktop.menu.app")} onSelect={openAboutDialog} />
+            <DesktopMenuItem
+              label={language.t("sidebar.nav.projectsAndSessions")}
+              keybind={props.command.keybind("home.toggle") || props.command.keybind("sidebar.toggle")}
+              disabled={commandDisabled("home.toggle") && commandDisabled("sidebar.toggle")}
+              onSelect={() => {
+                if (!commandDisabled("home.toggle")) {
+                  runCommand("home.toggle")
+                  return
+                }
+                runCommand("sidebar.toggle")
+              }}
+            />
+            <DesktopMenuItem
+              label={language.t("desktop.menu.newSession")}
+              keybind={newSessionKeybind()}
+              disabled={newSessionDisabled()}
+              onSelect={runNewSession}
+            />
+            <DropdownMenu.Separator />
             {DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, "windows")).map((menu) => (
               <DesktopMenuSubmenu label={language.t(menu.labelKey)}>
                 {menu.items
@@ -90,8 +145,20 @@ export function WindowsAppMenu(props: {
                     ) : (
                       <DesktopMenuItem
                         label={entry.labelKey ? language.t(entry.labelKey) : ""}
-                        keybind={entry.command ? props.command.keybind(entry.command) : entry.accelerator?.windows}
-                        disabled={entry.command ? commandDisabled(entry.command) : false}
+                        keybind={
+                          entry.command === "session.new"
+                            ? newSessionKeybind()
+                            : entry.command
+                              ? props.command.keybind(entry.command)
+                              : entry.accelerator?.windows
+                        }
+                        disabled={
+                          entry.command === "session.new"
+                            ? newSessionDisabled()
+                            : entry.command
+                              ? commandDisabled(entry.command)
+                              : false
+                        }
                         onSelect={() => runEntry(entry)}
                       />
                     ),

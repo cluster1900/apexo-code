@@ -60,6 +60,22 @@ export function downloadSessionExport(filename: string, data: unknown) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * `/copy [N]`: the source markdown of the Nth-latest assistant response (1 = latest). Responses are assistant messages
+ * with text, so tool-only steps between them do not count.
+ */
+export function sessionResponse(data: SessionExportData, index = 1) {
+  const responses = data.messages.flatMap((item) => {
+    if (item.info.role !== "assistant") return []
+    const text = item.parts
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("\n")
+      .trim()
+    return text ? [text] : []
+  })
+  return index >= 1 ? responses.at(-index) : undefined
+}
+
 // Desktop counterparts of the CLI `/copy`, `/usage` and `/trace` surfaces share one implementation with the TUI.
 export {
   sessionTrace,

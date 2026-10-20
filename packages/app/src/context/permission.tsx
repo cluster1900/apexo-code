@@ -430,6 +430,17 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       }),
     )
 
+    void input.sdk.client.session
+      .update({
+        sessionID,
+        directory,
+        permission: [
+          { permission: "edit", pattern: "*", action: "allow" },
+          { permission: "bash", pattern: "*", action: "allow" },
+        ],
+      })
+      .catch(() => undefined)
+
     list(directory)
       .then((permissions) => {
         if (meta.disposed) return
@@ -457,6 +468,18 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
         delete draft.autoAccept[sessionID]
       }),
     )
+    if (directory) {
+      void input.sdk.client.session
+        .update({
+          sessionID,
+          directory,
+          permission: [
+            { permission: "edit", pattern: "*", action: "ask" },
+            { permission: "bash", pattern: "*", action: "ask" },
+          ],
+        })
+        .catch(() => undefined)
+    }
   }
 
   function setReview(sessionID: string, directory: string, value: boolean) {

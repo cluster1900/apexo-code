@@ -817,6 +817,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     items: slashCommands,
     key: (x) => x?.id,
     filterKeys: ["trigger", "aliases", "title"],
+    // `/m` must run the command whose name or alias is exactly "m", not a fuzzy neighbour such as /multiline.
+    exact: (item, query) => item.trigger.toLowerCase() === query || !!item.aliases?.split(" ").includes(query),
     onSelect: handleSlashSelect,
   })
 
@@ -858,7 +860,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const el = node as HTMLElement
       if (el.dataset.type === "file") return true
       if (el.dataset.type === "agent") return true
-      return el.tagName === "BR"
+      if (el.tagName === "BR") return !node.nextSibling ? false : true
+      return false
     })
 
   const renderEditor = (parts: Prompt) => {
@@ -1047,6 +1050,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (shouldReset) {
       closePopover()
       resetHistoryNavigation()
+      if (editorRef.childNodes.length > 0) {
+        clearEditor()
+        if (document.activeElement === editorRef) setCursorPosition(editorRef, 0)
+      }
       if (prompt.dirty()) {
         mirror.input = true
         prompt.set(DEFAULT_PROMPT, 0)
@@ -1292,6 +1299,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onWorkflow: workflow.open,
       onGoal: goal.show,
       onGrokSlash: grok.submit,
+      onCommandSlash: command.slash,
       onMemoryCommand: memory.command,
       onRemember: memory.review,
       onMemoryWork: memory.work,
@@ -1300,6 +1308,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (background.onKeyDown(event)) return
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a") {
+      event.preventDefault()
+      const range = document.createRange()
+      range.selectNodeContents(editorRef)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      queueScroll()
+      return
+    }
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault()
       if (store.mode !== "normal") return

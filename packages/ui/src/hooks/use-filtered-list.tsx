@@ -13,6 +13,8 @@ export interface FilteredListProps<T> {
   sortBy?: (a: T, b: T) => number
   sortGroupsBy?: (a: { category: string; items: T[] }, b: { category: string; items: T[] }) => number
   skipFilter?: (item: T) => boolean
+  /** Moves items that exactly match the lowercase query (such as a command's exact name or alias) ahead of fuzzy ones. */
+  exact?: (item: T, query: string) => boolean
   onSelect?: (value: T | undefined, index: number) => void
   noInitialSelection?: boolean
 }
@@ -44,6 +46,11 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
               ? (fuzzysort.go(needle, filterable).map((x) => x.target) as T[])
               : fuzzysort.go(needle, filterable, { keys: props.filterKeys! }).map((x) => x.obj)
           return skipped.length ? [...filtered, ...skipped] : filtered
+        },
+        (x) => {
+          const exact = props.exact
+          if (!needle || !exact) return x
+          return [...x.filter((item) => exact(item, needle)), ...x.filter((item) => !exact(item, needle))]
         },
         groupBy((x) => (props.groupBy ? props.groupBy(x) : "")),
         entries(),

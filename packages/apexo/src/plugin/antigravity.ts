@@ -34,7 +34,7 @@ export function createAntigravityFetch(
       if (variant?.thinkingLevel) thinking.thinkingLevel = variant.thinkingLevel
     }
     const current = await session()
-    const headers = new Headers({ "content-type": "application/json", "user-agent": "apexo-antigravity" })
+    const headers = new Headers({ "content-type": "application/json", "user-agent": Antigravity.userAgent })
     headers.set("authorization", `Bearer ${current.access}`)
     const response = await transport(
       `${Antigravity.endpoint}/v1internal:${model[2]}${model[2] === "streamGenerateContent" ? "?alt=sse" : ""}`,

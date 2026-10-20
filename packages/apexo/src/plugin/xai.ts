@@ -1,10 +1,16 @@
+import path from "path"
+import { Effect } from "effect"
 import type { Hooks, PluginInput } from "@apexo/plugin"
-import { OAUTH_DUMMY_KEY } from "../auth"
+import { Global } from "@apexo/core/global"
 import { InstallationVersion } from "@apexo/core/installation/version"
+import { Auth, OAUTH_DUMMY_KEY } from "../auth"
+import { Filesystem } from "@/util/filesystem"
+import { isRecord } from "@/util/record"
 
 // Public Grok-CLI OAuth client.
 const CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 const TOKEN_URL = "https://auth.x.ai/oauth2/token"
+const GROK_OIDC_ENTRY_KEY = `https://auth.x.ai::${CLIENT_ID}`
 // RFC 8628 device authorization grant. Confirmed exposed by xAI's
 // /.well-known/openid-configuration as `device_authorization_endpoint`
 // with the matching `urn:ietf:params:oauth:grant-type:device_code` grant
@@ -29,9 +35,43 @@ const OAUTH_POLLING_SAFETY_MARGIN_MS = 3_000
 // long-running tool call doesn't have to recover from a mid-flight 401.
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 120_000
 
-interface XaiAuthPluginOptions {
+const DEFAULT_GROK_EFFORTS = ["low", "medium", "high", "xhigh"] as const
+
+const DEFAULT_GROK_MODELS = [
+  {
+    id: "grok-4.7",
+    name: "Grok 4.7",
+    context_window: 256_000,
+    release_date: "",
+    efforts: [...DEFAULT_GROK_EFFORTS],
+  },
+  {
+    id: "grok-4.7-build-fast",
+    name: "Grok 4.7 Fast",
+    context_window: 256_000,
+    release_date: "",
+    efforts: [...DEFAULT_GROK_EFFORTS],
+  },
+  {
+    id: "grok-4.6",
+    name: "Grok 4.6",
+    context_window: 256_000,
+    release_date: "",
+    efforts: [...DEFAULT_GROK_EFFORTS],
+  },
+  {
+    id: "grok-4.5",
+    name: "Grok 4.5",
+    context_window: 256_000,
+    release_date: "",
+    efforts: [...DEFAULT_GROK_EFFORTS],
+  },
+] as const
+
+export interface XaiAuthPluginOptions {
   tokenUrl?: string
   deviceAuthorizationUrl?: string
+  grokDir?: string
 }
 
 interface TokenResponse {
@@ -42,6 +82,108 @@ interface TokenResponse {
   expires_in?: number
   scope?: string
 }
+
+function defaultGrokDir() {
+  return process.env.GROK_HOME || path.join(Global.Path.home, ".grok")
+}
+
+export async function readGrokCliAuth(grokDir = defaultGrokDir()): Promise<Auth.Info | undefined> {
+  const raw = await Filesystem.readJson(path.join(grokDir, "auth.json")).catch(() => undefined)
+  if (!isRecord(raw)) return
+  const candidates = [raw[GROK_OIDC_ENTRY_KEY], ...Object.values(raw)]
+  for (const item of candidates) {
+    if (!isRecord(item)) continue
+    if (
+      typeof item.key === "string" &&
+      item.key.length > 0 &&
+      typeof item.refresh_token === "string" &&
+      item.refresh_token.length > 0
+    ) {
+      const parsed = typeof item.expires_at === "string" ? Date.parse(item.expires_at) : NaN
+      const expires = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
+      return {
+        type: "oauth",
+        access: item.key,
+        refresh: item.refresh_token,
+        expires,
+      }
+    }
+    if ((item.auth_mode === "api_key" || item.auth_mode === "api") && typeof item.key === "string" && item.key.length) {
+      return {
+        type: "api",
+        key: item.key,
+      }
+    }
+  }
+}
+
+export async function writeGrokCliOAuth(
+  tokens: { access: string; refresh: string; expires: number; idToken?: string },
+  grokDir = defaultGrokDir(),
+) {
+  const file = path.join(grokDir, "auth.json")
+  const raw = await Filesystem.readJson(file).catch(() => undefined)
+  if (!isRecord(raw)) return
+  const key =
+    GROK_OIDC_ENTRY_KEY in raw
+      ? GROK_OIDC_ENTRY_KEY
+      : Object.keys(raw).find((k) => isRecord(raw[k]) && raw[k].auth_mode === "oidc")
+  if (!key || !isRecord(raw[key])) return
+  const updated = {
+    ...raw,
+    [key]: {
+      ...raw[key],
+      auth_mode: "oidc",
+      key: tokens.access,
+      refresh_token: tokens.refresh,
+      ...(tokens.idToken ? { id_token: tokens.idToken } : {}),
+      expires_at: new Date(tokens.expires).toISOString(),
+      last_refresh: new Date().toISOString(),
+    },
+  }
+  await Filesystem.write(file, JSON.stringify(updated, null, 2) + "\n").catch(() => {})
+}
+
+export async function readGrokCliModels(grokDir = defaultGrokDir()) {
+  const map = new Map<
+    string,
+    { id: string; name: string; context_window: number; release_date: string; efforts: string[] }
+  >(DEFAULT_GROK_MODELS.map((item) => [item.id, { ...item, efforts: [...item.efforts] }]))
+  const raw = await Filesystem.readJson(path.join(grokDir, "models_cache.json")).catch(() => undefined)
+  const list = isRecord(raw) && Array.isArray(raw.models) ? raw.models : []
+  for (const item of list) {
+    if (!isRecord(item) || typeof item.id !== "string" || !item.id) continue
+    const prev = map.get(item.id)
+    const efforts = Array.isArray(item.reasoning_efforts)
+      ? item.reasoning_efforts.flatMap((entry) =>
+          isRecord(entry) && typeof entry.effort === "string" && entry.effort ? [entry.effort] : [],
+        )
+      : []
+    map.set(item.id, {
+      id: item.id,
+      name: typeof item.name === "string" && item.name ? item.name : (prev?.name ?? item.id),
+      context_window:
+        typeof item.context_window === "number" && item.context_window > 0
+          ? item.context_window
+          : (prev?.context_window ?? 256_000),
+      release_date: prev?.release_date ?? "",
+      efforts: efforts.length > 0 ? efforts : (prev?.efforts ?? [...DEFAULT_GROK_EFFORTS]),
+    })
+  }
+  return [...map.values()]
+}
+
+export const syncGrokCliAuth = Effect.fn("Xai.syncGrokCliAuth")(function* (
+  auth: Auth.Interface,
+  grokDir = defaultGrokDir(),
+) {
+  const external = yield* Effect.promise(() => readGrokCliAuth(grokDir))
+  if (!external) return
+  const existing = yield* auth.get("xai").pipe(Effect.orElseSucceed(() => undefined))
+  if (!existing || (existing.type === "oauth" && external.type === "oauth" && external.expires > existing.expires)) {
+    yield* auth.set("xai", external).pipe(Effect.ignore)
+  }
+})
 
 function authHeaders() {
   return {
@@ -204,6 +346,69 @@ interface RefreshResult {
 
 export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOptions = {}): Promise<Hooks> {
   return {
+    provider: {
+      id: "xai",
+      async models(provider) {
+        const extra = await readGrokCliModels(options.grokDir)
+        const models: typeof provider.models = {}
+        for (const item of extra) {
+          const existing = provider.models[item.id]
+          models[item.id] = {
+            id: item.id,
+            providerID: "xai",
+            api: existing?.api ?? {
+              id: item.id,
+              url: "https://api.x.ai/v1",
+              npm: "@ai-sdk/xai",
+            },
+            name: item.name,
+            family: item.id,
+            capabilities: existing?.capabilities ?? {
+              temperature: true,
+              reasoning: true,
+              attachment: true,
+              toolcall: true,
+              input: {
+                text: true,
+                audio: false,
+                image: true,
+                video: false,
+                pdf: false,
+              },
+              output: {
+                text: true,
+                audio: false,
+                image: false,
+                video: false,
+                pdf: false,
+              },
+              interleaved: false,
+            },
+            cost: existing?.cost ?? {
+              input: 0,
+              output: 0,
+              cache: { read: 0, write: 0 },
+            },
+            limit: existing?.limit ?? {
+              context: item.context_window,
+              output: 64_000,
+              context_options: [256_000, 500_000],
+            },
+            status: existing?.status ?? "active",
+            options: existing?.options ?? {},
+            headers: existing?.headers ?? {},
+            release_date: item.release_date,
+            variants:
+              existing?.variants ??
+              Object.fromEntries(item.efforts.map((effort) => [effort, { reasoningEffort: effort }])),
+          }
+        }
+        return {
+          ...models,
+          ...Object.fromEntries(Object.entries(provider.models).filter(([id]) => !(id in models))),
+        }
+      },
+    },
     auth: {
       provider: "xai",
       async loader(getAuth) {
@@ -240,32 +445,54 @@ export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOp
               accessTokenIsExpiring(currentAuth.access)
             if (expiresSoon) {
               if (!refreshPromise) {
-                const refreshToken = currentAuth.refresh
-                refreshPromise = refreshAccessToken(refreshToken, options)
-                  .then(async (tokens) => {
-                    const refreshedExpires = Date.now() + (tokens.expires_in ?? 3600) * 1000
-                    const refreshedRefresh = tokens.refresh_token || refreshToken
-                    // Persist the rotated pair as best-effort. xAI has already consumed the
-                    // old refresh_token by the time we get here; an auth.set failure leaves
-                    // the on-disk state stale but the in-memory result is still valid for
-                    // this turn. The next live refresh against the stale disk state will
-                    // 4xx and force re-login — a known cross-process limitation.
+                refreshPromise = (async () => {
+                  const external = await readGrokCliAuth(options.grokDir)
+                  if (
+                    external?.type === "oauth" &&
+                    external.expires - Date.now() > ACCESS_TOKEN_REFRESH_SKEW_MS &&
+                    !accessTokenIsExpiring(external.access)
+                  ) {
                     await input.client.auth
                       .set({
                         path: { id: "xai" },
-                        body: {
-                          type: "oauth",
-                          access: tokens.access_token,
-                          refresh: refreshedRefresh,
-                          expires: refreshedExpires,
-                        },
+                        body: external,
                       })
                       .catch(() => {})
-                    return { access: tokens.access_token, refresh: refreshedRefresh, expires: refreshedExpires }
-                  })
-                  .finally(() => {
-                    refreshPromise = undefined
-                  })
+                    return { access: external.access, refresh: external.refresh, expires: external.expires }
+                  }
+                  const refreshToken =
+                    external?.type === "oauth" && external.expires > (currentAuth.expires ?? 0)
+                      ? external.refresh
+                      : currentAuth.refresh
+                  const tokens = await refreshAccessToken(refreshToken, options)
+                  const refreshedExpires = Date.now() + (tokens.expires_in ?? 3600) * 1000
+                  const refreshedRefresh = tokens.refresh_token || refreshToken
+                  // Persist the rotated pair to both Apexo auth and ~/.grok/auth.json
+                  // so Grok CLI and Apexo stay in sync across rotating refresh tokens.
+                  await input.client.auth
+                    .set({
+                      path: { id: "xai" },
+                      body: {
+                        type: "oauth",
+                        access: tokens.access_token,
+                        refresh: refreshedRefresh,
+                        expires: refreshedExpires,
+                      },
+                    })
+                    .catch(() => {})
+                  await writeGrokCliOAuth(
+                    {
+                      access: tokens.access_token,
+                      refresh: refreshedRefresh,
+                      expires: refreshedExpires,
+                      idToken: tokens.id_token,
+                    },
+                    options.grokDir,
+                  )
+                  return { access: tokens.access_token, refresh: refreshedRefresh, expires: refreshedExpires }
+                })().finally(() => {
+                  refreshPromise = undefined
+                })
               }
               const refreshed = await refreshPromise
               currentAuth = { ...currentAuth, ...refreshed }

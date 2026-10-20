@@ -11,6 +11,7 @@ import { Watcher } from "@apexo/core/filesystem/watcher"
 import { Format } from "../format"
 import { FSUtil } from "@apexo/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
+import { projectRelativePath } from "@/project/instance-context"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
@@ -53,7 +54,7 @@ export const WriteTool = Tool.define(
           const diff = trimDiff(createTwoFilesPatch(filepath, filepath, contentOld, contentNew))
           yield* ctx.ask({
             permission: "edit",
-            patterns: [path.relative(instance.worktree, filepath)],
+            patterns: [projectRelativePath(filepath, instance)],
             always: ["*"],
             metadata: {
               filepath,
@@ -90,7 +91,7 @@ export const WriteTool = Tool.define(
           }
 
           return {
-            title: path.relative(instance.worktree, filepath),
+            title: projectRelativePath(filepath, instance),
             metadata: {
               diagnostics,
               filepath,

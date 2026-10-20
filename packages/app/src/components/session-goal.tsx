@@ -27,6 +27,7 @@ export function createSessionGoal(sessionID: () => string | undefined, selection
     {
       id: "session.goal",
       title: language.t("goal.title"),
+      description: language.t("goal.createHint"),
       slash: "goal",
       disabled: !sessionID(),
       onSelect: open,
@@ -50,7 +51,6 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
   const sdk = useSDK()()
   const api = sdk.protocol.then((protocol) => (protocol === "v2" ? sdk.client.v2.goal : sdk.client.goal))
   const language = useLanguage()
-  const dialog = useDialog()
   const lifetime = new AbortController()
   const options = { throwOnError: true as const, signal: lifetime.signal }
   const intent = props.objective?.trim()
@@ -166,8 +166,8 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
       })
   }
   return (
-    <Dialog title={language.t("goal.title")} size="large" class="h-full">
-      <div data-component="session-goal" class="flex flex-1 flex-col gap-4 px-6 pb-6 min-h-0 overflow-y-auto">
+    <Dialog title={language.t("goal.title")} size="large" fit>
+      <div data-component="session-goal" class="flex flex-1 flex-col gap-4 px-6 pt-2 pb-6 min-h-0 max-h-[75vh] overflow-y-auto">
         <Show when={state.error}>
           <p role="alert" class="text-text-critical-base">
             {language.t("goal.error")}
@@ -188,7 +188,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   {language.t("goal.objective")}
                   <textarea
                     data-field="goal-objective"
-                    class="min-h-28 rounded-md border border-border-base p-3"
+                    class="min-h-28 rounded-md border border-border-base bg-surface-inset-base p-3 text-text-base"
                     maxLength={32768}
                     value={state.objective}
                     disabled={state.pending}
@@ -199,7 +199,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   {language.t("goal.budget")}
                   <input
                     data-field="goal-budget"
-                    class="rounded-md border border-border-base p-2"
+                    class="rounded-md border border-border-base bg-surface-inset-base p-2 text-text-base"
                     inputMode="numeric"
                     value={state.budget}
                     disabled={state.pending}
@@ -214,13 +214,16 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   <p>{language.t("goal.selectModel")}</p>
                 </Show>
                 <p class="text-text-weak">{language.t("goal.createHint")}</p>
-                <Button
-                  data-action="goal-create"
-                  type="submit"
-                  disabled={state.pending || !props.selection || !state.objective.trim() || !validBudget()}
-                >
-                  {language.t("goal.create")}
-                </Button>
+                <div class="flex justify-end">
+                  <Button
+                    data-action="goal-create"
+                    variant="primary"
+                    type="submit"
+                    disabled={state.pending || !props.selection || !state.objective.trim() || !validBudget()}
+                  >
+                    {language.t("goal.create")}
+                  </Button>
+                </div>
               </form>
             }
           >
@@ -294,6 +297,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                 </Show>
                 <Button
                   data-action="goal-reports-open"
+                  class="self-start"
                   size="small"
                   variant="ghost"
                   onClick={() => setState("reports", (value) => !value)}
@@ -383,7 +387,15 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                   </Button>
                 </div>
                 <Show when={state.confirm}>
-                  <div role="alert" class="flex flex-col gap-2">
+                  <div
+                    role="alert"
+                    ref={(element) =>
+                      requestAnimationFrame(() => {
+                        if (!lifetime.signal.aborted) element.scrollIntoView({ block: "nearest", behavior: "instant" })
+                      })
+                    }
+                    class="flex flex-col gap-2"
+                  >
                     <p>{language.t("goal.clearReportsConfirm")}</p>
                     <div class="flex gap-2">
                       <Button
@@ -403,10 +415,7 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
             )}
           </Show>
         </Show>
-        <p class="text-text-weak">{language.t("goal.closeHint")}</p>
-        <Button variant="ghost" onClick={() => dialog.close()}>
-          {language.t("common.close")}
-        </Button>
+        <p class="text-12-regular text-text-weak">{language.t("goal.closeHint")}</p>
       </div>
     </Dialog>
   )

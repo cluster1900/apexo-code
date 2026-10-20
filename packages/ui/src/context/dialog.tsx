@@ -44,22 +44,16 @@ function init() {
     const items = stack()
     const current = id ? items.find((item) => item.id === id) : items.at(-1)
     if (!current || lock.value) return
-    lock.value = true
-    current.onClose?.()
-    current.setClosing(true)
-
-    const closed = current.id
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
       timer.current = undefined
     }
-
-    timer.current = setTimeout(() => {
-      timer.current = undefined
-      current.dispose()
-      setStack((items) => items.filter((item) => item.id !== closed))
-      lock.value = false
-    }, 100)
+    lock.value = false
+    current.onClose?.()
+    current.setClosing(true)
+    const closed = current.id
+    current.dispose()
+    setStack((items) => items.filter((item) => item.id !== closed))
   }
 
   createEffect(() => {
@@ -91,7 +85,7 @@ function init() {
         setClosing = setClosingSignal
         return (
           <Kobalte
-            modal={stack().at(-1)?.id === id}
+            modal={!closing() && stack().at(-1)?.id === id}
             open={!closing()}
             onOpenChange={(open: boolean) => {
               if (open || stack().at(-1)?.id !== id) return
@@ -101,7 +95,7 @@ function init() {
             <Kobalte.Portal>
               <Kobalte.Overlay
                 data-component="dialog-overlay"
-                style={{ "z-index": String(zIndex) }}
+                style={{ "z-index": String(zIndex), "pointer-events": closing() ? "none" : undefined }}
                 onClick={() => close(id)}
               />
               <div
@@ -140,7 +134,10 @@ function init() {
   }
 
   const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
-    for (const item of stack()) item.dispose()
+    for (const item of stack()) {
+      item.setClosing(true)
+      item.dispose()
+    }
     setStack([])
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
@@ -186,12 +183,12 @@ export function useDialog() {
       return ctx.stack().at(-1)
     },
     show(element: DialogElement, onClose?: () => void) {
-      const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.show(element, base, onClose))
+      const base = ctx.stack().at(0)?.owner ?? owner
+      ctx.show(element, base, onClose)
     },
     push(element: DialogElement, onClose?: () => void) {
-      const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.push(element, base, onClose))
+      const base = ctx.stack().at(0)?.owner ?? owner
+      ctx.push(element, base, onClose)
     },
     close() {
       ctx.close()

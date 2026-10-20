@@ -19,7 +19,7 @@ import { ServerAuth } from "@/server/auth"
 import { OpenAIPlugin } from "./openai/openai"
 import { Session } from "@/session/session"
 import { NamedError } from "@apexo/core/util/error"
-import { XaiAuthPlugin } from "./xai"
+import { syncGrokCliAuth, XaiAuthPlugin } from "./xai"
 import { AntigravityPlugin } from "./antigravity"
 import { Antigravity } from "@apexo/core/antigravity"
 import { Auth } from "@/auth"
@@ -162,7 +162,8 @@ const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
-        if (!flags.disableDefaultPlugins)
+        if (!flags.disableDefaultPlugins) {
+          yield* syncGrokCliAuth(auth)
           hooks.push(
             yield* AntigravityPlugin.pipe(
               Effect.provideService(Antigravity.Service, native),
@@ -170,6 +171,7 @@ const layer = Layer.effect(
               Effect.orDie,
             ),
           )
+        }
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),

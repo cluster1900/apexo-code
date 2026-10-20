@@ -17,6 +17,7 @@ import { useLayout, LocalProject } from "@/context/layout"
 import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@apexo/core/util/encode"
+import { resolveSessionReference } from "@apexo/sdk/v2/grok-commands"
 import { decode64 } from "@/utils/base64"
 import { ResizeHandle } from "@apexo/ui/resize-handle"
 import { Button } from "@apexo/ui/button"
@@ -155,7 +156,7 @@ export default function LegacyLayout(props: ParentProps) {
     sizing: false,
     peek: undefined as string | undefined,
     peeked: false,
-    debugTools: true,
+    debugTools: false,
   })
 
   const editor = createInlineEditorController()
@@ -899,7 +900,8 @@ export default function LegacyLayout(props: ParentProps) {
         category: language.t("command.category.session"),
         slash: "resume",
         slashAliases: ["continue"],
-        onSelect: () => layout.sidebar.open(),
+        onSelect: () => void resumeSession(),
+        onSlash: (query) => void resumeSession(query),
       },
       {
         id: "debug.toggle",
@@ -967,7 +969,8 @@ export default function LegacyLayout(props: ParentProps) {
         category: language.t("command.category.settings"),
         slash: "exit",
         slashAliases: ["quit"],
-        onSelect: () => window.close(),
+        // Closing the last window keeps the app running on macOS, so Electron quits through the main process.
+        onSelect: () => (platform.runDesktopMenuAction ? void platform.runDesktopMenuAction("app.quit") : window.close()),
       },
       {
         id: "session.toggle.timestamps",
@@ -1306,6 +1309,15 @@ export default function LegacyLayout(props: ParentProps) {
     }
 
     navigateWithSidebarReset(`/${base64Encode(root)}/session`)
+  }
+
+  // Grok Build `/resume [id or title]`: open the one session the text names, else the picker filtered by the text.
+  async function resumeSession(query = "") {
+    const sessions = currentSessions()
+    const match = resolveSessionReference(query, sessions)
+    if (match) return navigateToSession(match)
+    const { DialogResumeSession } = await import("@/components/dialog-resume-session")
+    dialog.show(() => <DialogResumeSession sessions={sessions} query={query} onSelect={navigateToSession} />)
   }
 
   function navigateToSession(session: Session | undefined) {
@@ -2323,7 +2335,8 @@ export default function LegacyLayout(props: ParentProps) {
       {autoselecting() ?? ""}
       <Titlebar
         debugTools={
-          import.meta.env.DEV && import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1"
+          (import.meta.env.DEV || import.meta.env.VITE_APEXO_CHANNEL === "dev") &&
+          import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1"
             ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
             : undefined
         }
@@ -2470,7 +2483,9 @@ export default function LegacyLayout(props: ParentProps) {
             </div>
           </div>
         </div>
-        {import.meta.env.DEV && import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1" && state.debugTools && <DebugBar />}
+        {(import.meta.env.DEV || import.meta.env.VITE_APEXO_CHANNEL === "dev") &&
+          import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1" &&
+          state.debugTools && <DebugBar />}
       </div>
       <TabsInfoPopup />
       <ToastRegion v2={false} />

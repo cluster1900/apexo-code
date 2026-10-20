@@ -104,39 +104,41 @@ export function WorkflowDialog(props: {
   }, 1500)
   onCleanup(() => { lifetime.abort(); clearInterval(timer) })
   return (
-    <Dialog title={language.t("workflow.title")} size="large">
-      <div data-testid="workflow-panel" class="min-h-0 max-h-[65vh] overflow-y-auto px-6 pb-6 space-y-4">
-        <p>{language.t("workflow.description")}</p>
-        <label class="block">{language.t("workflow.source")}
-          <select data-testid="workflow-source" class="block w-full border rounded p-2" value={state.source} onChange={(event) => setState({ source: event.currentTarget.value, validation: undefined })}>
+    <Dialog title={language.t("workflow.title")} size="large" fit>
+      <div data-testid="workflow-panel" class="min-h-0 max-h-[65vh] overflow-y-auto px-6 pt-2 pb-6 space-y-4">
+        <p class="text-13-regular text-text-weak">{language.t("workflow.description")}</p>
+        <label class="flex flex-col gap-1.5 text-13-medium text-text-strong">{language.t("workflow.source")}
+          <select data-testid="workflow-source" class="block w-full rounded-md border border-border-base bg-surface-inset-base p-2 text-14-regular text-text-base" value={state.source} onChange={(event) => setState({ source: event.currentTarget.value, validation: undefined })}>
             <For each={state.sources}>{(entry) => <option value={`${entry.scope === "builtin" ? "builtin" : "saved"}:${entry.name}`}>{entry.name} · {language.t(`workflow.scope.${entry.scope}`)}</option>}</For>
           </select>
         </label>
-        <Show when={state.source === "builtin:deep-research"} fallback={<label class="block">{language.t("workflow.arguments")}<textarea data-testid="workflow-args" class="w-full min-h-20 border rounded p-2" value={state.args} onInput={(event) => setState("args", event.currentTarget.value)} /></label>}>
-          <label class="block">{language.t("workflow.query")}<textarea data-testid="workflow-query" class="w-full min-h-20 border rounded p-2" value={state.query} onInput={(event) => setState("query", event.currentTarget.value)} /></label>
+        <Show when={state.source === "builtin:deep-research"} fallback={<label class="flex flex-col gap-1.5 text-13-medium text-text-strong">{language.t("workflow.arguments")}<textarea data-testid="workflow-args" class="w-full min-h-20 rounded-md border border-border-base bg-surface-inset-base p-2.5 text-14-regular text-text-base" value={state.args} onInput={(event) => setState("args", event.currentTarget.value)} /></label>}>
+          <label class="flex flex-col gap-1.5 text-13-medium text-text-strong">{language.t("workflow.query")}<textarea data-testid="workflow-query" class="w-full min-h-20 rounded-md border border-border-base bg-surface-inset-base p-2.5 text-14-regular text-text-base" value={state.query} onInput={(event) => setState("query", event.currentTarget.value)} /></label>
         </Show>
-        <label class="block">{language.t("workflow.budget")}<input data-testid="workflow-budget" type="number" min="1" max="1024" value={state.budget} onInput={(event) => setState("budget", event.currentTarget.value)} /></label>
-        <label class="block">{language.t("workflow.concurrency")}<input data-testid="workflow-concurrency" type="number" min="1" max="16" value={state.concurrency} onInput={(event) => setState("concurrency", event.currentTarget.value)} /></label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="flex flex-col gap-1.5 text-13-medium text-text-strong">{language.t("workflow.budget")}<input data-testid="workflow-budget" class="block w-full rounded-md border border-border-base bg-surface-inset-base p-2 text-14-regular text-text-base" type="number" min="1" max="1024" value={state.budget} onInput={(event) => setState("budget", event.currentTarget.value)} /></label>
+          <label class="flex flex-col gap-1.5 text-13-medium text-text-strong">{language.t("workflow.concurrency")}<input data-testid="workflow-concurrency" class="block w-full rounded-md border border-border-base bg-surface-inset-base p-2 text-14-regular text-text-base" type="number" min="1" max="16" value={state.concurrency} onInput={(event) => setState("concurrency", event.currentTarget.value)} /></label>
+        </div>
         <div class="flex gap-2">
-          <Button data-testid="workflow-start" disabled={state.pending} onClick={() => void run(start)}>{language.t("workflow.start")}</Button>
-          <Button data-testid="workflow-validate" disabled={state.pending} onClick={() => void run(validate)}>{language.t("workflow.validate")}</Button>
-          <Button data-testid="workflow-refresh" disabled={state.pending} onClick={() => void run(load)}>{language.t("workflow.refresh")}</Button>
+          <Button data-testid="workflow-start" variant="primary" disabled={state.pending} onClick={() => void run(start)}>{language.t("workflow.start")}</Button>
+          <Button data-testid="workflow-validate" variant="secondary" disabled={state.pending} onClick={() => void run(validate)}>{language.t("workflow.validate")}</Button>
+          <Button data-testid="workflow-refresh" variant="ghost" disabled={state.pending} onClick={() => void run(load)}>{language.t("workflow.refresh")}</Button>
         </div>
         <Show when={state.validation}>{(result) => <div data-testid="workflow-validation"><p>{language.t(result().valid ? "workflow.valid" : "workflow.invalid")}</p><For each={result().diagnostics}>{(diagnostic) => <p class="whitespace-pre-wrap">{diagnostic}</p>}</For></div>}</Show>
-        <Show when={state.invalid}><p role="alert">{language.t("workflow.invalidInput")}</p></Show>
-        <Show when={state.error}><p role="alert">{language.t("workflow.error")}</p></Show>
-        <h3>{language.t("workflow.runs")}</h3>
-        <Show when={!state.runs.length}><p>{language.t("workflow.empty")}</p></Show>
-        <For each={state.runs}>{(entry) => <section data-testid="workflow-run" data-status={entry.status} class="border rounded p-3 space-y-2">
-          <p>{entry.name} · {language.t(`workflow.status.${entry.status}`)}</p>
-          <Show when={entry.phase}><p>{entry.phase}</p></Show>
-          <p>{language.t("workflow.usage", { spent: entry.agentsSpent, budget: entry.agentBudget, tokens: entry.tokens })}</p>
+        <Show when={state.invalid}><p role="alert" class="text-text-critical-base">{language.t("workflow.invalidInput")}</p></Show>
+        <Show when={state.error}><p role="alert" class="text-text-critical-base">{language.t("workflow.error")}</p></Show>
+        <h3 class="text-14-medium text-text-strong">{language.t("workflow.runs")}</h3>
+        <Show when={!state.runs.length}><p class="text-13-regular text-text-weak">{language.t("workflow.empty")}</p></Show>
+        <For each={state.runs}>{(entry) => <section data-testid="workflow-run" data-status={entry.status} class="rounded-md border border-border-base p-3 space-y-2">
+          <p class="text-14-medium">{entry.name} · {language.t(`workflow.status.${entry.status}`)}</p>
+          <Show when={entry.phase}><p class="text-13-regular text-text-weak">{entry.phase}</p></Show>
+          <p class="text-13-regular">{language.t("workflow.usage", { spent: entry.agentsSpent, budget: entry.agentBudget, tokens: entry.tokens })}</p>
           <Show when={entry.usageIncomplete}><p data-testid="workflow-usage-incomplete">{language.t("goal.usageIncomplete")}</p></Show>
           <Show when={entry.resumeBlockedReason}>{(reason) => <p data-testid="workflow-resume-blocked">{language.t(`workflow.resumeBlocked.${reason()}`)}</p>}</Show>
           <Show when={entry.message}><p class="whitespace-pre-wrap">{entry.message}</p></Show>
           <Show when={entry.status === "running" || entry.status === "pending"}><Button data-testid="workflow-pause" disabled={state.pending} onClick={() => void run(() => control(entry, "pause"))}>{language.t("workflow.pause")}</Button></Show>
           <Show when={!entry.resumeBlockedReason && (entry.status === "paused" || entry.status === "budget_limited")}>
-            <label>{language.t("workflow.resumeBudget")}<input data-testid="workflow-resume-budget" type="number" min={entry.agentBudget} max="1024" value={state.budgets[entry.id] ?? entry.agentBudget} onInput={(event) => setState("budgets", entry.id, event.currentTarget.value)} /></label>
+            <label class="flex flex-col gap-1.5 text-13-medium">{language.t("workflow.resumeBudget")}<input data-testid="workflow-resume-budget" class="block w-full rounded-md border border-border-base bg-surface-inset-base p-2 text-14-regular text-text-base" type="number" min={entry.agentBudget} max="1024" value={state.budgets[entry.id] ?? entry.agentBudget} onInput={(event) => setState("budgets", entry.id, event.currentTarget.value)} /></label>
             <Button data-testid="workflow-resume" disabled={state.pending} onClick={() => void run(() => control(entry, "resume"))}>{language.t("workflow.resume")}</Button>
           </Show>
           <Show when={["pending", "running", "paused", "budget_limited"].includes(entry.status)}>

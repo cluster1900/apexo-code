@@ -216,6 +216,7 @@ export function BackgroundTasksButton(props: { tasks: ReturnType<typeof createSe
     {
       id: "session.tasks",
       title: language.t("tasks.title"),
+      description: language.t("tasks.description"),
       slash: "tasks",
       disabled: !props.tasks.available(),
       onSelect: open,

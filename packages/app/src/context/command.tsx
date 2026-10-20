@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { dict as en } from "@/i18n/en"
 import { Persist, persisted } from "@/utils/persist"
+import { showToast } from "@/utils/toast"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
@@ -86,7 +87,27 @@ export interface CommandOption {
   hidden?: boolean
   when?: (event: KeyboardEvent) => boolean
   onSelect?: (source?: "palette" | "keybind" | "slash") => void
+  /** Runs `/name <args>` typed with arguments. Commands without it run `onSelect` and ignore the arguments. */
+  onSlash?: (args: string) => void
   onHighlight?: () => (() => void) | void
+}
+
+/**
+ * The registered command a typed `/name` names, by slash or alias. An enabled option wins over a disabled one with the
+ * same name, so a disabled duplicate never shadows the live command.
+ */
+export function findSlashOption(options: CommandOption[], name: string) {
+  const matches = options.filter(
+    (option) =>
+      !option.id.startsWith(SUGGESTED_PREFIX) && (option.slash === name || !!option.slashAliases?.includes(name)),
+  )
+  return matches.find((option) => !option.disabled) ?? matches[0]
+}
+
+/** Runs a typed slash command: arguments go to `onSlash` when the command takes them, otherwise they are ignored. */
+export function runSlashOption(option: CommandOption, args: string) {
+  if (args && option.onSlash) return option.onSlash(args)
+  option.onSelect?.("slash")
 }
 
 export function commandPaletteOptions(options: CommandOption[]) {
@@ -454,6 +475,17 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       register,
       trigger(id: string, source?: CommandSource) {
         run(id, source)
+      },
+      /** Runs a typed `/name args`; false when no registered command has that name. */
+      slash(name: string, args: string) {
+        const option = findSlashOption(options(), name)
+        if (!option) return false
+        if (option.disabled) {
+          showToast({ title: language.t("command.slash.unavailable", { name }) })
+          return true
+        }
+        runSlashOption(option, args)
+        return true
       },
       keybind(id: string) {
         const config = keybindConfig(id)

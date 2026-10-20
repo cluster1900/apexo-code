@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events"
 import { mcpAttachmentParts } from "@apexo/sdk/v2/mcp-attachment"
 import { nextSessionMode, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
@@ -178,6 +179,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
+      EventEmitter.defaultMaxListeners = Math.max(EventEmitter.defaultMaxListeners, 100)
       const renderer = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
@@ -201,6 +203,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             destroyRenderer(renderer)
           }),
       )
+      renderer.setMaxListeners(0)
+      renderer.root.setMaxListeners(0)
       win32DisableProcessedInput()
       const keymap = createDefaultOpenTuiKeymap(renderer)
       yield* Effect.acquireRelease(

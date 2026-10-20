@@ -595,7 +595,7 @@ const layer: Layer.Layer<
       if (input?.roots) conditions.push(isNull(SessionTable.parent_id))
       if (input?.start) conditions.push(gte(SessionTable.time_updated, input.start))
       if (input?.cursor) conditions.push(lt(SessionTable.time_updated, input.cursor))
-      if (input?.search) conditions.push(like(SessionTable.title, `%${input.search}%`))
+      if (input?.search) conditions.push(titleSearch(input.search))
       if (!input?.archived) conditions.push(isNull(SessionTable.time_archived))
 
       const query =
@@ -996,7 +996,7 @@ function listByProject(
     conditions.push(gte(SessionTable.time_updated, input.start))
   }
   if (input.search) {
-    conditions.push(like(SessionTable.title, `%${input.search}%`))
+    conditions.push(titleSearch(input.search))
   }
 
   const limit = input.limit ?? 100
@@ -1031,5 +1031,16 @@ export const node = LayerNode.make({
     EventV2Bridge.node,
   ],
 })
+
+/**
+ * Session search (Grok Build 1.0.61 picker): a title matches when it contains every typed word in any order,
+ * regardless of separators; the text may also be a session ID prefix. SQLite LIKE is case-insensitive for ASCII.
+ */
+function titleSearch(search: string) {
+  const words = search.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  if (!words.length) return like(SessionTable.title, `%${search}%`)
+  const title = and(...words.map((word) => like(SessionTable.title, `%${word}%`)))
+  return or(like(SessionTable.id, `${search.trim()}%`), title) ?? like(SessionTable.title, `%${search}%`)
+}
 
 export * as Session from "./session"

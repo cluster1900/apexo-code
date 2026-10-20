@@ -19,7 +19,6 @@
   flex-direction: column;
   height: 100%;
   overflow-y: auto;
-  scrollbar-width: none;
   user-select: none;
 }
 
@@ -27,16 +26,8 @@
   user-select: text;
 }
 
-.settings-v2-panel::-webkit-scrollbar {
-  display: none;
-}
-
 .settings-v2-tab-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  padding: 40px 40px 32px;
-  background: linear-gradient(to bottom, var(--v2-background-bg-base) calc(100% - 24px), transparent);
+  padding: 40px 40px 24px;
 }
 
 .settings-v2-tab-title {

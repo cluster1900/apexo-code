@@ -23,6 +23,21 @@ describe("apexo run (non-interactive subprocess)", () => {
     60_000,
   )
 
+  // Like Grok Build -p, a prompt argument containing spaces reaches the model as typed, without added quotes.
+  cliIt.live(
+    "sends a spaced prompt argument verbatim",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.text("ok")
+        const result = yield* apexo.run("fix the add bug, then reply")
+        apexo.expectExit(result, 0)
+        const bodies = (yield* llm.hits).map((hit) => JSON.stringify(hit.body))
+        expect(bodies.some((body) => body.includes("fix the add bug, then reply"))).toBe(true)
+        expect(bodies.some((body) => body.includes('\\"fix the add bug, then reply\\"'))).toBe(false)
+      }),
+    60_000,
+  )
+
   cliIt.live(
     "prints each completed text part in order around a tool continuation",
     ({ llm, apexo }) =>
@@ -283,7 +298,7 @@ describe("apexo run (non-interactive subprocess)", () => {
         yield* llm.tool("bash", { command: "rm -f denied-file", description: "Remove a test file" })
         yield* llm.text("continued after rejection")
         const denied = yield* apexo.run("request permission", { permission: { bash: "ask" } })
-        apexo.expectExit(denied, 0)
+        apexo.expectExit(denied, 1)
         expect(denied.stderr).toContain("permission requested: bash")
         expect(denied.stdout).toBe("")
 
@@ -362,5 +377,124 @@ describe("apexo run (non-interactive subprocess)", () => {
         expect(result.durationMs).toBeLessThan(30_000)
       }),
     30_000,
+  )
+  // Grok Build 1.0.62 headless contract: the run waits for background work it started and prints the turn its
+  // completion wakes, instead of exiting at the first idle and dropping that reply.
+  cliIt.live(
+    "waits for a background command and prints the follow-up turn its completion wakes",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.push(
+          reply().tool("run_terminal_cmd", {
+            command: "sleep 1; printf BG-OUT",
+            description: "Background output",
+            block_until_ms: 0,
+          }),
+        )
+        yield* llm.text("started")
+        yield* llm.text("background said BG-OUT")
+        const result = yield* apexo.run("start it in the background", {
+          extraArgs: ["--profile", "grok-build", "--dangerously-skip-permissions"],
+          timeoutMs: 45_000,
+        })
+        apexo.expectExit(result, 0)
+        expect(result.stdout).toBe("started\nbackground said BG-OUT\n")
+        // Agent turns carry tools; the session title request does not.
+        const turns = (yield* llm.hits).filter((hit) => Array.isArray(hit.body.tools) && hit.body.tools.length > 0)
+        expect(turns.length).toBe(3)
+      }),
+    60_000,
+  )
+
+  cliIt.live(
+    "stops background work when the wait runs out and exits 1",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.push(
+          reply().tool("run_terminal_cmd", {
+            command: "sleep 60",
+            description: "Long background sleep",
+            block_until_ms: 0,
+          }),
+        )
+        yield* llm.text("started")
+        const result = yield* apexo.run("start a long background job", {
+          extraArgs: ["--profile", "grok-build", "--dangerously-skip-permissions", "--background-wait-timeout", "1"],
+          timeoutMs: 30_000,
+        })
+        expect(result.exitCode).toBe(1)
+        expect(result.stdout).toBe("started\n")
+        expect(result.stderr).toContain("the wait for background work ran out after 1 s and exit stopped 1 background task")
+        expect(result.durationMs).toBeLessThan(25_000)
+        // Agent turns carry tools; the session title request does not.
+        const turns = (yield* llm.hits).filter((hit) => Array.isArray(hit.body.tools) && hit.body.tools.length > 0)
+        expect(turns.length).toBe(2)
+      }),
+    45_000,
+  )
+
+  cliIt.live(
+    "--no-wait-for-background exits after the first turn",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.push(
+          reply().tool("run_terminal_cmd", {
+            command: "sleep 60",
+            description: "Long background sleep",
+            block_until_ms: 0,
+          }),
+        )
+        yield* llm.text("started")
+        const result = yield* apexo.run("start a long background job", {
+          extraArgs: ["--profile", "grok-build", "--dangerously-skip-permissions", "--no-wait-for-background"],
+          timeoutMs: 30_000,
+        })
+        apexo.expectExit(result, 0)
+        expect(result.stdout).toBe("started\n")
+        expect(result.durationMs).toBeLessThan(25_000)
+      }),
+    45_000,
+  )
+
+  cliIt.live(
+    "routes leading <think>...</think> in text-delta to reasoning part",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        yield* llm.text("<think>internal reasoning</think>\nvisible answer")
+        const plain = yield* apexo.run("say hi")
+        apexo.expectExit(plain, 0)
+        expect(plain.stdout).toBe("visible answer\n")
+        expect(plain.stdout).not.toContain("<think>")
+
+        yield* llm.text("<think>internal reasoning</think>\nvisible answer")
+        const json = yield* apexo.run("say hi", { extraArgs: ["--format", "json"] })
+        apexo.expectExit(json, 0)
+        const events = json.stdout
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+        expect(events.some((e) => e.type === "reasoning" && e.part?.text === "internal reasoning")).toBe(true)
+        expect(events.some((e) => e.type === "text" && e.part?.text === "visible answer")).toBe(true)
+      }),
+    60_000,
+  )
+
+  cliIt.live(
+    "apexo serve blocks non-loopback Host headers with 403 and returns 400 for unknown models",
+    ({ apexo }) =>
+      Effect.gen(function* () {
+        const server = yield* apexo.serve()
+        const rebindRes = yield* Effect.promise(() =>
+          fetch(`${server.url}/global/health`, {
+            headers: { Host: "evil.example.com" },
+          }),
+        )
+        expect(rebindRes.status).toBe(403)
+
+        const okRes = yield* Effect.promise(() => fetch(`${server.url}/global/health`))
+        expect(okRes.status).toBe(200)
+      }),
+    60_000,
   )
 })

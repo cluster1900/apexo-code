@@ -605,4 +605,22 @@ describe("tool.read binary detection", () => {
       expect(err.message).toContain("Cannot read binary file")
     }),
   )
+
+  it.live("preserves relative or leading-slash path in non-git project when worktree is / (#38)", () =>
+    Effect.gen(function* () {
+      const { projectRelativePath } = yield* Effect.promise(() => import("../../src/project/instance-context"))
+      expect(
+        projectRelativePath("/home/box/Default Project/qa25.txt", {
+          directory: "/home/box/Default Project",
+          worktree: "/",
+        }),
+      ).toBe("qa25.txt")
+      expect(
+        projectRelativePath("/etc/hosts", {
+          directory: "/home/box/Default Project",
+          worktree: "/",
+        }),
+      ).toBe("/etc/hosts")
+    }),
+  )
 })

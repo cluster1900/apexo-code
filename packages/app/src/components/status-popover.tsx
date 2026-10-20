@@ -26,13 +26,7 @@ export function StatusPopover() {
   const sync = useSync()
   const [shown, setShown] = createSignal(false)
   useCommand().register("status-popover", () => [
-    {
-      id: "status.open",
-      title: language.t("status.popover.trigger"),
-      slash: "status",
-      slashAliases: ["session-info", "info"],
-      onSelect: () => setShown(true),
-    },
+    { id: "status.open", title: language.t("status.popover.trigger"), onSelect: () => setShown(true) },
   ])
   const serverHealth = () => global.servers.health[server.key]?.healthy
   const ready = createMemo(() => serverHealth() === false || (sync().data.mcp_ready && sync().data.lsp_ready))
@@ -104,13 +98,7 @@ function DirectoryStatusPopover() {
   const sync = useSync()
   const [shown, setShown] = createSignal(false)
   useCommand().register("status-popover", () => [
-    {
-      id: "status.open",
-      title: language.t("status.popover.trigger"),
-      slash: "status",
-      slashAliases: ["session-info", "info"],
-      onSelect: () => setShown(true),
-    },
+    { id: "status.open", title: language.t("status.popover.trigger"), onSelect: () => setShown(true) },
   ])
   const serverHealth = () => global.servers.health[ServerConnection.key(server().server)]?.healthy
   const ready = createMemo(() => serverHealth() === false || (sync().data.mcp_ready && sync().data.lsp_ready))

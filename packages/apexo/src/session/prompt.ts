@@ -791,7 +791,7 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Error, {
           sessionID,
           error: new NamedError.Unknown({
-            message: `Model not found: ${err.providerID}/${err.modelID}.${hint}`,
+            message: `Model not found: ${err.providerID}/${err.modelID}.${hint} Run \`apexo models\` to list available models.`,
           }).toObject(),
         })
       }
@@ -1321,7 +1321,7 @@ const layer = Layer.effect(
         : undefined
       if (goalID && !goal) return yield* lastAssistant(sessionID)
       if (goal && admitted) yield* admitted
-      if (flags.runtimeProfile === "grok-build") yield* hookSnapshots.capture(sessionID).pipe(Effect.orDie)
+      yield* hookSnapshots.capture(sessionID).pipe(Effect.orDie)
 
       const hasPendingUser = Effect.fnUntraced(function* (userID: string) {
         const fresh = yield* MessageV2.filterCompactedEffect(sessionID).pipe(

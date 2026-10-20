@@ -133,8 +133,8 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     const pick = (scope?: PromptScope) => (scope ? load(scope) : session())
     const ready = createPromptReady(session)
 
-    const withSuspense = <T,>(cb: () => T): (() => T) =>
-      createResource(
+    const withSuspense = <T,>(cb: () => T): (() => T) => {
+      const [resource] = createResource(
         async () => {
           const value = cb()
           await session().ready.promise
@@ -142,7 +142,9 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
         },
         cb,
         { initialValue: cb() },
-      )[0]
+      )
+      return () => (session().ready() ? cb() : resource())
+    }
 
     return {
       ready,

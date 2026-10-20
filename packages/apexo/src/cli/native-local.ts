@@ -2,7 +2,7 @@ import path from "node:path"
 import { realpath, stat } from "node:fs/promises"
 import { createApexoClient } from "@apexo/sdk/v2/client"
 import { runNativeInteractive } from "./native-interactive"
-import { resolveInteractiveStdin } from "./cmd/run/runtime.stdin"
+import { readPipedStdin, resolveInteractiveStdin } from "./cmd/run/runtime.stdin"
 
 export interface NativeLocalOptions {
   "input-id"?: string
@@ -74,9 +74,10 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
     const parts = input.model?.split("/")
     if (parts && (!parts[0] || !parts.slice(1).join("/"))) throw new Error("Model must use provider/model syntax")
     const directory = await nativeLocalDirectory(input.dir)
+    const positional = [...(input.message ?? []), ...(input["--"] ?? [])].join(" ")
     const text = [
-      [...(input.message ?? []), ...(input["--"] ?? [])].join(" "),
-      process.stdin.isTTY ? undefined : await Bun.stdin.text(),
+      positional,
+      await readPipedStdin(positional.trim().length > 0 || Boolean(input.file?.length)),
     ]
       .filter(Boolean)
       .join("\n")
@@ -117,7 +118,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
   resolveInteractiveStdin().cleanup?.()
   const directory = await nativeLocalDirectory(input.dir)
   const message = [...(input.message ?? []), ...(input["--"] ?? [])].join(" ")
-  const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
+  const piped = await readPipedStdin(true)
   const initialInput = [message, piped].filter(Boolean).join("\n") || undefined
   const parts = input.model?.split("/")
   if (parts && (parts.length < 2 || !parts[0] || !parts.slice(1).join("/")))

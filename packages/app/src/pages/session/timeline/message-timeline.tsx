@@ -126,7 +126,7 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   return (
     <div data-slot="session-turn-thinking">
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <Show when={!props.showReasoningSummaries}>
+      <Show when={props.showReasoningSummaries && props.reasoningHeading}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
     </div>
@@ -696,6 +696,13 @@ export function MessageTimeline(props: {
       slashAliases: ["title"],
       disabled: !sessionID() || !!parentID(),
       onSelect: openTitleEditor,
+      onSlash: (title) => {
+        const id = sessionID()
+        if (!id) return
+        // Grok's `--auto` unpins a manual title for its local auto-titler; Apexo titles have no such pin.
+        if (title === "--auto") return showToast({ title: language.t("grok.rename.auto") })
+        titleMutation.mutate({ id, title })
+      },
     },
     {
       id: "session.delete",
@@ -1106,10 +1113,7 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={assistantPartRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <div
-                data-slot="session-turn-assistant-content"
-                aria-hidden={workingTurn(assistantPartRow().userMessageID)}
-              >
+              <div data-slot="session-turn-assistant-content">
                 {renderAssistantPartGroup(assistantPartRow, onSizeChange)}
               </div>
             </div>

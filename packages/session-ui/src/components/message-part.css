@@ -296,7 +296,9 @@
   line-height: var(--line-height-normal);
 
   [data-component="markdown"] {
-    margin-top: 16px;
+    margin-top: 8px;
+    padding-left: 10px;
+    border-left: 2px solid var(--v2-border-border-base);
     font-style: normal;
     font-size: 13px;
     color: var(--v2-text-text-muted);
@@ -1216,12 +1218,7 @@
   }
 
   > [data-component="collapsible"] > [data-slot="collapsible-trigger"][aria-expanded="true"] {
-    position: sticky;
-    top: var(--sticky-accordion-top, 0px);
-    z-index: 20;
-    height: calc(32px + var(--tool-content-gap));
     padding-bottom: var(--tool-content-gap);
-    background-color: var(--v2-background-bg-base);
   }
 }
 

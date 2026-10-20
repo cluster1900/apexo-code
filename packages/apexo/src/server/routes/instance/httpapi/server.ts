@@ -2,7 +2,7 @@ import { MemoryManagement } from "@/session/memory-management"
 import { SessionMemoryWork } from "@/session/memory-work"
 import { Config as EffectConfig, Context, Effect, Layer } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
-import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
+import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@apexo/core/fs-util"
 import { AppProcess } from "@apexo/core/process"
@@ -82,7 +82,7 @@ import { SessionMemoryModeNative } from "@apexo/core/session/memory-mode-native"
 import { SessionExecution } from "@apexo/core/session/execution"
 import * as SessionExecutionLocal from "@apexo/core/session/execution/local"
 import { lazy } from "@/util/lazy"
-import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@apexo/server/cors"
+import { CorsConfig, isAllowedCorsOrigin, isAllowedRequestOrigin, type CorsOptions } from "@apexo/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
@@ -140,14 +140,66 @@ import { schemaErrorLayer } from "./middleware/schema-error"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
-const cors = (corsOptions?: CorsOptions) =>
-  HttpRouter.middleware(
-    HttpMiddleware.cors({
-      allowedOrigins: (origin) => isAllowedCorsOrigin(origin, corsOptions),
-      maxAge: 86_400,
-    }),
+const cors = (corsOptions?: CorsOptions & { hostname?: string }) => {
+  const applyCors = HttpMiddleware.cors({
+    allowedOrigins: (origin) => isAllowedCorsOrigin(origin, corsOptions),
+    maxAge: 86_400,
+  })
+  return HttpRouter.middleware(
+    (effect) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const host = request.headers.host
+        if (isLoopbackHostname(corsOptions?.hostname)) {
+          if (typeof host === "string" && !isAllowedLoopbackHostHeader(host)) {
+            return HttpServerResponse.text("Forbidden: Invalid Host header", { status: 403 })
+          }
+        }
+        const origin = request.headers.origin
+        if (
+          typeof origin === "string" &&
+          !isAllowedRequestOrigin(origin, typeof host === "string" ? host : undefined, corsOptions)
+        ) {
+          return HttpServerResponse.text("Forbidden: Invalid Origin header", { status: 403 })
+        }
+        return yield* applyCors(effect)
+      }),
     { global: true },
   )
+}
+
+function isLoopbackHostname(hostname: string | undefined): boolean {
+  if (!hostname) return true
+  const normalized = hostname.trim().toLowerCase()
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized.startsWith("127.") ||
+    normalized === "::1" ||
+    normalized === "[::1]"
+  )
+}
+
+function isAllowedLoopbackHostHeader(hostHeader: string): boolean {
+  const trimmed = hostHeader.trim().toLowerCase()
+  if (!trimmed) return true
+  const host = trimmed.startsWith("[")
+    ? trimmed.slice(0, trimmed.indexOf("]") + 1)
+    : trimmed.split(":")[0] ?? ""
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host === "::" ||
+    host === "[::]" ||
+    host === "apexo.internal" ||
+    host === "apexo.local"
+  )
+}
 
 // Route tree:
 // - rootApiRoutes: typed /global/* and control routes; auth is declared by RootHttpApi.
@@ -299,7 +351,7 @@ const app = LayerNode.group([
 ])
 
 export function createRoutes(
-  corsOptions?: CorsOptions,
+  corsOptions?: CorsOptions & { hostname?: string },
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = AppNodeBuilderV1.locationServiceMap
 

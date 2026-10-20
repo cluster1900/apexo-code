@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { accessTokenIsExpiring, pollDeviceCodeToken, requestDeviceCode, XaiAuthPlugin } from "../../src/plugin/xai"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import {
+  accessTokenIsExpiring,
+  pollDeviceCodeToken,
+  readGrokCliAuth,
+  readGrokCliModels,
+  requestDeviceCode,
+  writeGrokCliOAuth,
+  XaiAuthPlugin,
+} from "../../src/plugin/xai"
 import { OAUTH_DUMMY_KEY } from "../../src/auth"
 
 function makeJwt(payload: object): string {
@@ -580,6 +591,89 @@ describe("plugin.xai", () => {
         (m): m is Extract<typeof m, { type: "oauth" }> => m.type === "oauth" && m.label === "SuperGrok Subscription",
       )!
       expect(await ((await headless.authorize!()) as any).callback()).toEqual({ type: "failed" })
+    })
+  })
+
+  describe("grok cli reuse", () => {
+    test("reads OIDC and API key credentials from ~/.grok/auth.json and syncs rotated tokens back", async () => {
+      const grokDir = await fs.mkdtemp(path.join(os.tmpdir(), "apexo-grok-auth-"))
+      try {
+        const authPath = path.join(grokDir, "auth.json")
+        const future = new Date(Date.now() + 3600_000).toISOString()
+        await Bun.write(
+          authPath,
+          JSON.stringify({
+            "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+              auth_mode: "oidc",
+              key: "grok-access-1",
+              refresh_token: "grok-refresh-1",
+              id_token: "grok-id-1",
+              expires_at: future,
+            },
+          }),
+        )
+        const parsed = await readGrokCliAuth(grokDir)
+        expect(parsed).toMatchObject({
+          type: "oauth",
+          access: "grok-access-1",
+          refresh: "grok-refresh-1",
+        })
+
+        const nextExpires = Date.now() + 7200_000
+        await writeGrokCliOAuth(
+          { access: "grok-access-2", refresh: "grok-refresh-2", expires: nextExpires },
+          grokDir,
+        )
+        const updated = await Bun.file(authPath).json()
+        expect(updated["https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828"]).toMatchObject({
+          auth_mode: "oidc",
+          key: "grok-access-2",
+          refresh_token: "grok-refresh-2",
+          id_token: "grok-id-1",
+          expires_at: new Date(nextExpires).toISOString(),
+        })
+      } finally {
+        await fs.rm(grokDir, { recursive: true, force: true })
+      }
+    })
+
+    test("exposes Grok Build models (grok-4.7, grok-4.7-build-fast, grok-4.6, grok-4.5) and merges models_cache.json", async () => {
+      const grokDir = await fs.mkdtemp(path.join(os.tmpdir(), "apexo-grok-models-"))
+      try {
+        await Bun.write(
+          path.join(grokDir, "models_cache.json"),
+          JSON.stringify({
+            models: [
+              {
+                id: "grok-4.8-preview",
+                name: "Grok 4.8 Preview",
+                context_window: 500_000,
+                reasoning_efforts: [{ effort: "medium" }, { effort: "xhigh" }],
+              },
+            ],
+          }),
+        )
+        const list = await readGrokCliModels(grokDir)
+        expect(list.map((m) => m.id)).toEqual([
+          "grok-4.7",
+          "grok-4.7-build-fast",
+          "grok-4.6",
+          "grok-4.5",
+          "grok-4.8-preview",
+        ])
+        const hooks = await XaiAuthPlugin({} as any, { grokDir })
+        const models = await hooks.provider!.models!({ models: {} } as any, {})
+        expect(models["grok-4.7"]).toMatchObject({
+          id: "grok-4.7",
+          providerID: "xai",
+          name: "Grok 4.7",
+          limit: { context: 256_000, output: 64_000 },
+        })
+        expect(Object.keys(models["grok-4.7"].variants ?? {})).toEqual(["low", "medium", "high", "xhigh"])
+        expect(Object.keys(models["grok-4.8-preview"].variants ?? {})).toEqual(["medium", "xhigh"])
+      } finally {
+        await fs.rm(grokDir, { recursive: true, force: true })
+      }
     })
   })
 })

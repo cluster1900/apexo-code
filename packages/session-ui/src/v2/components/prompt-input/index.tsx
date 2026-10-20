@@ -167,8 +167,16 @@ export function PromptInputV2(props: PromptInputV2Props) {
             }
             classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
             onInput={(event) => {
-              const cursor = promptInputV2Cursor(event.currentTarget)
               const prompt = parsePromptInputV2Editor(event.currentTarget)
+              if (
+                prompt.length === 1 &&
+                prompt[0]?.type === "text" &&
+                prompt[0].content === "" &&
+                event.currentTarget.childNodes.length > 0
+              ) {
+                renderPromptInputV2Editor(event.currentTarget, [])
+              }
+              const cursor = promptInputV2Cursor(event.currentTarget)
               const images = props.controller.parts().filter((part) => part.type === "image")
               localInput = true
               props.controller.onInput(prompt.map((part) => part.content).join(""), [...prompt, ...images], cursor)

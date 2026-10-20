@@ -140,11 +140,6 @@ export function SessionComposerRegion(props: {
                   onEdit={controller.followup()!.onEdit}
                 />
               </Show>
-              <Show when={controller.working() && !controller.child() && !controller.followup()?.items.length}>
-                <p class="px-1 pb-1 text-13-regular text-text-weak">
-                  {language.t("settings.general.row.followup.description")}
-                </p>
-              </Show>
               <Show
                 when={controller.child()}
                 fallback={<Show when={!controller.state.blocked()}>{props.promptInput}</Show>}

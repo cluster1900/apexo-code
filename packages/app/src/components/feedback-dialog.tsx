@@ -9,13 +9,14 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 
-export function FeedbackDialog(props: { sessionID: string }) {
+export function FeedbackDialog(props: { sessionID: string; initialMessage?: string }) {
   const language = useLanguage()
   const platform = usePlatform()
   const sdk = useSDK()()
   const api = sdk.protocol.then((protocol) => (protocol === "v2" ? sdk.client.v2.feedback : sdk.client.feedback))
   const lifetime = new AbortController()
   let picker: HTMLInputElement | undefined
+  const initial = props.initialMessage?.trim() ?? ""
   const empty = {
     title: "",
     details: "",
@@ -26,7 +27,7 @@ export function FeedbackDialog(props: { sessionID: string }) {
   }
   const [state, setState] = createStore({
     items: [] as FeedbackDraft[],
-    input: { ...empty },
+    input: { ...empty, title: initial, details: initial },
     selected: undefined as FeedbackDraft | undefined,
     issue: undefined as FeedbackIssue | undefined,
     images: [] as { key: string; input: FeedbackImageInput; preview: string; name: string; size: number }[],

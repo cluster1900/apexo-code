@@ -210,7 +210,7 @@ export function withCliFixture<A, E>(
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to
       // ignore; ChildProcess.make defaults to pipe, so we set it explicitly.
-      const command = ChildProcess.make("bun", ["run", cliEntry, ...args], {
+      const command = ChildProcess.make(process.execPath, ["run", cliEntry, ...args], {
         cwd: home,
         env: { ...env, ...opts?.env },
         extendEnv: true,
@@ -307,7 +307,7 @@ export function withCliFixture<A, E>(
       const options = runOpts(opts)
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
-          Bun.spawn(["bun", "run", cliEntry, ...runArgs(message, opts)], {
+          Bun.spawn([process.execPath, "run", cliEntry, ...runArgs(message, opts)], {
             cwd: home,
             env: { ...process.env, ...env, ...options?.env },
             stdin: "ignore",
@@ -348,7 +348,7 @@ export function withCliFixture<A, E>(
       // as a finalizer error during test teardown.
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
-          Bun.spawn(["bun", "run", cliEntry, ...argv], {
+          Bun.spawn([process.execPath, "run", cliEntry, ...argv], {
             cwd: home,
             env: { ...process.env, ...env, ...opts?.env },
             stdout: "pipe",

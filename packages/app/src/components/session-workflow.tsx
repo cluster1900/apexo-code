@@ -22,6 +22,7 @@ export function createSessionWorkflow(
     {
       id: "session.workflow",
       title: language.t("workflow.title"),
+      description: language.t("workflow.description"),
       slash: "workflow",
       slashAliases: ["workflows"],
       disabled: !sessionID(),
@@ -30,6 +31,7 @@ export function createSessionWorkflow(
     {
       id: "session.deep-research",
       title: language.t("workflow.research"),
+      description: language.t("workflow.description"),
       slash: "deep-research",
       disabled: !sessionID(),
       onSelect: () => void open("/deep-research"),

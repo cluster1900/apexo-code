@@ -368,9 +368,17 @@ export function Markdown(
     streaming?: boolean
     class?: string
     classList?: Record<string, boolean>
+    onContentRendered?: () => void
   },
 ) {
-  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
+  const [local, others] = splitProps(props, [
+    "text",
+    "cacheKey",
+    "streaming",
+    "class",
+    "classList",
+    "onContentRendered",
+  ])
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
@@ -385,7 +393,10 @@ export function Markdown(
       if (!live && !streamed) return
       return { key: owner, text: local.text, live }
     },
-    (src) => projectMarkdown(src.key, src.text, src.live),
+    (src) =>
+      projectMarkdown(src.key, src.text, src.live).catch(() =>
+        src.live ? pendingProjection(src.text) : completedProjection(src.text),
+      ),
     { initialValue: pendingProjection("") },
   )
   const currentProjection = () => {
@@ -530,6 +541,7 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       }))
+    local.onContentRendered?.()
   })
 
   onCleanup(() => {

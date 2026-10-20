@@ -190,11 +190,20 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-    if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
-      const heading = assistantMessages
-        .flatMap((message) => getMessageParts(message.id))
-        .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
-        .find((value): value is string => !!value)
+    const lastPartType = assistantPartRefs.at(-1)?.part.type
+    if (
+      isActive &&
+      status === "busy" &&
+      !error &&
+      lastPartType !== "text" &&
+      (showReasoning ? assistantPartRefs.length === 0 : true)
+    ) {
+      const heading = showReasoning
+        ? assistantMessages
+            .flatMap((message) => getMessageParts(message.id))
+            .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
+            .findLast((value): value is string => !!value)
+        : undefined
 
       rows.push(
         new TimelineRow.Thinking({

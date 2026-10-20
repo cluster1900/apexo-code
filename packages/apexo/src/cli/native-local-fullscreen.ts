@@ -40,7 +40,7 @@ export async function runNativeLocalFullscreen(input: {
     const transport = await withTimeout(client.call("start", undefined), 20_000)
     if (!transport.ok) throw new Error(transport.message)
     const { validateSession } = await import("./tui/validate-session")
-    await validateSession({
+    const sessionID = await validateSession({
       url: transport.url,
       headers: transport.headers,
       sessionID: input.session,
@@ -60,7 +60,7 @@ export async function runNativeLocalFullscreen(input: {
         pluginHost: createLegacyTuiPluginHost(),
         args: {
           sessionProtocol: "native",
-          sessionID: input.session,
+          sessionID,
           continue: input.continue,
           agent: input.agent,
           model: input.model,

@@ -1,3 +1,4 @@
+import path from "path"
 import { LocalContext } from "@/util/local-context"
 import { FSUtil } from "@apexo/core/fs-util"
 import type * as Project from "./project"
@@ -21,4 +22,17 @@ export function containsPath(filepath: string, ctx: InstanceContext): boolean {
   // Skip worktree check in this case to preserve external_directory permissions.
   if (ctx.worktree === "/") return false
   return FSUtil.contains(ctx.worktree, filepath)
+}
+
+export function projectRelativePath(
+  filepath: string,
+  ctx: Pick<InstanceContext, "directory" | "worktree">,
+): string {
+  if (ctx.worktree === "/" || ctx.worktree === "\\") {
+    if (FSUtil.contains(ctx.directory, filepath)) {
+      return path.relative(ctx.directory, filepath) || "."
+    }
+    return filepath
+  }
+  return path.relative(ctx.worktree, filepath)
 }

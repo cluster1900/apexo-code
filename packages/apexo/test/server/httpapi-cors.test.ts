@@ -115,7 +115,7 @@ describe("HttpApi CORS", () => {
         }),
       )
 
-      expect(rejected.status).toBe(204)
+      expect(rejected.status).toBe(403)
       expect(rejected.headers.get("access-control-allow-origin")).not.toBe("https://evil.example")
     }),
   )

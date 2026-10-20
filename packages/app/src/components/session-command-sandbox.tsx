@@ -38,6 +38,7 @@ export function createSessionCommandSandbox(sessionID: () => string | undefined)
     {
       id: "session.sandbox",
       title: language.t("commandSandbox.title"),
+      description: language.t("commandSandbox.scope"),
       slash: "sandbox",
       onSelect: () => void open(),
     },

@@ -78,22 +78,22 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
             </div>
           </div>
         </Tabs.List>
-        <Tabs.Content value="general" class="no-scrollbar">
+        <Tabs.Content value="general">
           <SettingsGeneral />
         </Tabs.Content>
-        <Tabs.Content value="shortcuts" class="no-scrollbar">
+        <Tabs.Content value="shortcuts">
           <SettingsKeybinds />
         </Tabs.Content>
-        <Tabs.Content value="servers" class="no-scrollbar">
+        <Tabs.Content value="servers">
           <SettingsServers />
         </Tabs.Content>
-        <Tabs.Content value="providers" class="no-scrollbar">
+        <Tabs.Content value="providers">
           <SettingsProviders onBack={showProviders} />
         </Tabs.Content>
         <Tabs.Content value="plugins">
           <Plugins />
         </Tabs.Content>
-        <Tabs.Content value="models" class="no-scrollbar">
+        <Tabs.Content value="models">
           <SettingsModels />
         </Tabs.Content>
       </Tabs>

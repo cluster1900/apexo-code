@@ -15,6 +15,10 @@ import {
   releaseNotesURL,
   resolveDocs,
   resolveEffort,
+  parseCopyArgs,
+  resolveSessionReference,
+  sessionMatches,
+  sideQuestionText,
 } from "../src/v2/grok-commands"
 
 describe("grok commands", () => {
@@ -167,5 +171,55 @@ describe("nextSessionMode", () => {
     expect(nextSessionMode("always-approve")).toBe("normal")
     expect(nextSessionMode("plan", { plan: true, auto: false })).toBe("always-approve")
     expect(nextSessionMode("normal", { plan: false, auto: true })).toBe("auto")
+  })
+})
+
+describe("grok session and argument helpers", () => {
+  const sessions = [
+    { id: "ses_alpha", title: "Fix login bug" },
+    { id: "ses_beta", title: "fix-login-bug" },
+    { id: "ses_gamma", title: "Refactor auth module" },
+    { id: "ses_delta", title: "Deploy notes" },
+  ]
+
+  test("sessionMatches finds titles containing every word in any order", () => {
+    expect(sessionMatches("login fix", sessions[0]!)).toBe(true)
+    expect(sessionMatches("BUG fix", sessions[1]!)).toBe(true)
+    expect(sessionMatches("auth refac", sessions[2]!)).toBe(true)
+    expect(sessionMatches("login deploy", sessions[0]!)).toBe(false)
+    expect(sessionMatches("ses_gam", sessions[2]!)).toBe(true)
+    expect(sessionMatches("  ", sessions[3]!)).toBe(true)
+  })
+
+  test("resolveSessionReference names exactly one session or none", () => {
+    expect(resolveSessionReference("ses_delta", sessions)?.id).toBe("ses_delta")
+    expect(resolveSessionReference("deploy NOTES", sessions)?.id).toBe("ses_delta")
+    expect(resolveSessionReference("refactor_auth-module", sessions)?.id).toBe("ses_gamma")
+    // An exact title match wins over a separator-joined duplicate.
+    expect(resolveSessionReference("fix-login-bug", sessions)?.id).toBe("ses_beta")
+    // Two titles share the same words: ambiguous, so the picker opens instead.
+    expect(resolveSessionReference("fix login", sessions)).toBeUndefined()
+    expect(resolveSessionReference("FIX_LOGIN_BUG", sessions)).toBeUndefined()
+    expect(resolveSessionReference("auth", sessions)).toBeUndefined()
+    expect(resolveSessionReference("", sessions)).toBeUndefined()
+  })
+
+  test("parseCopyArgs", () => {
+    expect(parseCopyArgs("")).toEqual({ index: 1 })
+    expect(parseCopyArgs("2")).toEqual({ index: 2 })
+    expect(parseCopyArgs("out.txt")).toEqual({ index: 1, path: "out.txt" })
+    expect(parseCopyArgs("2 ~/exports/last-reply.md")).toEqual({ index: 2, path: "~/exports/last-reply.md" })
+    expect(parseCopyArgs("0")).toEqual({ error: "The response number must be 1 or greater" })
+  })
+
+  test("sideQuestionText accepts /btw anywhere as a standalone token", () => {
+    expect(sideQuestionText("fix the retry loop first. /btw what does WBC stand for?")).toBe(
+      "fix the retry loop first. what does WBC stand for?",
+    )
+    expect(sideQuestionText("/btw also check the error handling")).toBe("also check the error handling")
+    expect(sideQuestionText("what is /btwx")).toBeUndefined()
+    expect(sideQuestionText("path a/btw b")).toBeUndefined()
+    expect(sideQuestionText("/btw")).toBeUndefined()
+    expect(sideQuestionText("no aside here")).toBeUndefined()
   })
 })

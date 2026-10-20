@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron"
+import { app, BrowserWindow } from "electron"
 import type { DesktopMenuAction } from "@apexo/app/desktop-menu"
 import { createMainWindow, updateTitlebar } from "./windows"
 
@@ -14,6 +14,10 @@ export function runDesktopMenuAction(
   switch (action) {
     case "app.relaunch":
       handlers.relaunch?.()
+      return
+    case "app.quit":
+      // `/quit`: closing the last window keeps the app alive on macOS; before-quit still stops the sidecars.
+      app.quit()
       return
     case "window.new":
       createMainWindow()

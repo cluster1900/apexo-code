@@ -81,8 +81,8 @@ export function HooksDialog(props: { sessionID: string }) {
   onMount(() => void load())
   onCleanup(() => lifetime.abort())
   return (
-    <Dialog title={language.t("hooks.title")} size="large">
-      <div data-component="hooks-dialog" class="min-h-0 max-h-[60vh] overflow-y-auto px-6 pb-6 space-y-4">
+    <Dialog title={language.t("hooks.title")} size="large" fit>
+      <div data-component="hooks-dialog" class="min-h-0 max-h-[60vh] overflow-y-auto px-6 pt-2 pb-6 space-y-4">
         <p class="text-12-regular text-text-weak">{language.t("hooks.description")}</p>
         <p class="text-12-regular text-text-weak">{language.t("hooks.preference.hint")}</p>
         <Show when={state.snapshot?.repository}>

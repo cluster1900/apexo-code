@@ -18,6 +18,7 @@ import { errorMessage } from "../util/error"
 import { DialogSessionDeleteFailed } from "./dialog-session-delete-failed"
 import { useCommandShortcut } from "../keymap"
 import { useEvent } from "../context/event"
+import { sessionMatches } from "@apexo/sdk/v2/grok-commands"
 
 type SessionListFilter = { scope?: "project"; path?: string }
 
@@ -42,7 +43,7 @@ export function loadDialogSessionList<T>(input: {
   )
 }
 
-export function DialogSessionList() {
+export function DialogSessionList(props: { filter?: string }) {
   const dialog = useDialog()
   const route = useRoute()
   const sync = useSync()
@@ -54,7 +55,7 @@ export function DialogSessionList() {
   const toast = useToast()
   const [toDelete, setToDelete] = createSignal<string>()
   const [deleted, setDeleted] = createSignal(new Set<string>())
-  const [search, setSearch] = createDebouncedSignal("", 150)
+  const [search, setSearch] = createDebouncedSignal(props.filter?.trim() ?? "", 150)
   const deleteHint = useCommandShortcut("session.delete")
   const quickSwitch1 = useCommandShortcut("session.quick_switch.1")
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
@@ -77,7 +78,9 @@ export function DialogSessionList() {
 
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
   const sessions = createMemo(() => {
-    const result = searchResults() ?? browseResults() ?? sync.data.session
+    // Server search matches a title substring; the recent list adds word-order and ID-prefix matches.
+    const listed = [...(searchResults() ?? []), ...(browseResults() ?? sync.data.session)]
+    const result = listed.filter((session, index) => listed.findIndex((item) => item.id === session.id) === index)
     const synced = new Map(sync.data.session.map((session) => [session.id, session]))
     const ids = new Set(result.map((session) => session.id))
     const extra = [currentSessionID(), ...local.session.pinned()].flatMap((id) => {
@@ -86,10 +89,9 @@ export function DialogSessionList() {
       if (session) ids.add(id)
       return session ? [session] : []
     })
-    const query = search().trim().toLowerCase()
     return [...result.map((session) => synced.get(session.id) ?? session), ...extra]
       .filter((session) => !deleted().has(session.id))
-      .filter((session) => !query || session.title.toLowerCase().includes(query))
+      .filter((session) => sessionMatches(search(), session))
   })
 
   onCleanup(
@@ -213,8 +215,7 @@ export function DialogSessionList() {
         .map((x) => [x.id, x]),
     )
 
-    const searchResult = searchResults()
-    const order = searchResult ? orderByRecency(sessions()) : browseOrder()
+    const order = search() ? orderByRecency(sessions()) : browseOrder()
     const current = currentSessionID()
     const displayOrder = current && sessionMap.has(current) && !order.includes(current) ? [...order, current] : order
 
@@ -273,6 +274,7 @@ export function DialogSessionList() {
     <DialogSelect
       title="Sessions"
       options={options()}
+      filter={props.filter?.trim()}
       skipFilter={true}
       preserveSelection={true}
       current={currentSessionID()}

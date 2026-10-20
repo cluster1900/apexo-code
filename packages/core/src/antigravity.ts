@@ -15,6 +15,7 @@ import { httpClient } from "./effect/app-node-platform"
 export const providerID = "antigravity"
 export const methodID = "agy"
 export const endpoint = "https://daily-cloudcode-pa.googleapis.com"
+export const userAgent = "antigravity/cli/1.4.2"
 
 export class Error extends Schema.TaggedErrorClass<Error>()("Antigravity.Error", {
   message: Schema.String,
@@ -219,7 +220,7 @@ export const make = (input: {
     const post = <S extends Schema.Top>(name: string, body: unknown, schema: S, access: string) =>
       Effect.gen(function* () {
         const request = yield* HttpClientRequest.post(`${endpoint}/v1internal:${name}`).pipe(
-          HttpClientRequest.setHeaders({ authorization: `Bearer ${access}`, "user-agent": "apexo-antigravity" }),
+          HttpClientRequest.setHeaders({ authorization: `Bearer ${access}`, "user-agent": userAgent }),
           HttpClientRequest.bodyJson(body),
         )
         const response = yield* input.http.execute(request)

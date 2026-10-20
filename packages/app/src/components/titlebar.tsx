@@ -355,7 +355,7 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
                   placement="bottom"
                   value={
                     <>
-                      {language.t("home.title")}
+                      {language.t("sidebar.nav.projectsAndSessions")}
                       <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
                     </>
                   }
@@ -369,7 +369,7 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
                     icon={<IconV2 name="grid-plus" />}
                     state={layout.route().type === "home" ? "pressed" : undefined}
                     onClick={toggleHome}
-                    aria-label={language.t("home.title")}
+                    aria-label={language.t("sidebar.nav.projectsAndSessions")}
                     aria-pressed={layout.route().type === "home"}
                   />
                 </TooltipV2>

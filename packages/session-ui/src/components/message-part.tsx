@@ -336,7 +336,12 @@ function createPacedValue(getValue: () => string, live?: () => boolean) {
   return value
 }
 
-function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boolean }) {
+function PacedMarkdown(props: {
+  text: string
+  cacheKey: string
+  streaming: boolean
+  onContentRendered?: () => void
+}) {
   const value = createPacedValue(
     () => props.text,
     () => props.streaming,
@@ -344,7 +349,12 @@ function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boole
 
   return (
     <Show when={value()}>
-      <Markdown text={value()} cacheKey={props.cacheKey} streaming={props.streaming} />
+      <Markdown
+        text={value()}
+        cacheKey={props.cacheKey}
+        streaming={props.streaming}
+        onContentRendered={props.onContentRendered}
+      />
     </Show>
   )
 }
@@ -359,7 +369,7 @@ function relativizeProjectPath(path: string, directory?: string) {
   const separator = directory.includes("\\") ? "\\" : "/"
   const prefix = directory.endsWith(separator) ? directory : directory + separator
   if (!path.startsWith(prefix)) return path
-  return path.slice(directory.length)
+  return path.slice(prefix.length)
 }
 
 function getDirectory(path: string | undefined) {
@@ -1552,12 +1562,13 @@ export const ToolRegistry = {
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
   const value = createMemo(() => props.path || "tool-file")
+  const dir = createMemo(() => getDirectory(props.path))
 
   return (
     <Accordion
       multiple
       data-scope="apply-patch"
-      style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
+      style={{ "--sticky-accordion-offset": "0px" }}
       defaultValue={[value()]}
     >
       <Accordion.Item value={value()}>
@@ -1567,8 +1578,8 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
               <div data-slot="apply-patch-file-info">
                 <FileIcon node={{ path: props.path, type: "file" }} />
                 <div data-slot="apply-patch-file-name-container">
-                  <Show when={props.path.includes("/")}>
-                    <span data-slot="apply-patch-directory">{`\u202A${getDirectory(props.path)}\u202C`}</span>
+                  <Show when={dir()}>
+                    <span data-slot="apply-patch-directory">{`\u202A${dir()}\u202C`}</span>
                   </Show>
                   <span data-slot="apply-patch-filename">{getFilename(props.path)}</span>
                 </div>
@@ -1796,7 +1807,12 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     <Show when={text()}>
       <div data-component="text-part" data-timeline-part-id={part().id}>
         <div data-slot="text-part-body">
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+          <PacedMarkdown
+            text={text()}
+            cacheKey={part().id}
+            streaming={streaming()}
+            onContentRendered={props.onContentRendered}
+          />
         </div>
         <Show when={showCopy()}>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
@@ -1822,16 +1838,46 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
+  const i18n = useI18n()
   const part = () => props.part as ReasoningPart
+  const [localOpen, setLocalOpen] = createSignal(props.defaultOpen ?? false)
+  const open = () => props.toolOpen ?? localOpen()
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const handleOpenChange = (value: boolean) => {
+    if (props.toolOpen === undefined) setLocalOpen(value)
+    props.onToolOpenChange?.(value)
+    props.onContentRendered?.()
+  }
 
   return (
     <Show when={text()}>
       <div data-component="reasoning-part" data-timeline-part-id={part().id}>
-        <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+        <Collapsible open={open()} onOpenChange={handleOpenChange} variant="ghost" class="tool-collapsible">
+          <Collapsible.Trigger>
+            <div data-component="context-tool-group-trigger" data-slot="reasoning-part-trigger">
+              <span
+                data-slot="context-tool-group-title"
+                class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
+              >
+                <span data-slot="context-tool-group-label" class="shrink-0">
+                  <TextShimmer text={i18n.t("ui.sessionTurn.status.thinking")} active={streaming()} />
+                </span>
+              </span>
+              <Collapsible.Arrow />
+            </div>
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <PacedMarkdown
+              text={text()}
+              cacheKey={part().id}
+              streaming={streaming()}
+              onContentRendered={props.onContentRendered}
+            />
+          </Collapsible.Content>
+        </Collapsible>
       </div>
     </Show>
   )
@@ -2282,7 +2328,7 @@ ToolRegistry.register({
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={!pending() && getDirectory(props.input.filePath)}>
                   <div data-slot="message-part-path">
                     <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
                   </div>
@@ -2349,7 +2395,7 @@ ToolRegistry.register({
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={!pending() && getDirectory(props.input.filePath)}>
                   <div data-slot="message-part-path">
                     <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
                   </div>
@@ -2430,7 +2476,7 @@ ToolRegistry.register({
                 <Accordion
                   multiple
                   data-scope="apply-patch"
-                  style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
+                  style={{ "--sticky-accordion-offset": "0px" }}
                   value={expanded()}
                   onChange={(value) => setExpanded(Array.isArray(value) ? value : value ? [value] : [])}
                 >
@@ -2459,7 +2505,7 @@ ToolRegistry.register({
                                 <div data-slot="apply-patch-file-info">
                                   <FileIcon node={{ path: file.relativePath, type: "file" }} />
                                   <div data-slot="apply-patch-file-name-container">
-                                    <Show when={file.relativePath.includes("/")}>
+                                    <Show when={getDirectory(file.relativePath)}>
                                       <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.relativePath)}\u202C`}</span>
                                     </Show>
                                     <span data-slot="apply-patch-filename">{getFilename(file.relativePath)}</span>
