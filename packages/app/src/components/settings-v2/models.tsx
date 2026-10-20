@@ -18,6 +18,7 @@ import "./settings-v2.css"
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
 const PROVIDER_ICON_SIZE = 16
+const STEALTH_MODEL_ID = /(?:^daybreak-|-terra(?:-|$))/i
 
 export const SettingsModelsV2: Component = () => {
   const language = useLanguage()
@@ -29,12 +30,17 @@ export const SettingsModelsV2: Component = () => {
   )
 
   const list = useFilteredList<ModelItem>({
-    items: (_filter) => models.list(),
+    items: (_filter) => models.list().filter((item) => !STEALTH_MODEL_ID.test(item.id)),
     key: (x) => `${x.provider.id}:${x.id}`,
     filterKeys: ["provider.name", "name", "id"],
     sortBy: (a, b) => a.name.localeCompare(b.name),
     groupBy: (x) => x.provider.id,
     sortGroupsBy: (a, b) => {
+      const aCustom = a.items[0]?.provider.source === "config" || !popularProviders.includes(a.category)
+      const bCustom = b.items[0]?.provider.source === "config" || !popularProviders.includes(b.category)
+      if (aCustom && !bCustom) return -1
+      if (!aCustom && bCustom) return 1
+
       const aIndex = popularProviders.indexOf(a.category)
       const bIndex = popularProviders.indexOf(b.category)
       const aPopular = aIndex >= 0

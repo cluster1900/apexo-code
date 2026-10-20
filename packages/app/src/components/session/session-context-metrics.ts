@@ -47,9 +47,10 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
 
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
-  const limit =
+  const rawLimit =
     effectiveContextWindow(contextWindowChoice(message.sessionID), model?.limit.context_options) ??
     model?.limit.context
+  const limit = rawLimit && rawLimit > 0 ? rawLimit : undefined
   const total = tokenTotal(message)
 
   return {

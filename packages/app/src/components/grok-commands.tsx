@@ -628,7 +628,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       category: "Session",
       slash: "dashboard",
       slashAliases: ["agents-dashboard", "sessions"],
-      keybind: "ctrl+\\",
+      keybind: "ctrl+\\,ctrl+i",
       onSelect: () => dialog.show(() => <DialogAgentDashboard />),
     },
     {

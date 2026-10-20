@@ -1,5 +1,5 @@
 import type { Argv } from "yargs"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
 import { Session } from "@/session/session"
@@ -58,11 +58,15 @@ export const SessionDeleteCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.session.delete")(function* (args) {
+    if (!Schema.is(SessionID)(args.sessionID)) {
+      return yield* fail(`Session '${args.sessionID}' not found.`)
+    }
     const svc = yield* Session.Service
-    const sessionID = SessionID.make(args.sessionID)
+    const sessionID = args.sessionID
+    yield* svc.get(sessionID).pipe(Effect.catchCause(() => fail(`Session '${args.sessionID}' not found.`)))
     yield* svc
       .remove(sessionID)
-      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)))
+      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session '${args.sessionID}' not found.`)))
     UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
   }),
 })
@@ -86,7 +90,10 @@ export const SessionListCommand = effectCmd({
   handler: Effect.fn("Cli.session.list")(function* (args) {
     const sessions = yield* Session.Service.use((svc) => svc.list({ roots: true, limit: args.maxCount }))
 
-    if (sessions.length === 0) return
+    if (sessions.length === 0) {
+      if (args.format === "json") console.log("[]")
+      return
+    }
 
     const output = args.format === "json" ? formatSessionJSON(sessions) : formatSessionTable(sessions)
 

@@ -75,8 +75,9 @@ export function createHomeSessionsController(home: HomeController) {
       return index
     },
     retry: false,
-    staleTime: 30_000,
-    refetchOnMount: true,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   }))
   const indexedSessions = createMemo(() =>
@@ -227,6 +228,32 @@ export function createHomeSessionsController(home: HomeController) {
               }),
             )
             homeSessions().remove(session.id)
+            showToast({
+              title: language.t("command.session.archive"),
+              description: session.title,
+              actions: [
+                {
+                  label: language.t("common.undo"),
+                  onClick: () => {
+                    void ctx.sdk.client.session
+                      .update({
+                        sessionID: session.id,
+                        directory: session.directory,
+                        time: { archived: 0 },
+                      })
+                      .then(() => {
+                        setStore(
+                          produce((draft) => {
+                            const match = Binary.search(draft.session, session.id, (item) => item.id)
+                            if (!match.found) draft.session.splice(match.index, 0, session)
+                          }),
+                        )
+                        homeSessions().restore(session)
+                      })
+                  },
+                },
+              ],
+            })
           },
           onError: (cause) =>
             showToast({

@@ -240,12 +240,14 @@ const layer = Layer.effect(
 
       yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
       if (!data.$schema) {
-        data.$schema = "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json"
+        data.$schema = "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json"
         const updated = text.replace(
           /^\s*\{/,
-          '{\n  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",',
+          '{\n  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",',
         )
         yield* fs.writeFileString(options.path, updated).pipe(Effect.catch(() => Effect.void))
+      } else if (data.$schema === "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json") {
+        data.$schema = "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json"
       }
       return data
     })
@@ -268,7 +270,7 @@ const layer = Layer.effect(
             .writeWithDirs(
               file,
               JSON.stringify(
-                { $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json" },
+                { $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json" },
                 null,
                 2,
               ),
@@ -288,7 +290,7 @@ const layer = Layer.effect(
             .then(async (mod) => {
               const { provider, model, ...rest } = mod.default
               if (provider && model) result.model = `${provider}/${model}`
-              result["$schema"] = "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json"
+              result["$schema"] = "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json"
               result = mergeConfig(result, rest)
               await fsNode.writeFile(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
               await fsNode.unlink(legacy)
@@ -401,7 +403,7 @@ const layer = Layer.effect(
               : {}
             const remoteConfig = mergeConfig(isRecord(wellknown.config) ? wellknown.config : {}, fetchedConfig)
             if (!remoteConfig.$schema)
-              remoteConfig.$schema = "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json"
+              remoteConfig.$schema = "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json"
             const source = wellknownURL
             const next = yield* loadConfig(
               JSON.stringify(remoteConfig),

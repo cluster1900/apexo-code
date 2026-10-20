@@ -73,20 +73,6 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
 
   return (
     <div class="flex flex-col gap-2" onKeyDown={(event) => props.controller.background.onKeyDown(event)}>
-      <div
-        data-slot="prompt-action-bar"
-        class="flex flex-wrap items-center justify-end gap-1.5 px-1 [&_[data-component=button]]:h-6 [&_[data-component=button]]:rounded-full [&_[data-component=button]]:border [&_[data-component=button]]:border-v2-border-border-muted [&_[data-component=button]]:bg-v2-background-bg-base/80 [&_[data-component=button]]:px-2.5 [&_[data-component=button]]:text-11-medium [&_[data-component=button]]:text-v2-text-text-muted [&_[data-component=button]]:transition-colors [&_[data-component=button]:hover]:border-v2-border-border-base [&_[data-component=button]:hover]:bg-v2-overlay-simple-overlay-hover [&_[data-component=button]:hover]:text-v2-text-text-base [&_[data-component=button-v2]]:h-6 [&_[data-component=button-v2]]:rounded-full [&_[data-component=button-v2]]:border [&_[data-component=button-v2]]:border-v2-border-border-muted [&_[data-component=button-v2]]:bg-v2-background-bg-base/80 [&_[data-component=button-v2]]:px-2.5 [&_[data-component=button-v2]]:text-11-medium [&_[data-component=button-v2]]:text-v2-text-text-muted [&_[data-component=button-v2]]:transition-colors [&_[data-component=button-v2]:hover]:border-v2-border-border-base [&_[data-component=button-v2]:hover]:bg-v2-overlay-simple-overlay-hover [&_[data-component=button-v2]:hover]:text-v2-text-text-base"
-      >
-        <GoalButton goal={props.controller.goal} />
-        <MemoryButton memory={props.controller.memory} />
-        <SideQuestionButton sideQuestion={props.controller.sideQuestion} />
-        <WorkflowButton workflow={props.controller.workflow} />
-        <FeedbackButton feedback={props.controller.feedback} />
-        <HooksButton hooks={props.controller.hooks} />
-        <McpAttachmentsButton attachments={props.controller.mcpAttachments} />
-        <CommandSandboxButton sandbox={props.controller.sandbox} />
-        <BackgroundTasksButton tasks={props.controller.tasks} />
-      </div>
       <PromptInputV2
         controller={props.controller}
         borderUnderlay={props.borderUnderlay}
@@ -134,6 +120,20 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
           />
         }
       />
+      <div
+        data-slot="prompt-action-bar"
+        class="order-first flex flex-wrap items-center justify-end gap-1.5 px-1 [&_[data-component=button]]:h-6 [&_[data-component=button]]:rounded-full [&_[data-component=button]]:border [&_[data-component=button]]:border-v2-border-border-muted [&_[data-component=button]]:bg-v2-background-bg-base/80 [&_[data-component=button]]:px-2.5 [&_[data-component=button]]:text-11-medium [&_[data-component=button]]:text-v2-text-text-muted [&_[data-component=button]]:transition-colors [&_[data-component=button]:hover]:border-v2-border-border-base [&_[data-component=button]:hover]:bg-v2-overlay-simple-overlay-hover [&_[data-component=button]:hover]:text-v2-text-text-base [&_[data-component=button]:focus-visible]:outline-2 [&_[data-component=button]:focus-visible]:outline-offset-2 [&_[data-component=button]:focus-visible]:outline-v2-border-border-focus [&_[data-component=button-v2]]:h-6 [&_[data-component=button-v2]]:rounded-full [&_[data-component=button-v2]]:border [&_[data-component=button-v2]]:border-v2-border-border-muted [&_[data-component=button-v2]]:bg-v2-background-bg-base/80 [&_[data-component=button-v2]]:px-2.5 [&_[data-component=button-v2]]:text-11-medium [&_[data-component=button-v2]]:text-v2-text-text-muted [&_[data-component=button-v2]]:transition-colors [&_[data-component=button-v2]:hover]:border-v2-border-border-base [&_[data-component=button-v2]:hover]:bg-v2-overlay-simple-overlay-hover [&_[data-component=button-v2]:hover]:text-v2-text-text-base [&_[data-component=button-v2]:focus-visible]:outline-2 [&_[data-component=button-v2]:focus-visible]:outline-offset-2 [&_[data-component=button-v2]:focus-visible]:outline-v2-border-border-focus"
+      >
+        <GoalButton goal={props.controller.goal} />
+        <MemoryButton memory={props.controller.memory} />
+        <SideQuestionButton sideQuestion={props.controller.sideQuestion} />
+        <WorkflowButton workflow={props.controller.workflow} />
+        <FeedbackButton feedback={props.controller.feedback} />
+        <HooksButton hooks={props.controller.hooks} />
+        <McpAttachmentsButton attachments={props.controller.mcpAttachments} />
+        <CommandSandboxButton sandbox={props.controller.sandbox} />
+        <BackgroundTasksButton tasks={props.controller.tasks} />
+      </div>
     </div>
   )
 }

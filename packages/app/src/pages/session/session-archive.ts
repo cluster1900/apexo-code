@@ -51,6 +51,8 @@ export function useSessionArchive() {
     await sdk()
       .client.session.update({ sessionID, directory: sdk().directory, time: { archived: Date.now() } })
       .then(() => {
+        const snapshot = { ...session }
+        const dir = sdk().directory
         sync().set(
           produce((draft) => {
             const index = draft.session.findIndex((s) => s.id === sessionID)
@@ -60,7 +62,23 @@ export function useSessionArchive() {
         sync().session.evict(sessionID)
         serverSync().homeSessions.remove(sessionID)
         navigateAfterRemoval(sessionID, session.parentID, nextSession?.id)
-        notifySessionTabsRemoved({ directory: sdk().directory, sessionIDs: [sessionID] })
+        notifySessionTabsRemoved({ directory: dir, sessionIDs: [sessionID] })
+        showToast({
+          title: language.t("command.session.archive"),
+          description: snapshot.title,
+          actions: [
+            {
+              label: language.t("common.undo"),
+              onClick: () => {
+                void sdk()
+                  .client.session.update({ sessionID, directory: dir, time: { archived: 0 } })
+                  .then(() => {
+                    serverSync().homeSessions.restore(snapshot)
+                  })
+              },
+            },
+          ],
+        })
       })
       .catch((err) => {
         showToast({

@@ -1082,11 +1082,13 @@ export function Session() {
           info: sessionData,
           messages: messages().map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
         })
+        const plural = (n: number, word: string) => `${n} ${n === 1 ? word : `${word}s`}`
         const lines = [
-          `${usage.turns} turns · ${usage.calls} model calls · ${usage.inputTokens} input / ${usage.outputTokens} output tokens · $${usage.costUsd.toFixed(4)}`,
+          `${plural(usage.turns, "turn")} · ${plural(usage.calls, "model call")} · $${usage.costUsd.toFixed(4)}`,
+          `${usage.inputTokens.toLocaleString()} input / ${usage.outputTokens.toLocaleString()} output tokens`,
           ...usage.models.map(
             (model) =>
-              `${model.providerID}/${model.modelID}: ${model.calls} calls · ${model.inputTokens} in / ${model.outputTokens} out · $${model.costUsd.toFixed(4)}`,
+              `${model.providerID}/${model.modelID}: ${plural(model.calls, "call")} · ${model.inputTokens.toLocaleString()} in / ${model.outputTokens.toLocaleString()} out · $${model.costUsd.toFixed(4)}`,
           ),
         ]
         void DialogAlert.show(dialog, "Session usage", lines.join("\n"))

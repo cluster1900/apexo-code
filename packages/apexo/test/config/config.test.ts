@@ -109,7 +109,7 @@ const it = testEffect(layer)
 const configIt = (options?: Parameters<typeof configLayer>[0]) => testEffect(configLayer(options))
 
 const schemaConfig = (config: object) => ({
-  $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
   ...config,
 })
 
@@ -269,7 +269,7 @@ async function check(map: (dir: string) => string) {
   await clear()
   try {
     await writeConfig(globalTmp.path, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       snapshot: false,
     })
     await withTestInstance({
@@ -317,7 +317,7 @@ it.effect("creates global jsonc config with schema when no global configs exist"
       // New (non-legacy) config directories get apexo.jsonc.
       const content = yield* FSUtil.use.readFileString(path.join(dir, "apexo.jsonc"))
       expect(content).toContain(
-        '"$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json"',
+        '"$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json"',
       )
     }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
   ),
@@ -347,7 +347,7 @@ it.effect("apexo.json overrides the legacy config file in the same project direc
     yield* writeConfigEffect(
       dir,
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         model: "legacy/model",
         username: "legacy",
       },
@@ -356,7 +356,7 @@ it.effect("apexo.json overrides the legacy config file in the same project direc
     yield* writeConfigEffect(
       dir,
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         username: "apexo-user",
       },
       "apexo.json",
@@ -373,7 +373,7 @@ it.effect("loads config from a .apexo directory", () =>
     yield* writeConfigEffect(
       path.join(dir, ".apexo"),
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         username: "from-dot-apexo",
       },
       "apexo.json",
@@ -407,7 +407,7 @@ it.instance("updates config and preserves empty shell sentinel", () =>
     const test = yield* TestInstance
     yield* writeConfigEffect(
       test.directory,
-      { $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json", shell: "bash" },
+      { $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json", shell: "bash" },
       "apexo.json",
     )
 
@@ -668,7 +668,7 @@ it.instance("ignores legacy tui keys in apexo config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       model: "test/model",
       theme: "legacy",
       tui: { scroll_speed: 4 },
@@ -688,7 +688,7 @@ it.instance("loads JSONC config file", () =>
       path.join(test.directory, "apexo.jsonc"),
       `{
         // This is a comment
-        "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         "model": "test/model",
         "username": "testuser"
       }`,
@@ -705,14 +705,14 @@ it.instance("jsonc overrides json in the same directory", () =>
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         model: "base",
         username: "base",
       },
       "apexo.jsonc",
     )
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       model: "override",
     })
     const config = yield* Config.use.get()
@@ -728,7 +728,7 @@ it.instance("handles environment variable substitution", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       yield* writeConfigEffect(test.directory, {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         username: "{env:TEST_VAR}",
       })
       const config = yield* Config.use.get()
@@ -765,7 +765,7 @@ it.instance("handles file inclusion substitution", () =>
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(path.join(test.directory, "included.txt"), "test-user")
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       username: "{file:included.txt}",
     })
     const config = yield* Config.use.get()
@@ -778,7 +778,7 @@ it.instance("handles file inclusion with replacement tokens", () =>
     const test = yield* TestInstance
     yield* FSUtil.use.writeWithDirs(path.join(test.directory, "included.md"), "const out = await Bun.$`echo hi`")
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       username: "{file:included.md}",
     })
     const config = yield* Config.use.get()
@@ -790,7 +790,7 @@ it.instance("validates config schema and throws on invalid values", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       model: 42,
     })
     const exit = yield* Config.use.get().pipe(Effect.exit)
@@ -811,7 +811,7 @@ it.instance("handles agent configuration", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: {
         test_agent: {
           model: "test/model",
@@ -835,7 +835,7 @@ it.instance("treats agent variant as model-scoped setting (not provider option)"
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: {
         test_agent: {
           model: "openai/gpt-5.2",
@@ -859,7 +859,7 @@ it.instance("handles command configuration", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       command: {
         test_command: {
           template: "test template",
@@ -881,7 +881,7 @@ it.instance("migrates mode field to agent field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       mode: {
         test_mode: {
           model: "test/model",
@@ -904,7 +904,7 @@ it.instance("accepts the deprecated reference field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       reference: {
         local: { path: "../library" },
         sdk: { repository: "github.com/example/sdk", branch: "main" },
@@ -1314,7 +1314,7 @@ it.instance("migrates legacy tools config to permissions - allow", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { tools: { bash: true, read: true } } },
     })
 
@@ -1330,7 +1330,7 @@ it.instance("migrates legacy tools config to permissions - deny", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { tools: { bash: false, webfetch: false } } },
     })
 
@@ -1346,7 +1346,7 @@ it.instance("migrates legacy write tool to edit permission", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { tools: { write: true } } },
     })
 
@@ -1362,7 +1362,7 @@ it.instance(
   "managed settings override user settings",
   Effect.gen(function* () {
     yield* writeManagedSettingsEffect({
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       model: "managed/model",
       shell: "zsh",
     })
@@ -1379,7 +1379,7 @@ it.instance(
   "managed settings override project settings",
   Effect.gen(function* () {
     yield* writeManagedSettingsEffect({
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       snapshot: false,
       disabled_providers: ["openai"],
     })
@@ -1414,7 +1414,7 @@ it.instance("migrates legacy edit tool to edit permission", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { tools: { edit: false } } },
     })
 
@@ -1427,7 +1427,7 @@ it.instance("migrates legacy patch tool to edit permission", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { tools: { patch: true } } },
     })
 
@@ -1440,7 +1440,7 @@ it.instance("migrates mixed legacy tools config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { tools: { bash: true, write: true, read: false, webfetch: true } } },
     })
 
@@ -1458,7 +1458,7 @@ it.instance("merges legacy tools with existing permission config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       agent: { test: { permission: { glob: "allow" }, tools: { bash: true } } },
     })
 
@@ -1476,7 +1476,7 @@ it.instance("permission config preserves user key order", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       permission: {
         "*": "deny",
         edit: "ask",
@@ -1532,7 +1532,7 @@ it.instance("project config can override MCP server enabled status", () =>
     const test = yield* TestInstance
     // Simulates a base config (like from remote .well-known) with disabled MCP.
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       mcp: {
         jira: {
           type: "remote",
@@ -1550,7 +1550,7 @@ it.instance("project config can override MCP server enabled status", () =>
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         mcp: {
           jira: {
             type: "remote",
@@ -1580,7 +1580,7 @@ it.instance("MCP config deep merges preserving base config properties", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       mcp: {
         myserver: {
           type: "remote",
@@ -1595,7 +1595,7 @@ it.instance("MCP config deep merges preserving base config properties", () =>
     yield* writeConfigEffect(
       test.directory,
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         mcp: {
           myserver: {
             type: "remote",
@@ -1623,7 +1623,7 @@ it.instance("local .apexo config can override MCP from project config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
-      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+      $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
       mcp: {
         docs: {
           type: "remote",
@@ -1636,7 +1636,7 @@ it.instance("local .apexo config can override MCP from project config", () =>
     yield* writeConfigEffect(
       path.join(test.directory, ".apexo"),
       {
-        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+        $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         mcp: {
           docs: {
             type: "remote",
@@ -2082,7 +2082,7 @@ describe("APEXO_CONFIG_CONTENT token substitution", () => {
       withProcessEnv(
         "APEXO_CONFIG_CONTENT",
         JSON.stringify({
-          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
           username: "{env:TEST_CONFIG_VAR}",
         }),
         Effect.gen(function* () {
@@ -2100,7 +2100,7 @@ describe("APEXO_CONFIG_CONTENT token substitution", () => {
       yield* withProcessEnv(
         "APEXO_CONFIG_CONTENT",
         JSON.stringify({
-          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
           username: "{file:./api_key.txt}",
         }),
         Effect.gen(function* () {
@@ -2148,7 +2148,7 @@ test("parseManagedPlist parses server settings", async () => {
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
-          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
           server: { hostname: "127.0.0.1", mdns: false },
           snapshot: true,
         }),
@@ -2168,7 +2168,7 @@ test("parseManagedPlist parses permission rules", async () => {
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
-          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
           permission: {
             "*": "ask",
             bash: { "*": "ask", "rm -rf *": "deny", "curl *": "deny" },
@@ -2198,7 +2198,7 @@ test("parseManagedPlist parses enabled_providers", async () => {
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
-          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
           enabled_providers: ["anthropic", "google"],
         }),
       ),
@@ -2215,12 +2215,12 @@ test("parseManagedPlist handles empty config", async () => {
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
-          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+          $schema: "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
         }),
       ),
       "test:mobileconfig",
     ),
     "test:mobileconfig",
   )
-  expect(config.$schema).toBe("https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json")
+  expect(config.$schema).toBe("https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json")
 })

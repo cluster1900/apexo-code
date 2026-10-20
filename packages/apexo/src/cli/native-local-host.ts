@@ -7,11 +7,15 @@ export function createNativeLocalHost(password?: string, headless = false) {
   const routes = (password ? createRoutes(password) : createEmbeddedRoutes()).pipe(
     Layer.provide(HttpServer.layerServices),
   )
+  const loggers =
+    process.env.APEXO_PRINT_LOGS === "1"
+      ? [Logger.make((options) => process.stderr.write(Logger.formatJson.log(options) + "\n"))]
+      : []
   const web = HttpRouter.toWebHandler(
     headless
       ? routes.pipe(
           Layer.provide(
-            Logger.layer([Logger.make((options) => process.stderr.write(Logger.formatJson.log(options) + "\n"))], {
+            Logger.layer(loggers, {
               mergeWithExisting: false,
             }),
           ),

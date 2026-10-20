@@ -56,7 +56,7 @@ export function CommandSandboxDialog(props: {
   onMount(() => void load())
   onCleanup(() => lifetime.abort())
   return (
-    <Dialog title={language.t("commandSandbox.title")} fit>
+    <Dialog title={language.t("commandSandbox.title")} size="large" fit>
       <div class="flex flex-col gap-4 px-6 pt-2 pb-6 text-14-regular text-text-base" data-component="command-sandbox-dialog">
         <p>{language.t("commandSandbox.scope")}</p>
         <p class="text-text-weak">{language.t("commandSandbox.limits")}</p>
@@ -108,7 +108,13 @@ export function CommandSandboxDialog(props: {
                   </>
                 )}
               </Show>
-              <Button size="small" variant="secondary" disabled={state.pending} onClick={() => void load()}>
+              <Button
+                size="small"
+                variant="secondary"
+                class="self-start"
+                disabled={state.pending}
+                onClick={() => void load()}
+              >
                 {language.t("commandSandbox.refresh")}
               </Button>
             </>

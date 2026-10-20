@@ -33,18 +33,19 @@ import { MemoryCommand } from "./cli/cmd/memory"
 import { GoalCommand } from "./cli/cmd/goal"
 import { UsageCommand } from "./cli/cmd/usage"
 import { TraceCommand } from "./cli/cmd/trace"
+import { CompletionCommand } from "./cli/cmd/completion"
 
 const args = grokPluginArgs(hideBin(process.argv))
 
-function show(out: string) {
+function show(out: string, stream: NodeJS.WriteStream = process.stdout) {
   const text = out.trimStart()
   if (!text.startsWith("apexo ")) {
-    process.stderr.write(UI.logo() + EOL + EOL)
-    process.stderr.write(UI.TAGLINE + EOL + EOL)
-    process.stderr.write(text + EOL)
+    stream.write(UI.logo() + EOL + EOL)
+    stream.write(UI.TAGLINE + EOL + EOL)
+    stream.write(text + EOL)
     return
   }
-  process.stderr.write(out)
+  stream.write(out)
 }
 
 const cli = yargs(args)
@@ -88,7 +89,7 @@ const cli = yargs(args)
     process.env.APEXO_PID = String(process.pid)
   })
   .usage("")
-  .completion("completion", "generate shell completion script")
+  .command(CompletionCommand)
   .command(AcpCommand)
   .command(McpCommand)
   .command(TuiThreadCommand)
@@ -122,9 +123,13 @@ const cli = yargs(args)
       msg?.startsWith("Invalid values:")
     ) {
       if (err) throw err
-      cli.showHelp(show)
+      cli.showHelp((out) => show(out, process.stderr))
     }
     if (err) throw err
+    if (msg) {
+      UI.empty()
+      UI.error(msg)
+    }
     process.exit(1)
   })
   .strict()

@@ -103,7 +103,7 @@ export function DialogHomeCommandPaletteV2(props: {
   }
   const loadItems = async (text: string) => {
     const query = text.trim()
-    if (!query) return commandEntries().slice(0, 5)
+    if (!query) return commandEntries()
     return [...commandEntries().filter((entry) => matchesEntry(entry, query)), ...(await sessions(query))]
   }
 

@@ -125,6 +125,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
       .client.auth.remove({ providerID })
       .then(async () => {
         await serverSDK().client.global.dispose()
+        await serverSync().refreshProviders().catch(() => undefined)
         showToast({
           variant: "success",
           icon: "circle-check",
@@ -228,7 +229,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
                   variant="secondary"
                   icon="plus-small"
                   onClick={() => {
-                    dialog.show(() => <DialogCustomProvider onBack={dialog.close} />)
+                    dialog.show(() => <DialogCustomProvider onBack={props.onBack ?? dialog.close} />)
                   }}
                 >
                   {language.t("common.connect")}

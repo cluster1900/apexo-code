@@ -14,6 +14,7 @@ import { ScrollView } from "@apexo/ui/scroll-view"
 import type { Message, Part, UserMessage } from "@apexo/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
+import { sessionTitle } from "@/utils/session-title"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
@@ -202,7 +203,7 @@ export function SessionContextTab() {
   }
 
   const stats = [
-    { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
+    { label: "context.stats.session", value: () => sessionTitle(info()?.title) ?? params.id ?? "—" },
     { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()) },
     { label: "context.stats.provider", value: providerLabel },
     { label: "context.stats.model", value: modelLabel },
@@ -233,12 +234,13 @@ export function SessionContextTab() {
         client: sdk().client,
       })
       const filename = sessionExportFilename(data.info)
-      downloadSessionExport(filename, data)
+      const saved = await downloadSessionExport(filename, data, language.t("context.export.session"))
+      if (!saved) return
       showToast({
         variant: "success",
         icon: "circle-check",
         title: language.t("toast.session.export.success.title"),
-        description: language.t("toast.session.export.success.description", { filename }),
+        description: language.t("toast.session.export.success.description", { filename: saved }),
       })
     } catch (err) {
       showToast({
@@ -341,7 +343,7 @@ export function SessionContextTab() {
                 )}
               </For>
             </div>
-            <div class="hidden text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
+            <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
           </div>
         </Show>
 

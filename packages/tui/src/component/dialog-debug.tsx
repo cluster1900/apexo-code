@@ -25,7 +25,7 @@ export function DialogDebug() {
     const model = local.model.current()
     return [
       { label: "Version", value: `${InstallationVersion} (${InstallationChannel})` },
-      { label: "Date", value: new Date().toISOString() },
+      { label: "Date", value: new Date().toLocaleString() },
       { label: "OS", value: describeOS() },
       { label: "Terminal", value: describeTerminal() },
       { label: "Session ID", value: route.data.type === "session" ? route.data.sessionID : "n/a" },

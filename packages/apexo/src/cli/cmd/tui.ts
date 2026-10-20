@@ -149,6 +149,15 @@ export const TuiThreadCommand = cmd({
         hidden: true,
       }),
   handler: async (args) => {
+    if (
+      args.project &&
+      !/^[.~/\\]|[/\\]/.test(args.project) &&
+      !(await Filesystem.isDir(resolveThreadDirectory(args.project)))
+    ) {
+      UI.error(`Unknown command: ${args.project}`)
+      process.exitCode = 1
+      return
+    }
     if (args["session-protocol"] === "native") {
       const { runNativeLocalMini, validateNativeLocal } = await import("../native-local")
       validateNativeLocal({ ...args, port: undefined })
@@ -248,6 +257,7 @@ export const TuiThreadCommand = cmd({
         process.chdir(next)
       } catch {
         UI.error("Failed to change directory to " + next)
+        process.exitCode = 1
         return
       }
       const cwd = Filesystem.resolve(process.cwd())

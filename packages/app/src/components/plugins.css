@@ -6,6 +6,7 @@
   color: var(--text-base);
   max-height: 78vh;
   overflow: auto;
+  scrollbar-gutter: stable;
   user-select: text;
 }
 .settings-v2 .plugins-store,
@@ -76,7 +77,7 @@
   display: flex;
   gap: 12px;
 }
-.plugins-store input,
+.plugins-store input:not([type="checkbox"]),
 .plugins-store select {
   border: 1px solid var(--border-base);
   border-radius: 10px;
@@ -120,7 +121,10 @@
 .plugins-card-top {
   gap: 10px;
   min-width: 0;
-  flex-wrap: wrap;
+}
+.plugins-card-top > div:not(.plugins-avatar) {
+  flex: 1;
+  min-width: 0;
 }
 .plugins-card-top h3 {
   overflow-wrap: anywhere;
@@ -240,6 +244,32 @@
 .plugins-confirm h2,
 .plugins-form h2 {
   margin-top: 0;
+}
+.plugins-confirm code {
+  display: block;
+  margin-top: 8px;
+}
+.plugins-confirm-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  cursor: pointer;
+}
+.plugins-notice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.plugins-danger-button[data-component="button"] {
+  background-color: var(--icon-critical-base);
+  border-color: transparent;
+  color: var(--icon-invert-base);
+}
+.plugins-danger-button[data-component="button"]:hover:not(:disabled) {
+  opacity: 0.9;
 }
 .plugins-confirm .plugins-actions,
 .plugins-form .plugins-actions {

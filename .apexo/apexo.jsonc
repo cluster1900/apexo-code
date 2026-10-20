@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
   "provider": {},
   "permission": {},
   "references": {

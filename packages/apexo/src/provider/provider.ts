@@ -494,9 +494,12 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
   }
 }
 
+const STEALTH_MODEL_ID = /(?:^daybreak-|-terra(?:-|$))/i
+
 export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
   const models: Record<string, Model> = {}
   for (const [key, model] of Object.entries(provider.models)) {
+    if (STEALTH_MODEL_ID.test(key) || STEALTH_MODEL_ID.test(model.id)) continue
     models[key] = fromModelsDevModel(provider, model)
     for (const [mode, opts] of Object.entries(model.experimental?.modes ?? {})) {
       const id = `${model.id}-${mode}`

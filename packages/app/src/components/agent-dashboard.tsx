@@ -42,7 +42,7 @@ function dashboardEvent(event: KeyboardEvent): DashboardKey | undefined {
   if (mod && event.key === "/") return { name: "ctrl+/" }
   if (event.ctrlKey && event.key.toLowerCase() === "x") return { name: "ctrl+x" }
   if (event.ctrlKey && event.key.toLowerCase() === "t") return { name: "ctrl+t" }
-  if (event.ctrlKey && event.key === "\\") return { name: "ctrl+\\" }
+  if (event.ctrlKey && (event.key === "\\" || event.key.toLowerCase() === "i")) return { name: "ctrl+\\" }
   if (mod || event.altKey) return
   if (event.key === "ArrowUp") return { name: "up" }
   if (event.key === "ArrowDown") return { name: "down" }

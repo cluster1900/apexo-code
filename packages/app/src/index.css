@@ -37,7 +37,9 @@
   }
 
   [data-component="dropdown-menu-content"].desktop-app-menu {
-    width: 160px;
+    width: max-content;
+    min-width: 240px;
+    max-width: min(360px, calc(100vw - 24px));
   }
 
   [data-component="dropdown-menu-sub-content"].desktop-app-menu {
@@ -75,6 +77,8 @@
 
   [data-slot="desktop-app-menu-keybind"] {
     margin-left: auto;
+    padding-left: 16px;
+    flex-shrink: 0;
     color: var(--text-weak);
     font-size: var(--font-size-x-small);
     font-weight: var(--font-weight-regular);

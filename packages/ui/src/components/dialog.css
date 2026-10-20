@@ -114,16 +114,6 @@
     }
   }
 
-  &[data-fit] {
-    [data-slot="dialog-container"] {
-      height: auto;
-
-      [data-slot="dialog-content"] {
-        min-height: 0;
-      }
-    }
-  }
-
   &[data-size="large"] [data-slot="dialog-container"] {
     width: min(calc(100vw - 32px), 800px);
     height: min(calc(100vh - 32px), 600px);
@@ -132,6 +122,17 @@
   &[data-size="x-large"] [data-slot="dialog-container"] {
     width: min(calc(100vw - 32px), 980px);
     height: min(calc(100vh - 92px), 600px);
+  }
+
+  &[data-fit] {
+    [data-slot="dialog-container"] {
+      height: auto;
+      max-height: min(calc(100vh - 32px), 600px);
+
+      [data-slot="dialog-content"] {
+        min-height: 0;
+      }
+    }
   }
 }
 

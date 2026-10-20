@@ -52,6 +52,7 @@ export function Plugins() {
     pending: false,
     loading: true,
     error: false,
+    errorMessage: "",
     confirm: undefined as PluginStore.Action | undefined,
     changed: false,
     runtime: undefined as PluginStoreRuntime | undefined,
@@ -74,17 +75,44 @@ export function Plugins() {
     if (state.pending) return
     const signal = requests.controller.signal
     const client = api()
-    setState({ pending: true, error: false, reloadBusy: false })
+    setState({ pending: true, error: false, errorMessage: "", reloadBusy: false })
     await client
       .then((plugins) => plugins.manage({ pluginStoreAction: action }, { signal, throwOnError: true }))
       .then((result) => {
         if (signal.aborted) return
         setState("catalog", reconcile(result.data))
-        setState({ form: "", sourceInput: "", confirm: undefined })
+        setState({ form: "", sourceInput: "", confirm: undefined, error: false, errorMessage: "" })
         if (["install", "update", "enable", "disable", "uninstall"].includes(action.action)) setState("changed", true)
       })
-      .catch(() => {
-        if (!signal.aborted) setState("error", true)
+      .catch((err) => {
+        if (signal.aborted) return
+        const msg =
+          err && typeof err === "object" && "message" in err && typeof err.message === "string"
+            ? err.message
+            : err &&
+                typeof err === "object" &&
+                "data" in err &&
+                err.data &&
+                typeof err.data === "object" &&
+                "message" in err.data &&
+                typeof err.data.message === "string"
+              ? err.data.message
+              : ""
+        setState({
+          error: true,
+          errorMessage: msg.startsWith("Plugin path does not exist:")
+            ? language.t("plugins.error.pathNotFound", {
+                path: msg.slice("Plugin path does not exist:".length).trim(),
+              })
+            : msg,
+          ...(state.form ? { confirm: undefined } : {}),
+        })
+        if (state.form) {
+          requestAnimationFrame(() => {
+            const input = document.getElementById("plugins-source")
+            if (input instanceof HTMLInputElement) input.focus()
+          })
+        }
       })
       .finally(() => {
         if (!signal.aborted) setState("pending", false)
@@ -222,7 +250,11 @@ export function Plugins() {
           <Button variant="ghost" disabled={state.pending} onClick={() => void manage({ action: "refresh" })}>
             {language.t("wsl.onboarding.refresh")}
           </Button>
-          <Button onClick={() => setState({ form: "install", selected: "", confirm: undefined })}>
+          <Button
+            onClick={() =>
+              setState({ form: "install", selected: "", confirm: undefined, error: false, errorMessage: "" })
+            }
+          >
             {language.t("plugins.add")}
           </Button>
         </div>
@@ -232,8 +264,10 @@ export function Plugins() {
           {(tab) => (
             <button
               type="button"
-              aria-pressed={state.tab === tab}
-              onClick={() => setState({ tab, selected: "", form: "", confirm: undefined })}
+              aria-pressed={!state.form && state.tab === tab}
+              onClick={() =>
+                setState({ tab, selected: "", form: "", confirm: undefined, error: false, errorMessage: "" })
+              }
             >
               {language.t(`plugins.${tab}`)}
             </button>
@@ -242,7 +276,9 @@ export function Plugins() {
       </nav>
       <Show when={state.error}>
         <div role="alert" class="plugins-notice">
-          {language.t(state.reloadBusy ? "plugins.activation.failure.busy" : "plugins.error")}
+          {state.reloadBusy
+            ? language.t("plugins.activation.failure.busy")
+            : state.errorMessage || language.t("plugins.error")}
         </div>
       </Show>
       <Show when={sdk().protocolKind() === "v2"}>
@@ -298,9 +334,9 @@ export function Plugins() {
         </section>
       </Show>
       <Show when={state.changed && sdk().protocolKind() !== "v2"}>
-        <div role="status" class="plugins-notice">
-          {language.t("plugins.changed")}
-          <Button variant="ghost" disabled={state.pending} onClick={() => void reload()}>
+        <div role="status" class="plugins-notice plugins-notice-row">
+          <span>{language.t("plugins.changed")}</span>
+          <Button variant="secondary" size="small" disabled={state.pending} onClick={() => void reload()}>
             {language.t("plugins.reload")}
           </Button>
         </div>
@@ -316,51 +352,66 @@ export function Plugins() {
         </div>
       </Show>
       <Show when={state.confirm}>
-        {(confirmation) => (
-          <div role="alertdialog" aria-label={language.t("plugins.confirm")} class="plugins-confirm">
-            <h2>{language.t("plugins.confirm")}</h2>
-            <p>
-              {language.t(
-                confirmation().action === "uninstall" || confirmation().action === "remove-source"
-                  ? "plugins.removeNotice"
-                  : "plugins.trust",
-              )}
-            </p>
-            <code>
-              {confirmation().source ??
-                state.catalog.items.find((item) => item.id === confirmation().id)?.source ??
-                confirmation().id}
-            </code>
-            <Show when={confirmation().action === "uninstall"}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={confirmation().keepData ?? false}
+        {(confirmation) => {
+          const targetItem = () => state.catalog.items.find((item) => item.id === confirmation().id)
+          const confirmTitle = () => {
+            if (confirmation().action === "uninstall") {
+              return language.t("plugins.uninstallConfirmTitle", {
+                name: targetItem()?.name ?? confirmation().id ?? "",
+              })
+            }
+            if (confirmation().action === "remove-source") {
+              return language.t("plugins.removeSourceConfirmTitle")
+            }
+            return language.t("plugins.confirm")
+          }
+          const confirmBody = () => {
+            if (confirmation().action === "uninstall") return language.t("plugins.uninstallNotice")
+            if (confirmation().action === "remove-source") return language.t("plugins.removeSourceNotice")
+            return language.t("plugins.trust")
+          }
+          const isDestructive = () =>
+            confirmation().action === "uninstall" || confirmation().action === "remove-source"
+          return (
+            <div role="alertdialog" aria-label={confirmTitle()} class="plugins-confirm">
+              <h2>{confirmTitle()}</h2>
+              <p>{confirmBody()}</p>
+              <code>{confirmation().source ?? targetItem()?.source ?? confirmation().id}</code>
+              <Show when={confirmation().action === "uninstall"}>
+                <label class="plugins-confirm-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={confirmation().keepData ?? false}
+                    disabled={state.pending}
+                    onChange={(event) =>
+                      setState("confirm", { ...confirmation(), keepData: event.currentTarget.checked })
+                    }
+                  />
+                  <span>{language.t("plugins.keepData")}</span>
+                </label>
+              </Show>
+              <div class="plugins-actions">
+                <Button variant="ghost" disabled={state.pending} onClick={() => setState("confirm", undefined)}>
+                  {language.t("common.cancel")}
+                </Button>
+                <Button
+                  class={isDestructive() ? "plugins-danger-button" : undefined}
                   disabled={state.pending}
-                  onChange={(event) =>
-                    setState("confirm", { ...confirmation(), keepData: event.currentTarget.checked })
-                  }
-                />
-                {language.t("plugins.keepData")}
-              </label>
-            </Show>
-            <div class="plugins-actions">
-              <Button variant="ghost" disabled={state.pending} onClick={() => setState("confirm", undefined)}>
-                {language.t("common.cancel")}
-              </Button>
-              <Button disabled={state.pending} onClick={() => void manage({ ...confirmation(), trust: true })}>
-                {language.t("common.continue")}
-              </Button>
+                  onClick={() => void manage({ ...confirmation(), trust: true })}
+                >
+                  {language.t("common.continue")}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )
+        }}
       </Show>
-      <Show when={state.form}>
+      <Show when={state.form && !state.confirm}>
         <form
           class="plugins-form"
           onSubmit={(event) => {
             event.preventDefault()
-            action({ action: state.form === "source" ? "add-source" : "install", source: state.sourceInput })
+            action({ action: state.form === "source" ? "add-source" : "install", source: state.sourceInput.trim() })
           }}
         >
           <h2>{language.t(state.form === "source" ? "plugins.addSource" : "plugins.add")}</h2>
@@ -368,12 +419,16 @@ export function Plugins() {
           <input
             id="plugins-source"
             value={state.sourceInput}
-            onInput={(event) => setState("sourceInput", event.currentTarget.value)}
+            onInput={(event) => setState({ sourceInput: event.currentTarget.value, error: false, errorMessage: "" })}
             placeholder={language.t("plugins.sourcePlaceholder")}
             required
           />
           <div class="plugins-actions">
-            <Button type="button" variant="ghost" onClick={() => setState("form", "")}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setState({ form: "", error: false, errorMessage: "" })}
+            >
               {language.t("common.cancel")}
             </Button>
             <Button type="submit" disabled={state.pending || !state.sourceInput.trim()}>
@@ -385,7 +440,10 @@ export function Plugins() {
       <Show when={!state.form && selected()}>
         {(item) => (
           <article class="plugins-detail">
-            <Button variant="ghost" onClick={() => setState({ selected: "", confirm: undefined })}>
+            <Button
+              variant="ghost"
+              onClick={() => setState({ selected: "", confirm: undefined, error: false, errorMessage: "" })}
+            >
               {language.t("common.goBack")}
             </Button>
             <div class="plugins-detail-heading">
@@ -557,7 +615,7 @@ export function Plugins() {
               <button
                 type="button"
                 class="plugins-card"
-                onClick={() => setState({ selected: item.id, confirm: undefined })}
+                onClick={() => setState({ selected: item.id, confirm: undefined, error: false, errorMessage: "" })}
               >
                 <div class="plugins-card-top">
                   <div class="plugins-avatar" aria-hidden="true">

@@ -37,7 +37,9 @@ export function DialogAlert(props: DialogAlertProps) {
         </text>
       </box>
       <box paddingBottom={1}>
-        <text fg={theme.textMuted}>{props.message}</text>
+        <text fg={theme.textMuted} wrapMode="word">
+          {props.message}
+        </text>
       </box>
       <box flexDirection="row" justifyContent="flex-end" paddingBottom={1}>
         <box

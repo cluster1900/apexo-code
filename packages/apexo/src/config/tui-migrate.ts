@@ -8,7 +8,7 @@ import { Global } from "@apexo/core/global"
 import { Filesystem } from "@/util/filesystem"
 import * as ConfigPaths from "@/config/paths"
 
-const TUI_SCHEMA_URL = "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/tui.json"
+const TUI_SCHEMA_URL = "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/tui.json"
 
 const decodeTheme = Schema.decodeUnknownOption(Schema.String)
 const decodeRecord = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))

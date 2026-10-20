@@ -128,6 +128,15 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
         return { ...index, sessions: index.sessions.toSpliced(at, 1) }
       })
     },
+    restore(session: Session) {
+      removed.delete(session.id)
+      if (!queryClient.getQueryState(indexKey)) return
+      queryClient.setQueryData<HomeSessionIndex>(indexKey, (index) => {
+        if (!index) return index
+        if (index.sessions.some((item) => item.id === session.id)) return index
+        return { ...index, sessions: [session, ...index.sessions] }
+      })
+    },
     refresh(event: Event["type"]) {
       const result = homeSessionIndexRefresh(event, connected)
       connected = result.connected
