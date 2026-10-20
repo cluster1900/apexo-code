@@ -122,6 +122,7 @@ export const SettingsProvidersV2: Component<{
       .client.auth.remove({ providerID })
       .then(async () => {
         await serverSdk().client.global.dispose()
+        await serverSync().refreshProviders().catch(() => undefined)
         showToast({
           variant: "success",
           icon: "circle-check",
@@ -238,7 +239,7 @@ export const SettingsProvidersV2: Component<{
                   variant="neutral"
                   icon="plus"
                   onClick={() => {
-                    dialog.show(() => <DialogCustomProvider onBack={dialog.close} />)
+                    dialog.show(() => <DialogCustomProvider onBack={props.onBack ?? dialog.close} />)
                   }}
                 >
                   {language.t("common.connect")}

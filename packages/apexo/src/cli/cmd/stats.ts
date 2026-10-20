@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { effectCmd } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
 import { Session } from "@/session/session"
 import { NotFoundError } from "@/storage/storage"
 import { Database } from "@apexo/core/database/database"
@@ -67,6 +67,12 @@ export const StatsCommand = effectCmd({
         type: "string",
       }),
   handler: Effect.fn("Cli.stats")(function* (args) {
+    if (args.days !== undefined && (!Number.isFinite(args.days) || args.days < 0)) {
+      return yield* fail("--days must be a non-negative number")
+    }
+    if (args.tools !== undefined && (!Number.isFinite(args.tools) || args.tools < 0)) {
+      return yield* fail("--tools must be a non-negative number")
+    }
     const ctx = yield* InstanceRef
     if (!ctx) return
     const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project)

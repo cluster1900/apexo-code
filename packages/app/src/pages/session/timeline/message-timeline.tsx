@@ -688,7 +688,8 @@ export function MessageTimeline(props: {
     })
   }
 
-  useCommand().register("session-rename", () => [
+  const command = useCommand()
+  command.register("session-rename", () => [
     {
       id: "session.rename",
       title: language.t("command.session.rename"),
@@ -743,12 +744,13 @@ export function MessageTimeline(props: {
         client: sdk().client,
       })
       const filename = sessionExportFilename(data.info)
-      downloadSessionExport(filename, data)
+      const saved = await downloadSessionExport(filename, data, language.t("command.session.export"))
+      if (!saved) return
       showToast({
         variant: "success",
         icon: "circle-check",
         title: language.t("toast.session.export.success.title"),
-        description: language.t("toast.session.export.success.description", { filename }),
+        description: language.t("toast.session.export.success.description", { filename: saved }),
       })
     } catch (err) {
       showToast({
@@ -1159,7 +1161,25 @@ export function MessageTimeline(props: {
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <Card variant="error" class="error-card">
-                {errorRow().text}
+                <div>{errorRow().text}</div>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="secondary"
+                    onClick={() => command.trigger("provider.connect")}
+                  >
+                    {language.t("command.provider.connect")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="ghost"
+                    onClick={() => command.trigger("model.choose")}
+                  >
+                    {language.t("command.model.choose")}
+                  </Button>
+                </div>
               </Card>
             </div>
           </TimelineRowFrame>

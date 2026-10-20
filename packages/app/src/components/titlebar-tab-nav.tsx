@@ -11,6 +11,7 @@ import { useLanguage } from "@/context/language"
 import { ServerConnection, serverName } from "@/context/server"
 import { displayName, projectForSession } from "@/pages/layout/helpers"
 import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
+import { sessionTitle } from "@/utils/session-title"
 import type { Session } from "@apexo/sdk/v2"
 import { canOpenTabRename, forwardTabRef } from "./titlebar-tab-gesture"
 import { TabPreviewPopover } from "./titlebar-tab-popover"
@@ -59,7 +60,7 @@ export function TabNavItem(props: {
     if (!session) return
     return projectForSession(session, serverCtx()?.projects.list() ?? [])
   })
-  const title = createMemo(() => props.session()?.title ?? props.fallbackTitle)
+  const title = createMemo(() => sessionTitle(props.session()?.title) ?? props.fallbackTitle)
 
   const projectName = createMemo(() => {
     const session = props.session()
@@ -121,7 +122,7 @@ export function TabNavItem(props: {
   const closeRename = async (save: boolean) => {
     if (rename.isPending || !editing()) return
 
-    const original = props.session()?.title ?? ""
+    const original = title() ?? ""
     const next = (titleEl.textContent ?? "").trim()
 
     titleEl.scrollLeft = 0
@@ -148,7 +149,7 @@ export function TabNavItem(props: {
     if (!canOpenTabRename(props.dragging, editing(), rename.isPending)) return
     const session = props.session()
     if (!session) return
-    titleEl.textContent = session.title
+    titleEl.textContent = sessionTitle(session.title) ?? ""
     setEditing(true)
 
     requestAnimationFrame(() => {
@@ -185,7 +186,7 @@ export function TabNavItem(props: {
       data-slot="titlebar-tab-item"
       data-title-overflow={titleOverflowing()}
       data-editing={editing()}
-      class="group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] px-1.5 [container-type:inline-size]"
+      class="group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] px-1.5"
       classList={{ invisible: props.hidden }}
       data-active={props.active}
       data-dragging={props.dragging}
@@ -228,7 +229,7 @@ export function TabNavItem(props: {
           if (props.suppressNavigation?.()) return
           props.onNavigate()
         }}
-        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base group-data-[editing='true']:text-v2-text-text-base [-webkit-user-drag:none]"
+        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 pe-6 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base group-data-[editing='true']:text-v2-text-text-base [-webkit-user-drag:none]"
       >
         <span data-slot="project-avatar-slot" class="flex size-4 shrink-0 items-center justify-center">
           <Show
@@ -271,7 +272,7 @@ export function TabNavItem(props: {
             }
             if (event.key !== "Escape") return
             event.preventDefault()
-            titleEl.textContent = props.session()?.title ?? ""
+            titleEl.textContent = title() ?? ""
             void closeRename(false)
           }}
           onBlur={() => void closeRename(true)}
@@ -319,7 +320,7 @@ export function TabNavItem(props: {
         }}
         data={{
           projectName: projectName(),
-          title: props.session()?.title,
+          title: sessionTitle(props.session()?.title),
           path: previewPath(),
           serverName: serverLabel(),
         }}
@@ -369,7 +370,7 @@ export function DraftTabItem(props: {
       data-active={props.active}
       data-dragging={props.dragging}
       data-state={props.active || props.pressed ? "pressed" : undefined}
-      class="group relative flex h-7 w-full min-w-0 flex-row items-center gap-1.5 overflow-hidden rounded-[6px] px-1.5 [container-type:inline-size] whitespace-nowrap"
+      class="group relative flex h-7 w-full min-w-0 flex-row items-center gap-1.5 overflow-hidden rounded-[6px] px-1.5 whitespace-nowrap"
       classList={{ invisible: props.hidden }}
       onMouseDown={(event) => {
         if (event.button !== MIDDLE_MOUSE_BUTTON) return
@@ -403,7 +404,7 @@ export function DraftTabItem(props: {
           if (props.suppressNavigation?.()) return
           props.onNavigate()
         }}
-        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base [-webkit-user-drag:none]"
+        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 pe-6 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base [-webkit-user-drag:none]"
       >
         <span class="flex size-4 shrink-0 items-center justify-center">
           <IconV2 name="edit" />

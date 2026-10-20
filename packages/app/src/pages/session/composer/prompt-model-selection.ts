@@ -22,15 +22,22 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   }
 
   const configured = () => {
-    const model = resolveDefaultModel(providers.defaultModel(), sync().data.config.model)
+    const model = resolveDefaultModel(undefined, sync().data.config.model)
     if (!model) return
     if (valid(model)) return model
   }
 
   const recent = () => models.recent.list().find(valid)
   const fallback = () => {
+    const serverDefault = resolveDefaultModel(providers.defaultModel(), undefined)
+    if (serverDefault && valid(serverDefault)) return serverDefault
+
     const defaults = providers.default()
-    return providers.connected().flatMap((provider) => {
+    const ordered = [
+      ...providers.connected().filter((p) => p.source === "config"),
+      ...providers.connected().filter((p) => p.source !== "config"),
+    ]
+    return ordered.flatMap((provider) => {
       const modelID = defaults[provider.id] ?? Object.values(provider.models)[0]?.id
       return modelID ? [{ providerID: provider.id, modelID }] : []
     })[0]

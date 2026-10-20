@@ -150,7 +150,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     })
 
     const configuredModel = () => {
-      const model = resolveDefaultModel(providers.defaultModel(), sync().data.config.model)
+      const model = resolveDefaultModel(undefined, sync().data.config.model)
       if (!model) return
       if (validModel(model)) return model
     }
@@ -162,8 +162,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const defaultModel = () => {
+      const serverDefault = resolveDefaultModel(providers.defaultModel(), undefined)
+      if (serverDefault && validModel(serverDefault)) return serverDefault
+
       const defaults = providers.default()
-      for (const provider of providers.connected()) {
+      const ordered = [
+        ...providers.connected().filter((p) => p.source === "config"),
+        ...providers.connected().filter((p) => p.source !== "config"),
+      ]
+      for (const provider of ordered) {
         const configured = defaults[provider.id]
         if (configured) {
           const model = { providerID: provider.id, modelID: configured }

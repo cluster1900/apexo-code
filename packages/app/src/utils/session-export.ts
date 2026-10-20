@@ -1,4 +1,5 @@
 import type { Message, Part, Session } from "@apexo/sdk/v2/client"
+import { sessionTitle } from "./session-title"
 
 // Matches the exact `{ info, messages: [{ info, parts }] }` structure produced by `apexo export` CLI
 export type SessionExportData = {
@@ -39,7 +40,7 @@ export async function fetchSessionExport(input: {
 }
 
 export function sessionExportFilename(session: { id: string; title?: string; slug?: string }) {
-  const name = session.title || session.slug || session.id
+  const name = sessionTitle(session.title) || session.slug || session.id
   const clean = name
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/gi, "-")
@@ -47,8 +48,18 @@ export function sessionExportFilename(session: { id: string; title?: string; slu
   return `${clean || session.id}.json`
 }
 
-export function downloadSessionExport(filename: string, data: unknown) {
+export async function downloadSessionExport(filename: string, data: unknown, title?: string): Promise<string | null> {
   const json = JSON.stringify(data, null, 2)
+  const desktopSave = (
+    window as {
+      api?: {
+        saveTextFile?: (opts: { title?: string; defaultPath?: string; content: string }) => Promise<string | null>
+      }
+    }
+  ).api?.saveTextFile
+  if (desktopSave) {
+    return desktopSave({ title, defaultPath: filename, content: json })
+  }
   const blob = new Blob([json], { type: "application/json" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
@@ -58,6 +69,7 @@ export function downloadSessionExport(filename: string, data: unknown) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+  return filename
 }
 
 /**

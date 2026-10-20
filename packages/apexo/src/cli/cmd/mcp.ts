@@ -697,12 +697,14 @@ export const McpDebugCommand = effectCmd({
       if (!serverConfig) {
         prompts.log.error(`MCP server not found: ${serverName}`)
         prompts.outro("Done")
+        process.exitCode = 1
         return
       }
 
       if (!isMcpRemote(serverConfig)) {
         prompts.log.error(`MCP server ${serverName} is not a remote server`)
         prompts.outro("Done")
+        process.exitCode = 1
         return
       }
 

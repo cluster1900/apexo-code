@@ -361,8 +361,8 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
         footer.close()
         await footer.idle().catch(() => {})
         footer.destroy()
-        unregisterKeymap?.()
         shutdown(renderer)
+        unregisterKeymap?.()
         if (!wroteExit) {
           process.stdout.write("\n")
         }

@@ -6,11 +6,17 @@
   outline: none;
 }
 
+[data-slot="titlebar-tab-item"]:has(a:focus-visible) {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
 [data-slot="titlebar-v2"]
   [data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:focus-visible, [data-state="focus"]):not(
     :disabled
   ) {
-  outline: none;
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
   background-color: var(--v2-overlay-simple-overlay-hover);
 }
 

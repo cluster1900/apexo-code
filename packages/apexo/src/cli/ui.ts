@@ -9,7 +9,7 @@ const wordmark = [
   `▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀`,
 ]
 
-export const TAGLINE = "Apexo: a UI harness for Grok. Coding agent for the terminal and desktop."
+export const TAGLINE = "Apexo: Coding agent for the terminal and desktop."
 
 export class CancelledError extends Schema.TaggedErrorClass<CancelledError>()("UICancelledError", {}) {}
 

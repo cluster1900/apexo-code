@@ -45,7 +45,7 @@ import { Terminal } from "./terminal"
 const CUSTOM_ID = "_custom"
 type ConnectMethod = Extract<IntegrationMethod, { type: "key" | "oauth" }> | ExternalLoginMethod
 
-export function useProviderConnectController(options: { onBack?: () => void } = {}) {
+export function useProviderConnectController(options: { onBack?: () => void; onComplete?: () => void } = {}) {
   const [store, setStore] = createStore({ selected: undefined as string | undefined })
   const reset = () => setStore("selected", undefined)
 
@@ -53,6 +53,7 @@ export function useProviderConnectController(options: { onBack?: () => void } = 
     selected: () => store.selected,
     select: (provider?: string) => setStore("selected", provider),
     back: options.onBack ?? reset,
+    complete: options.onComplete ?? options.onBack,
   }
 }
 
@@ -78,7 +79,7 @@ export const DialogConnectProvider: Component<{
     return (
       <Switch>
         <Match when={controller.selected() === CUSTOM_ID}>
-          <CustomProviderForm autofocus={!newLayout()} />
+          <CustomProviderForm autofocus={!newLayout()} onComplete={controller.complete} />
         </Match>
         <Match when={controller.selected() && controller.selected() !== CUSTOM_ID ? controller.selected() : undefined}>
           {(provider) => (
@@ -86,6 +87,7 @@ export const DialogConnectProvider: Component<{
               provider={provider()}
               directory={props.directory}
               onBack={reset}
+              onComplete={controller.complete}
               setBack={(handler) => (back.current = handler)}
             />
           )}
@@ -106,7 +108,8 @@ export const DialogConnectProvider: Component<{
       when={newLayout()}
       fallback={
         <Dialog
-          class="h-full"
+          class={controller.selected() && controller.selected() !== CUSTOM_ID ? undefined : "h-full"}
+          fit={Boolean(controller.selected() && controller.selected() !== CUSTOM_ID)}
           transition
           title={
             <Show when={controller.selected()} fallback={language.t("command.provider.connect")}>
@@ -125,7 +128,11 @@ export const DialogConnectProvider: Component<{
       }
     >
       <DialogV2
-        containerClass="!h-[min(calc(100vh_-_16px),512px)] !w-[min(calc(100vw_-_16px),640px)]"
+        containerClass={
+          controller.selected() && controller.selected() !== CUSTOM_ID
+            ? "!h-auto !max-h-[min(calc(100vh_-_16px),512px)] !w-[min(calc(100vw_-_16px),640px)]"
+            : "!h-[min(calc(100vh_-_16px),512px)] !w-[min(calc(100vw_-_16px),640px)]"
+        }
         class="[font-family:var(--v2-font-family-sans)] [&_[data-slot=dialog-header]]:!px-5 [&_[data-slot=dialog-header-title]]:!text-[15px] [&_[data-slot=dialog-header-title]]:!tracking-[-0.13px]"
       >
         <DialogHeader closeLabel={language.t("common.close")}>
@@ -143,7 +150,7 @@ export const DialogConnectProvider: Component<{
             </button>
           </Show>
         </DialogHeader>
-        <DialogBody class="min-h-0 flex-1 overflow-hidden px-2 pb-2">
+        <DialogBody class="min-h-0 flex-1 overflow-hidden px-2 pb-4">
           <div ref={focusHost} tabIndex={-1} class="flex min-h-0 flex-1 flex-col outline-none">
             <Content />
           </div>
@@ -360,6 +367,7 @@ function ProviderConnection(props: {
   provider: string
   directory?: Accessor<string | undefined>
   onBack: () => void
+  onComplete?: () => void
   setBack: (handler: () => void) => void
 }) {
   const dialog = useDialog()
@@ -695,7 +703,8 @@ function ProviderConnection(props: {
     await serverSync()
       .refreshProviders()
       .catch(() => undefined)
-    dialog.close()
+    if (props.onComplete) props.onComplete()
+    else dialog.close()
     showToast({
       variant: "success",
       icon: "circle-check",
@@ -869,24 +878,50 @@ function ProviderConnection(props: {
       apiKey?.focus({ preventScroll: true })
     })
 
+    function validateApiKey(raw: string) {
+      const trimmed = raw.trim()
+      if (!trimmed) return language.t("provider.connect.apiKey.required")
+      if (
+        /\s/.test(trimmed) ||
+        trimmed.length < 16 ||
+        /(?:^|[-_])(invalid|placeholder|example|dummy)(?:$|[-_])/i.test(trimmed)
+      ) {
+        return language.t("provider.connect.apiKey.invalid")
+      }
+      if (props.provider === "anthropic" && (!trimmed.startsWith("sk-ant-") || trimmed.length < 24)) {
+        return language.t("provider.connect.apiKey.invalid")
+      }
+      if (props.provider === "openai" && (!trimmed.startsWith("sk-") || trimmed.length < 24)) {
+        return language.t("provider.connect.apiKey.invalid")
+      }
+      return undefined
+    }
+
     async function handleSubmit(e: SubmitEvent) {
       e.preventDefault()
 
       const form = e.currentTarget as HTMLFormElement
       const formData = new FormData(form)
-      const apiKey = formData.get("apiKey") as string
-
-      if (!apiKey?.trim()) {
-        setFormStore("error", language.t("provider.connect.apiKey.required"))
+      const rawKey = (formData.get("apiKey") as string) ?? ""
+      const validationError = validateApiKey(rawKey)
+      if (validationError) {
+        setFormStore("error", validationError)
         return
       }
 
       setFormStore("error", undefined)
-      await serverSDK().api.integration.connect.key({
-        integrationID: props.provider,
-        location: location(),
-        key: apiKey,
-      })
+      const result = await serverSDK()
+        .api.integration.connect.key({
+          integrationID: props.provider,
+          location: location(),
+          key: rawKey.trim(),
+        })
+        .then(() => ({ ok: true as const }))
+        .catch((error) => ({ ok: false as const, error }))
+      if (!result.ok) {
+        setFormStore("error", formatError(result.error, language.t("common.requestFailed")))
+        return
+      }
       await complete()
     }
 
@@ -908,7 +943,7 @@ function ProviderConnection(props: {
                 aria-describedby={formStore.error ? errorID : undefined}
                 autocomplete="off"
                 spellcheck={false}
-                onInput={(event) => setFormStore("value", event.currentTarget.value)}
+                onInput={(event) => setFormStore({ value: event.currentTarget.value, error: undefined })}
               />
             </label>
             <Show when={formStore.error}>
@@ -943,7 +978,7 @@ function ProviderConnection(props: {
             placeholder={language.t("provider.connect.apiKey.placeholder")}
             name="apiKey"
             value={formStore.value}
-            onChange={(v) => setFormStore("value", v)}
+            onChange={(v) => setFormStore({ value: v, error: undefined })}
             validationState={formStore.error ? "invalid" : undefined}
             error={formStore.error}
           />
@@ -1020,7 +1055,7 @@ function ProviderConnection(props: {
                 aria-describedby={formStore.error ? errorID : undefined}
                 autocomplete="off"
                 spellcheck={false}
-                onInput={(event) => setFormStore("value", event.currentTarget.value)}
+                onInput={(event) => setFormStore({ value: event.currentTarget.value, error: undefined })}
               />
             </label>
             <Show when={formStore.error}>
@@ -1055,7 +1090,7 @@ function ProviderConnection(props: {
             placeholder={language.t("provider.connect.oauth.code.placeholder")}
             name="code"
             value={formStore.value}
-            onChange={(v) => setFormStore("value", v)}
+            onChange={(v) => setFormStore({ value: v, error: undefined })}
             validationState={formStore.error ? "invalid" : undefined}
             error={formStore.error}
           />

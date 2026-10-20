@@ -1,6 +1,6 @@
 import type { RuntimeProfileState } from "../preload/types"
 import { execFile } from "node:child_process"
-import { stat } from "node:fs/promises"
+import { stat, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -190,6 +190,25 @@ export function registerIpcHandlers(deps: Deps) {
       })
       if (result.canceled) return null
       return result.filePath ?? null
+    },
+  )
+
+  ipcMain.handle(
+    "save-text-file",
+    async (
+      _event: IpcMainInvokeEvent,
+      opts: { title?: string; defaultPath?: string; content: string },
+    ) => {
+      const result = await dialog.showSaveDialog({
+        title: opts.title ?? nativeT("desktop.dialog.saveFile"),
+        defaultPath: opts.defaultPath,
+        filters: opts.defaultPath?.endsWith(".json")
+          ? [{ name: "JSON", extensions: ["json"] }]
+          : undefined,
+      })
+      if (result.canceled || !result.filePath) return null
+      await writeFile(result.filePath, opts.content, "utf8")
+      return basename(result.filePath)
     },
   )
 

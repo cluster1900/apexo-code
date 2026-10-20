@@ -11,7 +11,7 @@ export const dict = {
   "feedback.images.manual":
     "Images stay local. Export the report, download its images, and attach them to the GitHub issue yourself.",
   "feedback.images.download": "Download image",
-  "feedback.images.limits": "Up to 4 PNG, JPEG, or GIF images. 8 MiB per image, 16 MiB total.",
+  "feedback.images.limits": "Up to 4 PNG, JPEG, or GIF images. 8 MB per image, 16 MB total.",
   "feedback.images.add": "Add images",
   "feedback.images.paste": "Paste image",
   "feedback.images.error":
@@ -122,10 +122,10 @@ export const dict = {
   "session.plan.approveDescription": "Switch to build mode and implement the reviewed plan",
   "session.plan.keepPlanningDescription": "Stay in Plan mode and revise the plan",
   "commandSandbox.title": "Command sandbox",
-  "commandSandbox.scope": "Applies to native shell commands on macOS (seatbelt) and Linux (bubblewrap). It does not cover all agent activity.",
+  "commandSandbox.scope": "Applies to native commands on macOS (seatbelt) and Linux (bubblewrap). It does not cover all agent activity.",
   "commandSandbox.limits": "Existing hard links and changes made by other processes are outside this protection.",
   "commandSandbox.immutable":
-    "This Session’s stored profile cannot be changed. Create a new Session to choose another profile.",
+    "This session’s stored profile cannot be changed. Create a new session to choose another profile.",
   "commandSandbox.stored": "Stored profile: {{profile}}",
   "commandSandbox.backend": "Backend availability: {{status}}",
   "commandSandbox.off": "Off",
@@ -144,9 +144,9 @@ export const dict = {
   "commandSandbox.noReceipt":
     "No confirmed command execution in this process. Backend availability does not mean a command has run under this policy.",
   "commandSandbox.newHint":
-    "New Sessions default to off. Your choice is stored when the first prompt creates this Session.",
+    "New sessions default to off. Your choice is stored when the first prompt creates this session.",
   "commandSandbox.creationUnavailable":
-    "This connection uses compatibility Session creation. Command sandbox selection requires the native App connection.",
+    "This connection uses compatibility Session creation, so command sandboxing cannot be changed here (defaults to Off).",
   "commandSandbox.workspaceHint":
     "Workspace: commands may write within the workspace and private temporary folders; network access is disabled.",
   "commandSandbox.readOnlyHint":
@@ -452,13 +452,20 @@ export const dict = {
   "plugins.readme": "About this plugin",
   "plugins.empty": "No plugins found. Try another search or add a source.",
   "plugins.error": "The operation could not be completed. Check the source and your connection, then try again.",
+  "plugins.error.pathNotFound": "Plugin path does not exist: {{path}}",
   "plugins.sourceError": "Could not refresh this source. Previously downloaded results are still available.",
   "plugins.changed": "Changes apply when the project is reloaded. Running sessions keep their current plugins.",
   "plugins.confirm": "Review plugin changes",
+  "plugins.uninstallConfirmTitle": "Uninstall {{name}}?",
+  "plugins.removeSourceConfirmTitle": "Remove plugin source?",
   "plugins.trust":
     "Only install plugins from sources you trust. Plugins can run commands, connect to services, and access files on your computer.",
   "plugins.removeNotice":
     "Remove this item? Removing a source keeps its installed plugins. Uninstalling a plugin removes it from future sessions.",
+  "plugins.uninstallNotice":
+    "Uninstalling this plugin removes it from future sessions. Running sessions keep their current plugins until reloaded.",
+  "plugins.removeSourceNotice":
+    "Removing this source hides its catalog entries. Any plugins already installed from this source will remain installed.",
   "plugins.sourceInput": "Git repository or local folder",
   "plugins.sourcePlaceholder": "owner/repo, https://… or /path/to/plugin",
   "plugins.hooksWarning":
@@ -807,6 +814,7 @@ export const dict = {
   "provider.connect.apiKey.label": "{{provider}} API key",
   "provider.connect.apiKey.placeholder": "API key",
   "provider.connect.apiKey.required": "API key is required",
+  "provider.connect.apiKey.invalid": "Invalid API key format. Check your key and try again.",
   "provider.connect.oauth.code.visit.prefix": "Visit ",
   "provider.connect.oauth.code.visit.link": "this link",
   "provider.connect.oauth.code.visit.suffix":
@@ -1530,17 +1538,17 @@ export const dict = {
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.appearance.title": "Appearance",
-  "settings.general.row.appearance.description": "Customise how Apexo looks on your device",
+  "settings.general.row.appearance.description": "Customize how Apexo looks on your device",
   "settings.general.row.colorScheme.title": "Color scheme",
   "settings.general.row.colorScheme.description": "Choose whether Apexo follows the system, light, or dark theme",
   "settings.general.row.theme.title": "Theme",
-  "settings.general.row.theme.description": "Customise how Apexo is themed.",
+  "settings.general.row.theme.description": "Customize the color palette used for light and dark modes.",
   "settings.general.row.font.title": "Code Font",
-  "settings.general.row.font.description": "Customise the font used in code blocks",
+  "settings.general.row.font.description": "Customize the font used in code blocks",
   "settings.general.row.terminalFont.title": "Terminal Font",
-  "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.terminalFont.description": "Customize the font used in the terminal",
   "settings.general.row.uiFont.title": "UI Font",
-  "settings.general.row.uiFont.description": "Customise the font used throughout the interface",
+  "settings.general.row.uiFont.description": "Customize the font used throughout the interface",
   "settings.general.row.followup.title": "Follow-up behavior",
   "settings.general.row.followup.description": "Choose whether follow-up prompts steer immediately or wait in a queue",
   "settings.general.row.followup.option.queue": "Queue",

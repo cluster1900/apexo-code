@@ -19,7 +19,25 @@ export async function validateSession(input: {
   fetch?: typeof fetch
   headers?: RequestInit["headers"]
 }) {
-  if (!input.sessionID) return
+  if (!input.sessionID) {
+    if (input.fetch) return
+    const client = createApexoClient({
+      baseUrl: input.url,
+      directory: input.directory,
+      headers: input.headers,
+    })
+    const signal = AbortSignal.timeout(10_000)
+    try {
+      if (input.sessionProtocol === "compatibility") {
+        await client.global.health({ signal, throwOnError: true })
+      } else {
+        await sessionTransport(client, input.directory, input.sessionProtocol)(signal)
+      }
+    } catch {
+      throw new Error(`Failed to connect to ${input.url}`)
+    }
+    return
+  }
 
   const client = createApexoClient({
     baseUrl: input.url,
@@ -28,7 +46,14 @@ export async function validateSession(input: {
     headers: input.headers,
   })
   const signal = AbortSignal.timeout(10_000)
-  const transport = await sessionTransport(client, input.directory, input.sessionProtocol)(signal)
+  const transport = await sessionTransport(client, input.directory, input.sessionProtocol)(signal).catch(
+    (error: unknown) => {
+      if (!input.fetch && !(error && typeof error === "object" && "status" in error)) {
+        throw new Error(`Failed to connect to ${input.url}`)
+      }
+      throw error
+    },
+  )
   const sessionID = decodeSessionID(input.sessionID)
   if (Option.isSome(sessionID)) {
     if (transport.kind === "native") await transport.get(sessionID.value, signal)

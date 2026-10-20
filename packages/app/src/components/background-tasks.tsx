@@ -271,6 +271,8 @@ function BackgroundTasksDialog(props: { tasks: ReturnType<typeof createSessionTa
   return (
     <Dialog
       title={language.t("tasks.title")}
+      size="large"
+      fit
       description={
         props.tasks.state.native
           ? language.t("tasks.nativeScheduledDescription", { limit: 100 })

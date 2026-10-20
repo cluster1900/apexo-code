@@ -388,9 +388,10 @@ const layer = Layer.effect(
 
       const real = (m: SessionV1.WithParts) =>
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
-      const idx = input.history.findIndex(real)
+      const idx = input.history.findLastIndex(real)
       if (idx === -1) return
-      if (input.history.filter(real).length !== 1) return
+      const hadSuccess = input.history.some((m) => m.info.role === "assistant" && !m.info.error && m.info.time.completed)
+      if (input.history.filter(real).length > 1 && hadSuccess) return
 
       const context = input.history.slice(0, idx + 1)
       const firstUser = context[idx]
@@ -427,11 +428,20 @@ const layer = Layer.effect(
           Stream.mkString,
           Effect.orDie,
         )
-      const cleaned = text
-        .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+      const fallback = firstUser.parts
+        .filter((p): p is SessionV1.TextPart => p.type === "text" && !p.synthetic)
+        .map((p) => p.text)
+        .join("\n")
         .split("\n")
         .map((line) => line.trim())
         .find((line) => line.length > 0)
+      const cleaned =
+        text
+          .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+          .replace(/<think>[\s\S]*$/g, "")
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => line.length > 0) ?? fallback
       if (!cleaned) return
       const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
       yield* sessions
@@ -1973,6 +1983,10 @@ const layer = Layer.effect(
         (part) => part.type !== "file" || !inputFiles.has(fileURLToPath(part.url)),
       )
       const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+      const skillCommandText =
+        cmd.source === "skill"
+          ? `/${input.command}${input.arguments.trim() ? ` ${input.arguments.trim()}` : ""}`
+          : undefined
       const parts = isSubtask
         ? [
             {
@@ -1984,7 +1998,13 @@ const layer = Layer.effect(
               prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
             },
           ]
-        : [...uniqueTemplateParts, ...(input.parts ?? [])]
+        : [
+            ...(skillCommandText ? [{ type: "text" as const, text: skillCommandText }] : []),
+            ...uniqueTemplateParts.map((part) =>
+              skillCommandText && part.type === "text" ? { ...part, synthetic: true } : part,
+            ),
+            ...(input.parts ?? []),
+          ]
 
       const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultInfo()).name) : agent.name
       const userModel = isSubtask

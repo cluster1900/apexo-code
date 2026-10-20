@@ -124,26 +124,82 @@ function keybinds(value: unknown): KeybindMap {
   return value as KeybindMap
 }
 
-function listFor(command: Pick<CommandContext, "catalog" | "options">, map: KeybindMap, palette: string) {
+const KEYBIND_TITLE_KEYS: Partial<Record<string, Parameters<LanguageContext["t"]>[0]>> = {
+  "context.addSelection": "command.context.addSelection",
+  "grok.dashboard": "grok.dashboard",
+  "tab.close": "command.tab.close",
+  "tab.new": "command.session.new",
+  "tab.reopenClosed": "command.tab.reopenClosed",
+  "input.focus": "command.input.focus",
+  "project.select": "session.new.project.search",
+  "fileTree.toggle": "command.fileTree.toggle",
+  "review.toggle": "command.review.toggle",
+  "terminal.toggle": "command.terminal.toggle",
+  "terminal.new": "command.terminal.new",
+  "mcp.toggle": "command.mcp.toggle",
+  "model.choose": "command.model.choose",
+  "model.variant.cycle": "command.model.variant.cycle",
+  "agent.cycle": "command.agent.cycle",
+  "agent.cycle.reverse": "command.agent.cycle.reverse",
+  "permissions.autoaccept": "command.permissions.autoaccept.enable",
+  "session.mode.cycle": "grok.mode.cycle",
+  "session.new": "command.session.new",
+  "session.archive": "command.session.archive",
+  "session.previous": "command.session.previous",
+  "session.next": "command.session.next",
+  "session.interrupt": "command.session.interrupt",
+  "session.compact": "command.session.compact",
+  "session.undo": "command.session.undo",
+  "session.redo": "command.session.redo",
+  "session.share": "command.session.share",
+  "session.unshare": "command.session.unshare",
+  "message.previous": "command.message.previous",
+  "message.next": "command.message.next",
+  "common.goBack": "common.goBack",
+  "common.goForward": "common.goForward",
+  "settings.open": "command.settings.open",
+  "file.open": "command.file.open",
+  "file.attach": "command.prompt.Attach",
+  "prompt.mode.shell": "command.prompt.mode.shell",
+  "prompt.mode.normal": "command.prompt.mode.normal",
+  "steps.toggle": "command.steps.toggle",
+  "theme.cycle": "command.theme.cycle",
+  "colorScheme.cycle": "command.colorScheme.cycle",
+  "sidebar.toggle": "sidebar.nav.projectsAndSessions",
+  "workspace.new": "workspace.new",
+}
+
+function localizedTitle(id: string, fallback: string, t?: LanguageContext["t"]) {
+  const key = KEYBIND_TITLE_KEYS[id]
+  if (key && t) return t(key)
+  return fallback
+}
+
+function listFor(
+  command: Pick<CommandContext, "catalog" | "options">,
+  map: KeybindMap,
+  palette: string,
+  t?: LanguageContext["t"],
+) {
   const out = new Map<string, KeybindMeta>()
   out.set(PALETTE_ID, { title: palette, group: "General" })
 
   for (const opt of command.catalog) {
     if (opt.id.startsWith("suggested.")) continue
     if (opt.hidden) continue
-    out.set(opt.id, { title: opt.title, group: groupFor(opt.id) })
+    out.set(opt.id, { title: localizedTitle(opt.id, opt.title, t), group: groupFor(opt.id) })
   }
 
   for (const opt of command.options) {
     if (opt.id.startsWith("suggested.")) continue
     if (opt.hidden) continue
-    out.set(opt.id, { title: opt.title, group: groupFor(opt.id) })
+    out.set(opt.id, { title: localizedTitle(opt.id, opt.title, t), group: groupFor(opt.id) })
   }
 
   for (const [id, value] of Object.entries(map)) {
     if (typeof value !== "string") continue
     if (out.has(id)) continue
-    out.set(id, { title: id, group: groupFor(id) })
+    out.set(id, { title: localizedTitle(id, id, t), group: groupFor(id) })
   }
 
   return out
@@ -280,7 +336,7 @@ export function createKeybindSettingsController(
   const overrides = createMemo(() => keybinds(input.settings.current.keybinds))
   const list = createMemo(() => {
     language.locale()
-    return listFor(input.command, overrides(), language.t("command.palette"))
+    return listFor(input.command, overrides(), language.t("command.palette"), language.t)
   })
   const grouped = createMemo(() => groupedFor(list()))
   const title = (id: string) => list().get(id)?.title ?? ""
@@ -574,7 +630,7 @@ export const SettingsKeybinds: Component<{ v2?: boolean }> = (props) => {
 
   const list = createMemo(() => {
     language.locale()
-    return listFor(command, map(), language.t("command.palette"))
+    return listFor(command, map(), language.t("command.palette"), language.t)
   })
 
   const title = (id: string) => list().get(id)?.title ?? ""

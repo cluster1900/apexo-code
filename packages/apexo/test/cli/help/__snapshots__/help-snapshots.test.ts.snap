@@ -393,7 +393,7 @@ browse, download and manage Plugins
 
 Commands:
   apexo plugins list                    list available and installed plugins
-  apexo plugins sources                 list plugin sources (Grok Build: plugin marketplace list)
+  apexo plugins sources                 list plugin sources
   apexo plugins validate [path]         check a plugin folder or marketplace repository before
                                         publishing
   apexo plugins tag [path]              tag a release from the plugin manifest version

@@ -31,6 +31,8 @@
     }
     &:disabled {
       background-color: var(--icon-strong-disabled);
+      cursor: not-allowed;
+      opacity: 0.6;
 
       [data-slot="icon-svg"] {
         color: var(--icon-invert-base);
@@ -99,6 +101,7 @@
       background-color: var(--surface-disabled);
       color: var(--text-weak);
       cursor: not-allowed;
+      opacity: 0.55;
     }
 
     [data-slot="icon-svg"] {

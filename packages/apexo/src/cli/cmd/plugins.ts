@@ -107,7 +107,7 @@ export const PluginsCommand = cmd({
       .command(
         effectCmd({
           command: "sources",
-          describe: "list plugin sources (Grok Build: plugin marketplace list)",
+          describe: "list plugin sources",
           instance: false,
           builder: (yargs) => yargs.option("json", { type: "boolean" }),
           handler: Effect.fn("Cli.plugins.sources")(function* (args) {

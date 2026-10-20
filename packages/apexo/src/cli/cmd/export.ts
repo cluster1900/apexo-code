@@ -6,7 +6,7 @@ import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { EOL } from "os"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { writeFile } from "fs/promises"
 import { formatTranscript } from "@apexo/tui/util/transcript"
 
@@ -261,9 +261,12 @@ const run = Effect.fn("Cli.export.body")(function* (args: {
   sanitize?: boolean
 }) {
   if (args.sanitize && args.format === "markdown") return yield* fail("--sanitize applies to JSON export only")
+  if (args.sessionID && !Schema.is(SessionID)(args.sessionID)) {
+    return yield* fail(`Session '${args.sessionID}' not found.`)
+  }
   const svc = yield* Session.Service
   let sessionID = args.sessionID ? SessionID.make(args.sessionID) : undefined
-  process.stderr.write(`Exporting session: ${sessionID ?? "latest"}\n`)
+  if (!sessionID) process.stderr.write(`Exporting session: latest\n`)
 
   if (!sessionID) {
     UI.empty()
@@ -307,7 +310,8 @@ const run = Effect.fn("Cli.export.body")(function* (args: {
     const sessionInfo = yield* svc.get(sessionID!)
     const messages = yield* svc.messages({ sessionID: sessionInfo.id })
     return { info: sessionInfo, messages }
-  }).pipe(Effect.catchCause(() => fail(`Session not found: ${sessionID!}`)))
+  }).pipe(Effect.catchCause(() => fail(`Session '${sessionID!}' not found.`)))
+  if (args.sessionID) process.stderr.write(`Exporting session: ${sessionID}\n`)
   const text =
     args.format === "markdown"
       ? formatTranscript(exportData.info, exportData.messages, {

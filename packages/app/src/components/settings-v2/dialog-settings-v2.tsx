@@ -44,6 +44,14 @@ export const DialogSettings: Component<{
 
   return (
     <Dialog size="x-large" variant="settings" class="settings-v2-dialog">
+      <button
+        type="button"
+        class="settings-v2-close-button"
+        aria-label={language.t("common.close")}
+        onClick={() => dialog.close()}
+      >
+        <Icon name="close" size="small" />
+      </button>
       <TabsV2
         orientation="vertical"
         variant="settings"

@@ -1,4 +1,5 @@
 import { useDialog } from "@apexo/ui/context/dialog"
+import { useGrokCommands } from "@/components/grok-commands"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -13,9 +14,11 @@ export function useNewSessionCommands(input: {
   const command = useCommand()
   const dialog = useDialog()
   const language = useLanguage()
+  const grok = useGrokCommands(() => undefined)
 
   useSettingsCommand()
   command.register("new-session", () => [
+    ...grok.commands(),
     {
       id: "command.palette",
       title: language.t("command.palette"),

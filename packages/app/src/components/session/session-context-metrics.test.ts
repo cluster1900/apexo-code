@@ -53,4 +53,23 @@ test("getSessionContext uses the session's chosen /context-window when supported
     total: 25_000,
     usage: 50,
   })
+
+  expect(
+    getSessionContext(messages, [
+      {
+        id: "xai",
+        name: "xAI",
+        models: {
+          "grok-4.7": {
+            name: "Grok 4.7",
+            limit: { context: 0 },
+          },
+        },
+      },
+    ]),
+  ).toMatchObject({
+    limit: undefined,
+    total: 25_000,
+    usage: null,
+  })
 })

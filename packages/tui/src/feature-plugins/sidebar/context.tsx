@@ -3,7 +3,7 @@ import { effectiveContextWindow } from "@apexo/sdk/v2/grok-commands"
 import type { TuiPlugin, TuiPluginApi } from "@apexo/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { contextWindowChoice } from "../../context/context-window"
-import { createMemo } from "solid-js"
+import { createMemo, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
 
@@ -45,7 +45,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <b>Context</b>
       </text>
       <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-      <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
+      <Show when={state().percent !== null}>
+        <text fg={theme().textMuted}>{state().percent}% used</text>
+      </Show>
       <text fg={theme().textMuted}>{money.format(cost())} spent</text>
     </box>
   )

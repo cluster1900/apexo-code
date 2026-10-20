@@ -227,14 +227,19 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
 
   const exportTrace = () =>
-    withExport((data) => {
+    withExport(async (data) => {
       const filename = sessionExportFilename(data.info).replace(/\.json$/, ".trace.json")
-      downloadSessionExport(filename, sessionTrace(data, "apexo-desktop"))
+      const saved = await downloadSessionExport(
+        filename,
+        sessionTrace(data, "apexo-desktop"),
+        language.t("command.session.trace"),
+      )
+      if (!saved) return
       showToast({
         variant: "success",
         icon: "circle-check",
         title: language.t("toast.session.export.success.title"),
-        description: language.t("toast.session.export.success.description", { filename }),
+        description: language.t("toast.session.export.success.description", { filename: saved }),
       })
     })
 
@@ -257,12 +262,13 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         client: sdk().client,
       })
       const filename = sessionExportFilename(data.info)
-      downloadSessionExport(filename, data)
+      const saved = await downloadSessionExport(filename, data, language.t("command.session.export"))
+      if (!saved) return
       showToast({
         variant: "success",
         icon: "circle-check",
         title: language.t("toast.session.export.success.title"),
-        description: language.t("toast.session.export.success.description", { filename }),
+        description: language.t("toast.session.export.success.description", { filename: saved }),
       })
     } catch (err) {
       showToast({

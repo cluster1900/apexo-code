@@ -104,8 +104,8 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
     const all = allowedCommands()
     const order = new Map<string, number>(COMMON_COMMAND_IDS.map((id, index) => [id, index]))
     const picked = all.filter((option) => order.has(option.id))
-    const base = picked.length ? picked : all.slice(0, ENTRY_LIMIT)
-    const sorted = picked.length ? [...base].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)) : base
+    const rest = all.filter((option) => !order.has(option.id))
+    const sorted = [...picked.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)), ...rest]
     const category = language.t("palette.group.commands")
     return sorted.map((option) => createCommandPaletteCommandEntry(option, category))
   })

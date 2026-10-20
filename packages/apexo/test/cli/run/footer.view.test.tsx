@@ -240,9 +240,9 @@ async function renderFooter(
     cleanup() {
       app.renderer.currentFocusedRenderable?.blur()
       app.renderer.currentFocusedEditor?.blur()
+      app.renderer.destroy()
       offKeymap?.()
       offKeymap = undefined
-      app.renderer.destroy()
     },
   }
 }

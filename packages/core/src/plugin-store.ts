@@ -68,6 +68,13 @@ function record(value: unknown): Record<string, unknown> {
 function string(value: unknown) {
   return typeof value === "string" ? value : undefined
 }
+function cleanBranding(value: string) {
+  return value
+    .replace(/\bfor Grok Build\b/gi, "for Apexo")
+    .replace(/\bdirectly from Grok\b/gi, "directly from Apexo")
+    .replace(/\bGrok Build Official Plugins\b/gi, "Official Plugins")
+    .replace(/\bGrok Build\b/g, "Apexo")
+}
 function strings(value: unknown) {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
 }
@@ -107,9 +114,10 @@ export async function catalog(root: string): Promise<PluginStore.Catalog> {
     source.entries.map((entry) => {
       const current = installed.get(entry.item.id)
       installed.delete(entry.item.id)
+      const base = { ...entry.item, description: cleanBranding(entry.item.description) }
       return current
         ? {
-            ...entry.item,
+            ...base,
             status: current.item.status,
             path: current.root,
             installedVersion: current.item.version,
@@ -117,11 +125,11 @@ export async function catalog(root: string): Promise<PluginStore.Catalog> {
             components: current.item.components,
             warnings: current.item.warnings,
           }
-        : entry.item
+        : base
     }),
   )
   return {
-    sources: value.sources.map((source) => source.info),
+    sources: value.sources.map((source) => ({ ...source.info, name: cleanBranding(source.info.name) })),
     ...(value.data?.some((entry) => entry.retired)
       ? {
           retainedData: value.data
@@ -132,7 +140,14 @@ export async function catalog(root: string): Promise<PluginStore.Catalog> {
             })),
         }
       : {}),
-    items: [...entries, ...[...installed.values()].map((v) => ({ ...v.item, path: v.root }))],
+    items: [
+      ...entries,
+      ...[...installed.values()].map((v) => ({
+        ...v.item,
+        description: cleanBranding(v.item.description),
+        path: v.root,
+      })),
+    ],
   }
 }
 
@@ -514,7 +529,14 @@ export async function mutate(root: string, input: PluginStore.Action) {
     // Persist retirement before any removal. A crash cannot reactivate a deleting epoch.
     await save(root, { ...value, installed, data: retired })
     await save(root, { ...value, installed, data: await cleanData(root, retired) })
-    // Keep immutable snapshots for in-flight sessions; an uninstall removes activation immediately.
+    // Keep immutable snapshots for in-flight sessions; remove package directory when no readers hold it.
+    if (
+      input.action === "uninstall" &&
+      !retired.some((entry) => entry.id === current.item.id && entry.readers.length > 0) &&
+      current.root.startsWith(`${path.join(root, "packages")}${path.sep}`)
+    ) {
+      await fs.rm(current.root, { recursive: true, force: true }).catch(() => undefined)
+    }
     return catalog(root)
   }
   if (input.action !== "download" && !input.trust)
@@ -593,7 +615,12 @@ async function resolveSource(input: string): Promise<typeof Location.Type> {
     const directory = source.startsWith("~/")
       ? path.join(process.env.APEXO_TEST_HOME ?? process.env.HOME ?? "", source.slice(2))
       : path.resolve(source)
-    return { location: await fs.realpath(directory) }
+    return {
+      location: await fs.realpath(directory).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new Error("invalid", `Plugin path does not exist: ${directory}`)
+        throw new Error("invalid", `Could not access plugin path: ${directory}`)
+      }),
+    }
   }
   const [repository, subdir] = source.split("#")
   const shorthand = /^([\w.-]+\/[\w.-]+)(?:@([\w./-]+))?$/.exec(repository)
@@ -673,7 +700,7 @@ async function refresh(
         item: {
           id: `${source.info.id}:${name}`,
           name,
-          description: string(item.description) ?? "",
+          description: cleanBranding(string(item.description) ?? ""),
           sourceID: source.info.id,
           source: source.info.location,
           category: string(item.category) ?? "other",
@@ -698,7 +725,12 @@ async function refresh(
     }),
   )
   return {
-    info: { ...source.info, name: string(data.name) ?? source.info.name, error: undefined, updatedAt: Date.now() },
+    info: {
+      ...source.info,
+      name: cleanBranding(string(data.name) ?? source.info.name),
+      error: undefined,
+      updatedAt: Date.now(),
+    },
     root: fetched.root,
     target,
     entries,
@@ -809,7 +841,7 @@ export async function inspect(root: string, fallbackName = path.basename(root)) 
     manifest,
     files,
     components,
-    description: string(manifest.description) ?? "",
+    description: cleanBranding(string(manifest.description) ?? ""),
     version: string(manifest.version),
     author: string(record(manifest.author).name) ?? string(manifest.author),
     homepage: string(manifest.homepage),
