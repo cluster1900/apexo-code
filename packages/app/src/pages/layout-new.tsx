@@ -6,7 +6,10 @@ import { Titlebar } from "@/components/titlebar"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
 
 export default function NewLayout(props: ParentProps) {
-  const [state, setState] = createStore({ debugTools: true })
+  const isDevBuild =
+    (import.meta.env.DEV || import.meta.env.VITE_APEXO_CHANNEL === "dev") &&
+    import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1"
+  const [state, setState] = createStore({ debugTools: false })
 
   createEffect(() => setV2Toast(true))
   onMount(() => {
@@ -23,7 +26,7 @@ export default function NewLayout(props: ParentProps) {
     >
       <Titlebar
         debugTools={
-          import.meta.env.DEV
+          isDevBuild
             ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
             : undefined
         }
@@ -31,7 +34,7 @@ export default function NewLayout(props: ParentProps) {
       <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
         <Suspense>{props.children}</Suspense>
       </main>
-      {import.meta.env.DEV && state.debugTools && <DebugBar inline />}
+      {isDevBuild && state.debugTools && <DebugBar inline />}
       <TabsInfoPopup />
       <ToastRegion v2 />
     </div>

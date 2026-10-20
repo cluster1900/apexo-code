@@ -151,3 +151,5 @@ function post(response: MarkdownWorkerResponse) {
 function token(value: ThemedToken): MarkdownToken {
   return [value.content, stringifyTokenStyle(value.htmlStyle ?? getTokenStyleObject(value))]
 }
+
+export default ""

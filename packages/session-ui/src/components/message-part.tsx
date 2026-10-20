@@ -1838,21 +1838,46 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
+  const i18n = useI18n()
   const part = () => props.part as ReasoningPart
+  const [localOpen, setLocalOpen] = createSignal(props.defaultOpen ?? false)
+  const open = () => props.toolOpen ?? localOpen()
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const handleOpenChange = (value: boolean) => {
+    if (props.toolOpen === undefined) setLocalOpen(value)
+    props.onToolOpenChange?.(value)
+    props.onContentRendered?.()
+  }
 
   return (
     <Show when={text()}>
       <div data-component="reasoning-part" data-timeline-part-id={part().id}>
-        <PacedMarkdown
-          text={text()}
-          cacheKey={part().id}
-          streaming={streaming()}
-          onContentRendered={props.onContentRendered}
-        />
+        <Collapsible open={open()} onOpenChange={handleOpenChange} variant="ghost" class="tool-collapsible">
+          <Collapsible.Trigger>
+            <div data-component="context-tool-group-trigger" data-slot="reasoning-part-trigger">
+              <span
+                data-slot="context-tool-group-title"
+                class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
+              >
+                <span data-slot="context-tool-group-label" class="shrink-0">
+                  <TextShimmer text={i18n.t("ui.sessionTurn.status.thinking")} active={streaming()} />
+                </span>
+              </span>
+              <Collapsible.Arrow />
+            </div>
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <PacedMarkdown
+              text={text()}
+              cacheKey={part().id}
+              streaming={streaming()}
+              onContentRendered={props.onContentRendered}
+            />
+          </Collapsible.Content>
+        </Collapsible>
       </div>
     </Show>
   )

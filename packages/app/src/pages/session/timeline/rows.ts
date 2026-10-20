@@ -198,10 +198,12 @@ export namespace Timeline {
       lastPartType !== "text" &&
       (showReasoning ? assistantPartRefs.length === 0 : true)
     ) {
-      const heading = assistantMessages
-        .flatMap((message) => getMessageParts(message.id))
-        .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
-        .findLast((value): value is string => !!value)
+      const heading = showReasoning
+        ? assistantMessages
+            .flatMap((message) => getMessageParts(message.id))
+            .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
+            .findLast((value): value is string => !!value)
+        : undefined
 
       rows.push(
         new TimelineRow.Thinking({
@@ -263,13 +265,6 @@ export namespace Timeline {
       const value = cleanHeading(strong[1])
       if (value) return value
     }
-
-    const lines = markdown
-      .split("\n")
-      .map((line) => cleanHeading(line))
-      .filter((line) => line.length > 0)
-    const latest = lines.at(-1)
-    if (latest) return latest.length > 80 ? `${latest.slice(0, 77)}...` : latest
   }
 
   function cleanHeading(value: string) {

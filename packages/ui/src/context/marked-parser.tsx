@@ -5,6 +5,7 @@ import markedShiki from "marked-shiki"
 export function createMarkdownParser(highlight: (code: string, language: string) => string | Promise<string>) {
   return new Marked(
     {
+      breaks: true,
       renderer: {
         link({ href, title, text }) {
           const titleAttr = title ? ` title="${title}"` : ""

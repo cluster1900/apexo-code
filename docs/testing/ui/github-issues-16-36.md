@@ -299,3 +299,118 @@
   - 将 `[data-component="tool-Part-wrapper"] [data-slot="Sticky-accordion-header"]` 设为 `position: relative; top: auto;`，消除与外层 sticky 工具头的重叠。
 - **复测与验证 (Retest & Verification)**:
   - `bun turbo typecheck`（21/21 通过）与 `packages/app` 单元测试通过。
+
+---
+
+## #37 — Desktop: Reasoning text leaked into "Thinking" row during tool calls when "Show reasoning summaries" is OFF (`BUG-20261020-522`)
+
+- **Affected Scope**:
+  - `packages/app/src/pages/session/timeline/rows.ts`
+  - `packages/app/src/pages/session/timeline/message-timeline.tsx`
+  - `packages/app/src/utils/message-part-text.test.ts`
+- **Observed vs. Expected**:
+  - **Observed**: With "Show reasoning summaries" disabled, while a tool call or permission request is active (`lastPartType !== "text"`), `TimelineRow.Thinking` rendered `Thinking The user wants me to create a file...` in the timeline.
+  - **Expected**: When "Show reasoning summaries" is disabled, only the neutral `Thinking` indicator is rendered and raw chain-of-thought prose is never shown.
+- **Root Cause**:
+  - `constructMessageRows` extracted `reasoningHeading` even when `showReasoning` was `false`, `reasoningHeading` fell back to `lines.at(-1)` prose, and `TimelineThinkingRow` rendered `reasoningHeading` inside `<Show when={!props.showReasoningSummaries}>`.
+- **Fix**:
+  - Removed the raw prose fallback from `reasoningHeading`, gated `heading` extraction on `showReasoning`, and changed `TimelineThinkingRow` to `<Show when={props.showReasoningSummaries && props.reasoningHeading}>`.
+- **Verification**:
+  - `cd packages/app && bun run test:unit` and `bun turbo typecheck --concurrency=2`.
+
+---
+
+## #24 (Follow-up) — Desktop: Reasoning summaries were not collapsible when "Show reasoning summaries" is ON (`BUG-20261020-523`)
+
+- **Affected Scope**:
+  - `packages/session-ui/src/components/message-part.tsx`
+  - `packages/session-ui/src/components/part-default-open.ts`
+  - `packages/session-ui/src/components/message-part.css`
+- **Observed vs. Expected**:
+  - **Observed**: Reasoning parts rendered as plain muted markdown text without a collapse/expand toggle.
+  - **Expected**: Reasoning summaries render inside a `<Collapsible>` block (collapsed by default) with a clickable `Thinking` trigger and arrow.
+- **Root Cause**:
+  - `PART_MAPPING["reasoning"]` rendered `<PacedMarkdown>` directly without a `<Collapsible>` wrapper.
+- **Fix**:
+  - Wrapped `PART_MAPPING["reasoning"]` in `<Collapsible>` (defaulting to collapsed via `partDefaultOpen` and controlled by `toolOpen`/`onToolOpenChange`).
+- **Verification**:
+  - `cd packages/app && bun run test:unit` and `bun turbo typecheck --concurrency=2`.
+
+---
+
+## #38 — Desktop: Permission card file path missing leading `/` in non-Git projects (`BUG-20261020-524`)
+
+- **Affected Scope**:
+  - `packages/apexo/src/project/instance-context.ts`
+  - `packages/apexo/src/tool/write.ts`
+  - `packages/apexo/src/tool/edit.ts`
+  - `packages/apexo/src/tool/read.ts`
+  - `packages/apexo/src/tool/apply_patch.ts`
+  - `packages/apexo/src/agent/agent.ts`
+  - `packages/app/src/pages/session/composer/session-permission-dock.tsx`
+- **Observed vs. Expected**:
+  - **Observed**: In non-Git projects (`instance.worktree === "/"`), permission prompts displayed `home/box/Default Project/qa25.txt` without the leading `/`.
+  - **Expected**: Permission prompts display the project-relative path (`qa25.txt`) for project files or a valid absolute path (`/etc/hosts`) with its leading `/`.
+- **Root Cause**:
+  - Tools called `path.relative(instance.worktree, filepath)` directly; when `instance.worktree === "/"`, `path.relative("/", "/abs/path")` stripped the leading `/`.
+- **Fix**:
+  - Added `projectRelativePath(filepath, ctx)` in `instance-context.ts` and normalized patterns in `SessionPermissionDock`.
+- **Verification**:
+  - `cd packages/apexo && bun test test/tool/read.test.ts` and `cd packages/app && bun run test:unit`.
+
+---
+
+## #39 — Desktop: Orphaned follow-up description text above composer while generating (`BUG-20261020-525`)
+
+- **Affected Scope**:
+  - `packages/app/src/pages/session/composer/session-composer-region.tsx`
+- **Observed vs. Expected**:
+  - **Observed**: While generating a reply, the text `"Choose whether follow-up prompts steer immediately or wait in a queue"` appeared above the composer without any associated control.
+  - **Expected**: No orphaned settings description text appears above the composer during generation.
+- **Root Cause**:
+  - `session-composer-region.tsx` rendered `settings.general.row.followup.description` inside `<Show when={controller.working() && ...}>` without any interactive control.
+- **Fix**:
+  - Removed the orphaned `<Show>` block from `session-composer-region.tsx`.
+- **Verification**:
+  - `cd packages/app && bun run test:unit` and `bun turbo typecheck --concurrency=2`.
+
+---
+
+## #40 — Desktop: Single newlines in assistant markdown collapsed into spaces (`BUG-20261020-526`)
+
+- **Affected Scope**:
+  - `packages/ui/src/context/marked-parser.tsx`
+- **Observed vs. Expected**:
+  - **Observed**: Single-newline lists (`one\ntwo\nthree\nfour\nfive`) rendered on a single line (`one two three four five`).
+  - **Expected**: Single line breaks in markdown responses render as `<br>` line breaks.
+- **Root Cause**:
+  - `createMarkdownParser` in `marked-parser.tsx` did not enable `breaks: true`.
+- **Fix**:
+  - Enabled `breaks: true` in `createMarkdownParser`.
+- **Verification**:
+  - `cd packages/app && bun run test:unit` and `bun turbo typecheck --concurrency=2`.
+
+---
+
+## #33 (Follow-up) — Desktop: `≡` menu top-level `Apexo` item, `DEV` badge toggle in built dev channel, and unified `New Session` shortcut (`BUG-20261020-527`)
+
+- **Affected Scope**:
+  - `packages/app/src/components/windows-app-menu.tsx`
+  - `packages/app/src/pages/layout-new.tsx`
+  - `packages/app/src/pages/layout.tsx`
+- **Root Cause & Fix**:
+  - Added a clickable top-level `Apexo` item in `WindowsAppMenu` that opens an About Apexo dialog, unified the `New Session` shortcut and handler between the top-level menu item and `File > New Session`, and enabled `debugTools` toggle when `import.meta.env.VITE_APEXO_CHANNEL === "dev"`.
+- **Verification**:
+  - `cd packages/app && bun run test:unit` and `bun turbo typecheck --concurrency=2`.
+
+---
+
+## #18 (Follow-up) — Server: Reject disallowed cross-origin `OPTIONS` preflight requests with HTTP 403 (`BUG-20261020-528`)
+
+- **Affected Scope**:
+  - `packages/apexo/src/server/routes/instance/httpapi/server.ts`
+  - `packages/apexo/test/server/httpapi-cors.test.ts`
+- **Root Cause & Fix**:
+  - Validated `Host` and `Origin` headers (`isAllowedRequestOrigin`) before `HttpMiddleware.cors` so disallowed cross-origin `OPTIONS` preflight requests are rejected with `403 Forbidden: Invalid Origin header` instead of `204`.
+- **Verification**:
+  - `cd packages/apexo && bun test test/server/httpapi-cors.test.ts`.

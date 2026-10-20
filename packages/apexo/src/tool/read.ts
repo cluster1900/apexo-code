@@ -6,6 +6,7 @@ import { FSUtil } from "@apexo/core/fs-util"
 import { LSP } from "@/lsp/lsp"
 import DESCRIPTION from "./read.txt"
 import { InstanceState } from "@/effect/instance-state"
+import { projectRelativePath } from "@/project/instance-context"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
@@ -238,7 +239,7 @@ export const ReadTool = Tool.define<
       if (process.platform === "win32") {
         filepath = FSUtil.normalizePath(filepath)
       }
-      const title = path.relative(instance.worktree, filepath)
+      const title = projectRelativePath(filepath, instance)
 
       const stat = yield* fs.stat(filepath).pipe(
         Effect.catchIf(
@@ -254,7 +255,7 @@ export const ReadTool = Tool.define<
 
       yield* ctx.ask({
         permission: "read",
-        patterns: [path.relative(instance.worktree, filepath)],
+        patterns: [projectRelativePath(filepath, instance)],
         always: ["*"],
         metadata: {},
       })

@@ -17,6 +17,7 @@ function deletionOnly(part: ToolPart) {
 }
 
 export function partDefaultOpen(part: PartType, shell = false, edit = false) {
+  if (part.type === "reasoning") return false
   if (part.type !== "tool") return
   if (part.tool === "bash" || part.tool === "shell") return shell
   if (part.tool === "edit" || part.tool === "write" || part.tool === "patch" || part.tool === "apply_patch") {

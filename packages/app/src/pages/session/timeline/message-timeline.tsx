@@ -126,7 +126,7 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   return (
     <div data-slot="session-turn-thinking">
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <Show when={!props.showReasoningSummaries}>
+      <Show when={props.showReasoningSummaries && props.reasoningHeading}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
     </div>

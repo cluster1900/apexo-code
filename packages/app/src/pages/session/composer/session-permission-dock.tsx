@@ -44,6 +44,14 @@ export function SessionPermissionDock(props: {
     return value
   }
 
+  const formatPattern = (pattern: string) => {
+    const filepath = props.request.metadata?.filepath
+    if (typeof filepath === "string" && filepath.startsWith("/") && pattern === filepath.replace(/^\/+/, "")) {
+      return filepath
+    }
+    return pattern
+  }
+
   return (
     <DockPrompt
       kind="permission"
@@ -84,7 +92,7 @@ export function SessionPermissionDock(props: {
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-patterns">
             <For each={props.request.patterns}>
-              {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
+              {(pattern) => <code class="text-12-regular text-text-base break-all">{formatPattern(pattern)}</code>}
             </For>
           </div>
         </div>
@@ -131,7 +139,7 @@ export function SessionPermissionDock(props: {
               </div>
             </Show>
             <For each={alwaysPatterns()}>
-              {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
+              {(pattern) => <code class="text-12-regular text-text-base break-all">{formatPattern(pattern)}</code>}
             </For>
           </div>
         </div>

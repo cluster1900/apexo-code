@@ -156,7 +156,7 @@ export default function LegacyLayout(props: ParentProps) {
     sizing: false,
     peek: undefined as string | undefined,
     peeked: false,
-    debugTools: true,
+    debugTools: false,
   })
 
   const editor = createInlineEditorController()
@@ -2335,7 +2335,8 @@ export default function LegacyLayout(props: ParentProps) {
       {autoselecting() ?? ""}
       <Titlebar
         debugTools={
-          import.meta.env.DEV && import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1"
+          (import.meta.env.DEV || import.meta.env.VITE_APEXO_CHANNEL === "dev") &&
+          import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1"
             ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
             : undefined
         }
@@ -2482,7 +2483,9 @@ export default function LegacyLayout(props: ParentProps) {
             </div>
           </div>
         </div>
-        {import.meta.env.DEV && import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1" && state.debugTools && <DebugBar />}
+        {(import.meta.env.DEV || import.meta.env.VITE_APEXO_CHANNEL === "dev") &&
+          import.meta.env.VITE_DISABLE_DEBUG_BAR !== "1" &&
+          state.debugTools && <DebugBar />}
       </div>
       <TabsInfoPopup />
       <ToastRegion v2={false} />
