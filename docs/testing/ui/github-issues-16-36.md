@@ -414,3 +414,19 @@
   - Validated `Host` and `Origin` headers (`isAllowedRequestOrigin`) before `HttpMiddleware.cors` so disallowed cross-origin `OPTIONS` preflight requests are rejected with `403 Forbidden: Invalid Origin header` instead of `204`.
 - **Verification**:
   - `cd packages/apexo && bun test test/server/httpapi-cors.test.ts`.
+
+---
+
+## Live End-to-End Browser, CLI, and Real Provider Simulation (`BUG-20261020-529`)
+
+- **Affected Scope**:
+  - `packages/core/src/util/path.ts` (`#35`)
+  - `packages/session-ui/src/v2/components/prompt-input/index.tsx` (`#26`, `#34`)
+  - `packages/app/src/components/session-feedback.tsx` & `packages/app/src/components/feedback-dialog.tsx` (`#32`)
+  - `packages/app/src/i18n/zh.ts` (`#30`)
+- **Additional Edge Cases Caught During Real Chrome CDP + CLI E2E Simulation**:
+  1. **`getDirectory` on bare relative filenames (`#35`)**: When a tool (`write`, `edit`, `patch`) was invoked with a bare project-root filename such as `"qa25.txt"` (no directory separator), `getDirectory("qa25.txt")` in `packages/core/src/util/path.ts` previously returned `"/"` (`parts.slice(0, 0).join("/") + "/"`), causing `[data-slot="message-part-directory"]` to render `"/"`. Fixed `getDirectory` to return `""` when `!/[/\\]/.test(path)`.
+  2. **Chromium `contenteditable` sentinel `<br>` after clearing (`#26`, `#34`)**: In real Chromium, deleting all text in `[contenteditable="true"]` leaves a sentinel `<br>` node in the DOM, which caused `PromptInputV2` to parse subsequent single-line input (such as `/goal`) with a trailing `\n` (`"/goal\n"`), preventing `/^\/(\S*)$/` from opening the slash popover. Updated `PromptInputV2` `onInput` to call `renderPromptInputV2Editor(event.currentTarget, [])` whenever the parsed prompt is empty and child nodes remain.
+  3. **`/feedback <message>` inline argument pre-fill (`#32`)**: Added `onSlash: (args) => void open(args)` in `createSessionFeedback` and `initialMessage?: string` in `FeedbackDialog` so `/feedback <message>` pre-populates the feedback dialog and saves cleanly via the backend API.
+- **Verification**:
+  - Built `packages/app/dist` (`cd packages/app && bun run build`), started a real `apexo serve` backend, drove Google Chrome via CDP and spawned real `apexo run` CLI processes (including a live `custom/MiniMax-M2.7` API call against `https://api.minimax.cn/v1`): all 22 end-to-end checks (`#16`, `#18-host`, `#18-cors-options`, `#18-cors-localhost`, `#19`, `#20`, `#21`, `MiniMax-Real-API`, `Desktop-Mount`, `#24`, `#25`, `#26`, `#27`, `#28`, `#29`, `#30`, `#31`, `#32`, `#33-dev-badge`, `#33-doctor`, `#34`, `#35`, `#37`, `#38`, `#39`, `#40`) passed with exit code `0`.

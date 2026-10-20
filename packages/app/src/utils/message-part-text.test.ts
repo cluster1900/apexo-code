@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test"
+import { getDirectory } from "@apexo/core/util/path"
 import { readPartText, stripInlineThink } from "@apexo/session-ui/message-part-text"
 import { partDefaultOpen } from "@apexo/session-ui/message-part"
 import { createMarkdownParser } from "@apexo/ui/context/marked-parser"
 import { Timeline } from "@/pages/session/timeline/rows"
 
 describe("stripInlineThink and readPartText", () => {
+  test("getDirectory returns empty string for bare filenames without directory separators (#35)", () => {
+    expect(getDirectory("qa25.txt")).toBe("")
+    expect(getDirectory("src/qa25.txt")).toBe("src/")
+    expect(getDirectory("/")).toBe("/")
+  })
   test("strips closed <think>...</think> blocks from text parts", () => {
     expect(stripInlineThink("<think>internal reasoning</think>\nvisible answer")).toBe("visible answer")
     expect(

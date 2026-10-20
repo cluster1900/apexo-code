@@ -116,7 +116,7 @@ export const dict = {
   "session.plan.approveDescription": "切换到 build 模式并实施已审阅的计划",
   "session.plan.keepPlanningDescription": "保持 Plan 模式并修改计划",
   "commandSandbox.title": "命令沙盒",
-  "commandSandbox.scope": "仅适用于 macOS 上的原生命令，不涵盖智能体的所有活动。",
+  "commandSandbox.scope": "仅适用于 macOS（seatbelt）和 Linux（bubblewrap）上的原生命令，不涵盖智能体的所有活动。",
   "commandSandbox.limits": "现有硬链接以及其他进程所做的更改不在此保护范围内。",
   "commandSandbox.immutable": "此会话已保存的模式无法更改。请选择其他模式后创建新会话。",
   "commandSandbox.stored": "已保存的模式：{{profile}}",

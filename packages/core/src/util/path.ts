@@ -7,6 +7,7 @@ export function getFilename(path: string | undefined) {
 
 export function getDirectory(path: string | undefined) {
   if (!path) return ""
+  if (!/[/\\]/.test(path)) return ""
   const trimmed = path.replace(/[/\\]+$/, "")
   const parts = trimmed.split(/[/\\]/)
   return parts.slice(0, parts.length - 1).join("/") + "/"

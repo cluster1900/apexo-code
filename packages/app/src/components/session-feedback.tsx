@@ -8,11 +8,11 @@ export function createSessionFeedback(sessionID: () => string | undefined) {
   const dialog = useDialog()
   const command = useCommand()
   const language = useLanguage()
-  const open = async () => {
+  const open = async (initialMessage?: string) => {
     const id = sessionID()
     if (!id) return
     const { FeedbackDialog } = await import("./feedback-dialog")
-    dialog.show(() => <FeedbackDialog sessionID={id} />)
+    dialog.show(() => <FeedbackDialog sessionID={id} initialMessage={initialMessage} />)
   }
   command.register("session-feedback", () => [
     {
@@ -22,6 +22,7 @@ export function createSessionFeedback(sessionID: () => string | undefined) {
       slash: "feedback",
       disabled: !sessionID(),
       onSelect: () => void open(),
+      onSlash: (args) => void open(args),
     },
   ])
   return { available: () => !!sessionID(), open }
