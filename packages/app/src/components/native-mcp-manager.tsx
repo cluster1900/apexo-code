@@ -3,6 +3,8 @@ import { createStore } from "solid-js/store"
 import { Button } from "@apexo/ui/button"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
+import { useSDK } from "@/context/sdk"
+import { useServerSync } from "@/context/server-sync"
 import { NativeMcpAuthentication } from "./native-mcp-authentication"
 import { useMcpManager } from "@/context/mcp"
 
@@ -14,11 +16,48 @@ const labels = {
   needs_client_registration: "mcp.status.needs_client_registration",
 } as const
 
-export function NativeMcpManager() {
+export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
   const sync = useSync()
+  const sdk = useSDK()
+  const serverSync = useServerSync()
   const language = useLanguage()
   const manager = useMcpManager()
-  const [state, setState] = createStore({ search: "" })
+  const [state, setState] = createStore({
+    search: "",
+    adding: false,
+    name: "",
+    type: "local" as "local" | "remote",
+    target: "",
+    saving: false,
+    addError: "",
+  })
+  const addServer = async (event: SubmitEvent) => {
+    event.preventDefault()
+    const name = state.name.trim()
+    const target = state.target.trim()
+    if (!name || !target) return
+    setState({ saving: true, addError: "" })
+    const config =
+      state.type === "local"
+        ? { type: "local" as const, command: target.split(/\s+/).filter(Boolean), enabled: true }
+        : { type: "remote" as const, url: target, enabled: true }
+    try {
+      await sdk().client.mcp.add({ name, config })
+      await serverSync().updateConfig({
+        mcp: {
+          ...serverSync().data.config.mcp,
+          [name]: config,
+        },
+      })
+      setState({ adding: false, name: "", target: "", saving: false, addError: "" })
+      manager.refresh.mutate()
+    } catch (err) {
+      setState({
+        saving: false,
+        addError: err instanceof Error ? err.message : language.t("common.requestFailed"),
+      })
+    }
+  }
   const items = createMemo(() =>
     Object.keys(sync().data.mcp ?? {})
       .filter((name) => name.toLowerCase().includes(state.search.toLowerCase()))
@@ -154,7 +193,70 @@ export function NativeMcpManager() {
         <Button size="small" variant="ghost" disabled={loading()} onClick={() => manager.refresh.mutate()}>
           {language.t("mcp.runtime.refresh")}
         </Button>
+        <Show when={props.allowManageConfig}>
+          <Button
+            size="small"
+            variant="secondary"
+            data-action="mcp-add-toggle"
+            onClick={() => setState({ adding: !state.adding, addError: "" })}
+          >
+            {state.adding ? language.t("common.cancel") : `+ ${language.t("settings.mcp.title")}`}
+          </Button>
+        </Show>
       </div>
+      <Show when={props.allowManageConfig && state.adding}>
+        <form class="flex flex-col gap-2 rounded-md border border-border-base p-3" onSubmit={addServer}>
+          <div class="flex gap-2">
+            <input
+              class="min-w-0 flex-1 rounded-md border border-border-base bg-background-base px-2 py-1 text-12-regular"
+              placeholder="Server name (e.g. filesystem)"
+              value={state.name}
+              onInput={(event) => setState("name", event.currentTarget.value)}
+            />
+            <select
+              class="rounded-md border border-border-base bg-background-base px-2 py-1 text-12-regular"
+              value={state.type}
+              onChange={(event) => setState("type", event.currentTarget.value as "local" | "remote")}
+            >
+              <option value="local">Local command</option>
+              <option value="remote">Remote URL</option>
+            </select>
+          </div>
+          <input
+            class="rounded-md border border-border-base bg-background-base px-2 py-1 text-12-regular"
+            placeholder={
+              state.type === "local"
+                ? "npx -y @modelcontextprotocol/server-filesystem ."
+                : "https://example.com/mcp"
+            }
+            value={state.target}
+            onInput={(event) => setState("target", event.currentTarget.value)}
+          />
+          <Show when={state.addError}>
+            <p role="alert" class="text-11-regular text-text-danger-base">
+              {state.addError}
+            </p>
+          </Show>
+          <div class="flex justify-end gap-2">
+            <Button
+              type="button"
+              size="small"
+              variant="ghost"
+              disabled={state.saving}
+              onClick={() => setState({ adding: false, addError: "" })}
+            >
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              type="submit"
+              size="small"
+              disabled={state.saving || !state.name.trim() || !state.target.trim()}
+            >
+              {language.t("common.save")}
+            </Button>
+          </div>
+        </form>
+      </Show>
       <Show when={failed()}>
         <p role="alert" class="text-12-regular text-text-danger-base">
           {language.t("common.requestFailed")}

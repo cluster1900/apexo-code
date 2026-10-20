@@ -8,15 +8,22 @@ const exec = promisify(execFile)
 
 function command(command: string, args: string[] = [], input?: string) {
   return new Promise<Buffer>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"] })
+    const child = spawn(command, args, {
+      stdio: [input === undefined ? "ignore" : "pipe", input === undefined ? "pipe" : "ignore", "ignore"],
+      detached: input !== undefined,
+    })
     const output: Buffer[] = []
     child.on("error", reject)
     child.stdout?.on("data", (chunk: Buffer) => output.push(chunk))
-    child.on("close", (code) => {
+    child.on(input === undefined ? "close" : "exit", (code) => {
+      if (input !== undefined) child.unref()
       if (code === 0) return resolve(Buffer.concat(output))
       reject(new Error(`${command} exited with code ${code}`))
     })
-    if (input !== undefined) child.stdin?.end(input)
+    if (input !== undefined) {
+      child.stdin?.on("error", reject)
+      child.stdin?.end(input)
+    }
   })
 }
 
@@ -79,6 +86,7 @@ export function copyCommand(
   wayland: boolean,
   has: (name: string) => boolean,
 ): string[] | undefined {
+  if (os === "darwin" && has("pbcopy")) return ["pbcopy"]
   if (os === "darwin" && has("osascript")) return ["osascript"]
   if (os === "linux" && wayland && has("wl-copy")) return ["wl-copy"]
   if (os === "linux" && has("xclip")) return ["xclip", "-selection", "clipboard"]
@@ -94,28 +102,26 @@ export function copyCommand(
   }
 }
 
-let copyMethod: Promise<(text: string) => Promise<void>> | undefined
-
-function getCopyMethod() {
-  return (copyMethod ??= (async () => {
-    const { which } = await import("@apexo/core/util/which")
-    const native = copyCommand(platform(), Boolean(process.env.WAYLAND_DISPLAY), (name) => Boolean(which(name)))
-    if (native?.[0] === "osascript") {
-      return async (text: string) => {
-        const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-        await command("osascript", ["-e", `set the clipboard to "${escaped}"`]).catch(() => undefined)
-      }
-    }
-    if (native) {
-      return async (text: string) => {
-        await command(native[0], native.slice(1), text).catch(() => undefined)
-      }
-    }
+async function getCopyMethod() {
+  const { which } = await import("@apexo/core/util/which")
+  const native = copyCommand(platform(), Boolean(process.env.WAYLAND_DISPLAY), (name) => Boolean(which(name)))
+  if (native?.[0] === "osascript") {
     return async (text: string) => {
-      const { default: clipboardy } = await import("clipboardy")
-      await clipboardy.write(text).catch(() => undefined)
+      const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      await command("osascript", ["-e", `set the clipboard to "${escaped}"`])
     }
-  })())
+  }
+  if (native) {
+    return async (text: string) => {
+      await command(native[0], native.slice(1), text)
+    }
+  }
+  return async (text: string) => {
+    const { default: clipboardy } = await import("clipboardy")
+    await clipboardy.write(text).catch(() => {
+      throw new Error("No clipboard utility found (install xclip, xsel, wl-copy, or pbcopy)")
+    })
+  }
 }
 
 export async function write(text: string) {

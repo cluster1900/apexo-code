@@ -810,10 +810,35 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     void Promise.resolve(input.afterPaint(ctx)).catch(() => {})
   }
 
-  void modelTask.then((info) => {
+  void modelTask.then(async (info) => {
     state.providers = info.providers
-    state.variants = variantsFor(state.providers, state.model)
     state.limits = info.limits
+
+    if (!state.model) {
+      const configured = !ctx.native
+        ? await ctx.sdk.config
+            .get({ directory: ctx.directory })
+            .then((x) => x.data?.model)
+            .catch(() => undefined)
+        : undefined
+      const sep = configured?.indexOf("/") ?? -1
+      if (configured && sep > 0) {
+        state.model = {
+          providerID: configured.slice(0, sep),
+          modelID: configured.slice(sep + 1),
+        }
+      } else {
+        const firstProvider = info.providers.find((p) => Object.keys(p.models ?? {}).length > 0)
+        const firstModelID = firstProvider ? Object.keys(firstProvider.models ?? {})[0] : undefined
+        if (firstProvider && firstModelID) {
+          state.model = {
+            providerID: firstProvider.id,
+            modelID: firstModelID,
+          }
+        }
+      }
+    }
+    state.variants = variantsFor(state.providers, state.model)
 
     const next = resolveVariant(ctx.variant, session.variant, savedVariant, state.variants)
     if (next !== state.activeVariant) {

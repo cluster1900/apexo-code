@@ -247,6 +247,7 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.menu.paste": "Paste",
   "desktop.menu.delete": "Delete",
   "desktop.menu.selectAll": "Select All",
+  "desktop.menu.commandPalette": "Command Palette",
   "desktop.menu.toggleSidebar": "Toggle Sidebar",
   "desktop.menu.toggleTerminal": "Toggle Terminal",
   "desktop.menu.toggleFileTree": "Toggle File Tree",

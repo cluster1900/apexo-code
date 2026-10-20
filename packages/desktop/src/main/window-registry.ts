@@ -33,6 +33,7 @@ export function createWindowRegistry<W>(persistence: {
       return windows.get(lastFocusedID)
     },
     closed(id: string) {
+      if (!windows.has(id)) return
       windows.delete(id)
       if (lastFocusedID === id) lastFocusedID = windows.keys().next().value
       // Only a deliberate close (app keeps running with other windows open)

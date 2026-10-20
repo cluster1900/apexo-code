@@ -74,6 +74,8 @@ function cleanBranding(value: string) {
     .replace(/\bdirectly from Grok\b/gi, "directly from Apexo")
     .replace(/\bGrok Build Official Plugins\b/gi, "Official Plugins")
     .replace(/\bGrok Build\b/g, "Apexo")
+    .replace(/^xai-official$/i, "official")
+    .replace(/^xAI$/i, "Official")
 }
 function strings(value: unknown) {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []

@@ -91,6 +91,11 @@ export function createEditProjectModel(props: { project: LocalProject; server: S
         serverCtx().sync.set("project", (items) =>
           items.map((item) => (item.id === project.id ? normalizeProjectInfo(project) : item)),
         )
+        serverCtx().sync.project.meta(props.project.worktree, {
+          name,
+          icon: { color: store.color || undefined, override: store.iconOverride || undefined },
+          commands: { start: start || undefined },
+        })
         serverCtx().sync.project.icon(props.project.worktree, store.iconOverride || undefined)
         dialog.close()
         return

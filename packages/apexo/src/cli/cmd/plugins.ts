@@ -17,6 +17,18 @@ const actions = [
   "uninstall",
 ] as const
 
+const actionDescriptions: Record<(typeof actions)[number], string> = {
+  refresh: "refresh plugin catalogs from configured sources",
+  "add-source": "add a plugin catalog source",
+  "remove-source": "remove a plugin catalog source",
+  install: "install a plugin",
+  download: "download a plugin without enabling it",
+  update: "update an installed plugin",
+  enable: "enable an installed plugin",
+  disable: "disable an installed plugin",
+  uninstall: "uninstall an installed plugin",
+}
+
 // Effect.tryPromise without `catch` hides the store's message behind "An error occurred in Effect.tryPromise".
 const message = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
 
@@ -196,7 +208,7 @@ export const PluginsCommand = cmd({
           effectCmd({
             command: `${action} [target]`,
             ...(action === "uninstall" ? { aliases: ["rm", "remove"] } : {}),
-            describe: `${action} plugins`,
+            describe: actionDescriptions[action],
             instance: false,
             builder: (yargs) => {
               const base = yargs

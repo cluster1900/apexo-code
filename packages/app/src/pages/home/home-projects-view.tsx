@@ -17,6 +17,7 @@ import { ServerConnection } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { displayName, getProjectAvatarSource } from "@/pages/layout/helpers"
+import { pathKey } from "@/utils/path-key"
 import { ServerRowMenuView, serverMenuLabels } from "@/components/server/server-row-menu"
 import { ServerHealthIndicator } from "@/components/server/server-row"
 import { type ServerHealth } from "@/utils/server-health"
@@ -382,7 +383,8 @@ function HomeProjectSlot(
       serverSelected={props.selection().server === ServerConnection.key(props.server)}
       selected={
         props.selection().server === ServerConnection.key(props.server) &&
-        props.selection().directory === props.worktree
+        !!props.selection().directory &&
+        pathKey(props.selection().directory!) === pathKey(props.worktree)
       }
       unseen={props.unseenCount(props.server, project())}
     />

@@ -28,6 +28,7 @@ export function TabNavItem(props: {
   fallbackTitle?: string
   onRename: (title: string) => Promise<void>
   onClose: () => void
+  onCloseOthers?: () => void
   onNavigate: () => void
   active?: boolean
   forceTruncate?: boolean
@@ -60,7 +61,11 @@ export function TabNavItem(props: {
     if (!session) return
     return projectForSession(session, serverCtx()?.projects.list() ?? [])
   })
-  const title = createMemo(() => sessionTitle(props.session()?.title) ?? props.fallbackTitle)
+  const title = createMemo(() => {
+    const raw = sessionTitle(props.session()?.title)
+    if (raw === "New session") return language.t("command.session.new")
+    return raw ?? props.fallbackTitle
+  })
 
   const projectName = createMemo(() => {
     const session = props.session()
@@ -320,7 +325,7 @@ export function TabNavItem(props: {
         }}
         data={{
           projectName: projectName(),
-          title: sessionTitle(props.session()?.title),
+          title: title(),
           path: previewPath(),
           serverName: serverLabel(),
         }}
@@ -338,6 +343,11 @@ export function TabNavItem(props: {
             {language.t("common.rename")}
           </MenuV2.Item>
           <MenuV2.Item onSelect={props.onClose}>{language.t("common.closeTab")}</MenuV2.Item>
+          <Show when={props.onCloseOthers}>
+            {(closeOthers) => (
+              <MenuV2.Item onSelect={() => closeOthers()()}>Close other tabs</MenuV2.Item>
+            )}
+          </Show>
         </MenuV2.Context.Content>
       </MenuV2.Context.Portal>
     </MenuV2.Context>

@@ -14,7 +14,11 @@ export function useCompactMode() {
   const kv = useKV()
   const sync = useSync()
   const [local, setLocal] = kv.signal<boolean | undefined>("compact_mode", undefined)
-  const enabled = () => resolveCompactMode(local(), sync.data.config)
+  const enabled = () => {
+    const val = resolveCompactMode(local(), sync.data.config)
+    setCompactSignal(val)
+    return val
+  }
   const toggle = () => {
     const next = !enabled()
     setLocal(next as never)

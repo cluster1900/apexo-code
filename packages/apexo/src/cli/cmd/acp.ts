@@ -17,6 +17,7 @@ export const AcpCommand = effectCmd({
         type: "string",
         choices: ["apexo", "grok-build"] as const,
         default: "apexo" as const,
+        hidden: true,
       })
       .option("cwd", {
         describe: "working directory",

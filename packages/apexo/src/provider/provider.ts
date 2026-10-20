@@ -850,6 +850,11 @@ const layer = Layer.effect(
             )
               delete provider.models[modelID]
             if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
+            if (
+              !runtimeFlags.enableExperimentalModels &&
+              /(-sol-|(-|^)sol$|-terra|daybreak)/i.test(`${modelID} ${model.name ?? ""}`)
+            )
+              delete provider.models[modelID]
             // Native tier aliases remain callable by saved sessions, but are hidden in model pickers.
             if (model.status === "deprecated" && providerID !== "antigravity") delete provider.models[modelID]
             if (

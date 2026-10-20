@@ -1844,8 +1844,27 @@ export default function Page() {
 
   const editMessage = (input: { sessionID: string; messageID: string }) => {
     if (input.sessionID !== params.id) return
-    prompt.set(draft(input.messageID))
-    inputRef?.focus()
+    const sessionID = input.sessionID
+    const target = sync()
+    const last = target.session.get(sessionID)?.revert
+    void runPromptRollbackMutation({
+      capturePrompt: prompt.capture,
+      optimistic: (promptSession) => {
+        roll(sessionID, { messageID: input.messageID }, target)
+        promptSession.set(draft(input.messageID))
+      },
+      request: () =>
+        halt(sessionID).then(() =>
+          sdk()
+            .api.session.revert.stage({ sessionID, messageID: input.messageID })
+            .then(() => undefined),
+        ),
+      complete: () => {
+        inputRef?.focus()
+      },
+      rollback: () => roll(sessionID, last, target),
+      fail,
+    })
   }
 
   const restoreMutation = useMutation(() => ({

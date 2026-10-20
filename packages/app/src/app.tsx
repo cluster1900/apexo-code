@@ -50,6 +50,7 @@ import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout
 import LegacyLayout from "@/pages/layout"
 import NewLayout from "@/pages/layout-new"
 import { ErrorPage } from "./pages/error"
+import { showToast } from "./utils/toast"
 import { useCheckServerHealth } from "./utils/server-health"
 import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
 import { createSessionLineage } from "@/pages/session/session-lineage"
@@ -324,7 +325,26 @@ function DesktopCommands() {
         title: language.t("command.logs.export"),
         category: language.t("command.category.settings"),
         onSelect: () => {
-          void platform.exportDebugLogs?.()
+          void Promise.resolve(platform.exportDebugLogs?.()).then((output) => {
+            if (typeof output === "string" && output) {
+              showToast({
+                variant: "success",
+                title: language.t("command.logs.export"),
+                description: output,
+              })
+            }
+          })
+        },
+      })
+    }
+    if (platform.platform === "desktop" && platform.runDesktopMenuAction) {
+      commands.push({
+        id: "window.new",
+        title: language.t("desktop.menu.newWindow"),
+        category: language.t("command.category.view"),
+        keybind: "mod+shift+n",
+        onSelect: () => {
+          void platform.runDesktopMenuAction?.("window.new")
         },
       })
     }

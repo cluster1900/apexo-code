@@ -120,7 +120,7 @@ export function createHomeProjectsController(home: HomeController) {
     },
     utility: {
       settings: openSettings,
-      help: () => platform.openExternal("https://github.com/cluster1900/apexo-grok/issues"),
+      help: () => platform.openExternal("https://github.com/cluster1900/apexo-code/issues"),
     },
   }
 }

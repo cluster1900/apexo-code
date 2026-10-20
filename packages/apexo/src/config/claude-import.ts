@@ -203,13 +203,18 @@ const readJson = async (file: string) => {
   }
 }
 
-export async function load(home: string) {
-  const claude = path.join(home, ".claude")
-  const settings = (
-    await Promise.all(["settings.json", "settings.local.json"].map((name) => readJson(path.join(claude, name))))
-  ).filter((item) => item !== undefined)
-  const claudeJson = await readJson(path.join(home, ".claude.json"))
-  const rulesDir = path.join(claude, "rules")
+export async function load(home: string, projectDir?: string) {
+  const roots = [...new Set([process.env.APEXO_TEST_HOME || process.env.HOME || home, home, ...(projectDir ? [projectDir] : [])])]
+  const settingsFiles = roots.flatMap((root) => {
+    const claude = path.join(root, ".claude")
+    return ["settings.json", "settings.local.json"].map((name) => path.join(claude, name))
+  })
+  const settings = (await Promise.all([...new Set(settingsFiles)].map((file) => readJson(file)))).filter(
+    (item) => item !== undefined,
+  )
+  const claudeJson =
+    (await readJson(path.join(roots[0]!, ".claude.json"))) ?? (await readJson(path.join(home, ".claude.json")))
+  const rulesDir = path.join(roots[0]!, ".claude", "rules")
   const files = (await fs.readdir(rulesDir).catch(() => [] as string[])).filter((file) => file.endsWith(".md"))
   const result = plan({ settings, claudeJson, rules: { dir: rulesDir, files } })
   for (const item of [...settings, ...(claudeJson ? [claudeJson] : [])])

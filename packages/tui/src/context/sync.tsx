@@ -637,6 +637,23 @@ export const {
           setStore("session", reconcile(sessions))
           setStore("status", "complete")
         })
+        void sdk.client.command
+          .list({ workspace: project.workspace.current() })
+          .then((x) => {
+            if (!x.data?.length) return
+            const seen = new Set(display.commands.map((c) => c.name))
+            const merged = [...display.commands, ...x.data.filter((c) => !seen.has(c.name))]
+            setStore("command", reconcile(merged))
+          })
+          .catch(() => {})
+        void sdk.client.config
+          .get({ workspace: project.workspace.current() })
+          .then((x) => {
+            if (!x.data) return
+            setStore("config", reconcile(x.data))
+            permission.applyConfig(x.data.ui?.permission_mode)
+          })
+          .catch(() => {})
         if (!nativeActivity.timer) void refreshNativeActivity()
         return
       }

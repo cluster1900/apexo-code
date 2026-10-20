@@ -117,6 +117,19 @@ export function FormatError(input: unknown): string | undefined {
   if (isTaggedError(input, "UICancelledError") || NamedError.hasName(input, "UICancelledError")) {
     return ""
   }
+
+  if (
+    NamedError.hasName(input, "ServerProtocolError") ||
+    (input instanceof Error && input.name === "ServerProtocolError")
+  ) {
+    const status = isRecord(input) && typeof input.status === "number" ? input.status : undefined
+    if (status === 401 || status === 403) {
+      return `Authentication failed (HTTP ${status}): invalid username or password`
+    }
+    return input instanceof Error
+      ? input.message
+      : (stringField(isRecord(input) ? input : {}, "message") ?? "Could not connect to server")
+  }
   return undefined
 }
 

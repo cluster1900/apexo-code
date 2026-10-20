@@ -111,6 +111,12 @@ export const SettingsProvidersV2: Component<{
   }
 
   const disconnect = async (providerID: string, name: string) => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`${language.t("provider.disconnect.toast.disconnected.title", { provider: name })}?`)
+    ) {
+      return
+    }
     if (isConfigCustom(providerID)) {
       await serverSdk()
         .client.auth.remove({ providerID })

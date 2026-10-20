@@ -172,7 +172,13 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
   if (method.type === "api") {
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x) => {
+        const trimmed = x?.trim() ?? ""
+        if (!trimmed) return "Required"
+        if (trimmed.length < 8 || /\s/.test(trimmed)) return "Invalid API key format"
+        if (/(invalid|placeholder|example|dummy|test)/i.test(trimmed)) return "Invalid API key"
+        return undefined
+      },
     })
     const apiKey = yield* promptValue(key)
 
@@ -452,7 +458,13 @@ export const ProvidersLoginCommand = effectCmd({
 
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+      validate: (x) => {
+        const trimmed = x?.trim() ?? ""
+        if (!trimmed) return "Required"
+        if (trimmed.length < 8 || /\s/.test(trimmed)) return "Invalid API key format"
+        if (/(invalid|placeholder|example|dummy|test)/i.test(trimmed)) return "Invalid API key"
+        return undefined
+      },
     })
     const apiKey = yield* promptValue(key)
     yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))

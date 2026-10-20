@@ -36,10 +36,16 @@ export const DialogFork: Component = () => {
     if (!sessionID) return []
 
     const msgs = sync().data.message[sessionID] ?? []
+    const boundary = sync().session.get(sessionID)?.revert?.messageID
+    const revertIndex = boundary ? msgs.findIndex((m) => m.id === boundary) : -1
+    const activeMsgs = revertIndex >= 0 ? msgs.slice(0, revertIndex) : msgs
+    const seen = new Set<string>()
     const result: ForkableMessage[] = []
 
-    for (const message of msgs) {
+    for (const message of activeMsgs) {
       if (message.role !== "user") continue
+      if (seen.has(message.id)) continue
+      seen.add(message.id)
 
       const parts = sync().data.part[message.id] ?? []
       const textPart = parts.find((x): x is SDKTextPart => x.type === "text" && !x.synthetic && !x.ignored)

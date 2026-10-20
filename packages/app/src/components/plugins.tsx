@@ -59,6 +59,7 @@ export function Plugins() {
     reloadBusy: false,
     runtimeError: false,
     runtimeLoading: false,
+    retainedDismissed: false,
   })
   const selected = createMemo(() => state.catalog.items.find((item) => item.id === state.selected))
   const items = createMemo(() =>
@@ -341,9 +342,17 @@ export function Plugins() {
           </Button>
         </div>
       </Show>
-      <Show when={state.catalog.retainedData?.length}>
-        <div role="status" class="plugins-notice">
-          {language.t("plugins.cleanupDeferred")}
+      <Show when={state.catalog.retainedData?.length && !state.retainedDismissed}>
+        <div role="status" class="plugins-notice plugins-notice-row">
+          <span>{language.t("plugins.cleanupDeferred")}</span>
+          <Button
+            variant="ghost"
+            size="small"
+            aria-label={language.t("common.close")}
+            onClick={() => setState("retainedDismissed", true)}
+          >
+            ×
+          </Button>
         </div>
       </Show>
       <Show when={state.pending || state.loading}>

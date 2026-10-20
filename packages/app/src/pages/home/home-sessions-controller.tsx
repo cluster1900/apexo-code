@@ -43,13 +43,18 @@ export function createHomeSessionsController(home: HomeController) {
   const command = useCommand()
   const dialog = useDialog()
   const language = useLanguage()
-  const projectDirectories = createMemo(() => {
+  const selectedDirectories = createMemo(() => {
     const project = home.project.selected()
-    if (!project) return home.project.list().flatMap(directories)
-    return directories(project)
+    if (!project) return undefined
+    return new Set(directories(project).map(pathKey))
   })
   const projectByID = createMemo(
     () => new Map(home.project.list().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
+  )
+  const storedProjects = createMemo(() =>
+    home.server
+      .focusedSync()
+      .data.project.map((project): LocalProject => ({ ...project, expanded: false })),
   )
   const homeSessions = () => home.server.focusedSync().homeSessions
   const sessionEventLoad = useQuery(() => ({
@@ -87,11 +92,21 @@ export function createHomeSessionsController(home: HomeController) {
       Date.now(),
     ),
   )
+  const unfilteredRecords = createMemo(() =>
+    buildHomeSessionRecords({
+      sessions: indexedSessions,
+      selectedDirectories: () => undefined,
+      projects: home.project.list,
+      storedProjects,
+      projectByID,
+    }),
+  )
   const allRecords = createMemo(() =>
     buildHomeSessionRecords({
       sessions: indexedSessions,
-      projectDirectories,
+      selectedDirectories,
       projects: home.project.list,
+      storedProjects,
       projectByID,
     }),
   )
@@ -173,6 +188,8 @@ export function createHomeSessionsController(home: HomeController) {
       groups,
       loading: () => sessionLoad.isLoading,
       searchRecords: allRecords,
+      unfilteredSearchRecords: unfilteredRecords,
+      refetch: () => void sessionLoad.refetch(),
     },
     session: {
       showProjectName: () => !home.project.selected(),
@@ -276,12 +293,17 @@ function directories(project: LocalProject) {
 
 function buildHomeSessionRecords(input: {
   sessions: () => Session[]
-  projectDirectories: () => string[]
+  selectedDirectories: () => Set<string> | undefined
   projects: () => LocalProject[]
+  storedProjects: () => LocalProject[]
   projectByID: () => Map<string, LocalProject>
 }) {
-  const directories = new Set(input.projectDirectories().map(pathKey))
-  const sessions = input.sessions().filter((session) => directories.has(pathKey(session.directory)))
+  const selected = input.selectedDirectories()
+  const sessions = selected
+    ? input.sessions().filter((session) => selected.has(pathKey(session.directory)))
+    : input.sessions()
+  const stored = input.storedProjects()
+  const storedByID = new Map(stored.flatMap((project) => (project.id ? [[project.id, project] as const] : [])))
   return [...new Map(sessions.map((session) => [session.id, session] as const)).values()]
     .sort(compareSessionTime)
     .flatMap((session) => {
@@ -292,8 +314,10 @@ function buildHomeSessionRecords(input: {
           .find(
             (item) =>
               pathKey(item.worktree) === directory || item.sandboxes?.some((sandbox) => pathKey(sandbox) === directory),
-          ) ?? projectForSession(session, input.projects(), input.projectByID())
-      if (!project) return []
+          ) ??
+        projectForSession(session, input.projects(), input.projectByID()) ??
+        projectForSession(session, stored, storedByID) ??
+        ({ worktree: session.directory, expanded: false } satisfies LocalProject)
       return { session, project, projectName: displayName(project) }
     })
 }

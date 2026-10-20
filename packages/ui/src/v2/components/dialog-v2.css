@@ -17,6 +17,7 @@
   pointer-events: none;
 
   [data-slot="dialog-container"] {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -29,6 +30,7 @@
     pointer-events: auto;
 
     [data-slot="dialog-content"] {
+      position: relative;
       display: flex;
       flex-direction: column;
       align-items: flex-start;

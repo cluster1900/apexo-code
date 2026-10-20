@@ -147,7 +147,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
       variant: input.variant,
       files: [],
       initialInput,
-      thinking: input.thinking ?? true,
+      thinking: input.thinking ?? false,
       backgroundSubagents: flags.experimentalBackgroundSubagents,
       replay: input.replay,
       replayLimit: input["replay-limit"],

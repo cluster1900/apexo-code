@@ -43,7 +43,7 @@ export function print(...message: string[]) {
 let blank = false
 export function empty() {
   if (blank) return
-  println("" + Style.TEXT_NORMAL)
+  process.stderr.write(EOL)
   blank = true
 }
 

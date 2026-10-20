@@ -21,9 +21,11 @@ export function createHomeSessionSearchController(home: HomeController, sessions
   const results = createMemo(() => {
     const value = query().toLowerCase()
     if (!value) return []
-    return sessions.data
-      .searchRecords()
-      .filter((record) => `${record.session.title} ${record.projectName}`.toLowerCase().includes(value))
+    const matches = (list: HomeSessionRecord[]) =>
+      list.filter((record) => `${record.session.title} ${record.projectName}`.toLowerCase().includes(value))
+    const scoped = matches(sessions.data.searchRecords())
+    if (scoped.length > 0) return scoped
+    return matches(sessions.data.unfilteredSearchRecords())
   })
   const active = createMemo(() => {
     const records = results()
@@ -53,7 +55,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
   command.register("home.search", () => [
     {
       id: "home.sessions.search.focus",
-      title: placeholder(),
+      title: language.t("home.sessions.search.placeholder"),
       keybind: "mod+f",
       hidden: true,
       onSelect: focus,
@@ -63,6 +65,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
   function focus() {
     input?.focus()
     setState("focused", true)
+    sessions.data.refetch()
   }
 
   function close() {
@@ -80,7 +83,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
       placeholder,
       open,
       focus,
-      input: (value: string) => setState({ value, highlighted: "" }),
+      input: (value: string) => setState({ value, focused: true, highlighted: "" }),
       close,
     },
     result: {

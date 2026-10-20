@@ -27,14 +27,19 @@ function tr(translator: Translator | undefined, key: string, text: string, vars?
   return out
 }
 
+function redactSecrets(message: string) {
+  return message.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.-]{3,}/gi, "$1-***")
+}
+
 export function formatServerError(error: unknown, translate?: Translator, fallback?: string) {
-  if (error instanceof CommandPromptError) return tr(translate, `error.loop.${error.code}`, error.message)
+  if (error instanceof CommandPromptError) return redactSecrets(tr(translate, `error.loop.${error.code}`, error.message))
   const unwrapped = unwrapNamedError(error)
-  if (isConfigInvalidErrorLike(unwrapped)) return parseReadableConfigInvalidError(unwrapped, translate)
-  if (isProviderModelNotFoundErrorLike(unwrapped)) return parseReadableProviderModelNotFoundError(unwrapped, translate)
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === "string" && error) return error
-  if (fallback) return fallback
+  if (isConfigInvalidErrorLike(unwrapped)) return redactSecrets(parseReadableConfigInvalidError(unwrapped, translate))
+  if (isProviderModelNotFoundErrorLike(unwrapped))
+    return redactSecrets(parseReadableProviderModelNotFoundError(unwrapped, translate))
+  if (error instanceof Error && error.message) return redactSecrets(error.message)
+  if (typeof error === "string" && error) return redactSecrets(error)
+  if (fallback) return redactSecrets(fallback)
   return tr(translate, "error.chain.unknown", "Unknown error")
 }
 

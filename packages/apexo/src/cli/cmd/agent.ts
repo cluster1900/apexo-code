@@ -126,15 +126,20 @@ const AgentCreateCommand = effectCmd({
       }
 
       // Generate agent
-      const spinner = prompts.spinner()
-      spinner.start("Generating agent configuration...")
+      const showSpinner = Boolean(process.stdout.isTTY && !isFullyNonInteractive)
+      const spinner = showSpinner ? prompts.spinner() : undefined
+      spinner?.start("Generating agent configuration...")
       const model = args.model ? Provider.parseModel(args.model) : undefined
       const generated = await runLocalEffect(agentSvc.generate({ description, model })).catch((error) => {
-        spinner.stop(`LLM failed to generate agent: ${error.message}`, 1)
+        if (spinner) {
+          spinner.stop(`LLM failed to generate agent: ${error.message}`, 1)
+        } else {
+          process.stderr.write(`Error: LLM failed to generate agent: ${error.message}\n`)
+        }
         if (isFullyNonInteractive) process.exit(1)
         throw new UI.CancelledError()
       })
-      spinner.stop(`Agent ${generated.identifier} generated`)
+      spinner?.stop(`Agent ${generated.identifier} generated`)
 
       // Select permissions to allow
       let selected: string[]

@@ -28,13 +28,13 @@ export function resolveEffort(level: string, variants: string[]): string | undef
     return variants.find((variant) => ["max", "maximum", "extra-high"].includes(variant.toLowerCase()))
 }
 
-export const docsURL = "https://github.com/cluster1900/apexo-grok#readme"
+export const docsURL = "https://github.com/cluster1900/apexo-code#readme"
 export const docsGuides = [
-  { title: "Getting Started", url: "https://github.com/cluster1900/apexo-grok#readme" },
-  { title: "Goals", url: "https://github.com/cluster1900/apexo-grok/blob/main/docs/goal-feature.md" },
-  { title: "Plugins", url: "https://github.com/cluster1900/apexo-grok/blob/main/docs/plugins-feature.md" },
-  { title: "Memory", url: "https://github.com/cluster1900/apexo-grok/blob/main/docs/memory-v2-feature.md" },
-  { title: "Workflows", url: "https://github.com/cluster1900/apexo-grok/blob/main/docs/workflow-management.md" },
+  { title: "Getting Started", url: "https://github.com/cluster1900/apexo-code#readme" },
+  { title: "Goals", url: "https://github.com/cluster1900/apexo-code/blob/main/docs/goal-feature.md" },
+  { title: "Plugins", url: "https://github.com/cluster1900/apexo-code/blob/main/docs/plugins-feature.md" },
+  { title: "Memory", url: "https://github.com/cluster1900/apexo-code/blob/main/docs/memory-v2-feature.md" },
+  { title: "Workflows", url: "https://github.com/cluster1900/apexo-code/blob/main/docs/workflow-management.md" },
 ] as const
 
 /** `/docs`, `/docs web` and `/docs <title>`: the guide to open, or undefined for the picker. */
@@ -50,8 +50,8 @@ export function resolveDocs(args: string): { title: string; url: string } | unde
 
 export function releaseNotesURL(version: string) {
   return /^\d+\.\d+\.\d+/u.test(version)
-    ? `https://github.com/cluster1900/apexo-grok/releases/tag/v${version}`
-    : "https://github.com/cluster1900/apexo-grok/releases"
+    ? `https://github.com/cluster1900/apexo-code/releases/tag/v${version}`
+    : "https://github.com/cluster1900/apexo-code/releases"
 }
 
 /** `/tutorial`: short onboarding topics, rendered as a list on both surfaces. */

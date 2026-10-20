@@ -81,8 +81,9 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     return true
   }
 
-  const [head, ...tail] = text.split(" ")
-  const cmd = head?.startsWith("/") ? head.slice(1) : undefined
+  const trimmed = text.trimStart()
+  const cmdMatch = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed)
+  const cmd = cmdMatch?.[1]
   if (cmd && input.sync.data.command.find((item) => item.name === cmd)) {
     setBusy()
     try {
@@ -96,7 +97,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         sessionID: input.draft.sessionID,
         id: messageID,
         command: cmd,
-        arguments: tail.join(" "),
+        arguments: cmdMatch?.[2] ?? "",
         agent: input.draft.agent,
         model: {
           id: input.draft.model.modelID,
@@ -479,13 +480,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let session = input.info()
     if (!session && isNewSession) {
       const commandSandbox = input.commandSandbox?.() ?? "off"
-      if (commandSandbox !== "off" && (await sdk().protocol) !== "v2") {
-        showToast({
-          title: language.t("commandSandbox.title"),
-          description: language.t("commandSandbox.creationUnavailable"),
-        })
-        return
-      }
       const creation = {
         agent: currentAgent.name,
         model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
@@ -639,9 +633,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    if (text.startsWith("/")) {
-      const [cmdName, ...args] = text.split(" ")
-      const commandName = cmdName.slice(1)
+    const trimmed = text.trimStart()
+    if (trimmed.startsWith("/")) {
+      const cmdMatch = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed)
+      const commandName = cmdMatch?.[1] ?? ""
       const customCommand = sync().data.command.find((c) => c.name === commandName)
       if (customCommand) {
         clearInput()
@@ -652,7 +647,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             sessionID: session.id,
             id: messageID,
             command: commandName,
-            arguments: args.join(" "),
+            arguments: cmdMatch?.[2] ?? "",
             agent,
             model: { id: model.modelID, providerID: model.providerID, variant },
             files: await Promise.all(

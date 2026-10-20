@@ -19,7 +19,6 @@ Options:
       --mdns-domain  custom domain name for mDNS service (default: apexo.local)
                                                                    [string] [default: "apexo.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
-      --backend      ACP backend        [string] [choices: "apexo", "grok-build"] [default: "apexo"]
       --cwd          working directory [string] [default: "<HOME>"]"
 `;
 
@@ -30,6 +29,7 @@ manage MCP (Model Context Protocol) servers
 
 Commands:
   apexo mcp add [name]     add an MCP server
+  apexo mcp remove <name>  remove an MCP server                                [aliases: rm, delete]
   apexo mcp list           list MCP servers and their status                           [aliases: ls]
   apexo mcp auth [name]    authenticate with an OAuth-enabled MCP server
   apexo mcp logout [name]  remove OAuth credentials for an MCP server
@@ -50,7 +50,7 @@ exports[`apexo CLI help-text snapshots every documented command emits stable hel
 attach to a running apexo server
 
 Positionals:
-  url  http://localhost:4096                                                     [string] [required]
+  url  server URL to attach to (e.g. http://localhost:4096)                      [string] [required]
 
 Options:
   -h, --help              show help                                                        [boolean]
@@ -100,10 +100,8 @@ Options:
   -m, --model                    model to use in the format of provider/model               [string]
       --agent                    agent to use                                               [string]
       --format                   format: default (formatted), json (completed events), or
-                                 streaming-json (Grok Build event stream)
+                                 streaming-json (streaming event JSONL)
                         [string] [choices: "default", "json", "streaming-json"] [default: "default"]
-      --profile                  runtime profile for the local server
-                                                           [string] [choices: "apexo", "grok-build"]
   -f, --file                     file(s) to attach to message                                [array]
       --title                    title for the session (uses truncated prompt if no value provided)
                                                                                             [string]
@@ -398,15 +396,15 @@ Commands:
                                         publishing
   apexo plugins tag [path]              tag a release from the plugin manifest version
   apexo plugins details <id>            show plugin contents and source
-  apexo plugins refresh [target]        refresh plugins
-  apexo plugins add-source [target]     add-source plugins
-  apexo plugins remove-source [target]  remove-source plugins
-  apexo plugins install [target]        install plugins
-  apexo plugins download [target]       download plugins
-  apexo plugins update [target]         update plugins
-  apexo plugins enable [target]         enable plugins
-  apexo plugins disable [target]        disable plugins
-  apexo plugins uninstall [target]      uninstall plugins                      [aliases: rm, remove]
+  apexo plugins refresh [target]        refresh plugin catalogs from configured sources
+  apexo plugins add-source [target]     add a plugin catalog source
+  apexo plugins remove-source [target]  remove a plugin catalog source
+  apexo plugins install [target]        install a plugin
+  apexo plugins download [target]       download a plugin without enabling it
+  apexo plugins update [target]         update an installed plugin
+  apexo plugins enable [target]         enable an installed plugin
+  apexo plugins disable [target]        disable an installed plugin
+  apexo plugins uninstall [target]      uninstall an installed plugin          [aliases: rm, remove]
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -730,7 +728,7 @@ Options:
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugins install --help 1`] = `
 "apexo plugins install [target]
 
-install plugins
+install a plugin
 
 Positionals:
   target                                                                                    [string]
@@ -749,7 +747,7 @@ Options:
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo plugins add-source --help 1`] = `
 "apexo plugins add-source [target]
 
-add-source plugins
+add a plugin catalog source
 
 Positionals:
   target                                                                                    [string]

@@ -582,8 +582,33 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
 }
 
 function TitlebarV2Right() {
+  const settings = useSettings()
+  const command = useCommand()
+  const language = useLanguage()
   return (
-    <div class="relative z-20 flex shrink-0 items-center justify-end gap-0 overflow-visible">
+    <div class="relative z-20 flex shrink-0 items-center justify-end gap-1 overflow-visible">
+      <Show when={settings.visibility.search()}>
+        <TooltipV2
+          placement="bottom"
+          value={
+            <>
+              {language.t("command.palette")}
+              <KeybindV2 keys={command.keybindParts("command.palette")} variant="neutral" />
+            </>
+          }
+          class="shrink-0"
+        >
+          <IconButtonV2
+            type="button"
+            variant="ghost-muted"
+            size="large"
+            class="shrink-0"
+            icon={<IconV2 name="magnifying-glass" />}
+            onClick={() => command.trigger("command.palette")}
+            aria-label={language.t("command.palette")}
+          />
+        </TooltipV2>
+      </Show>
       <div id="apexo-titlebar-right" class="flex shrink-0 items-center justify-end gap-0" />
     </div>
   )

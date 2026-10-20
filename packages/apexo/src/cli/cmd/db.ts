@@ -1,9 +1,10 @@
 import type { Argv } from "yargs"
 import { spawn } from "child_process"
 import { Database } from "@apexo/core/database/database"
-import { Effect } from "effect"
+import { Cause, Effect } from "effect"
 import { sql } from "drizzle-orm"
-import { effectCmd } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
+import { errorMessage } from "@/util/error"
 
 const QueryCommand = effectCmd({
   command: "$0 [query]",
@@ -26,7 +27,9 @@ const QueryCommand = effectCmd({
     const query = args.query as string | undefined
     if (query) {
       const { db } = yield* Database.Service
-      const result = yield* db.all<Record<string, unknown>>(sql.raw(query)).pipe(Effect.orDie)
+      const result = yield* db
+        .all<Record<string, unknown>>(sql.raw(query))
+        .pipe(Effect.catchCause((cause) => fail(errorMessage(Cause.squash(cause)))))
       if (args.format === "json") console.log(JSON.stringify(result, null, 2))
       else if (result.length > 0) {
         const keys = Object.keys(result[0])

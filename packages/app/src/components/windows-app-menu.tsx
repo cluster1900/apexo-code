@@ -48,15 +48,23 @@ export function WindowsAppMenu(props: {
     const version = props.platform.version ?? "dev"
     const channel = import.meta.env.VITE_APEXO_CHANNEL ?? (import.meta.env.DEV ? "dev" : "stable")
     dialog.show(() => (
-      <Dialog title={language.t("desktop.menu.about", { appName: "Apexo" })} class="w-full max-w-[400px] mx-auto">
-        <div class="flex flex-col gap-3 px-6 pb-6 text-13-regular text-text-base">
-          <div class="text-14-medium text-text-strong">Apexo Desktop</div>
+      <Dialog title={language.t("desktop.menu.about", { appName: "Apexo" })} class="w-full max-w-[380px] mx-auto">
+        <div class="flex flex-col gap-3 px-6 pb-5 text-13-regular text-text-base">
+          <div class="text-14-medium text-text-strong">{language.t("app.name.desktop")}</div>
           <div class="text-text-weak">
-            Version {version} ({channel})
+            {language.t("error.page.version", { version: `${version} (${channel})` })}
           </div>
-          <div class="flex justify-end pt-2">
+          <div class="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="large"
+              onClick={() => props.platform.openExternal("https://github.com/cluster1900/apexo-code/releases")}
+            >
+              {language.t("grok.releaseNotes")}
+            </Button>
             <Button type="button" variant="primary" size="large" onClick={() => dialog.close()}>
-              OK
+              {language.t("common.close")}
             </Button>
           </div>
         </div>

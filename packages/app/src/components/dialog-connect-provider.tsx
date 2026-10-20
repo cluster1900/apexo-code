@@ -934,6 +934,7 @@ function ProviderConnection(props: {
               {language.t("provider.connect.apiKey.label", { provider: provider().name })}
               <TextInputV2
                 ref={apiKey}
+                type="password"
                 class="!w-full"
                 name="apiKey"
                 data-input="provider-api-key"
@@ -973,7 +974,7 @@ function ProviderConnection(props: {
           <TextField
             autofocus={!newLayout()}
             ref={apiKey}
-            type="text"
+            type="password"
             label={language.t("provider.connect.apiKey.label", { provider: provider().name })}
             placeholder={language.t("provider.connect.apiKey.placeholder")}
             name="apiKey"

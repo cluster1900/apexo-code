@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { Snapshot } from "../../../snapshot"
-import { effectCmd } from "../../effect-cmd"
+import { effectCmd, fail } from "../../effect-cmd"
 import { cmd } from "../cmd"
 
 export const SnapshotCommand = cmd({
@@ -15,6 +15,7 @@ const TrackCommand = effectCmd({
   describe: "track current snapshot state",
   handler: Effect.fn("Cli.debug.snapshot.track")(function* () {
     const out = yield* Snapshot.Service.use((svc) => svc.track())
+    if (!out) return yield* fail("Snapshots are disabled or current directory is not a git repository")
     console.log(out)
   }),
 })
@@ -29,6 +30,9 @@ const PatchCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.debug.snapshot.patch")(function* (args) {
+    if (!/^[0-9a-f]{7,64}$/i.test(args.hash)) return yield* fail(`Invalid snapshot hash: ${args.hash}`)
+    const tracked = yield* Snapshot.Service.use((svc) => svc.track())
+    if (!tracked) return yield* fail("Snapshots are disabled or current directory is not a git repository")
     const out = yield* Snapshot.Service.use((svc) => svc.patch(args.hash))
     console.log(out)
   }),
@@ -44,6 +48,9 @@ const DiffCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.debug.snapshot.diff")(function* (args) {
+    if (!/^[0-9a-f]{7,64}$/i.test(args.hash)) return yield* fail(`Invalid snapshot hash: ${args.hash}`)
+    const tracked = yield* Snapshot.Service.use((svc) => svc.track())
+    if (!tracked) return yield* fail("Snapshots are disabled or current directory is not a git repository")
     const out = yield* Snapshot.Service.use((svc) => svc.diff(args.hash))
     console.log(out)
   }),

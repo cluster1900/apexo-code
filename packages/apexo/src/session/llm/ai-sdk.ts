@@ -60,7 +60,7 @@ function usage(value: unknown) {
     reasoningTokens: item.outputTokenDetails?.reasoningTokens ?? item.reasoningTokens,
     cacheReadInputTokens: item.inputTokenDetails?.cacheReadTokens ?? item.cachedInputTokens,
     cacheWriteInputTokens: item.inputTokenDetails?.cacheWriteTokens,
-  }).filter((entry) => entry[1] !== undefined)
+  }).filter((entry) => entry[1] !== undefined && !Number.isNaN(entry[1]))
   return entries.length === 0 ? undefined : Object.fromEntries(entries)
 }
 

@@ -224,7 +224,7 @@ export const PluginCommand = effectCmd({
       }),
     )
 
-    outro("Done")
+    if (ok) outro("Done")
     if (!ok) process.exitCode = 1
   }),
 })
