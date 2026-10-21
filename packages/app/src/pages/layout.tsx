@@ -1006,6 +1006,13 @@ export default function LegacyLayout(props: ParentProps) {
         onSelect: () => openSettings(),
       },
       {
+        id: "help.open",
+        title: language.t("sidebar.help"),
+        category: language.t("command.category.settings"),
+        slash: "help",
+        onSelect: () => openHelp(),
+      },
+      {
         id: "app.exit",
         title: language.t("grok.exit.title"),
         category: language.t("command.category.settings"),
@@ -1209,6 +1216,14 @@ export default function LegacyLayout(props: ParentProps) {
     void module.then((x) => {
       if (dialogDead || dialogRun !== run) return
       dialog.show(() => <x.DialogSettings />)
+    })
+  }
+
+  function openHelp() {
+    const run = ++dialogRun
+    void import("@/components/dialog-help-v2").then((module) => {
+      if (dialogDead || dialogRun !== run) return
+      dialog.show(() => <module.DialogHelpV2 />)
     })
   }
 
@@ -2365,7 +2380,7 @@ export default function LegacyLayout(props: ParentProps) {
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
       helpLabel={() => language.t("sidebar.help")}
-      onOpenHelp={() => platform.openExternal("https://github.com/cluster1900/apexo-grok/issues")}
+      onOpenHelp={openHelp}
       renderPanel={() =>
         mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
       }

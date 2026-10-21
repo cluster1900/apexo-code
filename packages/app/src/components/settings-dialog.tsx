@@ -1,4 +1,5 @@
 import { usePluginsDialog } from "./plugins-dialog"
+import { useHelpDialog } from "./dialog-help-v2"
 import { useParams } from "@solidjs/router"
 import { onCleanup } from "solid-js"
 import { useCommand } from "@/context/command"
@@ -38,6 +39,7 @@ export function useSettingsCommand() {
   const theme = useTheme()
   const show = useSettingsDialog()
   const plugins = usePluginsDialog()
+  const help = useHelpDialog()
 
   const cycleTheme = () => {
     const ids = theme.ids()
@@ -68,6 +70,13 @@ export function useSettingsCommand() {
       slash: "settings",
       slashAliases: ["config", "preferences", "prefs"],
       onSelect: show,
+    },
+    {
+      id: "help.open",
+      title: language.t("sidebar.help"),
+      category: language.t("command.category.settings"),
+      slash: "help",
+      onSelect: help,
     },
     {
       id: "provider.connect",
