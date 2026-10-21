@@ -31,6 +31,7 @@ const Context = createContext<ReturnType<typeof init>>()
 
 function init() {
   const [stack, setStack] = createSignal<Active[]>([])
+  const [topId, setTopId] = createSignal<string | undefined>(undefined)
   const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined }
   const lock = { value: false }
 
@@ -52,8 +53,10 @@ function init() {
     current.onClose?.()
     current.setClosing(true)
     const closed = current.id
+    const next = items.filter((item) => item.id !== closed)
+    setTopId(next.at(-1)?.id)
     current.dispose()
-    setStack((items) => items.filter((item) => item.id !== closed))
+    setStack(next)
   }
 
   createEffect(() => {
@@ -77,6 +80,7 @@ function init() {
     const zIndex = 50 + layer * 10
     let dispose: (() => void) | undefined
     let setClosing: ((closing: boolean) => void) | undefined
+    setTopId(id)
 
     const node = runWithOwner(owner, () =>
       createRoot((d: () => void) => {
@@ -85,10 +89,10 @@ function init() {
         setClosing = setClosingSignal
         return (
           <Kobalte
-            modal={!closing() && stack().at(-1)?.id === id}
+            modal={!closing() && topId() === id}
             open={!closing()}
             onOpenChange={(open: boolean) => {
-              if (open || stack().at(-1)?.id !== id) return
+              if (open || topId() !== id) return
               close(id)
             }}
           >

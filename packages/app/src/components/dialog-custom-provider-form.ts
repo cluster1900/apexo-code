@@ -71,10 +71,20 @@ export function validateCustomProvider(input: ValidateArgs) {
       : undefined
 
   const disabled = input.disabledProviders.includes(providerID)
+  const suggestedID = (() => {
+    if (!providerID) return "my-provider"
+    const customCandidate = `${providerID}-custom`
+    if (!input.existingProviderIDs.has(customCandidate)) return customCandidate
+    for (let i = 2; i < 100; i++) {
+      const candidate = `${providerID}-${i}`
+      if (!input.existingProviderIDs.has(candidate)) return candidate
+    }
+    return `${providerID}-custom`
+  })()
   const existsError = idError
     ? undefined
     : input.existingProviderIDs.has(providerID) && !disabled
-      ? input.t("provider.custom.error.providerID.exists")
+      ? input.t("provider.custom.error.providerID.exists", { id: suggestedID })
       : undefined
 
   const seenModels = new Set<string>()

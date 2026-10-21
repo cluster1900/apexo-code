@@ -97,6 +97,7 @@ import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
+import { normalizeSessionInfo } from "@/utils/session"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
@@ -1941,7 +1942,103 @@ export default function Page() {
     download()
   }
 
-  const actions = { edit: editMessage, openAttachment }
+  const deleteMessage = async (input: { sessionID: string; messageID: string }) => {
+    if (input.sessionID !== params.id) return
+    const sessionID = input.sessionID
+    const target = sync()
+    const last = target.session.get(sessionID)?.revert
+    roll(sessionID, { messageID: input.messageID }, target)
+    try {
+      await halt(sessionID)
+      await sdk().api.session.revert.stage({ sessionID, messageID: input.messageID })
+      await sdk().api.session.revert.commit({ sessionID }).catch(() => undefined)
+      roll(sessionID, undefined, target)
+      await target.session.sync(sessionID).catch(() => undefined)
+    } catch (error) {
+      roll(sessionID, last, target)
+      fail(error)
+    }
+  }
+
+  const retryMessage = async (input: { sessionID: string; messageID: string }) => {
+    if (input.sessionID !== params.id) return
+    const sessionID = input.sessionID
+    const target = sync()
+    const userMsg = userMessages().find((item) => item.id === input.messageID)
+    const promptDraft = draft(input.messageID)
+    const model =
+      userMsg?.model ??
+      (local.model.current()
+        ? { providerID: local.model.current()!.provider.id, modelID: local.model.current()!.id }
+        : undefined)
+    if (!model) {
+      showToast({
+        title: language.t("toast.model.none.title"),
+        description: language.t("toast.model.none.description"),
+      })
+      return
+    }
+    const agent = userMsg?.agent ?? local.agent.current()?.name ?? "build"
+    const last = target.session.get(sessionID)?.revert
+    roll(sessionID, { messageID: input.messageID }, target)
+    try {
+      await halt(sessionID)
+      await sdk().api.session.revert.stage({ sessionID, messageID: input.messageID })
+      await sdk().api.session.revert.commit({ sessionID }).catch(() => undefined)
+      roll(sessionID, undefined, target)
+      await sendFollowupDraft({
+        api: sdk().api.session,
+        sync: target,
+        serverSync: serverSync(),
+        draft: {
+          sessionID,
+          sessionDirectory: sdk().directory,
+          prompt: promptDraft,
+          context: [],
+          agent,
+          model,
+          variant: local.model.variant.current(),
+        },
+        optimisticBusy: true,
+      })
+      resumeScroll()
+    } catch (error) {
+      roll(sessionID, last, target)
+      fail(error)
+    }
+  }
+
+  const forkMessage = async (input: { sessionID: string; messageID: string }) => {
+    if (input.sessionID !== params.id) return
+    const sessionID = input.sessionID
+    const msgs = userMessages()
+    const index = msgs.findIndex((item) => item.id === input.messageID)
+    const next = index >= 0 ? msgs[index + 1] : undefined
+    try {
+      const forked = await sdk().api.session.fork({
+        sessionID,
+        messageID: next?.id,
+      })
+      const normalized = normalizeSessionInfo(forked)
+      sync().session.remember(normalized)
+      serverSync().homeSessions.restore(normalized)
+      navigate(
+        params.serverKey
+          ? sessionHref(requireServerKey(params.serverKey), forked.id)
+          : legacySessionHref(sdk().directory, forked.id),
+      )
+    } catch (error) {
+      fail(error)
+    }
+  }
+
+  const actions = {
+    edit: editMessage,
+    retry: retryMessage,
+    delete: deleteMessage,
+    fork: forkMessage,
+    openAttachment,
+  }
 
   createEffect(() => {
     const sessionID = params.id

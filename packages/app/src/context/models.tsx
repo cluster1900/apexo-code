@@ -17,6 +17,7 @@ type Store = {
 }
 
 const RECENT_LIMIT = 5
+const STEALTH_MODEL_PATTERN = /(?:^|[-_\s/])(sol|terra|daybreak)(?:$|[-_\s])/i
 
 function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
@@ -39,10 +40,12 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
 
     const available = createMemo(() =>
       providers.connected().flatMap((p) =>
-        Object.values(p.models).map((m) => ({
-          ...m,
-          provider: p,
-        })),
+        Object.values(p.models)
+          .filter((m) => !STEALTH_MODEL_PATTERN.test(`${m.id} ${m.name ?? ""}`))
+          .map((m) => ({
+            ...m,
+            provider: p,
+          })),
       ),
     )
 

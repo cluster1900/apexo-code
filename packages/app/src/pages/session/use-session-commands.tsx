@@ -9,6 +9,7 @@ import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useServerSync } from "@/context/server-sync"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
@@ -59,6 +60,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const permission = usePermission()
   const prompt = usePrompt()
   const sdk = useSDK()
+  const serverSync = useServerSync()
   const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
@@ -164,11 +166,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     return permission.isAutoAcceptingDirectory(sdk().directory)
   }
 
+  const fallbackExportMessages = (sessionID: string) =>
+    (sync().data.message[sessionID] ?? []).map((info) => ({
+      info,
+      parts: sync().data.part[info.id] ?? [],
+    }))
+
   const withExport = async (use: (data: Awaited<ReturnType<typeof fetchSessionExport>>) => unknown) => {
     const sessionID = params.id
     if (!sessionID) return
     try {
-      await use(await fetchSessionExport({ sessionID, client: sdk().client }))
+      await use(
+        await fetchSessionExport({
+          sessionID,
+          client: sdk().client,
+          fallbackMessages: fallbackExportMessages(sessionID),
+        }),
+      )
     } catch (err) {
       showToast({
         variant: "error",
@@ -260,6 +274,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       const data = await fetchSessionExport({
         sessionID,
         client: sdk().client,
+        fallbackMessages: fallbackExportMessages(sessionID),
       })
       const filename = sessionExportFilename(data.info)
       const saved = await downloadSessionExport(filename, data, language.t("command.session.export"))
@@ -756,6 +771,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       onSelect: () => {
         void sdk()
           .api.skill.reload()
+          .then(() => serverSync().reloadCommands(sdk().directory))
           .catch((error: unknown) =>
             showToast({
               variant: "error",

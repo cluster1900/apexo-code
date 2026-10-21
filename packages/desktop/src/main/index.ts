@@ -286,6 +286,12 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("apexo")
   registerRendererProtocol()
   setDockIcon()
+  app.setAboutPanelOptions({
+    applicationName: app.getName(),
+    applicationVersion: app.getVersion(),
+    version: app.isPackaged ? app.getVersion() : `${app.getVersion()}-dev`,
+    credits: "https://github.com/cluster1900/apexo-code",
+  })
   const menuDeps = {
     trigger: (id: string) => {
       const win = getLastFocusedWindow()

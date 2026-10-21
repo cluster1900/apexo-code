@@ -20,10 +20,12 @@ export const DialogServerV2: Component<{
     navigateOnAdd: false,
   })
   const [opened, setOpened] = createSignal(false)
+  if (props.mode === "add") controller.startAdd()
+  if (props.mode === "edit" && props.server) controller.startEdit(props.server)
 
   onMount(() => {
-    if (props.mode === "add") controller.startAdd()
-    if (props.mode === "edit" && props.server) controller.startEdit(props.server)
+    if (props.mode === "add" && !controller.isFormMode()) controller.startAdd()
+    if (props.mode === "edit" && props.server && !controller.isFormMode()) controller.startEdit(props.server)
     setOpened(true)
   })
 

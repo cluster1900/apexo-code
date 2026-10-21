@@ -19,7 +19,7 @@ import {
   type OpenSessionOptions,
 } from "./home-sessions-controller"
 
-const SHOW_HOME_SESSION_ARCHIVE = false
+const SHOW_HOME_SESSION_ARCHIVE = true
 const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"
 const HOME_SESSION_SEARCH_RESULTS_ID = "home-session-search-results"
 
@@ -51,9 +51,12 @@ export type HomeSessionsViewProps = {
   searchNoResultsLabel: Accessor<string>
   titleOpacity: (id: HomeSessionGroup["id"]) => number
   isOpenTab: (record: HomeSessionRecord) => boolean
+  showArchived?: Accessor<boolean>
+  onToggleArchived?: (archived: boolean) => void
   onCreateSession: () => void
   onOpenSession: (session: Session, options?: OpenSessionOptions) => void
   onArchiveSession: (session: Session) => Promise<void>
+  onUnarchiveSession?: (session: Session) => Promise<void>
   onSetHoverTarget: (element: HTMLElement) => void
   onSetThumbTrack: (element: HTMLDivElement) => void
   onSetContent: (element: HTMLDivElement) => void
@@ -79,7 +82,39 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
       aria-label={props.language.t("sidebar.project.recentSessions")}
     >
       <div class="sticky top-0 z-30 shrink-0 bg-v2-background-bg-base pb-3 pt-6 lg:pt-12" onWheel={props.onWheel}>
-        <HomeSessionSearch {...props} />
+        <div class="flex items-center gap-2">
+          <div class="min-w-0 flex-1">
+            <HomeSessionSearch {...props} />
+          </div>
+          <Show when={props.onToggleArchived}>
+            <div class="flex shrink-0 items-center gap-1 rounded-[6px] bg-v2-background-bg-layer-02/60 p-0.5">
+              <button
+                type="button"
+                data-action="home-filter-all"
+                class="h-8 rounded-[5px] px-2.5 text-[12px] [font-weight:500] transition-colors"
+                classList={{
+                  "bg-v2-background-bg-base text-v2-text-text-base shadow-sm": !props.showArchived?.(),
+                  "text-v2-text-text-muted hover:text-v2-text-text-base": !!props.showArchived?.(),
+                }}
+                onClick={() => props.onToggleArchived?.(false)}
+              >
+                {props.language.t("home.sessions.filter.all")}
+              </button>
+              <button
+                type="button"
+                data-action="home-filter-archived"
+                class="h-8 rounded-[5px] px-2.5 text-[12px] [font-weight:500] transition-colors"
+                classList={{
+                  "bg-v2-background-bg-base text-v2-text-text-base shadow-sm": !!props.showArchived?.(),
+                  "text-v2-text-text-muted hover:text-v2-text-text-base": !props.showArchived?.(),
+                }}
+                onClick={() => props.onToggleArchived?.(true)}
+              >
+                {props.language.t("home.sessions.filter.archived")}
+              </button>
+            </div>
+          </Show>
+        </div>
         <Suspense>
           <Show when={props.groups().length > 0 && props.canCreateSession()}>
             <div class="pointer-events-none absolute right-0 top-[84px] z-20 flex lg:top-[108px]">
@@ -468,20 +503,40 @@ function HomeSessionRow(props: HomeSessionsViewProps & { record: HomeSessionReco
             group-hover/session:opacity-100 focus-within:opacity-100
           `}
         >
-          <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={props.language.t("common.archive")}>
-            <IconButtonV2
-              data-action="home-session-archive"
-              variant="ghost-muted"
-              size="large"
-              icon={<IconV2 name="archive" />}
-              aria-label={props.language.t("common.archive")}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                void props.onArchiveSession(props.record.session)
-              }}
-            />
-          </TooltipV2>
+          <Show
+            when={props.showArchived?.() || typeof props.record.session.time?.archived === "number"}
+            fallback={
+              <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={props.language.t("common.archive")}>
+                <IconButtonV2
+                  data-action="home-session-archive"
+                  variant="ghost-muted"
+                  size="large"
+                  icon={<IconV2 name="archive" />}
+                  aria-label={props.language.t("common.archive")}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void props.onArchiveSession(props.record.session)
+                  }}
+                />
+              </TooltipV2>
+            }
+          >
+            <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={props.language.t("common.unarchive")}>
+              <IconButtonV2
+                data-action="home-session-unarchive"
+                variant="ghost-muted"
+                size="large"
+                icon={<IconV2 name="arrow-up-left" />}
+                aria-label={props.language.t("common.unarchive")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void props.onUnarchiveSession?.(props.record.session)
+                }}
+              />
+            </TooltipV2>
+          </Show>
         </div>
       </Show>
     </div>

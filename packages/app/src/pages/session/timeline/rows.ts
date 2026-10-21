@@ -275,8 +275,12 @@ export namespace Timeline {
       .trim()
   }
 
+  function redactSecrets(value: string) {
+    return value.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.-]+[A-Za-z0-9_*]/gi, "[REDACTED]")
+  }
+
   function unwrapErrorMessage(message: string) {
-    const text = message.replace(/^Error:\s*/, "").trim()
+    const text = redactSecrets(message).replace(/^Error:\s*/, "").trim()
 
     const parse = (value: string) => {
       try {
@@ -300,26 +304,26 @@ export namespace Timeline {
       if (start !== -1 && end > start) json = read(text.slice(start, end + 1))
     }
 
-    if (!record(json)) return message
+    if (!record(json)) return redactSecrets(message)
 
     const err = record(json.error) ? json.error : undefined
     if (err) {
       const type = typeof err.type === "string" ? err.type : undefined
       const msg = typeof err.message === "string" ? err.message : undefined
-      if (type && msg) return `${type}: ${msg}`
-      if (msg) return msg
-      if (type) return type
+      if (type && msg) return redactSecrets(`${type}: ${msg}`)
+      if (msg) return redactSecrets(msg)
+      if (type) return redactSecrets(type)
       const code = typeof err.code === "string" ? err.code : undefined
-      if (code) return code
+      if (code) return redactSecrets(code)
     }
 
     const msg = typeof json.message === "string" ? json.message : undefined
-    if (msg) return msg
+    if (msg) return redactSecrets(msg)
 
     const reason = typeof json.error === "string" ? json.error : undefined
-    if (reason) return reason
+    if (reason) return redactSecrets(reason)
 
-    return message
+    return redactSecrets(message)
   }
 
   function record(value: unknown): value is Record<string, unknown> {

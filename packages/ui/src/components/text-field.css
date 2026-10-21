@@ -64,12 +64,22 @@
 
       &:has([data-invalid]) {
         background: var(--surface-critical-weak);
-        border: 1px solid var(--border-critical-selected);
+        border: 1px solid var(--v2-state-border-danger, var(--border-critical-selected, #ef4444));
       }
 
       &:not(:has([data-slot="input-copy-button"])) {
         padding-inline-end: 0;
       }
+    }
+
+    [data-slot="input-description"] {
+      color: var(--v2-text-text-muted, var(--text-weak));
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-small);
+      font-style: normal;
+      font-weight: var(--font-weight-regular);
+      line-height: 18px;
+      letter-spacing: var(--letter-spacing-normal);
     }
 
     [data-slot="input-input"] {
@@ -120,7 +130,7 @@
     }
 
     [data-slot="input-error"] {
-      color: var(--text-critical-base, var(--icon-critical-base));
+      color: var(--v2-state-fg-danger, var(--text-danger-base, var(--text-critical-base, var(--icon-critical-base, #ef4444)))) !important;
 
       /* text-12-medium */
       font-family: var(--font-family-sans);

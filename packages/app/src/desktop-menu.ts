@@ -107,6 +107,16 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       },
       {
         type: "item",
+        labelKey: "desktop.menu.importSession",
+        command: "session.import",
+      },
+      {
+        type: "item",
+        labelKey: "desktop.menu.exportSession",
+        command: "session.export",
+      },
+      {
+        type: "item",
         labelKey: "desktop.menu.settings",
         command: "settings.open",
         accelerator: { windows: "Ctrl+," },
@@ -284,7 +294,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         labelKey: "desktop.menu.documentation",
         href: "https://github.com/cluster1900/apexo-code#readme",
       },
-      { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export" },
+      { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export", platforms: ["windows"] },
       { type: "separator" },
       {
         type: "item",
@@ -296,6 +306,8 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         labelKey: "desktop.menu.reportBug",
         href: "https://github.com/cluster1900/apexo-code/issues/new?template=bug-report.yml",
       },
+      { type: "separator", platforms: ["windows"] },
+      { type: "item", role: "about", platforms: ["windows"] },
     ],
   },
 ]

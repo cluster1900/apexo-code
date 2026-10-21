@@ -100,7 +100,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const validModel = (model: ModelKey) => {
       const provider = providers.all().get(model.providerID)
-      return !!provider?.models[model.modelID] && connected().has(model.providerID)
+      const info = provider?.models[model.modelID]
+      if (!info || !connected().has(model.providerID)) return false
+      if (/(?:^|[-_\s/])(sol|terra|daybreak)(?:$|[-_\s])/i.test(`${info.id} ${info.name ?? ""}`)) return false
+      return true
     }
 
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {

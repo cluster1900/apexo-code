@@ -884,7 +884,8 @@ function ProviderConnection(props: {
       if (
         /\s/.test(trimmed) ||
         trimmed.length < 16 ||
-        /(?:^|[-_])(invalid|placeholder|example|dummy)(?:$|[-_])/i.test(trimmed)
+        /(.)\1{7,}/i.test(trimmed) ||
+        /(invalid|placeholder|example|dummy|fake|testkey|01234567|12345678|abcdefgh)/i.test(trimmed)
       ) {
         return language.t("provider.connect.apiKey.invalid")
       }
@@ -892,6 +893,55 @@ function ProviderConnection(props: {
         return language.t("provider.connect.apiKey.invalid")
       }
       if (props.provider === "openai" && (!trimmed.startsWith("sk-") || trimmed.length < 24)) {
+        return language.t("provider.connect.apiKey.invalid")
+      }
+      return undefined
+    }
+
+    async function verifyApiKeyOnline(raw: string) {
+      const key = raw.trim()
+      const endpoints: Record<string, { url: string; headers: Record<string, string> }> = {
+        anthropic: {
+          url: "https://api.anthropic.com/v1/models",
+          headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+        },
+        openai: {
+          url: "https://api.openai.com/v1/models",
+          headers: { Authorization: `Bearer ${key}` },
+        },
+        xai: {
+          url: "https://api.x.ai/v1/models",
+          headers: { Authorization: `Bearer ${key}` },
+        },
+        google: {
+          url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+          headers: {},
+        },
+        openrouter: {
+          url: "https://openrouter.ai/api/v1/auth/key",
+          headers: { Authorization: `Bearer ${key}` },
+        },
+        deepseek: {
+          url: "https://api.deepseek.com/models",
+          headers: { Authorization: `Bearer ${key}` },
+        },
+        groq: {
+          url: "https://api.groq.com/openai/v1/models",
+          headers: { Authorization: `Bearer ${key}` },
+        },
+        mistral: {
+          url: "https://api.mistral.ai/v1/models",
+          headers: { Authorization: `Bearer ${key}` },
+        },
+      }
+      const target = endpoints[props.provider]
+      if (!target) return undefined
+      const res = await fetch(target.url, {
+        method: "GET",
+        headers: target.headers,
+        signal: AbortSignal.timeout(6000),
+      }).catch(() => undefined)
+      if (!res || !res.ok) {
         return language.t("provider.connect.apiKey.invalid")
       }
       return undefined
@@ -906,6 +956,11 @@ function ProviderConnection(props: {
       const validationError = validateApiKey(rawKey)
       if (validationError) {
         setFormStore("error", validationError)
+        return
+      }
+      const onlineError = await verifyApiKeyOnline(rawKey)
+      if (onlineError) {
+        setFormStore("error", onlineError)
         return
       }
 

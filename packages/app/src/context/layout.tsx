@@ -91,7 +91,7 @@ export type ReviewPanelSource = "context-button" | "other"
 
 export type LayoutRoute =
   | { type: "home" }
-  | { type: "draft"; draftID: string; server?: ServerConnection.Key }
+  | { type: "draft"; draftID: string; dir?: string; server?: ServerConnection.Key }
   | { type: "dir-new-sesssion"; dir: string; dirBase64: string; server?: ServerConnection.Key }
   | { type: "session"; sessionId: string; server?: ServerConnection.Key }
 
@@ -172,7 +172,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       if (value.server) return value
       if (value.type === "draft") {
         const draft = tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === value.draftID)
-        if (draft) return { ...value, server: draft.server }
+        if (draft) return { ...value, dir: draft.worktree || draft.directory, server: draft.server }
       }
       return { ...value, server: server.key }
     })
@@ -448,13 +448,26 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       const metadata = projectID
         ? serverSync().data.project.find((x) => x.id === projectID)
         : serverSync().data.project.find((x) => x.worktree === project.worktree)
+      const localMeta = childStore.projectMeta
 
-      // Preserve local icon override from per-workspace localStorage cache (childStore.icon).
+      // Preserve local metadata and icon override from per-workspace localStorage cache.
       // Without this, different subdirectories of the same git repo would share the same
       // icon from the database instead of using their individual overrides.
-      const base = { ...metadata, ...project }
-      if (childStore.icon) {
-        return { ...base, icon: { ...base.icon, override: childStore.icon } }
+      const base = {
+        ...metadata,
+        ...project,
+        ...(localMeta?.name !== undefined ? { name: localMeta.name || metadata?.name } : {}),
+        ...(localMeta?.commands ? { commands: { ...metadata?.commands, ...localMeta.commands } } : {}),
+      }
+      if (localMeta?.icon || childStore.icon) {
+        return {
+          ...base,
+          icon: {
+            ...base.icon,
+            ...localMeta?.icon,
+            ...(childStore.icon ? { override: childStore.icon } : {}),
+          },
+        }
       }
       return base
     }
@@ -573,7 +586,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const projectID = project.id
         void (async () => {
           const sdk = serverSdk()
-          if ((await sdk.protocol) !== "v1") return
           return sdk.client.project
             .update({ projectID, directory: worktree, icon: { color } })
             .then((response) => response.data)

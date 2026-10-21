@@ -1,5 +1,6 @@
 import { useDialog } from "@apexo/ui/context/dialog"
 import { Tooltip } from "@apexo/ui/tooltip"
+import { ButtonV2 } from "@apexo/ui/v2/button-v2"
 import { Icon as IconV2 } from "@apexo/ui/v2/icon"
 import { TooltipV2 } from "@apexo/ui/v2/tooltip-v2"
 import { WordmarkV2 } from "@apexo/ui/v2/wordmark-v2"
@@ -42,6 +43,7 @@ export function NewSessionView(props: {
             <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
             <div class="mt-8 flex flex-col gap-8">
               <PromptInputV2Composer controller={props.input} />
+              <NoProviderOnboardingCard />
               <Show when={props.project.empty()}>
                 <PromptProjectAddButton controller={props.project} />
               </Show>
@@ -88,6 +90,51 @@ export function NewSessionStatus(props: { mount: Accessor<HTMLElement | null>; v
           </Show>
         </Portal>
       )}
+    </Show>
+  )
+}
+
+function NoProviderOnboardingCard() {
+  const language = useLanguage()
+  const dialog = useDialog()
+  const sdk = useSDK()
+  const serverSync = useServerSync()
+  const providers = useProviders(() => sdk().directory)
+  const visible = createMemo(
+    () => serverSync().child(sdk().directory)[0].provider_ready && providers.connected().length === 0,
+  )
+
+  const openConnectProvider = () => {
+    void import("@/components/dialog-connect-provider").then(({ DialogConnectProvider }) => {
+      void dialog.show(() => <DialogConnectProvider directory={() => sdk().directory} />)
+    })
+  }
+
+  const openCustomProvider = () => {
+    void import("@/components/dialog-custom-provider").then(({ DialogCustomProvider }) => {
+      void dialog.show(() => <DialogCustomProvider onBack={() => dialog.close()} />)
+    })
+  }
+
+  return (
+    <Show when={visible()}>
+      <div
+        data-component="provider-onboarding-card"
+        class="flex flex-col gap-3 rounded-[10px] border border-v2-border-border-muted bg-v2-background-bg-base p-4"
+      >
+        <div class="flex flex-col gap-1">
+          <div class="text-[14px] font-medium text-v2-text-text-base">{language.t("home.onboarding.provider.title")}</div>
+          <div class="text-[13px] text-v2-text-text-muted">{language.t("home.onboarding.provider.description")}</div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <ButtonV2 variant="contrast" size="normal" onClick={openConnectProvider}>
+            {language.t("command.provider.connect")}
+          </ButtonV2>
+          <ButtonV2 variant="neutral" size="normal" onClick={openCustomProvider}>
+            {language.t("provider.custom.title")}
+          </ButtonV2>
+        </div>
+      </div>
     </Show>
   )
 }

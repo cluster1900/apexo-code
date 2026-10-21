@@ -25,12 +25,55 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
   const [state, setState] = createStore({
     search: "",
     adding: false,
+    editingName: "",
     name: "",
     type: "local" as "local" | "remote",
     target: "",
     saving: false,
     addError: "",
+    deletedNames: [] as string[],
   })
+  const startAdd = () => {
+    setState({
+      adding: true,
+      editingName: "",
+      name: "",
+      type: "local",
+      target: "",
+      addError: "",
+    })
+  }
+  const startEdit = (name: string) => {
+    const cfg = serverSync().data.config.mcp?.[name]
+    const type = cfg && "type" in cfg ? cfg.type : "local"
+    const target =
+      cfg && "type" in cfg
+        ? cfg.type === "local"
+          ? cfg.command.join(" ")
+          : cfg.url
+        : ""
+    setState({
+      adding: true,
+      editingName: name,
+      name,
+      type,
+      target,
+      addError: "",
+    })
+  }
+  const deleteServer = async (name: string) => {
+    const nextMcp = { ...(serverSync().data.config.mcp ?? {}) }
+    delete nextMcp[name]
+    setState("deletedNames", (prev) => [...prev.filter((item) => item !== name), name])
+    serverSync().set("config", "mcp", nextMcp)
+    await sdk()
+      .client.mcp.disconnect({ name })
+      .catch(() => undefined)
+    await serverSync()
+      .updateConfig({ mcp: nextMcp })
+      .catch(() => undefined)
+    manager.refresh.mutate()
+  }
   const addServer = async (event: SubmitEvent) => {
     event.preventDefault()
     const name = state.name.trim()
@@ -42,14 +85,30 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
         ? { type: "local" as const, command: target.split(/\s+/).filter(Boolean), enabled: true }
         : { type: "remote" as const, url: target, enabled: true }
     try {
+      const nextMcp = { ...(serverSync().data.config.mcp ?? {}) }
+      if (state.editingName && state.editingName !== name) {
+        delete nextMcp[state.editingName]
+        await sdk()
+          .client.mcp.disconnect({ name: state.editingName })
+          .catch(() => undefined)
+      }
+      nextMcp[name] = config
       await sdk().client.mcp.add({ name, config })
+      serverSync().set("config", "mcp", nextMcp)
       await serverSync().updateConfig({
-        mcp: {
-          ...serverSync().data.config.mcp,
-          [name]: config,
-        },
+        mcp: nextMcp,
       })
-      setState({ adding: false, name: "", target: "", saving: false, addError: "" })
+      setState({
+        adding: false,
+        editingName: "",
+        name: "",
+        target: "",
+        saving: false,
+        addError: "",
+        deletedNames: state.deletedNames.filter(
+          (item) => item !== name && (state.editingName && state.editingName !== name ? true : true),
+        ).concat(state.editingName && state.editingName !== name ? [state.editingName] : []),
+      })
       manager.refresh.mutate()
     } catch (err) {
       setState({
@@ -58,8 +117,26 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       })
     }
   }
+  const canManageConfig = () => Boolean(props.allowManageConfig)
+  const statusMap = createMemo(() => {
+    const merged: Record<string, ReturnType<typeof sync>["data"]["mcp"][string]> = {
+      ...(sync().data.mcp ?? {}),
+    }
+    if (canManageConfig()) {
+      for (const [name, cfg] of Object.entries(serverSync().data.config.mcp ?? {})) {
+        if (!cfg || !("type" in cfg)) continue
+        if (!(name in merged)) {
+          merged[name] = cfg.enabled === false ? { status: "disabled" } : { status: "connected" }
+        }
+      }
+    }
+    for (const deleted of state.deletedNames) {
+      delete merged[deleted]
+    }
+    return merged
+  })
   const items = createMemo(() =>
-    Object.keys(sync().data.mcp ?? {})
+    Object.keys(statusMap())
       .filter((name) => name.toLowerCase().includes(state.search.toLowerCase()))
       .sort((a, b) => a.localeCompare(b)),
   )
@@ -174,6 +251,24 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
               {language.t("mcp.preference.reset")}
             </Button>
           </Show>
+          <Show when={canManageConfig()}>
+            <Button
+              size="small"
+              variant="ghost"
+              data-action="edit"
+              onClick={() => startEdit(name)}
+            >
+              {language.t("common.edit")}
+            </Button>
+            <Button
+              size="small"
+              variant="ghost"
+              data-action="delete"
+              onClick={() => void deleteServer(name)}
+            >
+              {language.t("common.delete")}
+            </Button>
+          </Show>
         </div>
       </div>
     )
@@ -181,6 +276,11 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
 
   return (
     <div data-component="native-mcp-manager" class="flex flex-col gap-3 p-3">
+      <Show when={props.allowManageConfig}>
+        <div class="settings-v2-tab-header">
+          <h2 class="settings-v2-tab-title">{language.t("settings.mcp.title")}</h2>
+        </div>
+      </Show>
       <p class="text-12-regular text-text-weak">{language.t("mcp.runtime.hint")}</p>
       <div class="flex items-center gap-2">
         <input
@@ -193,14 +293,14 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
         <Button size="small" variant="ghost" disabled={loading()} onClick={() => manager.refresh.mutate()}>
           {language.t("mcp.runtime.refresh")}
         </Button>
-        <Show when={props.allowManageConfig}>
+        <Show when={props.allowManageConfig && !state.adding}>
           <Button
             size="small"
             variant="secondary"
             data-action="mcp-add-toggle"
-            onClick={() => setState({ adding: !state.adding, addError: "" })}
+            onClick={() => startAdd()}
           >
-            {state.adding ? language.t("common.cancel") : `+ ${language.t("settings.mcp.title")}`}
+            {`+ ${language.t("settings.mcp.title")}`}
           </Button>
         </Show>
       </div>
@@ -209,7 +309,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
           <div class="flex gap-2">
             <input
               class="min-w-0 flex-1 rounded-md border border-border-base bg-background-base px-2 py-1 text-12-regular"
-              placeholder="Server name (e.g. filesystem)"
+              placeholder={language.t("mcp.native.namePlaceholder")}
               value={state.name}
               onInput={(event) => setState("name", event.currentTarget.value)}
             />
@@ -218,8 +318,8 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
               value={state.type}
               onChange={(event) => setState("type", event.currentTarget.value as "local" | "remote")}
             >
-              <option value="local">Local command</option>
-              <option value="remote">Remote URL</option>
+              <option value="local">{language.t("mcp.native.type.local")}</option>
+              <option value="remote">{language.t("mcp.native.type.remote")}</option>
             </select>
           </div>
           <input
@@ -243,7 +343,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
               size="small"
               variant="ghost"
               disabled={state.saving}
-              onClick={() => setState({ adding: false, addError: "" })}
+              onClick={() => setState({ adding: false, editingName: "", addError: "" })}
             >
               {language.t("common.cancel")}
             </Button>
@@ -271,7 +371,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
         <p class="text-12-regular text-text-weak">{language.t("dialog.mcp.empty")}</p>
       </Show>
       <div class="flex flex-col gap-3">
-        <For each={items()}>{(name) => <Row name={name} status={sync().data.mcp[name]} />}</For>
+        <For each={items()}>{(name) => <Row name={name} status={statusMap()[name]} />}</For>
       </div>
     </div>
   )

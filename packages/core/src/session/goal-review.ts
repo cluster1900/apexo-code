@@ -14,6 +14,12 @@ const Plan = Schema.Struct({
   plan: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_768)),
 })
 
+function cleanJsonText(raw: string) {
+  const withoutThink = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, "").trim()
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(withoutThink)
+  return fenced ? fenced[1].trim() : withoutThink
+}
+
 export type Request = {
   readonly kind: "planning" | "evaluating" | "verifying" | "strategizing"
   readonly attempt: SessionGoal.Attempt
@@ -196,7 +202,7 @@ export function make(goals: SessionGoal.Interface) {
                     const verdict = yield* Schema.decodeUnknownEffect(
                       Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Goal.Verdict)),
                       { onExcessProperty: "error" },
-                    )(output.text)
+                    )(cleanJsonText(output.text))
                     const result: Goal.Reviewer = {
                       ...verdict,
                       index,
@@ -229,7 +235,7 @@ export function make(goals: SessionGoal.Interface) {
               if (input.kind === "planning") {
                 const result = yield* Schema.decodeUnknownEffect(
                   Schema.UnknownFromJsonString.pipe(Schema.decodeTo(Plan)),
-                )(output.text)
+                )(cleanJsonText(output.text))
                 if (!result.plan.trim())
                   return yield* new ReviewFailure({ message: "Goal planner returned an empty plan" })
                 return {
@@ -246,7 +252,7 @@ export function make(goals: SessionGoal.Interface) {
                 const result = yield* Schema.decodeUnknownEffect(
                   Schema.UnknownFromJsonString.pipe(Schema.decodeTo(SessionGoalEvaluation.Verdict)),
                   { onExcessProperty: "error" },
-                )(output.text)
+                )(cleanJsonText(output.text))
                 return { applied: true, info: yield* goals.evaluate(attempt, result) }
               }
             }).pipe(
@@ -262,7 +268,11 @@ export function make(goals: SessionGoal.Interface) {
                   return current
                 return pause(
                   "infra_paused",
-                  error instanceof ReviewFailure ? error.message : "Goal review failed; retry explicitly",
+                  error instanceof ReviewFailure
+                    ? error.message
+                    : error instanceof Error && typeof error.message === "string" && error.message.trim()
+                      ? `${error.message.trim().slice(0, 500)}; retry explicitly`
+                      : "Goal review failed; retry explicitly",
                 )
               }),
               Effect.onInterrupt(() => pause("user_paused", "Goal review interrupted").pipe(Effect.asVoid)),

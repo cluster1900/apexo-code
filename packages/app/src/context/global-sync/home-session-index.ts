@@ -15,6 +15,7 @@ export type HomeSessionEvents = {
 }
 export type HomeSessionIndex = {
   sessions: Session[]
+  archivedSessions?: Session[]
   eventSequence: number
 }
 
@@ -46,7 +47,11 @@ export async function loadHomeSessionIndex(
     const page = response.data!
     data.push(...page.data)
     if (page.data.length < HOME_V2_SESSION_PAGE_LIMIT || !page.cursor.next)
-      return { sessions: parseHomeSessionIndex(data), eventSequence }
+      return {
+        sessions: parseHomeSessionIndex(data),
+        archivedSessions: parseArchivedHomeSessionIndex(data),
+        eventSequence,
+      }
     cursor = page.cursor.next
   }
 }
@@ -101,6 +106,9 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
       const sessions = homeSessionIndexSessions(index, events)
       return removed.size === 0 ? sessions : sessions.filter((session) => !removed.has(session.id))
     },
+    archivedSessions(index: HomeSessionIndex | undefined) {
+      return index?.archivedSessions ?? []
+    },
     apply(event: HomeSessionEvent) {
       if (!queryClient.getQueryState(indexKey)) return
       const next = appendHomeSessionEvent(queryClient.getQueryData<HomeSessionEvents>(eventsKey), event)
@@ -112,6 +120,7 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
       const index = queryClient.getQueryData<HomeSessionIndex>(indexKey)
       if (index) {
         queryClient.setQueryData<HomeSessionIndex>(indexKey, {
+          ...index,
           sessions: homeSessionIndexSessions(index, next),
           eventSequence: next.sequence,
         })
@@ -125,7 +134,16 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
         if (!index) return index
         const at = index.sessions.findIndex((session) => session.id === sessionID)
         if (at === -1) return index
-        return { ...index, sessions: index.sessions.toSpliced(at, 1) }
+        const archivedItem = {
+          ...index.sessions[at]!,
+          time: { ...index.sessions[at]!.time, archived: Date.now() },
+        }
+        const prevArchived = (index.archivedSessions ?? []).filter((item) => item.id !== sessionID)
+        return {
+          ...index,
+          sessions: index.sessions.toSpliced(at, 1),
+          archivedSessions: [archivedItem, ...prevArchived],
+        }
       })
     },
     restore(session: Session) {
@@ -133,8 +151,19 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
       if (!queryClient.getQueryState(indexKey)) return
       queryClient.setQueryData<HomeSessionIndex>(indexKey, (index) => {
         if (!index) return index
-        if (index.sessions.some((item) => item.id === session.id)) return index
-        return { ...index, sessions: [session, ...index.sessions] }
+        const nextSession = {
+          ...session,
+          time: { ...session.time, archived: undefined },
+        }
+        const prevArchived = (index.archivedSessions ?? []).filter((item) => item.id !== session.id)
+        if (index.sessions.some((item) => item.id === session.id)) {
+          return { ...index, archivedSessions: prevArchived }
+        }
+        return {
+          ...index,
+          sessions: [nextSession, ...index.sessions],
+          archivedSessions: prevArchived,
+        }
       })
     },
     refresh(event: Event["type"]) {
@@ -154,6 +183,13 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
 export function parseHomeSessionIndex(sessions: SessionV2Info[]): Session[] {
   return sessions.flatMap((item) => {
     if (item.parentID || typeof item.time.archived === "number") return []
+    return [toLegacySummary(item)]
+  })
+}
+
+export function parseArchivedHomeSessionIndex(sessions: SessionV2Info[]): Session[] {
+  return sessions.flatMap((item) => {
+    if (item.parentID || typeof item.time.archived !== "number") return []
     return [toLegacySummary(item)]
   })
 }

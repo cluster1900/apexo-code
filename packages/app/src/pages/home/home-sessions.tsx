@@ -24,9 +24,12 @@ export function HomeSessions(props: {
       searchNoResultsLabel={props.search.result.noResultsLabel}
       titleOpacity={props.scroll.header.titleOpacity}
       isOpenTab={props.sessions.tab.isOpen}
+      showArchived={props.sessions.filter.showArchived}
+      onToggleArchived={props.sessions.filter.setShowArchived}
       onCreateSession={props.sessions.session.create}
       onOpenSession={props.sessions.session.open}
       onArchiveSession={props.sessions.session.archive}
+      onUnarchiveSession={props.sessions.session.unarchive}
       onSetHoverTarget={props.scroll.viewport.setHoverTarget}
       onSetThumbTrack={props.scroll.viewport.setThumbTrack}
       onSetContent={props.scroll.header.setContent}

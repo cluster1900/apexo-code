@@ -110,7 +110,13 @@ export const loadGlobalConfigQuery = (scope: ServerScope, sdk: ApexoClient, prot
   queryOptions({
     queryKey: [scope, "config"],
     queryFn: async () => {
-      if ((await protocol) !== "v1") return {}
+      if ((await protocol) !== "v1") {
+        if (!sdk?.global?.config?.get) return {}
+        return sdk.global.config
+          .get()
+          .then((x) => x.data ?? {})
+          .catch(() => ({}))
+      }
       return retry(() => sdk.global.config.get().then((x) => x.data!))
     },
   })

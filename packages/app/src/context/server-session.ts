@@ -550,17 +550,19 @@ export function createServerSession(
       }
       const response = pages.at(-1)!
       const source = pages.flatMap((page) => page.data).toReversed()
-      const normalized = normalizeSessionMessages(sessionID, source)
-      return {
-        session: normalized.messages.sort(compareMessages),
-        part: [...normalized.parts.entries()]
-          .map(([id, part]) => ({ id, part: part.sort((a, b) => cmp(a.id, b.id)) }))
-          .sort((a, b) => cmp(a.id, b.id)),
-        source,
-        sourceMode: before ? ("older" as const) : ("latest" as const),
-        projectSource: true,
-        cursor: response.cursor.next ?? undefined,
-        complete: response.data.length === 0,
+      if (source.length > 0 || before) {
+        const normalized = normalizeSessionMessages(sessionID, source)
+        return {
+          session: normalized.messages.sort(compareMessages),
+          part: [...normalized.parts.entries()]
+            .map(([id, part]) => ({ id, part: part.sort((a, b) => cmp(a.id, b.id)) }))
+            .sort((a, b) => cmp(a.id, b.id)),
+          source,
+          sourceMode: before ? ("older" as const) : ("latest" as const),
+          projectSource: true,
+          cursor: response.cursor.next ?? undefined,
+          complete: response.data.length === 0,
+        }
       }
     }
     const response = await (options?.retry ?? retry)(() => {

@@ -1,6 +1,7 @@
 import { getFilename } from "@apexo/core/util/path"
 import { type Session } from "@apexo/sdk/v2/client"
 import { pathKey } from "@/utils/path-key"
+import { activeLocale } from "@/context/language"
 import type { ServerConnection } from "@/context/server"
 import type { HomeProjectSelection } from "@/context/layout"
 
@@ -46,8 +47,16 @@ export const childSessionOnPath = (sessions: Session[] | undefined, rootID: stri
   }
 }
 
-export const displayName = (project: { name?: string; worktree: string }) =>
-  project.name || getFilename(project.worktree) || project.worktree
+export const displayName = (project: { name?: string; worktree: string }) => {
+  if (project.name) return project.name
+  const filename = getFilename(project.worktree)
+  if (filename === "Default Project") {
+    const loc = activeLocale()
+    if (loc === "zh") return "默认项目"
+    if (loc === "zht") return "預設專案"
+  }
+  return filename || project.worktree
+}
 
 export function toggleHomeProjectSelection(
   current: HomeProjectSelection | undefined,

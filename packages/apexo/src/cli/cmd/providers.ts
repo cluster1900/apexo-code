@@ -36,6 +36,89 @@ const cliTry = <Value>(message: string, fn: () => PromiseLike<Value>) =>
     catch: (error) => new CliError({ message: message + errorMessage(error) }),
   })
 
+function validateApiKeyFormat(providerID: string, raw: string | undefined) {
+  const trimmed = raw?.trim() ?? ""
+  if (!trimmed) return "Required"
+  if (trimmed.length < 16 || /\s/.test(trimmed)) return "Invalid API key format"
+  if (
+    /(.)\1{7,}/i.test(trimmed) ||
+    /(invalid|placeholder|example|dummy|fake|testkey|01234567|12345678|abcdefgh)/i.test(trimmed)
+  ) {
+    return "Invalid API key"
+  }
+  if (providerID === "anthropic" && (!trimmed.startsWith("sk-ant-") || trimmed.length < 24)) {
+    return "Invalid Anthropic API key format"
+  }
+  if (providerID === "openai" && (!trimmed.startsWith("sk-") || trimmed.length < 24)) {
+    return "Invalid OpenAI API key format"
+  }
+  return undefined
+}
+
+export async function verifyProviderApiKey(
+  providerID: string,
+  rawKey: string,
+  options?: { baseURL?: string },
+): Promise<string | undefined> {
+  const formatErr = validateApiKeyFormat(providerID, rawKey)
+  if (formatErr) return formatErr
+  const key = rawKey.trim()
+  const endpoints: Record<string, { url: string; headers: Record<string, string> }> = {
+    anthropic: {
+      url: "https://api.anthropic.com/v1/models",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+    },
+    openai: {
+      url: "https://api.openai.com/v1/models",
+      headers: { Authorization: `Bearer ${key}` },
+    },
+    xai: {
+      url: "https://api.x.ai/v1/models",
+      headers: { Authorization: `Bearer ${key}` },
+    },
+    google: {
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+      headers: {},
+    },
+    openrouter: {
+      url: "https://openrouter.ai/api/v1/auth/key",
+      headers: { Authorization: `Bearer ${key}` },
+    },
+    deepseek: {
+      url: "https://api.deepseek.com/models",
+      headers: { Authorization: `Bearer ${key}` },
+    },
+    groq: {
+      url: "https://api.groq.com/openai/v1/models",
+      headers: { Authorization: `Bearer ${key}` },
+    },
+    mistral: {
+      url: "https://api.mistral.ai/v1/models",
+      headers: { Authorization: `Bearer ${key}` },
+    },
+  }
+  const target = options?.baseURL
+    ? {
+        url: `${options.baseURL.replace(/\/+$/, "")}/models`,
+        headers: { Authorization: `Bearer ${key}` },
+      }
+    : endpoints[providerID]
+  if (!target) return undefined
+  const res = await fetch(target.url, {
+    method: "GET",
+    headers: target.headers,
+    signal: AbortSignal.timeout(6000),
+  }).catch(() => undefined)
+  if (!res) return `Could not verify API key against ${providerID} endpoint`
+  if (res.status === 401 || res.status === 403 || (providerID === "google" && res.status === 400)) {
+    return `API key rejected by ${providerID} (HTTP ${res.status})`
+  }
+  if (!res.ok) {
+    return `API key verification failed for ${providerID} (HTTP ${res.status})`
+  }
+  return undefined
+}
+
 const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
   plugin: { auth: PluginAuth },
   provider: string,
@@ -172,15 +255,13 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
   if (method.type === "api") {
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x) => {
-        const trimmed = x?.trim() ?? ""
-        if (!trimmed) return "Required"
-        if (trimmed.length < 8 || /\s/.test(trimmed)) return "Invalid API key format"
-        if (/(invalid|placeholder|example|dummy|test)/i.test(trimmed)) return "Invalid API key"
-        return undefined
-      },
+      validate: (x) => validateApiKeyFormat(provider, x),
     })
     const apiKey = yield* promptValue(key)
+    const verifyErr = yield* Effect.promise(() => verifyProviderApiKey(provider, apiKey))
+    if (verifyErr) {
+      return yield* fail(verifyErr)
+    }
 
     const metadata = Object.keys(inputs).length ? { metadata: inputs } : {}
     const authorizeApi = method.authorize
@@ -458,15 +539,13 @@ export const ProvidersLoginCommand = effectCmd({
 
     const key = yield* Prompt.password({
       message: "Enter your API key",
-      validate: (x) => {
-        const trimmed = x?.trim() ?? ""
-        if (!trimmed) return "Required"
-        if (trimmed.length < 8 || /\s/.test(trimmed)) return "Invalid API key format"
-        if (/(invalid|placeholder|example|dummy|test)/i.test(trimmed)) return "Invalid API key"
-        return undefined
-      },
+      validate: (x) => validateApiKeyFormat(provider, x),
     })
     const apiKey = yield* promptValue(key)
+    const verifyErr = yield* Effect.promise(() => verifyProviderApiKey(provider, apiKey))
+    if (verifyErr) {
+      return yield* fail(verifyErr)
+    }
     yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
 
     yield* Prompt.outro("Done")

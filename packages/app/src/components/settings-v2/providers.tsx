@@ -1,5 +1,7 @@
 import { ButtonV2 } from "@apexo/ui/v2/button-v2"
 import { Tag } from "@apexo/ui/v2/badge-v2"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@apexo/ui/v2/dialog-v2"
+import { DividerV2 } from "@apexo/ui/v2/divider-v2"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { ProviderIcon } from "@apexo/ui/provider-icon"
 import { showToast } from "@/utils/toast"
@@ -74,8 +76,7 @@ export const SettingsProvidersV2: Component<{
     return language.t("settings.providers.tag.other")
   }
 
-  const canDisconnect = (item: ProviderItem) =>
-    source(item) !== "env" && (protocol() === "v1" || !isConfigCustom(item.id))
+  const canDisconnect = (item: ProviderItem) => source(item) !== "env"
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
@@ -88,7 +89,6 @@ export const SettingsProvidersV2: Component<{
   }
 
   const disableProvider = async (providerID: string, name: string) => {
-    if (protocol() !== "v1") return
     const before = serverSync().data.config.disabled_providers ?? []
     const next = before.includes(providerID) ? before : [...before, providerID]
     serverSync().set("config", "disabled_providers", next)
@@ -110,13 +110,7 @@ export const SettingsProvidersV2: Component<{
       })
   }
 
-  const disconnect = async (providerID: string, name: string) => {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(`${language.t("provider.disconnect.toast.disconnected.title", { provider: name })}?`)
-    ) {
-      return
-    }
+  const performDisconnect = async (providerID: string, name: string) => {
     if (isConfigCustom(providerID)) {
       await serverSdk()
         .client.auth.remove({ providerID })
@@ -140,6 +134,36 @@ export const SettingsProvidersV2: Component<{
         const message = err instanceof Error ? err.message : String(err)
         showToast({ title: language.t("common.requestFailed"), description: message })
       })
+  }
+
+  const disconnect = (providerID: string, name: string) => {
+    dialog.push(() => (
+      <Dialog fit class="settings-v2-server-dialog">
+        <DialogHeader hideClose={true}>
+          <DialogTitle>{language.t("provider.disconnect.confirm.title", { provider: name })}</DialogTitle>
+        </DialogHeader>
+        <DividerV2 />
+        <DialogBody class="flex w-full min-w-0 flex-1 flex-col px-6 pt-4 pb-2">
+          <p class="text-13-regular text-[var(--v2-text-text-muted)]">
+            {language.t("provider.disconnect.confirm.description", { provider: name })}
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <ButtonV2 variant="neutral" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </ButtonV2>
+          <ButtonV2
+            variant="danger"
+            onClick={() => {
+              dialog.close()
+              void performDisconnect(providerID, name)
+            }}
+          >
+            {language.t("common.disconnect")}
+          </ButtonV2>
+        </DialogFooter>
+      </Dialog>
+    ))
   }
 
   return (
@@ -221,37 +245,35 @@ export const SettingsProvidersV2: Component<{
               )}
             </For>
 
-            <Show when={protocol() === "v1"}>
-              <div class="settings-v2-provider-row" data-component="custom-provider-section">
-                <div class="settings-v2-provider-lead">
-                  <ProviderIcon
-                    id="synthetic"
-                    width={PROVIDER_ICON_SIZE}
-                    height={PROVIDER_ICON_SIZE}
-                    class="settings-v2-provider-icon shrink-0"
-                  />
-                  <div class="settings-v2-provider-copy">
-                    <div class="settings-v2-provider-main">
-                      <span class="settings-v2-provider-name">{language.t("provider.custom.title")}</span>
-                      <Tag>{language.t("settings.providers.tag.custom")}</Tag>
-                    </div>
-                    <p class="settings-v2-provider-description">
-                      {language.t("settings.providers.custom.description")}
-                    </p>
+            <div class="settings-v2-provider-row" data-component="custom-provider-section">
+              <div class="settings-v2-provider-lead">
+                <ProviderIcon
+                  id="synthetic"
+                  width={PROVIDER_ICON_SIZE}
+                  height={PROVIDER_ICON_SIZE}
+                  class="settings-v2-provider-icon shrink-0"
+                />
+                <div class="settings-v2-provider-copy">
+                  <div class="settings-v2-provider-main">
+                    <span class="settings-v2-provider-name">{language.t("provider.custom.title")}</span>
+                    <Tag>{language.t("settings.providers.tag.custom")}</Tag>
                   </div>
+                  <p class="settings-v2-provider-description">
+                    {language.t("settings.providers.custom.description")}
+                  </p>
                 </div>
-                <ButtonV2
-                  size="normal"
-                  variant="neutral"
-                  icon="plus"
-                  onClick={() => {
-                    dialog.show(() => <DialogCustomProvider onBack={props.onBack ?? dialog.close} />)
-                  }}
-                >
-                  {language.t("common.connect")}
-                </ButtonV2>
               </div>
-            </Show>
+              <ButtonV2
+                size="normal"
+                variant="neutral"
+                icon="plus"
+                onClick={() => {
+                  dialog.show(() => <DialogCustomProvider onBack={props.onBack ?? dialog.close} />)
+                }}
+              >
+                {language.t("common.connect")}
+              </ButtonV2>
+            </div>
           </SettingsListV2>
 
           <button type="button" class="settings-v2-providers-view-all" onClick={() => connect()}>

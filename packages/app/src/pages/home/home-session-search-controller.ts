@@ -8,7 +8,9 @@ import { createStore } from "solid-js/store"
 import type { HomeController } from "./home-controller"
 import { homeSessionSearchKey, type HomeSessionRecord, type HomeSessionsController } from "./home-sessions-controller"
 
-type HomeSessionSearchSource = Pick<HomeSessionsController, "data" | "session">
+type HomeSessionSearchSource = Pick<HomeSessionsController, "data" | "session"> & {
+  filter?: HomeSessionsController["filter"]
+}
 
 export function createHomeSessionSearchController(home: HomeController, sessions: HomeSessionSearchSource) {
   const command = useCommand()
@@ -48,7 +50,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
       if (!open()) return
       const target = event.target
       if (!(target instanceof Node) || root?.contains(target)) return
-      close()
+      setState("focused", false)
     }),
   )
 
@@ -70,6 +72,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
 
   function close() {
     setState({ value: "", focused: false })
+    sessions.filter?.setSearchFilter("")
   }
 
   function select(record: HomeSessionRecord, options?: { background?: boolean }) {
@@ -83,7 +86,10 @@ export function createHomeSessionSearchController(home: HomeController, sessions
       placeholder,
       open,
       focus,
-      input: (value: string) => setState({ value, focused: true, highlighted: "" }),
+      input: (value: string) => {
+        setState({ value, focused: true, highlighted: "" })
+        sessions.filter?.setSearchFilter(value)
+      },
       close,
     },
     result: {

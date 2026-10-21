@@ -28,7 +28,16 @@ const keys = new Set([
 
 export function isV1(input: unknown) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return false
-  return Object.keys(input).some((key) => keys.has(key))
+  if (Object.keys(input).some((key) => keys.has(key))) return true
+  const mcp = (input as Record<string, unknown>).mcp
+  if (typeof mcp === "object" && mcp !== null && !Array.isArray(mcp)) {
+    return Object.entries(mcp).some(
+      ([k, v]) =>
+        (k !== "timeout" && k !== "servers") ||
+        (typeof v === "object" && v !== null && "type" in v && (v.type === "local" || v.type === "remote")),
+    )
+  }
+  return false
 }
 
 export function migrate(info: typeof ConfigV1.Info.Type) {

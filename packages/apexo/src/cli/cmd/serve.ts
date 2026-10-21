@@ -19,6 +19,18 @@ export const ServeCommand = effectCmd({
     const server = yield* Effect.promise(() => Server.listen(opts))
     console.log(`apexo server listening on http://${server.hostname}:${server.port}`)
 
-    yield* Effect.never
+    yield* Effect.callback<void>((resume) => {
+      const onSignal = () => {
+        process.off("SIGTERM", onSignal)
+        process.off("SIGINT", onSignal)
+        resume(Effect.void)
+      }
+      process.on("SIGTERM", onSignal)
+      process.on("SIGINT", onSignal)
+      return Effect.sync(() => {
+        process.off("SIGTERM", onSignal)
+        process.off("SIGINT", onSignal)
+      })
+    }).pipe(Effect.ensuring(Effect.promise(() => server.stop(true))))
   }),
 })

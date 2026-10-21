@@ -1,5 +1,5 @@
 import * as i18n from "@solid-primitives/i18n"
-import { createEffect, createMemo, createResource } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@apexo/ui/context"
 import { pluralCategory, type UiI18nPluralKey } from "@apexo/ui/context/i18n"
@@ -151,6 +151,8 @@ function readStoredLocale() {
 }
 
 const warm = readStoredLocale() ?? detectLocale()
+const [activeLocale, setActiveLocale] = createSignal<Locale>(warm)
+export { activeLocale }
 const initialLocale =
   warm === "en"
     ? Promise.resolve(warm)
@@ -205,8 +207,9 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
     const label = (value: Locale) => DESKTOP_NATIVE_LABELS[value]
 
     createEffect(() => {
-      if (typeof document !== "object") return
       const value = locale()
+      setActiveLocale(value)
+      if (typeof document !== "object") return
       document.documentElement.lang = intl()
       document.documentElement.dir = direction()
       document.cookie = cookie(value)

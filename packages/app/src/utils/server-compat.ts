@@ -126,6 +126,21 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
     },
     session: {
       ...input.current.session,
+      async rename(value: Parameters<ServerApi["session"]["rename"]>[0] & LegacyLocation) {
+        return input.current.session.rename(value).catch(async () => {
+          await input.legacy(value.directory ?? input.directory).session.update({
+            sessionID: value.sessionID,
+            title: value.title,
+          })
+        })
+      },
+      async fork(value: Parameters<ServerApi["session"]["fork"]>[0]) {
+        return input.current.session.fork(value).catch(async () => {
+          const result = await input.legacy(input.directory).session.fork(value)
+          if (!result.data) throw new Error("Failed to fork session")
+          return sessionInfo(result.data)
+        })
+      },
       async command(value: SessionCommandInput): Promise<SessionCommandOutput> {
         if (value.command !== "loop") return input.current.session.command(value)
         const text = await loopPrompt(input.legacy(input.directory), {
