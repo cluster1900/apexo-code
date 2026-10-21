@@ -179,6 +179,7 @@ export function HomeUtilityNav(props: {
       </HomeProjectNavButton>
       <HomeProjectNavButton
         type="button"
+        data-action="home-open-help"
         class="text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"
         onClick={props.onOpenHelp}
       >

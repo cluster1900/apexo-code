@@ -1,4 +1,5 @@
 import { useDirectoryPicker } from "@/components/directory-picker"
+import { useHelpDialog } from "@/components/dialog-help-v2"
 import { useServerManagementController } from "@/components/dialog-select-server"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
@@ -22,6 +23,7 @@ export function createHomeProjectsController(home: HomeController) {
   const language = useLanguage()
   const notification = useNotification()
   const openSettings = useSettingsCommand()
+  const openHelp = useHelpDialog()
   const serverManagement = useServerManagementController({ navigateOnAdd: false })
   const [_state, setState, _, ready] = persisted(
     Persist.global("home.servers", ["home.servers.v1"]),
@@ -120,7 +122,7 @@ export function createHomeProjectsController(home: HomeController) {
     },
     utility: {
       settings: openSettings,
-      help: () => platform.openExternal("https://github.com/cluster1900/apexo-code/issues"),
+      help: openHelp,
     },
   }
 }

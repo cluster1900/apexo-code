@@ -1,8 +1,8 @@
-# GitHub Issues #47, #51, #53, #54, #81, #83, #84, #85, #86, #90, #91, #92, #94, #95, #96, #97, #98, #99, #101, #102, #103, #104: Root Cause, Fix, and Live Verification Report
+# GitHub Issues #47, #51, #53, #54, #81, #83, #84, #85, #86, #90, #91, #92, #94, #95, #96, #97, #98, #99, #101, #102, #103, #104, #107: Root Cause, Fix, and Live Verification Report
 
-- **ID**: `BUG-20261021-601` through `BUG-20261021-622`
+- **ID**: `BUG-20261021-601` through `BUG-20261021-623`
 - **Status**: Fixed & Verified (Unit, Typecheck, HTTP API, Live CLI, and Live Desktop UI)
-- **Branch**: `issue-fixes-round3`, `issue-fixes-round4`
+- **Branch**: `issue-fixes-round3`, `issue-fixes-round4`, `home-help-dialog`
 
 ---
 
@@ -399,3 +399,25 @@
   - Updated `interpolate()` in `packages/cli/src/commands/handlers/api.ts` to substitute `params.path` into trailing `/*` routes, and added a `url.searchParams.get("path")` fallback in `packages/server/src/handlers/fs.ts`.
 - **Verification**:
   - Live CLI verification (`bun run src/index.ts api v2.fs.read --param path=package.json`) emitted the complete `package.json` file contents.
+
+---
+
+## #107 — Desktop `Projects and sessions` `Help` Button Opening In-App Help Dialog (`BUG-20261021-623`)
+
+- **Affected Scope**:
+  - `packages/app/src/components/dialog-help-v2.tsx`
+  - `packages/app/src/pages/home/home-projects-controller.tsx`
+  - `packages/app/src/pages/home/home-projects-view.tsx`
+  - `packages/app/src/pages/layout.tsx`
+  - `packages/app/src/components/settings-dialog.tsx`
+  - `packages/app/src/pages/error.tsx`
+  - `packages/app/src/components/settings-general.tsx`
+- **Observed vs. Expected**:
+  - **Observed**: Clicking the `Help` button in the `Projects and sessions` left sidebar (`HomeUtilityNav`) only called `platform.openExternal("https://github.com/cluster1900/apexo-code/issues")` without opening any visible page, dialog, or help surface inside the Desktop window (leaving the Desktop accessibility tree unchanged with the `Help` button still focused).
+  - **Expected**: Clicking `Help` in `Projects and sessions` (or in the session left sidebar / `/help` command) opens a clearly labeled in-app `Help` dialog (`DialogHelpV2`) containing the product's how-to documentation and onboarding tutorial topics, documentation guide links, a `Shortcuts` button to open keyboard shortcuts, and a `Close` button.
+- **Root Cause**:
+  - `createHomeProjectsController` (`utility.help`) and `LegacyLayout` (`onOpenHelp`) invoked `platform.openExternal(...)` directly instead of opening an in-app Help dialog.
+- **Fix**:
+  - Created `DialogHelpV2` and `useHelpDialog()` in `packages/app/src/components/dialog-help-v2.tsx`, wired `utility.help` in `home-projects-controller.tsx` and `onOpenHelp` in `layout.tsx` to open `DialogHelpV2`, registered `help.open` (`/help`) in `settings-dialog.tsx` and `layout.tsx`, and updated remaining `apexo-grok` external links in `error.tsx` and `settings-general.tsx` to `apexo-code`.
+- **Verification**:
+  - Live Desktop verification clicked the `Help` button in `Projects and sessions`, verified `[role="dialog"]` (`title: "Help"`) opened with 8 documentation/guide buttons and 8 onboarding tutorial topics, and verified clicking `Close` dismissed the dialog.

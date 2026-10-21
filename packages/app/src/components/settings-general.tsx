@@ -481,7 +481,7 @@ export const SettingsGeneral: Component = () => {
           description={
             <>
               {language.t("settings.general.row.theme.description")}{" "}
-              <ExternalLink href="https://github.com/cluster1900/apexo-grok#readme">
+              <ExternalLink href="https://github.com/cluster1900/apexo-code#readme">
                 {language.t("common.learnMore")}
               </ExternalLink>
             </>
