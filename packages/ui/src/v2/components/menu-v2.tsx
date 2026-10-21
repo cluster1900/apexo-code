@@ -46,15 +46,52 @@ function ItemBody(
   )
 }
 
+function createMenuItemClickHandlers<T extends HTMLElement>(props: {
+  onPointerUp?: JSX.EventHandlerUnion<T, PointerEvent>
+  onClick?: JSX.EventHandlerUnion<T, MouseEvent>
+}) {
+  let lastPointerUpAt = 0
+  const call = <E extends Event>(
+    handler: JSX.EventHandlerUnion<T, E> | undefined,
+    event: E & { currentTarget: T; target: Element },
+  ) => {
+    if (typeof handler === "function") {
+      handler(event)
+      return
+    }
+    if (Array.isArray(handler)) handler[0](handler[1], event)
+  }
+  return {
+    onPointerUp: (event: PointerEvent & { currentTarget: T; target: Element }) => {
+      if (event.button === 0) lastPointerUpAt = Date.now()
+      call(props.onPointerUp, event)
+    },
+    onClick: (event: MouseEvent & { currentTarget: T; target: Element }) => {
+      call(props.onClick, event)
+      const handledByPointerUp = Date.now() - lastPointerUpAt < 100 && event.detail > 0
+      lastPointerUpAt = 0
+      if (handledByPointerUp || event.defaultPrevented) return
+      event.currentTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    },
+  }
+}
+
 export interface MenuV2ItemProps extends ComponentProps<typeof DropdownMenu.Item> {
   shortcut?: JSX.Element | string
   badge?: JSX.Element | string
 }
 
 function MenuV2Item(props: ParentProps<MenuV2ItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge", "onPointerUp", "onClick"])
+  const handlers = createMenuItemClickHandlers(s)
   return (
-    <DropdownMenu.Item {...r} data-component="menu-v2-item" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}>
+    <DropdownMenu.Item
+      {...r}
+      onPointerUp={handlers.onPointerUp}
+      onClick={handlers.onClick}
+      data-component="menu-v2-item"
+      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
+    >
       <ItemBody shortcut={s.shortcut} badge={s.badge}>
         {s.children}
       </ItemBody>
@@ -68,10 +105,13 @@ export interface MenuV2CheckboxItemProps extends ComponentProps<typeof DropdownM
 }
 
 function MenuV2CheckboxItem(props: ParentProps<MenuV2CheckboxItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge", "onPointerUp", "onClick"])
+  const handlers = createMenuItemClickHandlers(s)
   return (
     <DropdownMenu.CheckboxItem
       {...r}
+      onPointerUp={handlers.onPointerUp}
+      onClick={handlers.onClick}
       data-component="menu-v2-item"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     >
@@ -96,10 +136,13 @@ export interface MenuV2RadioItemProps extends ComponentProps<typeof DropdownMenu
 }
 
 function MenuV2RadioItem(props: ParentProps<MenuV2RadioItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge", "onPointerUp", "onClick"])
+  const handlers = createMenuItemClickHandlers(s)
   return (
     <DropdownMenu.RadioItem
       {...r}
+      onPointerUp={handlers.onPointerUp}
+      onClick={handlers.onClick}
       data-component="menu-v2-item"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     >

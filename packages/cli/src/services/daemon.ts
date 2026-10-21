@@ -111,7 +111,7 @@ export const layer = Layer.effect(
       const existing = yield* healthy().pipe(Effect.option)
       const found = Option.getOrUndefined(existing)
       const compiled = path.basename(process.execPath).replace(/\.exe$/, "") !== "bun"
-      if (found?.version === InstallationVersion && compiled) return found.url
+      if (found?.version === InstallationVersion) return found.url
       if (found) yield* stopProcess(found).pipe(Effect.ignore)
 
       const entrypoint = compiled ? undefined : process.argv[1]

@@ -226,7 +226,6 @@ export function ModelSelectorPopoverV2(props: {
   const controller = createModelSelectorController({
     model: props.model,
     provider: () => props.provider,
-    onSelect: () => props.onClose?.(),
   })
 
   return (
@@ -249,7 +248,6 @@ export function ModelSelectorPopoverV2(props: {
 function createModelSelectorController(input: {
   provider: () => string | undefined
   model?: ModelState
-  onSelect: () => void
 }) {
   const model = input.model ?? useLocal().model
   const allModels = createMemo(() =>
@@ -280,7 +278,6 @@ function createModelSelectorController(input: {
     },
     select: (item: ModelItem) => {
       model.set({ modelID: item.id, providerID: item.provider.id }, { recent: true })
-      input.onSelect()
     },
   }
 }
@@ -327,8 +324,9 @@ function ModelSelectorPopoverV2View(props: {
   }
   const selectModel = (item: ModelItem) => {
     dismiss.preventTriggerRestore()
+    props.select(item)
     setOpen(false)
-    dismiss.afterClose(() => props.select(item))
+    dismiss.afterClose(props.onClose)
   }
   const manage = () => {
     dismiss.preventTriggerRestore()

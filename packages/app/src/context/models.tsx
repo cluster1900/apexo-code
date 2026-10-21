@@ -149,15 +149,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       setStore("variant", key, value)
     }
 
-    const [recentModels] = createResource(
-      async () => {
-        const recent = store.recent
-        await ready.promise
-        return recent
-      },
-      (p) => p,
-      { initialValue: [] },
-    )
+    const recentModels = createMemo(() => (ready() ? store.recent : []))
     return {
       ready,
       list: () => list().filter((model) => model.status !== "deprecated"),
@@ -165,7 +157,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       visible,
       setVisibility,
       recent: {
-        list: () => recentModels()!,
+        list: () => recentModels(),
         push,
       },
       variant: {

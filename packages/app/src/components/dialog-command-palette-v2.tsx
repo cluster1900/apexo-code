@@ -37,22 +37,24 @@ function matchesEntry(entry: CommandPaletteEntry, query: string) {
 
 export function DialogCommandPaletteV2(props: { onOpenFile?: (path: string) => void }) {
   const palette = createCommandPaletteModel(props)
-  const loadItems = async (text: string) => {
+  const syncItems = (text: string) => {
     const q = text.trim()
     if (!q) return [...palette.preferredCommandEntries(), ...palette.recentFileEntries()]
+    return palette.commandEntries().filter((entry) => matchesEntry(entry, q))
+  }
+  const loadItems = async (text: string) => {
+    const q = text.trim()
+    if (!q) return []
 
     const [files, nextSessions] = await Promise.all([palette.file.searchFiles(q), Promise.resolve(palette.sessions(q))])
     const category = palette.language.t("palette.group.files")
-    return [
-      ...palette.commandEntries().filter((entry) => matchesEntry(entry, q)),
-      ...nextSessions,
-      ...files.map((path) => createCommandPaletteFileEntry(path, category)),
-    ]
+    return [...nextSessions, ...files.map((path) => createCommandPaletteFileEntry(path, category))]
   }
 
   return (
     <CommandPaletteView
       placeholder={palette.language.t("palette.search.placeholder")}
+      syncItems={syncItems}
       loadItems={loadItems}
       highlight={palette.highlight}
       select={palette.select}
@@ -101,10 +103,15 @@ export function DialogHomeCommandPaletteV2(props: {
     }
     if (item.type === "session") props.onSelectSession(item)
   }
-  const loadItems = async (text: string) => {
+  const syncItems = (text: string) => {
     const query = text.trim()
     if (!query) return commandEntries()
-    return [...commandEntries().filter((entry) => matchesEntry(entry, query)), ...(await sessions(query))]
+    return commandEntries().filter((entry) => matchesEntry(entry, query))
+  }
+  const loadItems = async (text: string) => {
+    const query = text.trim()
+    if (!query) return []
+    return sessions(query)
   }
 
   onCleanup(() => {
@@ -115,6 +122,7 @@ export function DialogHomeCommandPaletteV2(props: {
   return (
     <CommandPaletteView
       placeholder={language.t("palette.search.placeholder.home")}
+      syncItems={syncItems}
       loadItems={loadItems}
       highlight={highlight}
       select={select}
@@ -125,7 +133,8 @@ export function DialogHomeCommandPaletteV2(props: {
 
 function CommandPaletteView(props: {
   placeholder: string
-  loadItems: (text: string) => CommandPaletteEntry[] | Promise<CommandPaletteEntry[]>
+  syncItems: (text: string) => CommandPaletteEntry[]
+  loadItems?: (text: string) => Promise<CommandPaletteEntry[]>
   highlight: (item: CommandPaletteEntry | undefined) => void
   select: (item: CommandPaletteEntry | undefined) => void
   close: () => void
@@ -135,9 +144,19 @@ function CommandPaletteView(props: {
   const [query, setQuery] = createSignal("")
   const [active, setActive] = createSignal(0)
 
-  const [entries] = createResource(query, props.loadItems, { initialValue: [] as CommandPaletteEntry[] })
-  // Render stale results while a new query loads to avoid flashing "Loading" per keystroke.
-  const visibleEntries = createMemo(() => uniqueCommandPaletteEntries(entries.latest ?? []))
+  const syncEntries = createMemo(() => props.syncItems(query()))
+  const [asyncResult] = createResource(
+    () => query().trim(),
+    async (q) => {
+      if (!q || !props.loadItems) return { query: q, items: [] as CommandPaletteEntry[] }
+      return { query: q, items: await props.loadItems(q) }
+    },
+  )
+  const visibleEntries = createMemo(() => {
+    const q = query().trim()
+    const extra = asyncResult.latest?.query === q ? asyncResult.latest.items : []
+    return uniqueCommandPaletteEntries([...syncEntries(), ...extra])
+  })
   const groupedEntries = createMemo(() => groups(visibleEntries()))
   const activeEntry = createMemo(() => visibleEntries()[active()])
   const openSessions = createMemo(
@@ -209,7 +228,7 @@ function CommandPaletteView(props: {
               when={visibleEntries().length > 0}
               fallback={
                 <div class="command-palette-v2-state">
-                  {entries.loading ? language.t("common.loading") : language.t("palette.empty")}
+                  {asyncResult.loading ? language.t("common.loading") : language.t("palette.empty")}
                 </div>
               }
             >
