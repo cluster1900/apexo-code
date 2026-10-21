@@ -17,6 +17,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { detectServerProtocol } from "@/utils/server-protocol"
+import { authTokenFromCredentials } from "@/utils/server"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
 import { useSettings } from "@/context/settings"
 import { useTabs } from "@/context/tabs"
@@ -244,6 +245,19 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     })
   }
 
+  const checkAuthFailure = async (http: ServerConnection.HttpBase) => {
+    const fetcher = platform.fetch ?? globalThis.fetch
+    const headers = http.password
+      ? {
+          Authorization: `Basic ${authTokenFromCredentials({ username: http.username, password: http.password })}`,
+        }
+      : undefined
+    const status = await fetcher(`${http.url}/global/health`, { headers })
+      .then((res) => res.status)
+      .catch(() => 0)
+    return status === 401 || status === 403
+  }
+
   const addMutation = useMutation(() => ({
     mutationFn: async (value: string) => {
       const normalized = normalizeServerUrl(value)
@@ -261,7 +275,12 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       if (store.addServer.password && store.addServer.username) conn.http.username = store.addServer.username
       const result = await checkServerHealth(conn.http)
       if (!result.healthy) {
-        setStore("addServer", { error: language.t("dialog.server.add.error") })
+        const authFailed = await checkAuthFailure(conn.http)
+        setStore("addServer", {
+          error: authFailed
+            ? "Authentication failed (HTTP 401/403). Check your username and password."
+            : language.t("dialog.server.add.error"),
+        })
         return
       }
       if (
@@ -312,7 +331,12 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       }
       const result = await checkServerHealth(conn.http)
       if (!result.healthy) {
-        setStore("editServer", { error: language.t("dialog.server.add.error") })
+        const authFailed = await checkAuthFailure(conn.http)
+        setStore("editServer", {
+          error: authFailed
+            ? "Authentication failed (HTTP 401/403). Check your username and password."
+            : language.t("dialog.server.add.error"),
+        })
         return
       }
       if (
@@ -528,6 +552,9 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   })
 
   async function handleRemove(key: ServerConnection.Key) {
+    if (typeof window !== "undefined" && typeof window.confirm === "function") {
+      if (!window.confirm(`${language.t("dialog.server.action.remove")} (${key})?`)) return
+    }
     try {
       if (key.startsWith("wsl:")) await platform.wslServers?.removeServer(key)
       tabs.removeServer(key)

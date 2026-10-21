@@ -7,7 +7,12 @@ export function serverProtocol(client: ApexoClient) {
       const legacy = await client.global.health({ signal, throwOnError: false })
       if (legacy.data?.healthy) return "v1" as const
       if (!legacy.response) throw legacy.error ?? new Error("Failed to connect to server")
-      if (legacy.response.status !== 404) throw new Error("Could not determine the server protocol")
+      if (legacy.response.status !== 404) {
+        const err = new Error("Could not determine the server protocol") as Error & { status?: number }
+        err.name = "ServerProtocolError"
+        err.status = legacy.response.status
+        throw err
+      }
       await client.v2.health.get({ signal, throwOnError: true })
       return "v2" as const
     })().catch((error: unknown) => {

@@ -120,7 +120,7 @@
     }
 
     [data-slot="input-error"] {
-      color: var(--text-on-critical-base);
+      color: var(--text-critical-base, var(--icon-critical-base));
 
       /* text-12-medium */
       font-family: var(--font-family-sans);

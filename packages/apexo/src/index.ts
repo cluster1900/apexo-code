@@ -153,9 +153,12 @@ try {
   }
   process.exitCode = 1
 } finally {
+  if (process.stdout.writableLength > 0) {
+    await new Promise<void>((resolve) => process.stdout.once("drain", resolve))
+  }
   // Some subprocesses don't react properly to SIGTERM and similar signals.
   // Most notably, some docker-container-based MCP servers don't handle such signals unless
   // run using `docker run --init`.
   // Explicitly exit to avoid any hanging subprocesses.
-  process.exit()
+  process.exit(process.exitCode)
 }

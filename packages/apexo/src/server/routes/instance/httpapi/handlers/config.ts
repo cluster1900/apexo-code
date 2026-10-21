@@ -33,12 +33,14 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     const claudeImportPreview = Effect.fn("ConfigHttpApi.claudeImportPreview")(function* () {
-      return ClaudeImport.preview(yield* Effect.promise(() => ClaudeImport.load(Global.Path.home)))
+      const ctx = yield* InstanceState.context
+      return ClaudeImport.preview(yield* Effect.promise(() => ClaudeImport.load(Global.Path.home, ctx.directory)))
     })
 
     const claudeImportApply = Effect.fn("ConfigHttpApi.claudeImportApply")(function* (ctx) {
+      const instance = yield* InstanceState.context
       const home = Global.Path.home
-      const plan = yield* Effect.promise(() => ClaudeImport.load(home))
+      const plan = yield* Effect.promise(() => ClaudeImport.load(home, instance.directory))
       const chosen = ctx.payload.sections
       const patch = ClaudeImport.configPatch(plan, chosen)
       if (Object.keys(patch).length) yield* configSvc.updateGlobal(patch as ConfigV1.Info)

@@ -176,6 +176,26 @@ const layer = Layer.effect(
                           )
                         if (result.info.role !== "assistant" || result.info.error || result.info.finish !== "stop")
                           return yield* Effect.fail(new Error("Goal reviewer session ended without a final response"))
+                        if (
+                          request.kind === "planning" &&
+                          !(yield* Effect.promise(() => Bun.file(files.paths.plan).exists()))
+                        ) {
+                          const raw = result.parts
+                            .flatMap((part) => (part.type === "text" ? [part.text] : []))
+                            .join("\n")
+                            .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+                            .trim()
+                          if (raw) {
+                            const fallbackPlan = (() => {
+                              try {
+                                const parsed = JSON.parse(raw) as { plan?: unknown }
+                                if (typeof parsed?.plan === "string" && parsed.plan.trim()) return parsed.plan.trim()
+                              } catch {}
+                              return raw
+                            })()
+                            yield* role.reports.write(files.paths.plan, fallbackPlan)
+                          }
+                        }
                         return {
                           sessionID: child.id,
                           execution: selection.execution,

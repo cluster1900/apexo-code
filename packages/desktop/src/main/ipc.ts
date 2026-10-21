@@ -221,7 +221,12 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
+    if (!app) {
+      return Promise.race([
+        shell.openPath(path),
+        new Promise<string>((resolve) => setTimeout(() => resolve(""), 1500)),
+      ])
+    }
     await new Promise<void>((resolve, reject) => {
       const [cmd, args] =
         process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)

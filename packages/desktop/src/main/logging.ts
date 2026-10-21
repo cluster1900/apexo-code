@@ -63,7 +63,9 @@ export async function exportDebugLogs() {
       ...serverLogRoots().flatMap((dir, i) => collect(dir, `server-${i + 1}`)),
       ...collect(app.getPath("crashDumps"), "crashpad"),
     ])
-    shell.showItemInFolder(output)
+    if (process.platform === "darwin" || process.platform === "win32") {
+      shell.showItemInFolder(output)
+    }
     return output
   } finally {
     if (restartNetLog) {

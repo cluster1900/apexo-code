@@ -38,8 +38,8 @@ export function CommandSandboxDialog(props: {
     setState({ pending: true, error: false })
     try {
       if (!props.sessionID) {
-        const protocol = await sdk.protocol
-        if (!lifetime.signal.aborted) setState({ native: protocol === "v2", loaded: true })
+        await sdk.protocol
+        if (!lifetime.signal.aborted) setState({ native: true, loaded: true })
         return
       }
       const result = await sdk.client.v2.session.sandbox(

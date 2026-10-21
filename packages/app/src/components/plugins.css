@@ -121,9 +121,11 @@
 .plugins-card-top {
   gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 .plugins-card-top > div:not(.plugins-avatar) {
-  flex: 1;
+  flex: 1 1 110px;
   min-width: 0;
 }
 .plugins-card-top h3 {

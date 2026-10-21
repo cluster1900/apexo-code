@@ -187,7 +187,7 @@ export const dict = {
   "mcp.runtime.retry": "重试连接",
   "mcp.runtime.tools": "可用工具：{{count}}",
   "mcp.runtime.authUnavailable": "此连接暂不支持设置身份验证。",
-  "hooks.title": "Hook",
+  "hooks.title": "钩子",
   "hooks.description":
     "查看为此会话保存的钩子配置快照。重新加载会在下一个可安全切换的时机重新查找受信任的配置，不会启动模型任务。",
   "hooks.refresh": "刷新快照",
@@ -630,6 +630,7 @@ export const dict = {
   "desktop.menu.paste": "粘贴",
   "desktop.menu.delete": "删除",
   "desktop.menu.selectAll": "全选",
+  "desktop.menu.commandPalette": "命令面板",
   "desktop.menu.toggleSidebar": "切换侧边栏",
   "desktop.menu.toggleTerminal": "切换终端",
   "desktop.menu.toggleFileTree": "切换文件树",
@@ -780,7 +781,9 @@ export const dict = {
   "command.model.choose.description": "选择不同的模型",
 
   "command.mcp.toggle": "启用或禁用 MCP 服务器",
-  "command.mcp.toggle.description": "启用或禁用 MCP 服务器",
+  "command.mcp.toggle.description": "管理已配置的 MCP 服务器连接状态",
+  "command.skills.reload": "重新加载技能",
+  "command.skills.reload.description": "在下一轮模型调用前重新加载已配置的技能",
 
   "command.agent.cycle": "切换智能体",
   "command.agent.cycle.description": "切换到下一个智能体",
@@ -1323,7 +1326,7 @@ export const dict = {
   "home.sessions.group.today": "今天",
   "home.sessions.group.yesterday": "昨天",
   "home.sessions.group.older": "更早",
-  "home.providerTip": "连接 75 个以上的提供商，使用包括 Claude、GPT、Gemini 在内的更多模型",
+  "home.providerTip": "连接主流提供商或自定义 OpenAI 兼容端点，使用 Claude、GPT、Grok、Gemini 等模型",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",

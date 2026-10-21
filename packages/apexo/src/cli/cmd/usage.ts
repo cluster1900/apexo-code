@@ -181,6 +181,15 @@ export async function loadSessionUsage(input: {
       directory,
     })
     return await readNativeUsageFromClient(client, input.sessionID, input.turn)
+  } catch (err) {
+    if (
+      protocol === "auto" &&
+      err instanceof CliError &&
+      (err.message.startsWith("No usage recorded") || err.message.includes("not found"))
+    ) {
+      return await readCompatibilityUsageLocal(input.sessionID, input.turn, directory ?? process.cwd())
+    }
+    throw err
   } finally {
     await host.close()
   }
@@ -580,15 +589,25 @@ export function buildCompatibilitySessionUsageReport(input: {
     const targetTurn = ensureTurn(assistant.parentID, assistant.time.created)
     const startedIso = new Date(assistant.time.created).toISOString()
     const endedIso = assistant.time.completed ? new Date(assistant.time.completed).toISOString() : undefined
+    const stepFinishParts = message.parts.filter(
+      (part): part is Extract<(typeof message.parts)[number], { type: "step-finish" }> => part.type === "step-finish",
+    )
+    const rawInput =
+      assistant.tokens.input || stepFinishParts.reduce((sum, part) => sum + (part.tokens?.input ?? 0), 0)
+    const rawOutput =
+      assistant.tokens.output || stepFinishParts.reduce((sum, part) => sum + (part.tokens?.output ?? 0), 0)
+    const rawReasoning =
+      assistant.tokens.reasoning || stepFinishParts.reduce((sum, part) => sum + (part.tokens?.reasoning ?? 0), 0)
+    const rawCacheRead =
+      assistant.tokens.cache.read || stepFinishParts.reduce((sum, part) => sum + (part.tokens?.cache?.read ?? 0), 0)
+    const rawCacheWrite =
+      assistant.tokens.cache.write || stepFinishParts.reduce((sum, part) => sum + (part.tokens?.cache?.write ?? 0), 0)
+    const rawCost = assistant.cost || stepFinishParts.reduce((sum, part) => sum + (part.cost ?? 0), 0)
     const hasTokens =
-      assistant.tokens.input > 0 ||
-      assistant.tokens.output > 0 ||
-      assistant.tokens.reasoning > 0 ||
-      assistant.tokens.cache.read > 0 ||
-      assistant.tokens.cache.write > 0
+      rawInput > 0 || rawOutput > 0 || rawReasoning > 0 || rawCacheRead > 0 || rawCacheWrite > 0
     const settled = Boolean(assistant.time.completed || assistant.finish || hasTokens) && !assistant.error
-    const inputTokens = settled || hasTokens ? assistant.tokens.input : 0
-    const outputTokens = settled || hasTokens ? assistant.tokens.output : 0
+    const inputTokens = settled || hasTokens ? rawInput : 0
+    const outputTokens = settled || hasTokens ? rawOutput : 0
     const step: StepUsage = {
       assistantMessageId: assistant.id,
       userMessageId: assistant.parentID,
@@ -601,12 +620,12 @@ export function buildCompatibilitySessionUsageReport(input: {
       ...(assistant.finish ? { finishReason: assistant.finish } : {}),
       inputTokens,
       outputTokens,
-      cachedReadTokens: settled || hasTokens ? assistant.tokens.cache.read : 0,
-      cacheCreationTokens: settled || hasTokens ? assistant.tokens.cache.write : 0,
-      reasoningTokens: settled || hasTokens ? assistant.tokens.reasoning : 0,
+      cachedReadTokens: settled || hasTokens ? rawCacheRead : 0,
+      cacheCreationTokens: settled || hasTokens ? rawCacheWrite : 0,
+      reasoningTokens: settled || hasTokens ? rawReasoning : 0,
       totalTokens: inputTokens + outputTokens,
-      modelCalls: settled || hasTokens ? 1 : 0,
-      costUsd: settled || hasTokens ? assistant.cost : null,
+      modelCalls: settled || hasTokens ? Math.max(1, stepFinishParts.length) : 0,
+      costUsd: settled || hasTokens ? rawCost : null,
       usageIsIncomplete: !settled,
       ...(assistant.error
         ? {

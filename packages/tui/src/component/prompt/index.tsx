@@ -460,6 +460,13 @@ export function Prompt(props: PromptProps) {
         slashAliases: ["edit-prompt"],
         run: async () => {
           dialog.clear()
+          if (!process.env.VISUAL?.trim() && !process.env.EDITOR?.trim()) {
+            toast.show({
+              variant: "warning",
+              message: "Editor not set. Set $VISUAL or $EDITOR for /editor.",
+            })
+            return
+          }
 
           // replace summarized text parts with the actual text
           const text = store.prompt.parts
@@ -882,7 +889,7 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: on,
       bindings: [
-        ...(store.prompt.input !== ""
+        ...(store.prompt.input !== "" && !/^\/[a-z][a-z0-9:-]*(?:\s+[^\n]*)?$/i.test(store.prompt.input.trim())
           ? [{ key: "return", desc: "Insert newline", group: "Prompt", cmd: () => input.insertText("\n") }]
           : []),
         { key: "shift+return", desc: "Send message", group: "Prompt", cmd: send },
@@ -1786,6 +1793,9 @@ export function Prompt(props: PromptProps) {
                         <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>
                           {local.permission.mode === "review" ? "auto" : "always-approve"}
                         </text>
+                      </Show>
+                      <Show when={multiline()}>
+                        <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>multiline</text>
                       </Show>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>

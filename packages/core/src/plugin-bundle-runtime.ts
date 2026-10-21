@@ -50,7 +50,12 @@ const make = Effect.gen(function* () {
         command()
         skill()
         bundles.publish(candidate)
-      }).pipe(Effect.andThen(pending.retire), Effect.andThen(language.retire), Effect.uninterruptible)
+      }).pipe(
+        Effect.andThen(pending.retire),
+        Effect.andThen(language.retire),
+        Effect.andThen(bundles.retire),
+        Effect.uninterruptible,
+      )
       // Retirement is part of settlement: new work cannot use old connections while
       // the old process groups and registrations are being closed.
     }).pipe(Effect.provideService(PluginBundleState.Candidate, candidate), Effect.scoped)
@@ -86,10 +91,10 @@ const make = Effect.gen(function* () {
                 yield* activate(candidate)
               }).pipe(
                 Effect.catchCause((cause) => {
-                  if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+                  if (Cause.hasInterruptsOnly(cause)) return bundles.retire.pipe(Effect.andThen(Effect.failCause(cause)))
                   const error = failure(cause)
                   bundles.failed(error)
-                  return Effect.fail(error)
+                  return bundles.retire.pipe(Effect.andThen(Effect.fail(error)))
                 }),
               ),
             ),

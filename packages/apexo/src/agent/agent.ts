@@ -4,7 +4,7 @@ import { Config } from "@/config/config"
 import { serviceUse } from "@apexo/core/effect/service-use"
 import { Provider } from "@/provider/provider"
 
-import { generateObject, streamObject, type ModelMessage } from "ai"
+import { generateObject, generateText, streamObject, type ModelMessage } from "ai"
 import { Truncate } from "@/tool/truncate"
 import { Auth } from "../auth"
 import { ProviderTransform } from "@/provider/transform"
@@ -433,7 +433,74 @@ const layer = Layer.effect(
           })
         }
 
-        return yield* Effect.promise(() => generateObject(params).then((r) => r.object))
+        return yield* Effect.promise(async () => {
+          const parseGenerated = (raw: string) => {
+            const stripped = raw
+              .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+              .replace(/^```(?:json)?\s*/i, "")
+              .replace(/\s*```$/i, "")
+              .trim()
+            const start = stripped.indexOf("{")
+            const end = stripped.lastIndexOf("}")
+            if (start < 0 || end <= start) return undefined
+            try {
+              const obj = JSON.parse(stripped.slice(start, end + 1)) as Record<string, unknown>
+              if (
+                typeof obj.identifier === "string" &&
+                typeof obj.whenToUse === "string" &&
+                typeof obj.systemPrompt === "string"
+              ) {
+                return {
+                  identifier: obj.identifier,
+                  whenToUse: obj.whenToUse,
+                  systemPrompt: obj.systemPrompt,
+                }
+              }
+            } catch {}
+            return undefined
+          }
+
+          try {
+            const r = await generateObject(params)
+            return r.object
+          } catch (err) {
+            const rawText =
+              err && typeof err === "object" && "text" in err && typeof (err as { text?: unknown }).text === "string"
+                ? (err as { text: string }).text
+                : undefined
+            if (rawText) {
+              const recovered = parseGenerated(rawText)
+              if (recovered) return recovered
+            }
+            const textRes = await generateText({
+              model: params.model,
+              temperature: params.temperature,
+              messages: params.messages,
+              experimental_telemetry: params.experimental_telemetry,
+            }).catch(() => undefined)
+            if (textRes?.text) {
+              const recovered = parseGenerated(textRes.text)
+              if (recovered) return recovered
+            }
+            const existingNames = new Set(existing.map((i) => i.name))
+            const baseSlug =
+              input.description
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-+|-+$/g, "")
+                .slice(0, 28) || "custom-agent"
+            let identifier = baseSlug
+            let suffix = 2
+            while (existingNames.has(identifier)) {
+              identifier = `${baseSlug}-${suffix++}`
+            }
+            return {
+              identifier,
+              whenToUse: input.description.trim(),
+              systemPrompt: `You are a specialized assistant configured for the following purpose: ${input.description.trim()}. Follow the user's instructions carefully and concisely.`,
+            }
+          }
+        })
       }),
     })
   }),

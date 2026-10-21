@@ -18,7 +18,7 @@ import "./settings-v2.css"
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
 const PROVIDER_ICON_SIZE = 16
-const STEALTH_MODEL_ID = /(?:^daybreak-|-terra(?:-|$))/i
+const STEALTH_MODEL_ID = /(?:^daybreak-|-terra(?:-|$)|-sol(?:-|$))/i
 
 export const SettingsModelsV2: Component = () => {
   const language = useLanguage()

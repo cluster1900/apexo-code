@@ -32,6 +32,7 @@ function SessionTabSlot(props: {
   onRename: (title: string) => Promise<void>
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
+  onCloseOthers?: () => void
 }) {
   const sortable = useSortable({
     get id() {
@@ -49,7 +50,7 @@ function SessionTabSlot(props: {
       data-titlebar-tab-slot
       data-tab-key={props.id}
       data-active={props.active()}
-      class="relative flex w-auto min-w-7 max-w-56 flex-shrink"
+      class="relative flex w-auto min-w-24 max-w-56 flex-shrink"
     >
       <TabNavItem
         ref={(el) => {
@@ -62,6 +63,7 @@ function SessionTabSlot(props: {
         onRename={props.onRename}
         onNavigate={() => props.onNavigate(ref)}
         onClose={props.onClose}
+        onCloseOthers={props.onCloseOthers}
         active={props.active()}
         forceTruncate={props.forceTruncate}
         dragging={sortable.isDragSource()}
@@ -80,6 +82,7 @@ function SessionTabEntry(props: {
   onVisibleChange: (visible: boolean) => void
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
+  onCloseOthers?: () => void
 }) {
   const tabs = useTabs()
   const language = useLanguage()
@@ -162,6 +165,7 @@ function SessionTabEntry(props: {
         onRename={rename}
         onNavigate={props.onNavigate}
         onClose={props.onClose}
+        onCloseOthers={props.onCloseOthers}
       />
     </Show>
   )
@@ -192,7 +196,7 @@ function DraftTabSlot(props: {
       data-titlebar-tab-slot
       data-tab-key={props.id}
       data-active={props.active()}
-      class="relative flex w-auto min-w-7 max-w-56 flex-shrink"
+      class="relative flex w-auto min-w-24 max-w-56 flex-shrink"
     >
       <DraftTabItem
         ref={(el) => {
@@ -360,6 +364,15 @@ export function TitlebarTabStrip(props: {
                         props.onNavigate(tab, element)
                       }}
                       onClose={() => props.onClose(tab)}
+                      onCloseOthers={
+                        props.tabs.length > 1
+                          ? () => {
+                              for (const other of props.tabs) {
+                                if (tabKey(other) !== id) props.onClose(other)
+                              }
+                            }
+                          : undefined
+                      }
                     />
                   )
                 }

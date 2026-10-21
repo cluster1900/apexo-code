@@ -1,10 +1,12 @@
 import { Plugins } from "../plugins"
+import { NativeMcpManager } from "../native-mcp-manager"
 import { Component, createMemo, createSignal, startTransition } from "solid-js"
 import { Dialog } from "@apexo/ui/v2/dialog-v2"
 import { TabsV2 } from "@apexo/ui/v2/tabs-v2"
 import { Icon } from "@apexo/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { SDKProvider } from "@/context/sdk"
 import { SettingsGeneralV2 } from "./general"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsProvidersV2 } from "./providers"
@@ -92,6 +94,10 @@ export const DialogSettings: Component<{
                       <Icon name="dot-grid" />
                       {language.t("plugins.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="mcp">
+                      <Icon name="mcp" />
+                      {language.t("settings.mcp.title")}
+                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="models">
                       <Icon name="models" />
                       {language.t("settings.models.title")}
@@ -120,6 +126,11 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="plugins">
           <Plugins />
+        </TabsV2.Content>
+        <TabsV2.Content value="mcp" class="settings-v2-panel">
+          <SDKProvider directory={() => directory() ?? serverSync().data.path.directory ?? ""}>
+            <NativeMcpManager allowManageConfig />
+          </SDKProvider>
         </TabsV2.Content>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />

@@ -168,6 +168,7 @@ function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] })
       ...data.info,
       title: redact("session-title", data.info.id, data.info.title),
       directory: redact("session-directory", data.info.id, data.info.directory),
+      ...(data.info.path === undefined ? {} : { path: redact("session-path", data.info.id, data.info.path) }),
       summary: !data.info.summary
         ? data.info.summary
         : {
@@ -266,42 +267,43 @@ const run = Effect.fn("Cli.export.body")(function* (args: {
   }
   const svc = yield* Session.Service
   let sessionID = args.sessionID ? SessionID.make(args.sessionID) : undefined
-  if (!sessionID) process.stderr.write(`Exporting session: latest\n`)
 
   if (!sessionID) {
-    UI.empty()
-    prompts.intro("Export session", { output: process.stderr })
-
     const sessions = yield* svc.list()
-
-    if (sessions.length === 0) {
-      prompts.log.error("No sessions found", { output: process.stderr })
-      prompts.outro("Done", { output: process.stderr })
-      return
-    }
-
     sessions.sort((a, b) => b.time.updated - a.time.updated)
 
-    const selectedSession = yield* Effect.promise(() =>
-      prompts.autocomplete({
-        message: "Select session to export",
-        maxItems: 10,
-        options: sessions.map((session) => ({
-          label: session.title,
-          value: session.id,
-          hint: `${new Date(session.time.updated).toLocaleString()} • ${session.id.slice(-8)}`,
-        })),
-        output: process.stderr,
-      }),
-    )
-
-    if (prompts.isCancel(selectedSession)) {
-      return yield* Effect.die(new UI.CancelledError())
+    if (sessions.length === 0) {
+      return yield* fail("No sessions found.")
     }
 
-    sessionID = selectedSession
+    if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stderr.isTTY) {
+      sessionID = sessions[0].id
+      process.stderr.write(`Exporting session: ${sessionID}\n`)
+    } else {
+      UI.empty()
+      prompts.intro("Export session", { output: process.stderr })
 
-    prompts.outro("Exporting session...", { output: process.stderr })
+      const selectedSession = yield* Effect.promise(() =>
+        prompts.autocomplete({
+          message: "Select session to export",
+          maxItems: 10,
+          options: sessions.map((session) => ({
+            label: session.title,
+            value: session.id,
+            hint: `${new Date(session.time.updated).toLocaleString()} • ${session.id.slice(-8)}`,
+          })),
+          output: process.stderr,
+        }),
+      )
+
+      if (prompts.isCancel(selectedSession)) {
+        return yield* Effect.die(new UI.CancelledError())
+      }
+
+      sessionID = selectedSession
+
+      prompts.outro(`Exporting session: ${sessionID}`, { output: process.stderr })
+    }
   }
 
   // Match legacy try/catch — catches both typed failures and defects
@@ -340,9 +342,21 @@ const run = Effect.fn("Cli.export.body")(function* (args: {
   }
   if (args.clipboard) {
     const { write } = yield* Effect.promise(() => import("@apexo/tui/clipboard"))
-    yield* Effect.promise(() => write(text))
+    yield* Effect.tryPromise({
+      try: () => write(text),
+      catch: (error) => error,
+    }).pipe(
+      Effect.catch((error) =>
+        fail(`Failed to copy to clipboard: ${error instanceof Error ? error.message : String(error)}`),
+      ),
+    )
     process.stderr.write(`Copied session ${exportData.info.id} to the clipboard${EOL}`)
     return
   }
-  process.stdout.write(text)
+  yield* Effect.promise(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        process.stdout.write(text, (err) => (err ? reject(err) : resolve()))
+      }),
+  )
 })

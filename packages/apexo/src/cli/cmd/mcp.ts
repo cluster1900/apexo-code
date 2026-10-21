@@ -1,6 +1,6 @@
 import { cmd } from "./cmd"
 import { ConfigV1 } from "@apexo/core/v1/config/config"
-import { effectCmd } from "../effect-cmd"
+import { CliError, effectCmd, fail } from "../effect-cmd"
 import { Cause } from "effect"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -99,6 +99,7 @@ export const McpCommand = cmd({
   builder: (yargs) =>
     yargs
       .command(McpAddCommand)
+      .command(McpRemoveCommand)
       .command(McpListCommand)
       .command(McpAuthCommand)
       .command(McpLogoutCommand)
@@ -202,6 +203,9 @@ export const McpAuthCommand = effectCmd({
 
     let serverName = args.name
     if (!serverName) {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        return yield* fail("MCP server name is required in non-interactive mode.")
+      }
       // Build options with auth status
       const options = servers.map(([name, cfg]) => {
         const authStatus = auth[name]
@@ -346,7 +350,16 @@ export const McpLogoutCommand = effectCmd({
     UI.empty()
     prompts.intro("MCP OAuth Logout")
 
-    const credentials = yield* McpAuth.Service.use((auth) => auth.all())
+    const config = yield* Config.Service.use((cfg) => cfg.get())
+    const configuredNames = new Set(Object.keys(config.mcp ?? {}))
+    const rawCredentials = yield* McpAuth.Service.use((auth) => auth.all())
+    for (const [name, entry] of Object.entries(rawCredentials)) {
+      if (!configuredNames.has(name) && !entry.tokens) {
+        yield* MCP.Service.use((mcp) => mcp.removeAuth(name))
+        delete rawCredentials[name]
+      }
+    }
+    const credentials = rawCredentials
     const serverNames = Object.keys(credentials)
 
     if (serverNames.length === 0) {
@@ -357,6 +370,9 @@ export const McpLogoutCommand = effectCmd({
 
     let serverName = args.name
     if (!serverName) {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        return yield* fail("MCP server name is required in non-interactive mode.")
+      }
       const selected = yield* Effect.promise(() =>
         prompts.select({
           message: "Select MCP server to logout",
@@ -437,6 +453,47 @@ async function addMcpToConfig(name: string, mcpConfig: ConfigMCPV1.Info, configP
   return configPath
 }
 
+async function removeMcpFromConfig(name: string, configPath: string) {
+  if (!(await Filesystem.exists(configPath))) return false
+  const text = await Filesystem.readText(configPath)
+  const edits = modify(text, ["mcp", name], undefined, {
+    formattingOptions: { tabSize: 2, insertSpaces: true },
+  })
+  if (edits.length === 0) return false
+  const next = applyEdits(text, edits)
+  if (next === text) return false
+  await Filesystem.write(configPath, next)
+  return true
+}
+
+export const McpRemoveCommand = effectCmd({
+  command: "remove <name>",
+  aliases: ["rm", "delete"],
+  describe: "remove an MCP server",
+  builder: (yargs) =>
+    yargs.positional("name", {
+      describe: "name of the MCP server to remove",
+      type: "string",
+      demandOption: true,
+    }),
+  handler: Effect.fn("Cli.mcp.remove")(function* (args) {
+    const maybeCtx = yield* InstanceRef
+    if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
+    const ctx = maybeCtx
+    const [projectConfigPath, globalConfigPath] = yield* Effect.promise(() =>
+      Promise.all([resolveConfigPath(ctx.worktree), resolveConfigPath(Global.Path.config, true)]),
+    )
+    const removedProject = yield* Effect.promise(() => removeMcpFromConfig(args.name, projectConfigPath))
+    const removedGlobal = yield* Effect.promise(() => removeMcpFromConfig(args.name, globalConfigPath))
+    yield* MCP.Service.use((mcp) => mcp.removeAuth(args.name)).pipe(Effect.catch(() => Effect.void))
+    if (!removedProject && !removedGlobal) {
+      return yield* fail(`MCP server not found: ${args.name}`)
+    }
+    const targetPath = removedProject ? projectConfigPath : globalConfigPath
+    prompts.log.success(`MCP server "${args.name}" removed from ${targetPath}`)
+  }),
+})
+
 export const McpAddCommand = effectCmd({
   command: "add [name]",
   describe: "add an MCP server",
@@ -464,206 +521,223 @@ export const McpAddCommand = effectCmd({
     const maybeCtx = yield* InstanceRef
     if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
     const ctx = maybeCtx
-    yield* Effect.promise(async () => {
-      const command = args["--"] ?? []
-      if (!args.name && (args.url || args.env?.length || args.header?.length || command.length)) {
-        throw new Error("A server name is required for non-interactive MCP configuration")
-      }
-      if (args.name) {
-        if (!!args.url === !!command.length) {
-          throw new Error("Provide either --url <url> or a command after --")
+    yield* Effect.tryPromise({
+      try: async () => {
+        const command = args["--"] ?? []
+        if (!args.name && (args.url || args.env?.length || args.header?.length || command.length)) {
+          throw new CliError({ message: "A server name is required for non-interactive MCP configuration" })
         }
-        if (args.url && !URL.canParse(args.url)) {
-          throw new Error(`Invalid URL: ${args.url}`)
+        if (args.name) {
+          if (!!args.url === !!command.length) {
+            throw new CliError({ message: "Provide either --url <url> or a command after --" })
+          }
+          if (args.url && !URL.canParse(args.url)) {
+            throw new CliError({ message: `Invalid URL: ${args.url}` })
+          }
+          if (args.url && args.env?.length) {
+            throw new CliError({ message: "--env is only valid for local MCP servers" })
+          }
+          if (command.length && args.header?.length) {
+            throw new CliError({ message: "--header is only valid for remote MCP servers" })
+          }
+
+          const entries = (values: string[], kind: string) =>
+            Object.fromEntries(
+              values.map((entry) => {
+                const index = entry.indexOf("=")
+                if (index < 1) throw new CliError({ message: `Invalid ${kind}: ${entry}. Expected KEY=VALUE` })
+                return [entry.slice(0, index), entry.slice(index + 1)]
+              }),
+            )
+          const environment = entries(args.env ?? [], "environment variable")
+          const headers = entries(args.header ?? [], "HTTP header")
+          const mcpConfig: ConfigMCPV1.Info = args.url
+            ? {
+                type: "remote",
+                url: args.url,
+                ...(Object.keys(headers).length ? { headers } : {}),
+              }
+            : {
+                type: "local",
+                command,
+                ...(Object.keys(environment).length ? { environment } : {}),
+              }
+
+          const configPath = await resolveConfigPath(Global.Path.config, true)
+          await addMcpToConfig(args.name, mcpConfig, configPath)
+          prompts.log.success(`MCP server "${args.name}" added to ${configPath}`)
+          return
         }
-        if (args.url && args.env?.length) {
-          throw new Error("--env is only valid for local MCP servers")
+
+        if (!process.stdin.isTTY || !process.stdout.isTTY) {
+          throw new CliError({
+            message: "Interactive MCP configuration requires a TTY. Provide <name> and --url or -- <command>.",
+          })
         }
-        if (command.length && args.header?.length) {
-          throw new Error("--header is only valid for remote MCP servers")
+
+        UI.empty()
+        prompts.intro("Add MCP server")
+
+        const project = ctx.project
+
+        // Resolve config paths eagerly for hints
+        const [projectConfigPath, globalConfigPath] = await Promise.all([
+          resolveConfigPath(ctx.worktree),
+          resolveConfigPath(Global.Path.config, true),
+        ])
+
+        // Determine scope
+        let configPath = globalConfigPath
+        if (project.vcs === "git") {
+          const scopeResult = await prompts.select({
+            message: "Location",
+            options: [
+              {
+                label: "Current project",
+                value: projectConfigPath,
+                hint: projectConfigPath,
+              },
+              {
+                label: "Global",
+                value: globalConfigPath,
+                hint: globalConfigPath,
+              },
+            ],
+          })
+          if (prompts.isCancel(scopeResult)) throw new UI.CancelledError()
+          configPath = scopeResult
         }
 
-        const entries = (values: string[], kind: string) =>
-          Object.fromEntries(
-            values.map((entry) => {
-              const index = entry.indexOf("=")
-              if (index < 1) throw new Error(`Invalid ${kind}: ${entry}. Expected KEY=VALUE`)
-              return [entry.slice(0, index), entry.slice(index + 1)]
-            }),
-          )
-        const environment = entries(args.env ?? [], "environment variable")
-        const headers = entries(args.header ?? [], "HTTP header")
-        const mcpConfig: ConfigMCPV1.Info = args.url
-          ? {
-              type: "remote",
-              url: args.url,
-              ...(Object.keys(headers).length ? { headers } : {}),
-            }
-          : {
-              type: "local",
-              command,
-              ...(Object.keys(environment).length ? { environment } : {}),
-            }
+        const name = await prompts.text({
+          message: "Enter MCP server name",
+          validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+        })
+        if (prompts.isCancel(name)) throw new UI.CancelledError()
 
-        const configPath = await resolveConfigPath(Global.Path.config, true)
-        await addMcpToConfig(args.name, mcpConfig, configPath)
-        prompts.log.success(`MCP server "${args.name}" added to ${configPath}`)
-        return
-      }
-
-      UI.empty()
-      prompts.intro("Add MCP server")
-
-      const project = ctx.project
-
-      // Resolve config paths eagerly for hints
-      const [projectConfigPath, globalConfigPath] = await Promise.all([
-        resolveConfigPath(ctx.worktree),
-        resolveConfigPath(Global.Path.config, true),
-      ])
-
-      // Determine scope
-      let configPath = globalConfigPath
-      if (project.vcs === "git") {
-        const scopeResult = await prompts.select({
-          message: "Location",
+        const type = await prompts.select({
+          message: "Select MCP server type",
           options: [
             {
-              label: "Current project",
-              value: projectConfigPath,
-              hint: projectConfigPath,
+              label: "Local",
+              value: "local",
+              hint: "Run a local command",
             },
             {
-              label: "Global",
-              value: globalConfigPath,
-              hint: globalConfigPath,
+              label: "Remote",
+              value: "remote",
+              hint: "Connect to a remote URL",
             },
           ],
         })
-        if (prompts.isCancel(scopeResult)) throw new UI.CancelledError()
-        configPath = scopeResult
-      }
+        if (prompts.isCancel(type)) throw new UI.CancelledError()
 
-      const name = await prompts.text({
-        message: "Enter MCP server name",
-        validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-      })
-      if (prompts.isCancel(name)) throw new UI.CancelledError()
+        if (type === "local") {
+          const command = await prompts.text({
+            message: "Enter command to run",
+            placeholder: "e.g., npx -y @modelcontextprotocol/server-filesystem",
+            validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+          })
+          if (prompts.isCancel(command)) throw new UI.CancelledError()
 
-      const type = await prompts.select({
-        message: "Select MCP server type",
-        options: [
-          {
-            label: "Local",
-            value: "local",
-            hint: "Run a local command",
-          },
-          {
-            label: "Remote",
-            value: "remote",
-            hint: "Connect to a remote URL",
-          },
-        ],
-      })
-      if (prompts.isCancel(type)) throw new UI.CancelledError()
+          const mcpConfig: ConfigMCPV1.Info = {
+            type: "local",
+            command: command.split(" "),
+          }
 
-      if (type === "local") {
-        const command = await prompts.text({
-          message: "Enter command to run",
-          placeholder: "e.g., apexo x @modelcontextprotocol/server-filesystem",
-          validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-        })
-        if (prompts.isCancel(command)) throw new UI.CancelledError()
-
-        const mcpConfig: ConfigMCPV1.Info = {
-          type: "local",
-          command: command.split(" "),
+          await addMcpToConfig(name, mcpConfig, configPath)
+          prompts.log.success(`MCP server "${name}" added to ${configPath}`)
+          prompts.outro("MCP server added successfully")
+          return
         }
 
-        await addMcpToConfig(name, mcpConfig, configPath)
-        prompts.log.success(`MCP server "${name}" added to ${configPath}`)
-        prompts.outro("MCP server added successfully")
-        return
-      }
+        if (type === "remote") {
+          const url = await prompts.text({
+            message: "Enter MCP server URL",
+            placeholder: "e.g., https://example.com/mcp",
+            validate: (x) => {
+              if (!x) return "Required"
+              if (x.length === 0) return "Required"
+              const isValid = URL.canParse(x)
+              return isValid ? undefined : "Invalid URL"
+            },
+          })
+          if (prompts.isCancel(url)) throw new UI.CancelledError()
 
-      if (type === "remote") {
-        const url = await prompts.text({
-          message: "Enter MCP server URL",
-          placeholder: "e.g., https://example.com/mcp",
-          validate: (x) => {
-            if (!x) return "Required"
-            if (x.length === 0) return "Required"
-            const isValid = URL.canParse(x)
-            return isValid ? undefined : "Invalid URL"
-          },
-        })
-        if (prompts.isCancel(url)) throw new UI.CancelledError()
-
-        const useOAuth = await prompts.confirm({
-          message: "Does this server require OAuth authentication?",
-          initialValue: false,
-        })
-        if (prompts.isCancel(useOAuth)) throw new UI.CancelledError()
-
-        let mcpConfig: ConfigMCPV1.Info
-
-        if (useOAuth) {
-          const hasClientId = await prompts.confirm({
-            message: "Do you have a pre-registered client ID?",
+          const useOAuth = await prompts.confirm({
+            message: "Does this server require OAuth authentication?",
             initialValue: false,
           })
-          if (prompts.isCancel(hasClientId)) throw new UI.CancelledError()
+          if (prompts.isCancel(useOAuth)) throw new UI.CancelledError()
 
-          if (hasClientId) {
-            const clientId = await prompts.text({
-              message: "Enter client ID",
-              validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-            })
-            if (prompts.isCancel(clientId)) throw new UI.CancelledError()
+          let mcpConfig: ConfigMCPV1.Info
 
-            const hasSecret = await prompts.confirm({
-              message: "Do you have a client secret?",
+          if (useOAuth) {
+            const hasClientId = await prompts.confirm({
+              message: "Do you have a pre-registered client ID?",
               initialValue: false,
             })
-            if (prompts.isCancel(hasSecret)) throw new UI.CancelledError()
+            if (prompts.isCancel(hasClientId)) throw new UI.CancelledError()
 
-            let clientSecret: string | undefined
-            if (hasSecret) {
-              const secret = await prompts.password({
-                message: "Enter client secret",
+            if (hasClientId) {
+              const clientId = await prompts.text({
+                message: "Enter client ID",
+                validate: (x) => (x && x.length > 0 ? undefined : "Required"),
               })
-              if (prompts.isCancel(secret)) throw new UI.CancelledError()
-              clientSecret = secret
-            }
+              if (prompts.isCancel(clientId)) throw new UI.CancelledError()
 
-            mcpConfig = {
-              type: "remote",
-              url,
-              oauth: {
-                clientId,
-                ...(clientSecret && { clientSecret }),
-              },
+              const hasSecret = await prompts.confirm({
+                message: "Do you have a client secret?",
+                initialValue: false,
+              })
+              if (prompts.isCancel(hasSecret)) throw new UI.CancelledError()
+
+              let clientSecret: string | undefined
+              if (hasSecret) {
+                const secret = await prompts.password({
+                  message: "Enter client secret",
+                })
+                if (prompts.isCancel(secret)) throw new UI.CancelledError()
+                clientSecret = secret
+              }
+
+              mcpConfig = {
+                type: "remote",
+                url,
+                oauth: {
+                  clientId,
+                  ...(clientSecret && { clientSecret }),
+                },
+              }
+            } else {
+              mcpConfig = {
+                type: "remote",
+                url,
+                oauth: {},
+              }
             }
           } else {
             mcpConfig = {
               type: "remote",
               url,
-              oauth: {},
             }
           }
-        } else {
-          mcpConfig = {
-            type: "remote",
-            url,
-          }
+
+          await addMcpToConfig(name, mcpConfig, configPath)
+          prompts.log.success(`MCP server "${name}" added to ${configPath}`)
         }
 
-        await addMcpToConfig(name, mcpConfig, configPath)
-        prompts.log.success(`MCP server "${name}" added to ${configPath}`)
-      }
-
-      prompts.outro("MCP server added successfully")
-    })
+        prompts.outro("MCP server added successfully")
+      },
+      catch: (err) => {
+        if (err instanceof CliError || err instanceof UI.CancelledError) return err
+        return new CliError({ message: err instanceof Error ? err.message : String(err) })
+      },
+    }).pipe(
+      Effect.catchIf(
+        (err): err is UI.CancelledError => err instanceof UI.CancelledError,
+        (err) => Effect.die(err),
+      ),
+    )
   }),
 })
 

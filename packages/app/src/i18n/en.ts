@@ -724,7 +724,7 @@ export const dict = {
   "command.model.choose": "Choose model",
   "command.model.choose.description": "Select a different model",
   "command.mcp.toggle": "Toggle MCPs",
-  "command.mcp.toggle.description": "Toggle MCPs",
+  "command.mcp.toggle.description": "Enable or disable configured MCP servers",
   "command.agent.cycle": "Cycle agent",
   "command.agent.cycle.description": "Switch to the next agent",
   "command.agent.cycle.reverse": "Cycle agent backwards",
@@ -1303,7 +1303,7 @@ export const dict = {
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.older": "Older",
-  "home.providerTip": "Connect to 75+ providers to use other models, including Claude, GPT, Gemini, etc",
+  "home.providerTip": "Connect a provider or custom OpenAI-compatible endpoint to use Claude, GPT, Grok, Gemini, and more",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",

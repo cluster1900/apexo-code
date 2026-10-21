@@ -262,12 +262,13 @@ const CompatibilityRunCommand = effectCmd({
         type: "string",
         choices: ["default", "json", "streaming-json"],
         default: "default",
-        describe: "format: default (formatted), json (completed events), or streaming-json (Grok Build event stream)",
+        describe: "format: default (formatted), json (completed events), or streaming-json (streaming event JSONL)",
       })
       .option("profile", {
         type: "string",
         choices: ["apexo", "grok-build"],
         describe: "runtime profile for the local server",
+        hidden: true,
       })
       .option("file", {
         alias: ["f"],
@@ -373,9 +374,9 @@ const CompatibilityRunCommand = effectCmd({
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
       const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
-      const interactive = args.mini
+      const interactive = Boolean(args.mini || args.interactive)
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
-      const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
+      const thinking = args.demo ? (args.thinking ?? true) : (args.thinking ?? false)
       const die = (message: string): never => {
         UI.error(message)
         process.exit(1)
@@ -396,7 +397,7 @@ const CompatibilityRunCommand = effectCmd({
         die("--mini cannot be used with --command")
       }
 
-      if (interactive && args._?.[0] !== "mini") {
+      if (args.mini && args._?.[0] !== "mini") {
         die("--mini must be used without the run subcommand")
       }
 
@@ -530,9 +531,10 @@ const CompatibilityRunCommand = effectCmd({
           ]
 
       function title() {
-        if (args.title === undefined) return
-        if (args.title !== "") return args.title
-        const text = initialInput ?? ""
+        if (args.title !== undefined && args.title !== "") return args.title
+        if (interactive && args.title === undefined) return
+        const text = (initialInput ?? "").trim().replace(/\s+/g, " ")
+        if (!text) return
         return text.slice(0, 50) + (text.length > 50 ? "..." : "")
       }
 
@@ -879,6 +881,9 @@ const CompatibilityRunCommand = effectCmd({
           }
         }
 
+        const printedTextParts = new Set<string>()
+        const toggles = new Map<string, boolean>()
+
         // Consume one subscribed event stream for the active session and mirror it
         // to stdout/UI. `client` is passed explicitly because attach mode may
         // rebind the SDK to the session's directory after the subscription is
@@ -889,7 +894,6 @@ const CompatibilityRunCommand = effectCmd({
           events: Awaited<ReturnType<typeof sdk.event.subscribe>>,
           stream: AbortController,
         ) {
-          const toggles = new Map<string, boolean>()
           const sessions = new Set([sessionID])
           let error: string | undefined
           // Grok Build headless contract: after a turn ends, keep running while background work the session started
@@ -1012,6 +1016,7 @@ const CompatibilityRunCommand = effectCmd({
               }
 
               if (part.type === "text" && part.time?.end && args.format !== "streaming-json") {
+                printedTextParts.add(part.id)
                 if (emit("text", { part })) continue
                 const text = part.text.trim()
                 if (!text) continue
@@ -1152,10 +1157,42 @@ const CompatibilityRunCommand = effectCmd({
           const onSigterm = () => handleSignal("SIGTERM")
           process.once("SIGINT", onSigint)
           process.once("SIGTERM", onSigterm)
-          async function finish() {
-            if (args.attach) return
+          async function finish(responseData?: {
+            info?: { role?: string; agent?: string; modelID?: string }
+            parts?: Array<{ id: string; type: string; text?: string }>
+          }) {
+            if (args.attach) {
+              await Promise.race([completed, Bun.sleep(1500)])
+              stream.abort()
+            }
             const error = await completed
             if (error) process.exitCode = 1
+            if (args.attach && responseData?.parts && args.format !== "streaming-json") {
+              if (
+                responseData.info?.role === "assistant" &&
+                args.format === "default" &&
+                toggles.get("start") !== true
+              ) {
+                UI.empty()
+                UI.println(`> ${responseData.info.agent} · ${responseData.info.modelID}`)
+                UI.empty()
+                toggles.set("start", true)
+              }
+              for (const part of responseData.parts) {
+                if (part.type !== "text" || printedTextParts.has(part.id)) continue
+                printedTextParts.add(part.id)
+                if (emit("text", { part })) continue
+                const text = (part.text ?? "").trim()
+                if (!text) continue
+                if (!process.stdout.isTTY) {
+                  process.stdout.write(text + EOL)
+                  continue
+                }
+                UI.empty()
+                UI.println(text)
+                UI.empty()
+              }
+            }
           }
 
           try {
@@ -1199,7 +1236,7 @@ const CompatibilityRunCommand = effectCmd({
               process.exitCode = 1
               return
             }
-            await finish()
+            await finish(result.data)
             return
           } finally {
             process.removeListener("SIGINT", onSigint)

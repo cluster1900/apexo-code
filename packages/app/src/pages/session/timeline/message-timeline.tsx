@@ -253,6 +253,7 @@ export function MessageTimeline(props: {
   const sdk = useSDK()
   const sync = useSync()
   const settings = useSettings()
+  const command = useCommand()
   const dialog = useDialog()
   const sessionArchive = useSessionArchive()
   const language = useLanguage()
@@ -286,7 +287,11 @@ export function MessageTimeline(props: {
     return sync().session.get(id)
   })
   const titleValue = createMemo(() => info()?.title)
-  const titleLabel = createMemo(() => sessionTitle(titleValue()))
+  const titleLabel = createMemo(() => {
+    const raw = sessionTitle(titleValue())
+    if (raw === "New session") return language.t("command.session.new")
+    return raw
+  })
   const parentID = createMemo(() => info()?.parentID)
   const parent = createMemo(() => {
     const id = parentID()
@@ -688,7 +693,6 @@ export function MessageTimeline(props: {
     })
   }
 
-  const command = useCommand()
   command.register("session-rename", () => [
     {
       id: "session.rename",
@@ -1481,6 +1485,9 @@ export function MessageTimeline(props: {
                                 >
                                   <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
                                 </DropdownMenu.Item>
+                                <DropdownMenu.Item onSelect={() => command.trigger("session.fork")}>
+                                  <DropdownMenu.ItemLabel>{language.t("command.session.fork")}</DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
                                 <DropdownMenu.Item onSelect={() => exportSession(id)}>
                                   <DropdownMenu.ItemLabel>{language.t("common.export")}</DropdownMenu.ItemLabel>
                                 </DropdownMenu.Item>
@@ -1534,6 +1541,9 @@ export function MessageTimeline(props: {
                                 }}
                               >
                                 {language.t("common.rename")}
+                              </MenuV2.Item>
+                              <MenuV2.Item onSelect={() => command.trigger("session.fork")}>
+                                {language.t("command.session.fork")}
                               </MenuV2.Item>
                               <MenuV2.Item onSelect={() => exportSession(id)}>
                                 {language.t("common.export")}...

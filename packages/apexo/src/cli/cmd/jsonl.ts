@@ -25,7 +25,7 @@ export function sessionListUrl(baseUrl: string, query: JsonlRequest["query"]) {
 
 export const JsonlCommand = effectCmd({
   command: "jsonl",
-  describe: "run a thin JSONL adapter for an existing Protocol/Client operation",
+  describe: "run a thin JSONL adapter for an existing Protocol/Client operation (supported method: session.list)",
   instance: false,
   builder: (yargs) =>
     yargs

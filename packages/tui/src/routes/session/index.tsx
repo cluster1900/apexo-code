@@ -1074,7 +1074,7 @@ export function Session() {
       title: "Session usage",
       value: "session.usage",
       category: "Session",
-      slash: { name: "usage", aliases: ["cost"] },
+      hidden: true,
       run: () => {
         const sessionData = session()
         if (!sessionData) return
@@ -1088,7 +1088,7 @@ export function Session() {
           `${usage.inputTokens.toLocaleString()} input / ${usage.outputTokens.toLocaleString()} output tokens`,
           ...usage.models.map(
             (model) =>
-              `${model.providerID}/${model.modelID}: ${plural(model.calls, "call")} · ${model.inputTokens.toLocaleString()} in / ${model.outputTokens.toLocaleString()} out · $${model.costUsd.toFixed(4)}`,
+              `${model.providerID}/${model.modelID} ($${model.costUsd.toFixed(4)}): ${plural(model.calls, "call")} · ${model.inputTokens.toLocaleString()} in / ${model.outputTokens.toLocaleString()} out`,
           ),
         ]
         void DialogAlert.show(dialog, "Session usage", lines.join("\n"))

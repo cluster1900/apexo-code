@@ -344,7 +344,11 @@ function HomeSessionSearchResultRow(
     selected: boolean
   },
 ) {
-  const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
+  const title = createMemo(() => {
+    const raw = sessionTitle(props.record.session.title)
+    if (raw === "New session") return props.language.t("command.session.new")
+    return raw || props.record.session.id
+  })
   const showProjectName = () => props.showProjectName() && props.record.projectName
   const key = () => homeSessionSearchKey(props.record)
 
@@ -415,7 +419,11 @@ function HomeSessionGroupHeader(props: {
 }
 
 function HomeSessionRow(props: HomeSessionsViewProps & { record: HomeSessionRecord }) {
-  const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
+  const title = createMemo(() => {
+    const raw = sessionTitle(props.record.session.title)
+    if (raw === "New session") return props.language.t("command.session.new")
+    return raw || props.record.session.id
+  })
   const showProjectName = () => props.showProjectName() && props.record.projectName
 
   return (

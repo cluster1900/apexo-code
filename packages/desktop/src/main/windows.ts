@@ -276,6 +276,9 @@ function registerWindow(win: BrowserWindow, id: string) {
   // Windows never emits before-quit on OS shutdown/logoff, but each window
   // gets session-end before it closes; flag the quit so ids stay persisted.
   win.on("session-end", () => registry.setQuitting())
+  win.on("close", (event) => {
+    if (!event.defaultPrevented) registry.closed(id)
+  })
   win.on("closed", () => registry.closed(id))
 }
 

@@ -6,6 +6,6 @@ export const StartupCommand = cmd({
   describe: "print startup timing",
   builder: (yargs) => yargs,
   handler() {
-    process.stdout.write(performance.now().toString() + EOL)
+    process.stdout.write(`${performance.now().toFixed(2)}ms${EOL}`)
   },
 })

@@ -410,6 +410,13 @@ const layer = Layer.effect(
       const msgs = onlySubtasks
         ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
         : yield* MessageV2.toModelMessagesEffect(context, mdl)
+      const fallback = firstUser.parts
+        .filter((p): p is SessionV1.TextPart => p.type === "text" && !p.synthetic)
+        .map((p) => p.text)
+        .join("\n")
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0)
       const text = yield* llm
         .stream({
           agent: ag,
@@ -426,15 +433,8 @@ const layer = Layer.effect(
           Stream.filter(LLMEvent.is.textDelta),
           Stream.map((e) => e.text),
           Stream.mkString,
-          Effect.orDie,
+          Effect.catchCause(() => Effect.succeed("")),
         )
-      const fallback = firstUser.parts
-        .filter((p): p is SessionV1.TextPart => p.type === "text" && !p.synthetic)
-        .map((p) => p.text)
-        .join("\n")
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.length > 0)
       const cleaned =
         text
           .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
@@ -1984,7 +1984,7 @@ const layer = Layer.effect(
       )
       const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
       const skillCommandText =
-        cmd.source === "skill"
+        cmd.source === "skill" || Boolean(cmd.template)
           ? `/${input.command}${input.arguments.trim() ? ` ${input.arguments.trim()}` : ""}`
           : undefined
       const parts = isSubtask

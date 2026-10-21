@@ -315,8 +315,11 @@ export function McpBrowser(props: {
         }
       >
         <text flexShrink={0} fg={props.theme().highlight}>
-          MCP connections
+          {props.openPicker ? "MCP resources" : "MCP connections"}
         </text>
+        <Show when={props.openPicker && !props.actions.attachments?.()}>
+          <text fg={props.theme().muted}>Start or open a session to browse and attach MCP resources.</text>
+        </Show>
         <Show when={state.snapshot?.native && props.onAttach && props.actions.attachments?.()}>
           <text fg={props.theme().muted}>b browse resources</text>
         </Show>

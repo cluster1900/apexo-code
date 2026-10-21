@@ -15,6 +15,7 @@ import {
 } from "@apexo/sdk/v2/grok-commands"
 import { InstallationVersion } from "@apexo/core/installation/version"
 import { openUrl } from "@apexo/core/open"
+import { sessionUsage } from "@apexo/sdk/v2/session-report"
 import { useDialog } from "../ui/dialog"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogConfirm } from "../ui/dialog-confirm"
@@ -71,8 +72,31 @@ export function useGrokCommands() {
     return id
   }
   const open = (url: string) => {
+    toast.show({ variant: "info", message: `Opening ${url}` })
     openUrl(url).catch(() => toast.show({ variant: "info", message: url }))
     dialog.clear()
+  }
+
+  const usageReport = () => {
+    const id = requireSession()
+    if (!id) return
+    const sessionData = sync.session.get(id)
+    if (!sessionData) return
+    const messages = sync.data.message[id] ?? []
+    const usage = sessionUsage({
+      info: sessionData,
+      messages: messages.map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+    })
+    const plural = (n: number, word: string) => `${n} ${n === 1 ? word : `${word}s`}`
+    const lines = [
+      `${plural(usage.turns, "turn")} · ${plural(usage.calls, "model call")} · $${usage.costUsd.toFixed(4)}`,
+      `${usage.inputTokens.toLocaleString()} input / ${usage.outputTokens.toLocaleString()} output tokens`,
+      ...usage.models.map(
+        (model) =>
+          `${model.providerID}/${model.modelID} ($${model.costUsd.toFixed(4)}): ${plural(model.calls, "call")} · ${model.inputTokens.toLocaleString()} in / ${model.outputTokens.toLocaleString()} out`,
+      ),
+    ]
+    alert("Session usage", lines.join("\n"))
   }
 
   const effort = (level = "") => {
@@ -126,7 +150,18 @@ export function useGrokCommands() {
     if (!session) return
     const file = `.apexo/plans/${session.time.created}-${session.slug}.md`
     const result = await sdk.client.file.read({ path: file }).catch(() => undefined)
-    const content = result?.data?.type === "text" ? result.data.content : ""
+    let content = result?.data?.type === "text" ? result.data.content : ""
+    if (!content.trim()) {
+      const messages = sync.data.message[id] ?? []
+      const planAssistant = [...messages]
+        .reverse()
+        .find((msg) => msg.role === "assistant" && ("agent" in msg ? msg.agent === "plan" : false))
+      if (planAssistant) {
+        content = (sync.data.part[planAssistant.id] ?? [])
+          .flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : []))
+          .join("\n")
+      }
+    }
     if (!content.trim()) return alert("Plan", "No saved plan for this session yet. Run /plan to create one.")
     alert(`Plan · ${file}`, content.length > 20_000 ? content.slice(0, 20_000) + "\n…" : content)
   }
@@ -150,12 +185,22 @@ export function useGrokCommands() {
     const limit =
       effectiveContextWindow(contextWindowChoice(id), model?.limit.context_options) ?? model?.limit.context ?? 0
     const usage = contextUsage(messages, limit)
-    if (!usage) return alert("Context", "No model response yet in this session.")
+    if (!usage)
+      return alert(
+        "Context",
+        [
+          model ? `Model: ${model.providerID}/${model.id}` : "",
+          `Window: ${limit ? limit.toLocaleString() : "?"} tokens`,
+          "Used: 0 tokens (no model response yet in this session)",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      )
     const pct = (value: number) => (usage.limit ? ` (${Math.round((value / usage.limit) * 100)}%)` : "")
     alert(
       "Context",
       [
-        `Window: ${usage.limit ? usage.limit.toLocaleString() : "unknown"} tokens`,
+        `Window: ${usage.limit ? usage.limit.toLocaleString() : "?"} tokens`,
         `Used: ${usage.used.toLocaleString()}${pct(usage.used)}`,
         `  Input (system prompt, tools, messages): ${usage.input.toLocaleString()}`,
         `  Cached input: ${usage.cache.toLocaleString()}`,
@@ -209,7 +254,14 @@ export function useGrokCommands() {
     if (!preview) return toast.show({ variant: "error", message: "Failed to read Claude settings" })
     const available = preview.sections.filter((section) => Number(section.count) > 0)
     if (!preview.found || !available.length)
-      return toast.show({ variant: "info", message: "No Claude settings found in ~/.claude" })
+      return toast.show({
+        variant: "info",
+        message: preview.found
+          ? preview.skipped.length
+            ? `No importable Claude settings in ~/.claude (${preview.skipped[0]})`
+            : "Claude settings file in ~/.claude has no importable sections"
+          : "No Claude settings found in ~/.claude",
+      })
     const chosen = new Set(available.map((section) => section.id))
     const show = (current?: string) =>
       dialog.replace(() => (
@@ -518,6 +570,14 @@ export function useGrokCommands() {
 
   const commands = [
     {
+      name: "grok.usage",
+      title: "Session usage",
+      category: "Session",
+      slashName: "usage",
+      slashAliases: ["cost"],
+      run: usageReport,
+    },
+    {
       name: "grok.context",
       title: "Show context window usage",
       category: "Session",
@@ -632,6 +692,7 @@ export function useGrokCommands() {
       category: "System",
       slashName: "fullscreen",
       slashAliases: ["full"],
+      hidden: true,
       run: () => {
         toast.show({ variant: "info", message: "Already in the fullscreen interface; /minimal switches to inline" })
         dialog.clear()

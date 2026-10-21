@@ -176,6 +176,13 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "view",
     labelKey: "desktop.menu.view",
     items: [
+      {
+        type: "item",
+        labelKey: "desktop.menu.commandPalette",
+        command: "command.palette",
+        accelerator: { macos: "Cmd+K", windows: "Ctrl+K" },
+      },
+      { type: "separator" },
       { type: "item", labelKey: "desktop.menu.toggleSidebar", command: "sidebar.toggle" },
       {
         type: "item",
@@ -275,19 +282,19 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       {
         type: "item",
         labelKey: "desktop.menu.documentation",
-        href: "https://github.com/cluster1900/apexo-grok#readme",
+        href: "https://github.com/cluster1900/apexo-code#readme",
       },
       { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export" },
       { type: "separator" },
       {
         type: "item",
         labelKey: "desktop.menu.shareFeedback",
-        href: "https://github.com/cluster1900/apexo-grok/issues/new?template=feature-request.yml",
+        href: "https://github.com/cluster1900/apexo-code/issues/new?template=feature-request.yml",
       },
       {
         type: "item",
         labelKey: "desktop.menu.reportBug",
-        href: "https://github.com/cluster1900/apexo-grok/issues/new?template=bug-report.yml",
+        href: "https://github.com/cluster1900/apexo-code/issues/new?template=bug-report.yml",
       },
     ],
   },
