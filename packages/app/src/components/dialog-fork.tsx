@@ -11,6 +11,8 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import type { TextPart as SDKTextPart } from "@apexo/sdk/v2/client"
 import { base64Encode } from "@apexo/core/util/encode"
 import { useLanguage } from "@/context/language"
+import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
+import { normalizeSessionInfo } from "@/utils/session"
 
 interface ForkableMessage {
   id: string
@@ -78,8 +80,13 @@ export const DialogFork: Component = () => {
       .api.session.fork({ sessionID, messageID: item.id })
       .then((forked) => {
         dialog.close()
+        sync().session.remember(normalizeSessionInfo(forked))
         prompt.set(restored, undefined, { dir, id: forked.id })
-        navigate(`/${dir}/session/${forked.id}`)
+        navigate(
+          params.serverKey
+            ? sessionHref(requireServerKey(params.serverKey), forked.id)
+            : legacySessionHref(sdk().directory, forked.id),
+        )
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)

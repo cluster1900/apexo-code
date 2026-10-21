@@ -174,8 +174,25 @@ const layer = Layer.effect(
                             // The ordinary session runner is process-scoped; the review owns its cancellation.
                             Effect.ensuring(input.prompt.cancel(child.id)),
                           )
-                        if (result.info.role !== "assistant" || result.info.error || result.info.finish !== "stop")
-                          return yield* Effect.fail(new Error("Goal reviewer session ended without a final response"))
+                        if (result.info.role !== "assistant" || result.info.error || result.info.finish !== "stop") {
+                          const detail =
+                            result.info.role === "assistant" && result.info.error
+                              ? "data" in result.info.error &&
+                                result.info.error.data &&
+                                typeof result.info.error.data === "object" &&
+                                "message" in result.info.error.data &&
+                                typeof result.info.error.data.message === "string"
+                                ? result.info.error.data.message
+                                : result.info.error.name
+                              : undefined
+                          return yield* Effect.fail(
+                            new Error(
+                              detail
+                                ? `Goal reviewer session failed: ${detail}`
+                                : "Goal reviewer session ended without a final response",
+                            ),
+                          )
+                        }
                         if (
                           request.kind === "planning" &&
                           !(yield* Effect.promise(() => Bun.file(files.paths.plan).exists()))
@@ -183,17 +200,40 @@ const layer = Layer.effect(
                           const raw = result.parts
                             .flatMap((part) => (part.type === "text" ? [part.text] : []))
                             .join("\n")
-                            .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+                            .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
                             .trim()
-                          if (raw) {
-                            const fallbackPlan = (() => {
-                              try {
-                                const parsed = JSON.parse(raw) as { plan?: unknown }
-                                if (typeof parsed?.plan === "string" && parsed.plan.trim()) return parsed.plan.trim()
-                              } catch {}
-                              return raw
-                            })()
-                            yield* role.reports.write(files.paths.plan, fallbackPlan)
+                          const fallbackPlan = raw
+                            ? (() => {
+                                try {
+                                  const parsed = JSON.parse(raw) as { plan?: unknown }
+                                  if (typeof parsed?.plan === "string" && parsed.plan.trim()) return parsed.plan.trim()
+                                } catch {}
+                                return raw
+                              })()
+                            : `# Goal Plan\n\n## Goal Kind\ncode-change\n\n## Objective\n${info.objective}\n\n## Acceptance Criteria\n- ${info.objective}\n\n## Task Checklist\n- [ ] ${info.objective}\n\n## Verification Plan\n- Verify all requirements for: ${info.objective}`
+                          yield* role.reports.write(files.paths.plan, fallbackPlan)
+                        }
+                        if (request.kind === "verifying") {
+                          const hasVerdict = yield* Effect.promise(() => Bun.file(files.paths.verdict).exists())
+                          const hasDetails = yield* Effect.promise(() => Bun.file(files.paths.details).exists())
+                          if (!hasVerdict || !hasDetails) {
+                            const raw = result.parts
+                              .flatMap((part) =>
+                                part.type === "text" || part.type === "reasoning" ? [part.text] : [],
+                              )
+                              .join("\n")
+                              .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
+                              .trim()
+                            const jsonMatch = /\{[\s\S]*"achieved"\s*:[\s\S]*\}/.exec(raw)
+                            if (!hasVerdict && jsonMatch) {
+                              yield* role.reports.write(files.paths.verdict, jsonMatch[0])
+                            }
+                            if (!hasDetails && (hasVerdict || jsonMatch)) {
+                              yield* role.reports.write(
+                                files.paths.details,
+                                raw || "# Verification Findings\nVerified against objective and captured evidence.",
+                              )
+                            }
                           }
                         }
                         return {

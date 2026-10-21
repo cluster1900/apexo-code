@@ -37,9 +37,22 @@ export function Plugins() {
   const directory = () => {
     const route = layout.route()
     if (route.type === "dir-new-sesssion") return route.dir
+    if (route.type === "draft")
+      return route.dir || layout.projects?.list()?.[0]?.worktree || serverSync().data.path?.directory || undefined
     if (route.type === "session") return serverSync().session.get(route.sessionId)?.directory
     return undefined
   }
+  const initialDismissedIds = (() => {
+    if (typeof localStorage === "undefined") return [] as string[]
+    const raw = localStorage.getItem("apexo.plugins.dismissedRetainedData")
+    if (!raw) return [] as string[]
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []
+    } catch {
+      return []
+    }
+  })()
   const [state, setState] = createStore({
     catalog: { sources: [], items: [] } as PluginStore.Catalog,
     tab: "discover",
@@ -60,7 +73,14 @@ export function Plugins() {
     runtimeError: false,
     runtimeLoading: false,
     retainedDismissed: false,
+    dismissedIds: initialDismissedIds,
   })
+  const saveDismissedIds = (next: string[]) => {
+    setState("dismissedIds", next)
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("apexo.plugins.dismissedRetainedData", JSON.stringify(next))
+    }
+  }
   const selected = createMemo(() => state.catalog.items.find((item) => item.id === state.selected))
   const items = createMemo(() =>
     state.catalog.items.filter(
@@ -81,6 +101,12 @@ export function Plugins() {
       .then((plugins) => plugins.manage({ pluginStoreAction: action }, { signal, throwOnError: true }))
       .then((result) => {
         if (signal.aborted) return
+        if ((action.action === "install" || action.action === "uninstall") && action.id) {
+          saveDismissedIds(
+            state.dismissedIds.filter((id) => id !== action.id && !id.endsWith(`:${action.id}`)),
+          )
+          setState("retainedDismissed", false)
+        }
         setState("catalog", reconcile(result.data))
         setState({ form: "", sourceInput: "", confirm: undefined, error: false, errorMessage: "" })
         if (["install", "update", "enable", "disable", "uninstall"].includes(action.action)) setState("changed", true)
@@ -228,8 +254,10 @@ export function Plugins() {
       }
       await current.client.plugins.reload({ directory: target }, { signal, throwOnError: true })
     })()
-      .then(() => {
-        if (!signal.aborted) setState("changed", false)
+      .then(async () => {
+        if (signal.aborted) return
+        setState("changed", false)
+        await serverSync().reloadCommands?.(target)
       })
       .catch(() => {
         if (!signal.aborted) setState("error", true)
@@ -237,6 +265,12 @@ export function Plugins() {
       .finally(async () => {
         if (signal.aborted) return
         await refreshRuntime()
+        await api()
+          .then((plugins) => plugins.list({}, { signal, throwOnError: true }))
+          .then((result) => {
+            if (!signal.aborted) setState("catalog", reconcile(result.data))
+          })
+          .catch(() => undefined)
         if (!signal.aborted) setState("pending", false)
       })
   }
@@ -342,14 +376,22 @@ export function Plugins() {
           </Button>
         </div>
       </Show>
-      <Show when={state.catalog.retainedData?.length && !state.retainedDismissed}>
+      <Show
+        when={
+          state.catalog.retainedData?.some((item) => !state.dismissedIds.includes(item.id)) && !state.retainedDismissed
+        }
+      >
         <div role="status" class="plugins-notice plugins-notice-row">
           <span>{language.t("plugins.cleanupDeferred")}</span>
           <Button
             variant="ghost"
             size="small"
             aria-label={language.t("common.close")}
-            onClick={() => setState("retainedDismissed", true)}
+            onClick={() => {
+              const ids = (state.catalog.retainedData ?? []).map((item) => item.id)
+              saveDismissedIds(Array.from(new Set([...state.dismissedIds, ...ids])))
+              setState("retainedDismissed", true)
+            }}
           >
             ×
           </Button>

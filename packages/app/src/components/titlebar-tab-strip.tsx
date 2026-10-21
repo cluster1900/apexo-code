@@ -33,6 +33,7 @@ function SessionTabSlot(props: {
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
   onCloseOthers?: () => void
+  onCloseAll?: () => void
 }) {
   const sortable = useSortable({
     get id() {
@@ -50,7 +51,7 @@ function SessionTabSlot(props: {
       data-titlebar-tab-slot
       data-tab-key={props.id}
       data-active={props.active()}
-      class="relative flex w-auto min-w-24 max-w-56 flex-shrink"
+      class="relative flex w-auto min-w-16 max-w-56 flex-shrink"
     >
       <TabNavItem
         ref={(el) => {
@@ -64,6 +65,7 @@ function SessionTabSlot(props: {
         onNavigate={() => props.onNavigate(ref)}
         onClose={props.onClose}
         onCloseOthers={props.onCloseOthers}
+        onCloseAll={props.onCloseAll}
         active={props.active()}
         forceTruncate={props.forceTruncate}
         dragging={sortable.isDragSource()}
@@ -83,6 +85,7 @@ function SessionTabEntry(props: {
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
   onCloseOthers?: () => void
+  onCloseAll?: () => void
 }) {
   const tabs = useTabs()
   const language = useLanguage()
@@ -166,6 +169,7 @@ function SessionTabEntry(props: {
         onNavigate={props.onNavigate}
         onClose={props.onClose}
         onCloseOthers={props.onCloseOthers}
+        onCloseAll={props.onCloseAll}
       />
     </Show>
   )
@@ -179,6 +183,8 @@ function DraftTabSlot(props: {
   title: string
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
+  onCloseOthers?: () => void
+  onCloseAll?: () => void
 }) {
   const sortable = useSortable({
     get id() {
@@ -196,7 +202,7 @@ function DraftTabSlot(props: {
       data-titlebar-tab-slot
       data-tab-key={props.id}
       data-active={props.active()}
-      class="relative flex w-auto min-w-24 max-w-56 flex-shrink"
+      class="relative flex w-auto min-w-16 max-w-56 flex-shrink"
     >
       <DraftTabItem
         ref={(el) => {
@@ -206,6 +212,8 @@ function DraftTabSlot(props: {
         title={props.title}
         onNavigate={() => props.onNavigate(ref)}
         onClose={props.onClose}
+        onCloseOthers={props.onCloseOthers}
+        onCloseAll={props.onCloseAll}
         active={props.active()}
         dragging={sortable.isDragSource()}
       />
@@ -349,6 +357,23 @@ export function TitlebarTabStrip(props: {
                   if (conn) return global.ensureServerCtx(conn)
                 })
 
+                const closeOthers =
+                  props.tabs.length > 1
+                    ? () => {
+                        for (const other of props.tabs) {
+                          if (tabKey(other) !== id) props.onClose(other)
+                        }
+                      }
+                    : undefined
+                const closeAll =
+                  props.tabs.length > 0
+                    ? () => {
+                        for (const item of [...props.tabs]) {
+                          props.onClose(item)
+                        }
+                      }
+                    : undefined
+
                 if (tab.type === "session") {
                   return (
                     <SessionTabEntry
@@ -364,15 +389,8 @@ export function TitlebarTabStrip(props: {
                         props.onNavigate(tab, element)
                       }}
                       onClose={() => props.onClose(tab)}
-                      onCloseOthers={
-                        props.tabs.length > 1
-                          ? () => {
-                              for (const other of props.tabs) {
-                                if (tabKey(other) !== id) props.onClose(other)
-                              }
-                            }
-                          : undefined
-                      }
+                      onCloseOthers={closeOthers}
+                      onCloseAll={closeAll}
                     />
                   )
                 }
@@ -389,6 +407,8 @@ export function TitlebarTabStrip(props: {
                       props.onNavigate(tab, element)
                     }}
                     onClose={() => props.onClose(tab)}
+                    onCloseOthers={closeOthers}
+                    onCloseAll={closeAll}
                   />
                 )
               }}

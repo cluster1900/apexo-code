@@ -146,6 +146,19 @@ function globalConfigFile() {
   return path.join(Global.Path.config, `${legacy ? LEGACY_CONFIG_NAME : "apexo"}.jsonc`)
 }
 
+function isV1McpMap(value: Record<string, unknown>) {
+  return Object.values(value).every((v) => isRecord(v) && (v.type === "local" || v.type === "remote"))
+}
+
+function removedV1McpKeys(existing: unknown, next: Record<string, unknown>) {
+  if (!isV1McpMap(next)) return []
+  const prev = isRecord(existing) && isRecord(existing.mcp) ? existing.mcp : undefined
+  if (!prev) return []
+  return Object.entries(prev)
+    .filter(([k, v]) => !(k in next) && isRecord(v) && (v.type === "local" || v.type === "remote"))
+    .map(([k]) => k)
+}
+
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
   if (!isRecord(patch)) {
     const edits = modify(input, path, patch, {
@@ -157,7 +170,24 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
     return applyEdits(input, edits)
   }
 
-  return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
+  const next = Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
+  if (path.length === 1 && path[0] === "mcp") {
+    const removed = removedV1McpKeys(ConfigParse.jsonc(input, "config.jsonc"), patch)
+    return removed.reduce(
+      (result, key) =>
+        applyEdits(
+          result,
+          modify(result, ["mcp", key], undefined, {
+            formattingOptions: {
+              insertSpaces: true,
+              tabSize: 2,
+            },
+          }),
+        ),
+      next,
+    )
+  }
+  return next
 }
 
 function writable(info: Info) {
@@ -627,6 +657,11 @@ const layer = Layer.effect(
         const existing = ConfigParse.jsonc(before, file)
         ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value, file)
         const merged = mergeDeep(isRecord(existing) ? existing : {}, patch)
+        if ("mcp" in patch && isRecord(patch.mcp) && isRecord(merged.mcp)) {
+          for (const key of removedV1McpKeys(existing, patch.mcp)) {
+            delete merged.mcp[key]
+          }
+        }
         const serialized = JSON.stringify(merged, null, 2)
         next = yield* decodeConfig(merged, file)
         changed = serialized !== before

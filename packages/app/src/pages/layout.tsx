@@ -49,6 +49,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
 import { listAllSessions } from "@/utils/session"
+import { importSessionFromFile } from "@/utils/session-export"
 
 import { useDialog } from "@apexo/ui/context/dialog"
 import { useTheme, type ColorScheme } from "@apexo/ui/theme/context"
@@ -859,7 +860,6 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   async function archiveSession(session: Session) {
-    if ((await serverSDK().protocol) !== "v1") return
     const [store, setStore] = serverSync().child(session.directory)
     const sessions = store.session ?? []
     const index = sessions.findIndex((s) => s.id === session.id)
@@ -885,6 +885,41 @@ export default function LegacyLayout(props: ParentProps) {
     }
   }
 
+  async function importSession() {
+    const directory = currentDir() ?? currentProject()?.worktree ?? layout.projects.list()[0]?.worktree
+    try {
+      const session = await importSessionFromFile({
+        url: serverSDK().url,
+        directory,
+        title: language.t("command.session.import"),
+      })
+      if (!session) return
+      const [, setChildStore] = serverSync().child(session.directory)
+      setChildStore(
+        produce((draft) => {
+          const match = Binary.search(draft.session, session.id, (s) => s.id)
+          if (match.found) draft.session[match.index] = session
+          else draft.session.splice(match.index, 0, session)
+        }),
+      )
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("toast.session.import.success.title"),
+        description: language.t("toast.session.import.success.description", {
+          title: session.title || session.id,
+        }),
+      })
+      navigateToSession(session)
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("toast.session.import.failed.title"),
+        description: err instanceof Error ? err.message : language.t("toast.session.import.failed.description"),
+      })
+    }
+  }
+
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
@@ -902,6 +937,14 @@ export default function LegacyLayout(props: ParentProps) {
         slashAliases: ["continue"],
         onSelect: () => void resumeSession(),
         onSlash: (query) => void resumeSession(query),
+      },
+      {
+        id: "session.import",
+        title: language.t("command.session.import"),
+        description: language.t("command.session.import.description"),
+        category: language.t("command.category.session"),
+        slash: "import",
+        onSelect: () => void importSession(),
       },
       {
         id: "debug.toggle",

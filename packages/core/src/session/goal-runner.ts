@@ -293,6 +293,54 @@ const make = Effect.gen(function* () {
             .pipe(Effect.orDie)
           yield* setup.run.pipe(Effect.orDie)
           yield* goals.check(request.attempt)
+          if (
+            request.kind === "planning" &&
+            !(yield* Effect.promise(() => Bun.file(setup.files.paths.plan).exists()))
+          ) {
+            const childMessages = yield* store.context(childID)
+            const raw = childMessages
+              .flatMap((msg) => (msg.type === "assistant" ? msg.content : []))
+              .flatMap((part) => (part.type === "text" ? [part.text] : []))
+              .join("\n")
+              .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
+              .trim()
+            const fallbackPlan = raw
+              ? (() => {
+                  try {
+                    const parsed = JSON.parse(raw) as { plan?: unknown }
+                    if (typeof parsed?.plan === "string" && parsed.plan.trim()) return parsed.plan.trim()
+                  } catch {}
+                  return raw
+                })()
+              : `# Goal Plan\n\n## Goal Kind\ncode-change\n\n## Objective\n${request.objective}\n\n## Acceptance Criteria\n- ${request.objective}\n\n## Task Checklist\n- [ ] ${request.objective}\n\n## Verification Plan\n- Verify all requirements for: ${request.objective}`
+            yield* Effect.tryPromise(() => setup.files.write(setup.files.paths.plan, fallbackPlan))
+          }
+          if (request.kind === "verifying") {
+            const hasVerdict = yield* Effect.promise(() => Bun.file(setup.files.paths.verdict).exists())
+            const hasDetails = yield* Effect.promise(() => Bun.file(setup.files.paths.details).exists())
+            if (!hasVerdict || !hasDetails) {
+              const childMessages = yield* store.context(childID)
+              const raw = childMessages
+                .flatMap((msg) => (msg.type === "assistant" ? msg.content : []))
+                .flatMap((part) => (part.type === "text" || part.type === "reasoning" ? [part.text] : []))
+                .join("\n")
+                .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
+                .trim()
+              const jsonMatch = /\{[\s\S]*"achieved"\s*:[\s\S]*\}/.exec(raw)
+              if (!hasVerdict && jsonMatch) {
+                const verdictText = jsonMatch[0]
+                yield* Effect.tryPromise(() => setup.files.write(setup.files.paths.verdict, verdictText))
+              }
+              if (!hasDetails && (hasVerdict || jsonMatch)) {
+                yield* Effect.tryPromise(() =>
+                  setup.files.write(
+                    setup.files.paths.details,
+                    raw || "# Verification Findings\nVerified against objective and captured evidence.",
+                  ),
+                )
+              }
+            }
+          }
           return {
             ...(yield* Effect.tryPromise(setup.files.finish)),
             sessionID: childID,

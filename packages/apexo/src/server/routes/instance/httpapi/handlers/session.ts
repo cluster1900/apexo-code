@@ -179,6 +179,64 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (body.trim().length === 0) return yield* create({})
 
       const json = yield* tryParseJson(body)
+      if (
+        json &&
+        typeof json === "object" &&
+        "info" in json &&
+        "messages" in json &&
+        Array.isArray((json as { messages?: unknown }).messages)
+      ) {
+        const raw = json as {
+          info?: { title?: string }
+          messages: Array<{ info?: Record<string, unknown>; parts?: Array<Record<string, unknown>> }>
+        }
+        const created = yield* create({
+          payload: {
+            title: typeof raw.info?.title === "string" && raw.info.title.trim() ? raw.info.title.trim() : undefined,
+          },
+        })
+        const idMap = new Map<string, MessageID>()
+        const decodeMsg = Schema.decodeUnknownOption(SessionV1.Info)
+        const decodePart = Schema.decodeUnknownOption(SessionV1.Part)
+        for (const item of raw.messages) {
+          if (!item?.info || typeof item.info !== "object") continue
+          const oldID = typeof item.info.id === "string" ? item.info.id : ""
+          const newID = MessageID.ascending()
+          if (oldID) idMap.set(oldID, newID)
+          const oldParentID = typeof item.info.parentID === "string" ? item.info.parentID : undefined
+          const parentID =
+            item.info.role === "assistant" && oldParentID
+              ? (idMap.get(oldParentID) ?? MessageID.make(oldParentID))
+              : undefined
+          const candidateMsg = {
+            ...item.info,
+            sessionID: created.id,
+            id: newID,
+            ...(parentID ? { parentID } : {}),
+          }
+          const decodedMsg = decodeMsg(candidateMsg)
+          if (Option.isNone(decodedMsg)) continue
+          yield* session.updateMessage(structuredClone(decodedMsg.value) as SessionV1.Info)
+          const parts = Array.isArray(item.parts) ? item.parts : []
+          for (const part of parts) {
+            if (!part || typeof part !== "object") continue
+            const candidatePart = {
+              ...part,
+              id: PartID.ascending(),
+              messageID: newID,
+              sessionID: created.id,
+            }
+            const decodedPart = decodePart(candidatePart)
+            if (Option.isNone(decodedPart)) continue
+            const nextPart = structuredClone(decodedPart.value) as SessionV1.Part
+            if (nextPart.type === "compaction" && nextPart.tail_start_id) {
+              nextPart.tail_start_id = idMap.get(nextPart.tail_start_id) ?? nextPart.tail_start_id
+            }
+            yield* session.updatePart(nextPart)
+          }
+        }
+        return created
+      }
       const decoded = yield* Schema.decodeUnknownEffect(Session.CreateInput)(json).pipe(
         Effect.mapError(() => new HttpApiError.BadRequest({})),
       )

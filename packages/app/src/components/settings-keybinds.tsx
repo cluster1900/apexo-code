@@ -13,6 +13,7 @@ import fuzzysort from "fuzzysort"
 import { DEFAULT_PALETTE_KEYBIND, formatKeybind, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
+import { dict as en } from "@/i18n/en"
 import { SettingsList } from "./settings-list"
 import { SettingsListV2 } from "./settings-v2/parts/list"
 
@@ -127,6 +128,61 @@ function keybinds(value: unknown): KeybindMap {
 const KEYBIND_TITLE_KEYS: Partial<Record<string, Parameters<LanguageContext["t"]>[0]>> = {
   "context.addSelection": "command.context.addSelection",
   "grok.dashboard": "grok.dashboard",
+  "grok.context": "grok.context",
+  "grok.context-window": "grok.contextWindow",
+  "grok.history": "grok.history",
+  "grok.plan": "grok.plan",
+  "grok.view-plan": "grok.plan.view",
+  "grok.effort": "grok.effort",
+  "grok.docs": "grok.docs",
+  "grok.release-notes": "grok.releaseNotes",
+  "grok.tutorial": "grok.tutorial",
+  "grok.doctor": "grok.doctor",
+  "grok.multiline": "grok.multiline.on",
+  "grok.vim-mode": "grok.vim.on",
+  "grok.compact-mode": "grok.compact.on",
+  "grok.edit-prompt": "grok.editPrompt",
+  "grok.move": "grok.move",
+  "grok.import-claude": "grok.importClaude",
+  "grok.logout": "grok.logout",
+  "sessions.open": "command.sessions.open",
+  "session.info": "grok.sessionInfo",
+  "session.mcpResources": "mcp.resources.title",
+  "session.sandbox": "commandSandbox.title",
+  "session.hooks": "hooks.title",
+  "session.btw": "btw.title",
+  "session.goal": "goal.title",
+  "session.feedback": "feedback.title",
+  "session.workflow": "workflow.title",
+  "session.deep-research": "workflow.research",
+  "session.memory": "memory.title",
+  "session.remember": "memory.review.title",
+  "session.export": "command.session.export",
+  "session.import": "command.session.import",
+  "session.copy": "command.session.copy",
+  "session.timeline": "command.session.timeline",
+  "session.usage": "command.session.usage",
+  "session.trace": "command.session.trace",
+  "session.rename": "command.session.rename",
+  "session.skills": "command.session.skills",
+  "session.fork": "command.session.fork",
+  "session.toggle.timestamps": "grok.timestamps.title",
+  "skills.reload": "command.skills.reload",
+  "debug.toggle": "command.debug.toggle",
+  "reasoning.toggle": "command.reasoning.toggle",
+  "provider.connect": "command.provider.connect",
+  "server.switch": "command.server.switch",
+  "plugins.open": "plugins.title",
+  "app.exit": "grok.exit.title",
+  "logs.export": "command.logs.export",
+  "project.open": "command.project.open",
+  "project.previous": "command.project.previous",
+  "project.next": "command.project.next",
+  "workspace.toggle": "command.workspace.toggle",
+  "language.cycle": "command.language.cycle",
+  "session.previous.unseen": "command.session.previous.unseen",
+  "session.next.unseen": "command.session.next.unseen",
+  "theme.scheme.cycle": "command.theme.scheme.cycle",
   "tab.close": "command.tab.close",
   "tab.new": "command.session.new",
   "tab.reopenClosed": "command.tab.reopenClosed",
@@ -169,9 +225,17 @@ const KEYBIND_TITLE_KEYS: Partial<Record<string, Parameters<LanguageContext["t"]
   "workspace.new": "workspace.new",
 }
 
+const EN_TITLE_TO_KEY = new Map<string, Parameters<LanguageContext["t"]>[0]>()
+for (const [k, v] of Object.entries(en)) {
+  if (typeof v === "string" && !EN_TITLE_TO_KEY.has(v)) {
+    EN_TITLE_TO_KEY.set(v, k as Parameters<LanguageContext["t"]>[0])
+  }
+}
+
 function localizedTitle(id: string, fallback: string, t?: LanguageContext["t"]) {
-  const key = KEYBIND_TITLE_KEYS[id]
-  if (key && t) return t(key)
+  if (!t) return fallback
+  const key = KEYBIND_TITLE_KEYS[id] ?? EN_TITLE_TO_KEY.get(fallback)
+  if (key) return t(key)
   return fallback
 }
 

@@ -1,6 +1,9 @@
 import { Button } from "@apexo/ui/button"
+import { ButtonV2 } from "@apexo/ui/v2/button-v2"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { Dialog } from "@apexo/ui/dialog"
+import { DialogBody, DialogFooter, DialogHeader, DialogTitle, DialogV2 } from "@apexo/ui/v2/dialog-v2"
+import { DividerV2 } from "@apexo/ui/v2/divider-v2"
 import { DropdownMenu } from "@apexo/ui/dropdown-menu"
 import { Icon } from "@apexo/ui/icon"
 import { IconButton } from "@apexo/ui/icon-button"
@@ -193,6 +196,7 @@ export function DialogSelectServer() {
 
 export function useServerManagementController(options: { onSelect?: () => void; navigateOnAdd?: boolean } = {}) {
   const navigate = useNavigate()
+  const dialog = useDialog()
   const server = useServer()
   const tabs = useTabs()
   const global = useGlobal()
@@ -262,7 +266,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     mutationFn: async (value: string) => {
       const normalized = normalizeServerUrl(value)
       if (!normalized) {
-        resetAdd()
+        setStore("addServer", { error: language.t("dialog.server.add.error") })
         return
       }
 
@@ -278,7 +282,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
         const authFailed = await checkAuthFailure(conn.http)
         setStore("addServer", {
           error: authFailed
-            ? "Authentication failed (HTTP 401/403). Check your username and password."
+            ? language.t("dialog.server.add.authError")
             : language.t("dialog.server.add.error"),
         })
         return
@@ -306,7 +310,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       if (input.original.type !== "http") return
       const normalized = normalizeServerUrl(input.value)
       if (!normalized) {
-        resetEdit()
+        setStore("editServer", { error: language.t("dialog.server.add.error") })
         return
       }
 
@@ -334,7 +338,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
         const authFailed = await checkAuthFailure(conn.http)
         setStore("editServer", {
           error: authFailed
-            ? "Authentication failed (HTTP 401/403). Check your username and password."
+            ? language.t("dialog.server.add.authError")
             : language.t("dialog.server.add.error"),
         })
         return
@@ -551,10 +555,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     resetEdit()
   })
 
-  async function handleRemove(key: ServerConnection.Key) {
-    if (typeof window !== "undefined" && typeof window.confirm === "function") {
-      if (!window.confirm(`${language.t("dialog.server.action.remove")} (${key})?`)) return
-    }
+  async function performRemove(key: ServerConnection.Key) {
     try {
       if (key.startsWith("wsl:")) await platform.wslServers?.removeServer(key)
       tabs.removeServer(key)
@@ -565,6 +566,36 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     } catch (err) {
       showRequestError(language, err)
     }
+  }
+
+  async function handleRemove(key: ServerConnection.Key) {
+    dialog.push(() => (
+      <DialogV2 fit class="settings-v2-server-dialog">
+        <DialogHeader hideClose={true}>
+          <DialogTitle>{language.t("dialog.server.menu.delete")}</DialogTitle>
+        </DialogHeader>
+        <DividerV2 />
+        <DialogBody class="flex w-full min-w-0 flex-1 flex-col px-6 pt-4 pb-2">
+          <p class="text-13-regular text-[var(--v2-text-text-muted)]">
+            {language.t("dialog.server.action.remove")} ({key})?
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <ButtonV2 variant="neutral" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </ButtonV2>
+          <ButtonV2
+            variant="danger"
+            onClick={() => {
+              dialog.close()
+              void performRemove(key)
+            }}
+          >
+            {language.t("dialog.server.menu.delete")}
+          </ButtonV2>
+        </DialogFooter>
+      </DialogV2>
+    ))
   }
 
   return {

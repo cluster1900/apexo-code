@@ -57,6 +57,7 @@ import { Icon as IconV2 } from "@apexo/ui/v2/icon"
 import { IconButtonV2 } from "@apexo/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@apexo/ui/v2/button-v2"
 import { TooltipV2 } from "@apexo/ui/v2/tooltip-v2"
+import { MenuV2 } from "@apexo/ui/v2/menu-v2"
 import { Spinner } from "@apexo/ui/spinner"
 import { TextShimmer } from "@apexo/ui/text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
@@ -181,6 +182,8 @@ export type UserActions = {
   fork?: SessionAction
   edit?: SessionAction
   revert?: SessionAction
+  retry?: SessionAction
+  delete?: SessionAction
   openAttachment?: (file: FilePart) => void
 }
 
@@ -196,6 +199,8 @@ export type UserMessageComment = {
 export interface MessagePartProps {
   part: PartType
   message: MessageType
+  actions?: UserActions
+  userMessageID?: string
   hideDetails?: boolean
   defaultOpen?: boolean
   toolOpen?: boolean
@@ -210,7 +215,7 @@ export interface MessagePartProps {
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "reset" | "edit"
+    icon: "check" | "copy" | "reset" | "edit" | "branch" | "trash"
     label: JSX.Element
     useV2?: boolean
   },
@@ -1290,8 +1295,7 @@ export function UserMessageDisplay(props: {
   }
 
   const editLabel = () => i18n.t(props.actions?.edit ? "ui.messagePart.title.edit" : "ui.message.revertMessage")
-  const edit = () => {
-    const act = props.actions?.edit ?? props.actions?.revert
+  const runAction = (act: SessionAction | undefined) => {
     if (!act || busy()) return
     setState("busy", true)
     void Promise.resolve()
@@ -1303,6 +1307,10 @@ export function UserMessageDisplay(props: {
       )
       .finally(() => setState("busy", false))
   }
+  const edit = () => runAction(props.actions?.edit ?? props.actions?.revert)
+  const retry = () => runAction(props.actions?.retry)
+  const fork = () => runAction(props.actions?.fork)
+  const remove = () => runAction(props.actions?.delete)
 
   const renderAttachments = () => (
     <Show when={attachments().length > 0}>
@@ -1356,81 +1364,152 @@ export function UserMessageDisplay(props: {
   )
 
   return (
-    <div data-component="user-message" data-timeline-part-id={textPart()?.id}>
-      <Show when={!props.useV2Actions}>{renderAttachments()}</Show>
-      <Show
-        when={text()}
-        fallback={
-          <Show when={messageComments().length > 0}>
-            <UserMessageComments comments={messageComments()} bounded={false} />
-          </Show>
-        }
-      >
-        <div data-slot="user-message-body">
-          <div
-            data-slot="user-message-text"
-            dir="auto"
-            data-comments={messageComments().length > 0 ? "true" : undefined}
-          >
-            <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+    <MenuV2.Context>
+      <MenuV2.Context.Trigger as="div" data-component="user-message" data-timeline-part-id={textPart()?.id}>
+        <Show when={!props.useV2Actions}>{renderAttachments()}</Show>
+        <Show
+          when={text()}
+          fallback={
             <Show when={messageComments().length > 0}>
-              <UserMessageComments comments={messageComments()} bounded />
+              <UserMessageComments comments={messageComments()} bounded={false} />
+            </Show>
+          }
+        >
+          <div data-slot="user-message-body">
+            <div
+              data-slot="user-message-text"
+              dir="auto"
+              data-comments={messageComments().length > 0 ? "true" : undefined}
+            >
+              <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+              <Show when={messageComments().length > 0}>
+                <UserMessageComments comments={messageComments()} bounded />
+              </Show>
+            </div>
+          </div>
+        </Show>
+        <Show when={props.useV2Actions}>{renderAttachments()}</Show>
+        <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
+          <div data-slot="user-message-copy-wrapper">
+            <Show when={metaHead() || metaTail()}>
+              <span data-slot="user-message-meta-wrap">
+                <Show when={metaHead()}>
+                  <span data-slot="user-message-meta" class="text-12-regular text-text-weak cursor-default">
+                    {metaHead()}
+                  </span>
+                </Show>
+                <Show when={metaHead() && metaTail()}>
+                  <span data-slot="user-message-meta-sep" class="text-12-regular text-text-weak cursor-default">
+                    {"\u00A0\u00B7\u00A0"}
+                  </span>
+                </Show>
+                <Show when={metaTail()}>
+                  <span data-slot="user-message-meta-tail" class="text-12-regular text-text-weak cursor-default">
+                    {metaTail()}
+                  </span>
+                </Show>
+              </span>
+            </Show>
+            <Show when={props.actions?.edit ?? props.actions?.revert}>
+              <MessageActionButton
+                icon={props.actions?.edit ? "edit" : "reset"}
+                label={editLabel()}
+                useV2={props.useV2Actions}
+                disabled={!!busy()}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  edit()
+                }}
+                aria-label={editLabel()}
+              />
+            </Show>
+            <Show when={props.actions?.retry}>
+              <MessageActionButton
+                icon="reset"
+                label={i18n.t("ui.message.retryMessage")}
+                useV2={props.useV2Actions}
+                disabled={!!busy()}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  retry()
+                }}
+                aria-label={i18n.t("ui.message.retryMessage")}
+              />
+            </Show>
+            <Show when={props.actions?.fork}>
+              <MessageActionButton
+                icon="branch"
+                label={i18n.t("ui.message.forkMessage")}
+                useV2={props.useV2Actions}
+                disabled={!!busy()}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  fork()
+                }}
+                aria-label={i18n.t("ui.message.forkMessage")}
+              />
+            </Show>
+            <Show when={props.actions?.delete}>
+              <MessageActionButton
+                icon="trash"
+                label={i18n.t("ui.message.deleteMessage")}
+                useV2={props.useV2Actions}
+                disabled={!!busy()}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  remove()
+                }}
+                aria-label={i18n.t("ui.message.deleteMessage")}
+              />
+            </Show>
+            <Show when={text()}>
+              <MessageActionButton
+                icon={copied() ? "check" : "copy"}
+                label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void handleCopy()
+                }}
+                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
+              />
             </Show>
           </div>
-        </div>
-      </Show>
-      <Show when={props.useV2Actions}>{renderAttachments()}</Show>
-      <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
-        <div data-slot="user-message-copy-wrapper">
-          <Show when={metaHead() || metaTail()}>
-            <span data-slot="user-message-meta-wrap">
-              <Show when={metaHead()}>
-                <span data-slot="user-message-meta" class="text-12-regular text-text-weak cursor-default">
-                  {metaHead()}
-                </span>
-              </Show>
-              <Show when={metaHead() && metaTail()}>
-                <span data-slot="user-message-meta-sep" class="text-12-regular text-text-weak cursor-default">
-                  {"\u00A0\u00B7\u00A0"}
-                </span>
-              </Show>
-              <Show when={metaTail()}>
-                <span data-slot="user-message-meta-tail" class="text-12-regular text-text-weak cursor-default">
-                  {metaTail()}
-                </span>
-              </Show>
-            </span>
+        </Show>
+      </MenuV2.Context.Trigger>
+      <MenuV2.Context.Portal>
+        <MenuV2.Context.Content>
+          <Show when={text()}>
+            <MenuV2.Item onSelect={() => void handleCopy()}>{i18n.t("ui.message.copyMessage")}</MenuV2.Item>
           </Show>
           <Show when={props.actions?.edit ?? props.actions?.revert}>
-            <MessageActionButton
-              icon={props.actions?.edit ? "edit" : "reset"}
-              label={editLabel()}
-              useV2={props.useV2Actions}
-              disabled={!!busy()}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                edit()
-              }}
-              aria-label={editLabel()}
-            />
+            <MenuV2.Item disabled={!!busy()} onSelect={edit}>
+              {editLabel()}
+            </MenuV2.Item>
           </Show>
-          <Show when={text()}>
-            <MessageActionButton
-              icon={copied() ? "check" : "copy"}
-              label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
-              useV2={props.useV2Actions}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                void handleCopy()
-              }}
-              aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyMessage")}
-            />
+          <Show when={props.actions?.retry}>
+            <MenuV2.Item disabled={!!busy()} onSelect={retry}>
+              {i18n.t("ui.message.retryMessage")}
+            </MenuV2.Item>
           </Show>
-        </div>
-      </Show>
-    </div>
+          <Show when={props.actions?.fork}>
+            <MenuV2.Item disabled={!!busy()} onSelect={fork}>
+              {i18n.t("ui.message.forkMessage")}
+            </MenuV2.Item>
+          </Show>
+          <Show when={props.actions?.delete}>
+            <MenuV2.Item disabled={!!busy()} onSelect={remove}>
+              {i18n.t("ui.message.deleteMessage")}
+            </MenuV2.Item>
+          </Show>
+        </MenuV2.Context.Content>
+      </MenuV2.Context.Portal>
+    </MenuV2.Context>
   )
 }
 
@@ -1481,6 +1560,8 @@ export function Part(props: MessagePartProps) {
         component={component()}
         part={props.part}
         message={props.message}
+        actions={props.actions}
+        userMessageID={props.userMessageID}
         hideDetails={props.hideDetails}
         defaultOpen={props.defaultOpen}
         toolOpen={props.toolOpen}
@@ -1793,6 +1874,26 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)
+  const [actionBusy, setActionBusy] = createSignal(false)
+  const targetMessageID = createMemo(() => {
+    if (props.userMessageID) return props.userMessageID
+    if (props.message.role === "assistant") return (props.message as AssistantMessage).parentID || props.message.id
+    return props.message.id
+  })
+
+  const runAction = (act: SessionAction | undefined) => {
+    const messageID = targetMessageID()
+    if (!act || !messageID || actionBusy()) return
+    setActionBusy(true)
+    void Promise.resolve()
+      .then(() =>
+        act({
+          sessionID: props.message.sessionID,
+          messageID,
+        }),
+      )
+      .finally(() => setActionBusy(false))
+  }
 
   const handleCopy = async () => {
     const content = text()
@@ -1805,33 +1906,97 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div data-component="text-part" data-timeline-part-id={part().id}>
-        <div data-slot="text-part-body">
-          <PacedMarkdown
-            text={text()}
-            cacheKey={part().id}
-            streaming={streaming()}
-            onContentRendered={props.onContentRendered}
-          />
-        </div>
-        <Show when={showCopy()}>
-          <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
-            <MessageActionButton
-              icon={copied() ? "check" : "copy"}
-              label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
-              useV2={props.useV2Actions}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={handleCopy}
-              aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+      <MenuV2.Context>
+        <MenuV2.Context.Trigger as="div" data-component="text-part" data-timeline-part-id={part().id}>
+          <div data-slot="text-part-body">
+            <PacedMarkdown
+              text={text()}
+              cacheKey={part().id}
+              streaming={streaming()}
+              onContentRendered={props.onContentRendered}
             />
-            <Show when={meta()}>
-              <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
-                {meta()}
-              </span>
-            </Show>
           </div>
-        </Show>
-      </div>
+          <Show when={showCopy()}>
+            <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+              <MessageActionButton
+                icon={copied() ? "check" : "copy"}
+                label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={handleCopy}
+                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+              />
+              <Show when={props.actions?.retry}>
+                <MessageActionButton
+                  icon="reset"
+                  label={i18n.t("ui.message.retryMessage")}
+                  useV2={props.useV2Actions}
+                  disabled={actionBusy()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    runAction(props.actions?.retry)
+                  }}
+                  aria-label={i18n.t("ui.message.retryMessage")}
+                />
+              </Show>
+              <Show when={props.actions?.fork}>
+                <MessageActionButton
+                  icon="branch"
+                  label={i18n.t("ui.message.forkMessage")}
+                  useV2={props.useV2Actions}
+                  disabled={actionBusy()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    runAction(props.actions?.fork)
+                  }}
+                  aria-label={i18n.t("ui.message.forkMessage")}
+                />
+              </Show>
+              <Show when={props.actions?.delete}>
+                <MessageActionButton
+                  icon="trash"
+                  label={i18n.t("ui.message.deleteMessage")}
+                  useV2={props.useV2Actions}
+                  disabled={actionBusy()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    runAction(props.actions?.delete)
+                  }}
+                  aria-label={i18n.t("ui.message.deleteMessage")}
+                />
+              </Show>
+              <Show when={meta()}>
+                <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
+                  {meta()}
+                </span>
+              </Show>
+            </div>
+          </Show>
+        </MenuV2.Context.Trigger>
+        <MenuV2.Context.Portal>
+          <MenuV2.Context.Content>
+            <MenuV2.Item onSelect={() => void handleCopy()}>{i18n.t("ui.message.copyResponse")}</MenuV2.Item>
+            <Show when={props.actions?.retry}>
+              <MenuV2.Item disabled={actionBusy()} onSelect={() => runAction(props.actions?.retry)}>
+                {i18n.t("ui.message.retryMessage")}
+              </MenuV2.Item>
+            </Show>
+            <Show when={props.actions?.fork}>
+              <MenuV2.Item disabled={actionBusy()} onSelect={() => runAction(props.actions?.fork)}>
+                {i18n.t("ui.message.forkMessage")}
+              </MenuV2.Item>
+            </Show>
+            <Show when={props.actions?.delete}>
+              <MenuV2.Item disabled={actionBusy()} onSelect={() => runAction(props.actions?.delete)}>
+                {i18n.t("ui.message.deleteMessage")}
+              </MenuV2.Item>
+            </Show>
+          </MenuV2.Context.Content>
+        </MenuV2.Context.Portal>
+      </MenuV2.Context>
     </Show>
   )
 }

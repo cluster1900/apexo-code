@@ -26,6 +26,7 @@ import { eq } from "drizzle-orm"
 import { and } from "drizzle-orm"
 import { gte } from "drizzle-orm"
 import { isNull } from "drizzle-orm"
+import { asc } from "drizzle-orm"
 import { desc } from "drizzle-orm"
 import { like } from "drizzle-orm"
 import { sql } from "drizzle-orm"
@@ -33,7 +34,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "@apexo/core/session/sql"
+import { PartTable, SessionMessageTable, SessionTable } from "@apexo/core/session/sql"
 import { ProjectTable } from "@apexo/core/project/sql"
 import { MessageV2 } from "./message-v2"
 import type { InstanceContext } from "../project/instance-context"
@@ -754,6 +755,34 @@ const layer: Layer.Layer<
                     p.tail_start_id = idMap.get(p.tail_start_id)
                   }
                   yield* updatePart(p)
+                }
+              }
+              if (msgs.length === 0) {
+                const v2Rows = yield* db
+                  .select()
+                  .from(SessionMessageTable)
+                  .where(eq(SessionMessageTable.session_id, input.sessionID))
+                  .orderBy(asc(SessionMessageTable.seq))
+                  .all()
+                  .pipe(Effect.orDie)
+                const v2Target = input.messageID
+                  ? v2Rows.findIndex((row) => String(row.id) === String(input.messageID))
+                  : v2Rows.length
+                const sliced = v2Rows.slice(0, v2Target < 0 ? v2Rows.length : v2Target)
+                for (let idx = 0; idx < sliced.length; idx++) {
+                  const row = sliced[idx]!
+                  yield* db
+                    .insert(SessionMessageTable)
+                    .values({
+                      id: SessionMessage.ID.create(),
+                      session_id: session.id,
+                      type: row.type,
+                      seq: idx + 1,
+                      time_created: row.time_created,
+                      data: row.data,
+                    })
+                    .run()
+                    .pipe(Effect.orDie)
                 }
               }
               return session

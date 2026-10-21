@@ -743,9 +743,14 @@ export function MessageTimeline(props: {
 
   const exportSession = async (sessionID: string) => {
     try {
+      const fallbackMessages = (sync().data.message[sessionID] ?? []).map((info) => ({
+        info,
+        parts: sync().data.part[info.id] ?? [],
+      }))
       const data = await fetchSessionExport({
         sessionID,
         client: sdk().client,
+        fallbackMessages,
       })
       const filename = sessionExportFilename(data.info)
       const saved = await downloadSessionExport(filename, data, language.t("command.session.export"))
@@ -974,6 +979,8 @@ export function MessageTimeline(props: {
               <MessagePart
                 part={part()}
                 message={message()}
+                actions={props.actions}
+                userMessageID={row().userMessageID}
                 showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
                 turnDurationMs={turnDurationMs(row().userMessageID)}
                 useV2Actions={settings.general.newLayoutDesigns()}

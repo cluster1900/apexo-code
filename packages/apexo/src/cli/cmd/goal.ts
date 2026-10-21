@@ -66,8 +66,18 @@ export const GoalCommand = cmd({
               .providers(undefined, options)
               .then((r) => r.data)
               .catch(() => undefined)
-            const firstProvider = prov?.providers?.[0]
-            const defModel = firstProvider ? (prov?.default?.[firstProvider.id] ?? Object.keys(firstProvider.models ?? {})[0]) : undefined
+            const configuredKeys = new Set(Object.keys(cfg?.provider ?? {}))
+            const candidates = prov?.providers ?? []
+            const firstProvider =
+              candidates.find((p) => configuredKeys.has(p.id) && p.id !== "antigravity") ??
+              candidates.find((p) => p.id !== "antigravity") ??
+              candidates[0]
+            const modelIDs = Object.keys(firstProvider?.models ?? {})
+            const defModel = firstProvider
+              ? (prov?.default?.[firstProvider.id] ??
+                modelIDs.find((id) => /claude-sonnet|gemini-3-flash|gemini-2\.5|gpt-5|grok/i.test(id)) ??
+                modelIDs[0])
+              : undefined
             if (firstProvider && defModel) {
               modelSpec = `${firstProvider.id}/${defModel}`
             }
@@ -151,7 +161,9 @@ export const GoalCommand = cmd({
       const target = { sessionID: args.session, goalID: current.id }
       const result =
         args.action === "start"
-          ? await client.goal.start({ ...target, goalStart: current.launch ?? (await selection()) }, options)
+          ? (current.status === "infra_paused" || current.status === "user_paused") && current.launch
+            ? await client.goal.resume(target, options)
+            : await client.goal.start({ ...target, goalStart: current.launch ?? (await selection()) }, options)
           : await client.goal[args.action](target, options)
       console.log(JSON.stringify(result.data, null, 2))
     } catch (error) {

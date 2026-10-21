@@ -104,6 +104,13 @@ export function Dialog(props: DialogProps) {
             if (autofocusEl) {
               e.preventDefault()
               autofocusEl.focus({ preventScroll: true })
+              if (typeof requestAnimationFrame === "function") {
+                requestAnimationFrame(() => {
+                  if (document.activeElement !== autofocusEl && target?.contains(autofocusEl)) {
+                    autofocusEl.focus({ preventScroll: true })
+                  }
+                })
+              }
             }
           }}
         >

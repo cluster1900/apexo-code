@@ -3,7 +3,7 @@ import { preloadMarkdown } from "@apexo/session-ui/markdown-cache"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 import { DateTime } from "luxon"
-import { type Accessor, createEffect, createMemo, createRoot, type JSX, startTransition } from "solid-js"
+import { type Accessor, createEffect, createMemo, createRoot, createSignal, type JSX, startTransition } from "solid-js"
 import { produce } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import {
@@ -85,12 +85,16 @@ export function createHomeSessionsController(home: HomeController) {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   }))
+  const [showArchived, setShowArchived] = createSignal(false)
+  const [searchFilter, setSearchFilter] = createSignal("")
   const indexedSessions = createMemo(() =>
-    retainHomeSessions(
-      homeSessions().sessions(sessionLoad.data, sessionEventLoad.data),
-      HOME_SESSION_LIMIT,
-      Date.now(),
-    ),
+    showArchived()
+      ? homeSessions().archivedSessions(sessionLoad.data).slice(0, HOME_SESSION_LIMIT)
+      : retainHomeSessions(
+          homeSessions().sessions(sessionLoad.data, sessionEventLoad.data),
+          HOME_SESSION_LIMIT,
+          Date.now(),
+        ),
   )
   const unfilteredRecords = createMemo(() =>
     buildHomeSessionRecords({
@@ -110,7 +114,13 @@ export function createHomeSessionsController(home: HomeController) {
       projectByID,
     }),
   )
-  const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
+  const filteredRecords = createMemo(() => {
+    const query = searchFilter().trim().toLowerCase()
+    const base = allRecords()
+    if (!query) return base
+    return base.filter((record) => `${record.session.title} ${record.projectName}`.toLowerCase().includes(query))
+  })
+  const records = createMemo(() => filteredRecords().slice(0, HOME_SESSION_LIMIT))
   const groups = createMemo(() => groupSessions(records(), language))
   const prefetched = new Set<string>()
 
@@ -183,6 +193,11 @@ export function createHomeSessionsController(home: HomeController) {
     copy: {
       language,
     },
+    filter: {
+      showArchived,
+      setShowArchived,
+      setSearchFilter,
+    },
     data: {
       records,
       groups,
@@ -227,7 +242,6 @@ export function createHomeSessionsController(home: HomeController) {
         const ctx = home.server.focusedContext()
         if (!conn || !ctx) return
         const [, setStore] = ctx.sync.child(session.directory)
-        if ((await ctx.sdk.protocol) !== "v1") return
         await archiveHomeSession({
           server: ServerConnection.key(conn),
           session,
@@ -278,6 +292,37 @@ export function createHomeSessionsController(home: HomeController) {
               description: errorMessage(cause, language.t("common.requestFailed")),
             }),
         })
+      },
+      unarchive: async (session: Session) => {
+        const ctx = home.server.focusedContext()
+        if (!ctx) return
+        const [, setStore] = ctx.sync.child(session.directory)
+        try {
+          await ctx.sdk.client.session.update({
+            sessionID: session.id,
+            directory: session.directory,
+            time: { archived: 0 },
+          })
+          const restored = { ...session, time: { ...session.time, archived: undefined } }
+          setStore(
+            produce((draft) => {
+              const match = Binary.search(draft.session, restored.id, (item) => item.id)
+              if (!match.found) draft.session.splice(match.index, 0, restored)
+            }),
+          )
+          homeSessions().restore(restored)
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("common.unarchive"),
+            description: session.title,
+          })
+        } catch (cause) {
+          showToast({
+            title: language.t("common.requestFailed"),
+            description: errorMessage(cause, language.t("common.requestFailed")),
+          })
+        }
       },
     },
     tab: {

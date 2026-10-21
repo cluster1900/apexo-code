@@ -8,6 +8,7 @@ import { Spinner } from "@apexo/ui/spinner"
 import { showToast } from "@/utils/toast"
 import { Tooltip, TooltipKeybind } from "@apexo/ui/tooltip"
 import { getFilename } from "@apexo/core/util/path"
+import { displayName } from "@/pages/layout/helpers"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -156,8 +157,8 @@ export function SessionHeader() {
   })
   const name = createMemo(() => {
     const current = project()
-    if (current) return current.name || getFilename(current.worktree)
-    return getFilename(projectDirectory())
+    if (current) return displayName(current)
+    return displayName({ worktree: projectDirectory() })
   })
   const hotkey = createMemo(() => command.keybind("file.open"))
   const os = createMemo(() => detectOS(platform))

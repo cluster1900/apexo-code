@@ -97,8 +97,18 @@ export const loadMcpQuery = (
   >({
     queryKey: [scope, directory, "mcp"] as const,
     queryFn: async ({ signal }) => {
-      if ((await protocol) === "v2" && legacy)
-        return (await legacy.v2.mcp.status({ location: { directory } }, { signal, throwOnError: true })).data
+      if ((await protocol) === "v2" && legacy) {
+        const [v2Status, v1Status] = await Promise.all([
+          legacy.v2.mcp.status({ location: { directory } }, { signal, throwOnError: true }).then((r) => r.data),
+          legacy.mcp?.status
+            ? legacy.mcp
+                .status({}, { signal })
+                .then((r) => r.data ?? {})
+                .catch(() => ({}))
+            : Promise.resolve({}),
+        ])
+        return { ...v1Status, ...v2Status }
+      }
       if ((await protocol) === "v1" && legacy) return (await legacy.mcp.status({}, { signal, throwOnError: true })).data
       return api
         .list({ location: { directory } })
@@ -681,6 +691,21 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     },
   }
 
+  async function reloadCommands(directory?: string) {
+    const dirs = new Set<string>()
+    if (directory) dirs.add(directoryKey(directory))
+    for (const dir of Object.keys(children.children)) {
+      if (children.active(dir) || !directory) dirs.add(dir)
+    }
+    await Promise.all(
+      Array.from(dirs).map(async (dir) => {
+        const [, setStore] = children.ensureChild(dir)
+        const commands = await loadCommands(dir, serverSDK.api.command, sdkFor(dir), serverSDK.protocol)
+        setStore("command", commands)
+      }),
+    )
+  }
+
   const updateConfigMutation = useMutation(() => ({
     mutationFn: (config: Config) => serverSDK.client.global.config.update({ config }),
     onSuccess: () => {
@@ -710,6 +735,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
     refreshProviders,
+    reloadCommands,
     // bootstrap,
     updateConfig: updateConfigMutation.mutateAsync,
     project: projectApi,
@@ -749,6 +775,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         const sdk = sdkFor(key)
         if ((await serverSDK.protocol) !== "v2") return
         const result = await sdk.v2.mcp[action]({ server: name, location: { directory: key } }, { throwOnError: false })
+        if (!result.response.ok && result.response.status === 404 && (action === "connect" || action === "disconnect")) {
+          const fallback = await sdk.mcp[action]({ name }, { throwOnError: false })
+          await queryClient.refetchQueries(queryOptionsApi.mcp(key))
+          if (!fallback.response.ok) throw new Error(language.t("common.requestFailed"))
+          return
+        }
         await queryClient.refetchQueries(queryOptionsApi.mcp(key))
         if (!result.response.ok)
           throw new Error(language.t(result.response.status === 409 ? "mcp.runtime.busy" : "common.requestFailed"))

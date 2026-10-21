@@ -852,7 +852,7 @@ const layer = Layer.effect(
             if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
             if (
               !runtimeFlags.enableExperimentalModels &&
-              /(-sol-|(-|^)sol$|-terra|daybreak)/i.test(`${modelID} ${model.name ?? ""}`)
+              /(?:^|[-_\s/])(sol|terra|daybreak)(?:$|[-_\s])/i.test(`${modelID} ${model.name ?? ""}`)
             )
               delete provider.models[modelID]
             // Native tier aliases remain callable by saved sessions, but are hidden in model pickers.
