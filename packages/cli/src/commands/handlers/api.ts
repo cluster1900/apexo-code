@@ -39,6 +39,7 @@ export default Runtime.handler(
     )
     const output = yield* Effect.promise(() => response.text())
     if (output) process.stdout.write(output + (output.endsWith(EOL) ? "" : EOL))
+    if (!response.ok) process.exitCode = 1
   }),
 )
 
@@ -74,12 +75,24 @@ function resolveRequest(
 
 function interpolate(path: string, params: Record<string, string>) {
   const used = new Set<string>()
-  const pathname = path.replaceAll(/\{([^}]+)\}/g, (_, name: string) => {
+  const replaced = path.replaceAll(/\{([^}]+)\}/g, (_, name: string) => {
     const value = params[name]
     if (value === undefined) throw new Error(`Missing path parameter: ${name}`)
     used.add(name)
     return encodeURIComponent(value)
   })
+  const pathname =
+    replaced.endsWith("/*") && params.path !== undefined
+      ? (() => {
+          used.add("path")
+          const encoded = params.path
+            .replace(/^\/+/, "")
+            .split("/")
+            .map((segment) => encodeURIComponent(segment))
+            .join("/")
+          return `${replaced.slice(0, -1)}${encoded}`
+        })()
+      : replaced
   const query = new URLSearchParams(Object.entries(params).filter(([name]) => !used.has(name))).toString()
   return query ? `${pathname}?${query}` : pathname
 }

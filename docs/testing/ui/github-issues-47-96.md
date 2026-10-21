@@ -1,8 +1,8 @@
-# GitHub Issues #47, #51, #53, #54, #81, #83, #84, #85, #86, #90, #91, #92, #94, #95, #96: Root Cause, Fix, and Live Verification Report
+# GitHub Issues #47, #51, #53, #54, #81, #83, #84, #85, #86, #90, #91, #92, #94, #95, #96, #97, #98, #99, #101, #102, #103, #104: Root Cause, Fix, and Live Verification Report
 
-- **ID**: `BUG-20261021-601` through `BUG-20261021-615`
+- **ID**: `BUG-20261021-601` through `BUG-20261021-622`
 - **Status**: Fixed & Verified (Unit, Typecheck, HTTP API, Live CLI, and Live Desktop UI)
-- **Branch**: `issue-fixes-round3`
+- **Branch**: `issue-fixes-round3`, `issue-fixes-round4`
 
 ---
 
@@ -280,3 +280,122 @@
   - Replaced `window.confirm` in `providers.tsx` with a `DialogV2` confirmation modal pushed via `dialog.push`, and localized 401/403 errors in `dialog-select-server.tsx`.
 - **Verification**:
   - Live Desktop verification confirmed the `DialogV2` confirmation modal workflow.
+
+---
+
+## #97 — Security: `v2.agent.list` and `debug agents` Exposing Full System Prompts and Permission Policies (`BUG-20261021-616`)
+
+- **Affected Scope**:
+  - `packages/server/src/handlers/agent.ts`
+  - `packages/cli/src/commands/handlers/debug/agents.ts`
+- **Observed vs. Expected**:
+  - **Observed**: Calling `apexo api v2.agent.list` (`GET /api/agent`) or `apexo debug agents` returned internal `system` prompt strings, full `permissions` rulesets (including local filesystem paths), and hidden internal agents (`compaction`, `title`, `summary`).
+  - **Expected**: `v2.agent.list` and `debug agents` filter out hidden internal agents (`!item.hidden`) and omit `system` prompts and internal `permissions` rulesets.
+- **Root Cause**:
+  - `AgentHandler` in `packages/server/src/handlers/agent.ts` returned `agent.all()` directly without filtering hidden agents or redacting `system` and `permissions`.
+- **Fix**:
+  - Filtered `!item.hidden` and stripped `system` and `permissions` (`permissions: []`) in `packages/server/src/handlers/agent.ts` and `packages/cli/src/commands/handlers/debug/agents.ts`.
+- **Verification**:
+  - Live CLI verification (`bun run src/index.ts api v2.agent.list` and `bun run src/index.ts debug agents`) confirmed only visible agents (`build`, `explore`, `general`, `plan`) are returned and no `system` prompts or permission path rules are exposed.
+
+---
+
+## #98 — Desktop Command Palette Rendering, Synchronous Command Filtering, and Dismissal (`BUG-20261021-617`)
+
+- **Affected Scope**:
+  - `packages/app/src/components/dialog-command-palette-v2.tsx`
+  - `packages/app/src/components/dialog-command-palette-v2.css`
+  - `packages/ui/src/context/dialog.tsx`
+- **Observed vs. Expected**:
+  - **Observed**: Opening the Command Palette in WebKit (`WKWebView`) had an indefinite `height: auto` on `[data-slot="dialog-container"]` combined with `flex: 1` (`flex-basis: 0%`) children, and typing a command query (such as `Open settings`) and pressing `Enter` awaited async `sessions(query)` / `searchFiles(query)` network calls before updating `visibleEntries()`, preventing immediate command execution.
+  - **Expected**: Command Palette renders with a definite container height (`min(calc(100vh - 96px), 480px)`) and higher CSS specificity than `[data-size="large"]`, filters command entries synchronously on every keystroke so `Open settings` + `Enter` executes immediately, and closes cleanly on `Escape` or outside click.
+- **Root Cause**:
+  - `dialog-command-palette-v2.css` set `height: auto` on `[data-slot="dialog-container"]` at the same `(0, 3, 0)` specificity as `dialog-v2.css`, and `DialogHomeCommandPaletteV2` / `DialogCommandPaletteV2` gated synchronous `commandEntries()` filtering behind async `createResource` `loadItems`.
+- **Fix**:
+  - Separated synchronous command filtering (`syncItems`) from async session/file search (`loadItems`) in `dialog-command-palette-v2.tsx`, and set definite height and `[data-size="large"]` specificity in `dialog-command-palette-v2.css`.
+- **Verification**:
+  - Live Desktop verification opened the Command Palette (`640x480`), typed `Open settings` and immediately pressed `Enter` to open the Settings dialog, closed Settings with `Escape`, reopened the Command Palette, and dismissed it with `Escape`.
+
+---
+
+## #99 — CLI `apexo api` Returning Exit Code 0 on HTTP/API Errors (`BUG-20261021-618`)
+
+- **Affected Scope**:
+  - `packages/cli/src/commands/handlers/api.ts`
+- **Observed vs. Expected**:
+  - **Observed**: `apexo api GET /session/ses_missing` or any 4xx/5xx API call printed the error payload (or empty body) and exited with status `0`.
+  - **Expected**: When `!response.ok`, `apexo api` sets `process.exitCode = 1` while still printing the response body.
+- **Root Cause**:
+  - `packages/cli/src/commands/handlers/api.ts` wrote `response.text()` to stdout without checking `response.ok`.
+- **Fix**:
+  - Added `if (!response.ok) process.exitCode = 1` in `packages/cli/src/commands/handlers/api.ts`.
+- **Verification**:
+  - Live CLI verification (`bun run src/index.ts api GET /session/ses_missing_verify`) confirmed `EXIT_CODE=1`.
+
+---
+
+## #101 — Desktop `Edit project` Dialog `Cancel` Button and `[data-fit]` Flex Sizing (`BUG-20261021-619`)
+
+- **Affected Scope**:
+  - `packages/ui/src/context/dialog.tsx`
+  - `packages/ui/src/v2/components/dialog-v2.css`
+- **Observed vs. Expected**:
+  - **Observed**: Closing a dialog via `dialog.close()` (`Cancel` in `Edit project`) called `setClosing(true)` and `setTopId(...)` before `current.dispose()`, flipping Kobalte's `DismissableLayer` `disableOutsidePointerEvents` to `false` before unmount cleanup and leaving stale `pointer-events` state; additionally `[data-fit]` dialogs left `flex: 1` (`flex-basis: 0%`) on `dialog-content` and `dialog-body` inside `height: auto`.
+  - **Expected**: Clicking `Cancel` in `Edit project` immediately disposes and closes the dialog and restores `document.body.style.pointerEvents`.
+- **Root Cause**:
+  - `dialog.tsx` mutated `closing` and `topId` prior to `current.dispose()`, and `dialog-v2.css` did not set `flex: 0 1 auto` on `dialog-content` / `dialog-body` for `[data-fit]` dialogs.
+- **Fix**:
+  - Updated `close()` and `show()` in `packages/ui/src/context/dialog.tsx` to dispose the active dialog root before updating `topId` and `stack` (and clean up `document.body.style.pointerEvents` when the stack empties), and set `flex: 0 1 auto` under `&[data-fit]` in `packages/ui/src/v2/components/dialog-v2.css`.
+- **Verification**:
+  - Live Desktop verification opened `Edit project` from the project context menu on `sandbox-project`, clicked `Cancel`, and confirmed the dialog closed (`dialog count: 0`).
+
+---
+
+## #102 — Desktop Model Picker Selecting `Grok 4.7` in a Newly Created Session (`BUG-20261021-620`)
+
+- **Affected Scope**:
+  - `packages/ui/src/v2/components/menu-v2.tsx`
+  - `packages/app/src/components/dialog-select-model.tsx`
+  - `packages/app/src/context/models.tsx`
+- **Observed vs. Expected**:
+  - **Observed**: Activating `Grok 4.7` in `ModelSelectorPopoverV2` via macOS Accessibility (`AXPress`) or synthetic `.click()` left the menu open and the model unchanged on `MiniMax M3.1 Flash` because Kobalte's `MenuItemBase` only triggers `onSelect` on `pointerup` and `keydown`, never on `click`; additionally `selectModel` deferred `props.select(item)` inside `dismiss.afterClose(...)` and `recentModels` used an `async` source function in `createResource`.
+  - **Expected**: Selecting `Grok 4.7` in the model picker (via pointer click, keyboard `Enter`, or Accessibility `AXPress` / `.click()`) immediately updates the composer model button to `Grok 4.7` and closes the menu.
+- **Root Cause**:
+  - Kobalte's `MenuItemBase` omits `onSelect()` from `onClick`, `ModelSelectorPopoverV2View.selectModel` deferred `props.select(item)` until `dismiss.afterClose`, and `models.tsx` passed an `async` function as the `createResource` source for `recentModels`.
+- **Fix**:
+  - Added click-fallback handling in `MenuV2Item`, `MenuV2CheckboxItem`, and `MenuV2RadioItem` (`packages/ui/src/v2/components/menu-v2.tsx`) when `click` fires without a preceding primary `pointerup`, invoked `props.select(item)` synchronously in `selectModel` (`packages/app/src/components/dialog-select-model.tsx`), and replaced `recentModels` `createResource` with a synchronous `createMemo` (`packages/app/src/context/models.tsx`).
+- **Verification**:
+  - Live Desktop verification opened a new session in `sandbox-project`, opened the model picker (`MiniMax M3.1 Flash`), and verified selecting `Grok 4.7` via both pointer click and DOM `.click()` (`AXPress`) immediately updated the composer button to `Grok 4.7` and closed the menu.
+
+---
+
+## #103 — CLI/API `v2.pty.create` Returning Running Session That Is Immediately Missing (`BUG-20261021-621`)
+
+- **Affected Scope**:
+  - `packages/cli/src/services/daemon.ts`
+- **Observed vs. Expected**:
+  - **Observed**: Running `apexo api v2.pty.create` followed by `apexo api v2.pty.get` or `v2.pty.list` in separate CLI invocations failed with `404 Not Found` (or empty list) when running from source (`bun run src/index.ts ...`).
+  - **Expected**: Subsequent `apexo api` commands reuse the running compatible daemon so in-memory PTY sessions remain alive across CLI invocations.
+- **Root Cause**:
+  - `Daemon.start` in `packages/cli/src/services/daemon.ts` had `if (found?.version === InstallationVersion && compiled) return found.url`, which killed and restarted the background daemon on every non-compiled CLI invocation, wiping all in-memory PTY sessions.
+- **Fix**:
+  - Changed the check in `packages/cli/src/services/daemon.ts` to `if (found?.version === InstallationVersion) return found.url`.
+- **Verification**:
+  - Live CLI verification created a PTY via `bun run src/index.ts api v2.pty.create -d '{"command":"/bin/sh"}'`, fetched it via `bun run src/index.ts api v2.pty.get --param ptyID=...` (`"status":"running"`), and removed it via `v2.pty.remove`.
+
+---
+
+## #104 — CLI `v2.fs.read` Exiting Successfully Without Emitting File Contents (`BUG-20261021-622`)
+
+- **Affected Scope**:
+  - `packages/cli/src/commands/handlers/api.ts`
+  - `packages/server/src/handlers/fs.ts`
+- **Observed vs. Expected**:
+  - **Observed**: Running `apexo api v2.fs.read --param path=README.md` exited 0 with empty stdout because the OpenAPI route path `/api/fs/read/*` uses a wildcard segment rather than `{path}`, so `interpolate()` placed `path=README.md` in the query string while the server read the empty wildcard path `""`.
+  - **Expected**: `apexo api v2.fs.read --param path=README.md` interpolates `params.path` into `/api/fs/read/*` (and the server also falls back to `?path=` query param) and outputs the file contents.
+- **Root Cause**:
+  - `interpolate()` in `packages/cli/src/commands/handlers/api.ts` only substituted `{param}` placeholders and did not interpolate `params.path` into trailing `/*` wildcard paths; `packages/server/src/handlers/fs.ts` did not fall back to `url.searchParams.get("path")`.
+- **Fix**:
+  - Updated `interpolate()` in `packages/cli/src/commands/handlers/api.ts` to substitute `params.path` into trailing `/*` routes, and added a `url.searchParams.get("path")` fallback in `packages/server/src/handlers/fs.ts`.
+- **Verification**:
+  - Live CLI verification (`bun run src/index.ts api v2.fs.read --param path=package.json`) emitted the complete `package.json` file contents.

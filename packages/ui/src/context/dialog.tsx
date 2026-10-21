@@ -24,7 +24,6 @@ type Active = {
   dispose: () => void
   owner: Owner
   onClose?: () => void
-  setClosing: (closing: boolean) => void
 }
 
 const Context = createContext<ReturnType<typeof init>>()
@@ -51,12 +50,14 @@ function init() {
     }
     lock.value = false
     current.onClose?.()
-    current.setClosing(true)
     const closed = current.id
     const next = items.filter((item) => item.id !== closed)
-    setTopId(next.at(-1)?.id)
     current.dispose()
+    setTopId(next.at(-1)?.id)
     setStack(next)
+    if (next.length === 0 && typeof document !== "undefined" && document.body.style.pointerEvents === "none") {
+      document.body.style.removeProperty("pointer-events")
+    }
   }
 
   createEffect(() => {
@@ -79,18 +80,15 @@ function init() {
     const id = Math.random().toString(36).slice(2)
     const zIndex = 50 + layer * 10
     let dispose: (() => void) | undefined
-    let setClosing: ((closing: boolean) => void) | undefined
     setTopId(id)
 
     const node = runWithOwner(owner, () =>
       createRoot((d: () => void) => {
         dispose = d
-        const [closing, setClosingSignal] = createSignal(false)
-        setClosing = setClosingSignal
         return (
           <Kobalte
-            modal={!closing() && topId() === id}
-            open={!closing()}
+            modal={topId() === id}
+            open
             onOpenChange={(open: boolean) => {
               if (open || topId() !== id) return
               close(id)
@@ -99,7 +97,7 @@ function init() {
             <Kobalte.Portal>
               <Kobalte.Overlay
                 data-component="dialog-overlay"
-                style={{ "z-index": String(zIndex), "pointer-events": closing() ? "none" : undefined }}
+                style={{ "z-index": String(zIndex) }}
                 onClick={() => close(id)}
               />
               <div
@@ -122,9 +120,9 @@ function init() {
       }),
     )
 
-    if (!dispose || !setClosing) return
+    if (!dispose) return
 
-    const active: Active = { id, node, dispose, owner, onClose, setClosing }
+    const active: Active = { id, node, dispose, owner, onClose }
     setStack((items) => [...items, active])
   }
 
@@ -139,7 +137,6 @@ function init() {
 
   const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
     for (const item of stack()) {
-      item.setClosing(true)
       item.dispose()
     }
     setStack([])

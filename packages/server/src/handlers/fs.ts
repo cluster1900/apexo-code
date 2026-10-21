@@ -11,10 +11,12 @@ export const FileSystemHandler = HttpApiBuilder.group(Api, "server.fs", (handler
     return handlers
       .handleRaw("fs.read", (ctx) =>
         Effect.gen(function* () {
-          const file = yield* (yield* FileSystem.Service).read({
-            path: RelativePath.make(
-              decodeURIComponent(new URL(ctx.request.url, "http://localhost").pathname.slice(13)),
-            ),
+          const url = new URL(ctx.request.url, "http://localhost")
+          const rawPath = decodeURIComponent(url.pathname.slice(13))
+          const resolvedPath = !rawPath || rawPath === "*" ? (url.searchParams.get("path") ?? "") : rawPath
+          const fs = yield* FileSystem.Service
+          const file = yield* fs.read({
+            path: RelativePath.make(resolvedPath),
           })
           return HttpServerResponse.uint8Array(file.content, { contentType: file.mime })
         }),

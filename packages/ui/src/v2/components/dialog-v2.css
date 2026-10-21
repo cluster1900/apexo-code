@@ -162,7 +162,12 @@
       height: auto;
 
       [data-slot="dialog-content"] {
+        flex: 0 1 auto;
         min-height: 0;
+
+        [data-slot="dialog-body"] {
+          flex: 0 1 auto;
+        }
       }
     }
   }
