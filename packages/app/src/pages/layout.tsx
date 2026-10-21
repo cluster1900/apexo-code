@@ -943,7 +943,6 @@ export default function LegacyLayout(props: ParentProps) {
         title: language.t("command.session.import"),
         description: language.t("command.session.import.description"),
         category: language.t("command.category.session"),
-        slash: "import",
         onSelect: () => void importSession(),
       },
       {

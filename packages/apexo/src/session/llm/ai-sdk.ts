@@ -61,7 +61,10 @@ function usage(value: unknown) {
     cacheReadInputTokens: item.inputTokenDetails?.cacheReadTokens ?? item.cachedInputTokens,
     cacheWriteInputTokens: item.inputTokenDetails?.cacheWriteTokens,
   }).filter((entry) => entry[1] !== undefined && !Number.isNaN(entry[1]))
-  if (entries.length === 0 && ("inputTokens" in item || "outputTokens" in item || "totalTokens" in item)) {
+  if (
+    entries.length === 0 &&
+    (Number.isNaN(item.inputTokens) || Number.isNaN(item.outputTokens) || Number.isNaN(item.totalTokens))
+  ) {
     return { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
   }
   return entries.length === 0 ? undefined : Object.fromEntries(entries)
