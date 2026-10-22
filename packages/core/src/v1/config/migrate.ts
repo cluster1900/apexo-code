@@ -74,7 +74,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     skills: info.skills && [...(info.skills.paths ?? []), ...(info.skills.urls ?? [])],
     commands: info.command,
     instructions: info.instructions,
-    references: info.references ?? info.reference,
+    references: references(info.references ?? info.reference),
     plugins: info.plugin?.map((plugin) =>
       typeof plugin === "string" ? plugin : { package: plugin[0], options: plugin[1] },
     ),
@@ -104,6 +104,13 @@ function permissions(info?: ConfigPermissionV1.Info, tools?: Readonly<Record<str
 
 function normalizeAction(action: string) {
   return action === "write" || action === "patch" ? "edit" : action
+}
+
+function references(info?: typeof ConfigV1.Info.Type["references"]) {
+  if (!info) return undefined
+  return Object.fromEntries(
+    Object.entries(info).map(([name, entry]) => [name, typeof entry === "string" ? entry : { ...entry }]),
+  )
 }
 
 function agents(info: typeof ConfigV1.Info.Type) {

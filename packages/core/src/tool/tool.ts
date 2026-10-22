@@ -189,6 +189,19 @@ function toJsonSchema(schema: Schema.Top): JsonSchema.JsonSchema {
   const imported = importedSchemas.get(schema)
   if (imported) return structuredClone(imported)
   const document = Schema.toJsonSchemaDocument(schema)
-  if (Object.keys(document.definitions).length === 0) return document.schema
-  return { ...document.schema, $defs: document.definitions }
+  const ref =
+    typeof document.schema.$ref === "string" && document.schema.$ref.startsWith("#/$defs/")
+      ? document.schema.$ref.slice("#/$defs/".length)
+      : undefined
+  const root = ref && document.definitions[ref] ? document.definitions[ref] : document.schema
+  const definitions =
+    ref && document.definitions[ref]
+      ? Object.fromEntries(Object.entries(document.definitions).filter(([key]) => key !== ref))
+      : document.definitions
+  const used =
+    ref && document.definitions[ref] && JSON.stringify({ root, definitions }).includes(`"#/$defs/${ref}"`)
+      ? { ...definitions, [ref]: document.definitions[ref] }
+      : definitions
+  if (Object.keys(used).length === 0) return root
+  return { ...root, $defs: used }
 }

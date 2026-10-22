@@ -270,6 +270,8 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.menu.documentation": "Apexo Documentation",
   "desktop.menu.shareFeedback": "Share Feedback",
   "desktop.menu.reportBug": "Report a Bug",
+  "desktop.menu.about": "About {{appName}}",
+  "desktop.menu.checkForUpdates": "Check for Updates...",
   "desktop.menu.ariaLabel": "Apexo menu",
 
   "desktop.recovery.action.relaunch": "Relaunch",

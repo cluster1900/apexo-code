@@ -903,7 +903,11 @@ function ProviderConnection(props: {
       const endpoints: Record<string, { url: string; headers: Record<string, string> }> = {
         anthropic: {
           url: "https://api.anthropic.com/v1/models",
-          headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+          headers: {
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
         },
         openai: {
           url: "https://api.openai.com/v1/models",
@@ -941,8 +945,11 @@ function ProviderConnection(props: {
         headers: target.headers,
         signal: AbortSignal.timeout(6000),
       }).catch(() => undefined)
-      if (!res || !res.ok) {
+      if (!res) {
         return language.t("provider.connect.apiKey.invalid")
+      }
+      if (!res.ok) {
+        return `${language.t("provider.connect.apiKey.invalid")} (HTTP ${res.status})`
       }
       return undefined
     }

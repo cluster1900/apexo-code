@@ -79,6 +79,41 @@ export function useSettingsCommand() {
       onSelect: help,
     },
     {
+      id: "app.checkUpdates",
+      title: language.t("desktop.menu.checkForUpdates"),
+      category: language.t("command.category.settings"),
+      onSelect: () => {
+        if (!platform.checkUpdate) {
+          showToast({
+            title: language.t("desktop.menu.checkForUpdates"),
+            description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+          })
+          return
+        }
+        void platform
+          .checkUpdate()
+          .then((res) => {
+            if (res.updateAvailable && res.version) {
+              showToast({
+                title: language.t("toast.update.title"),
+                description: language.t("toast.update.description", { version: res.version }),
+              })
+              return
+            }
+            showToast({
+              title: language.t("desktop.menu.checkForUpdates"),
+              description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+            })
+          })
+          .catch(() => {
+            showToast({
+              title: language.t("desktop.menu.checkForUpdates"),
+              description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+            })
+          })
+      },
+    },
+    {
       id: "provider.connect",
       title: language.t("command.provider.connect"),
       category: language.t("command.category.provider"),

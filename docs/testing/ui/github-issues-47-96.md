@@ -1,8 +1,8 @@
-# GitHub Issues #47, #51, #53, #54, #81, #83, #84, #85, #86, #90, #91, #92, #94, #95, #96, #97, #98, #99, #101, #102, #103, #104, #107: Root Cause, Fix, and Live Verification Report
+# GitHub Issues #47, #51, #53, #54, #81, #83, #84, #85, #86, #90, #91, #92, #94, #95, #96, #97, #98, #99, #101, #102, #103, #104, #107, #109, #110, #111, #112, #113, #114, #115, #116, #117, #118, #119: Root Cause, Fix, and Live Verification Report
 
-- **ID**: `BUG-20261021-601` through `BUG-20261021-623`
+- **ID**: `BUG-20261021-601` through `BUG-20261022-634`
 - **Status**: Fixed & Verified (Unit, Typecheck, HTTP API, Live CLI, and Live Desktop UI)
-- **Branch**: `issue-fixes-round3`, `issue-fixes-round4`, `home-help-dialog`
+- **Branch**: `issue-fixes-round3`, `issue-fixes-round4`, `home-help-dialog`, `fix-open-issues`
 
 ---
 
@@ -421,3 +421,95 @@
   - Created `DialogHelpV2` and `useHelpDialog()` in `packages/app/src/components/dialog-help-v2.tsx`, wired `utility.help` in `home-projects-controller.tsx` and `onOpenHelp` in `layout.tsx` to open `DialogHelpV2`, registered `help.open` (`/help`) in `settings-dialog.tsx` and `layout.tsx`, and updated remaining `apexo-grok` external links in `error.tsx` and `settings-general.tsx` to `apexo-code`.
 - **Verification**:
   - Live Desktop verification clicked the `Help` button in `Projects and sessions`, verified `[role="dialog"]` (`title: "Help"`) opened with 8 documentation/guide buttons and 8 onboarding tutorial topics, and verified clicking `Close` dismissed the dialog.
+
+---
+
+## #109 & #119 — V2 `xai/grok-4.7` Prompt Completion (`UnknownModelError`, Auth/Catalog Bridge, and Root `$ref` Tool Schema Unwrapping) (`BUG-20261022-624`, `BUG-20261022-634`)
+
+- **Affected Scope**:
+  - `packages/core/src/credential.ts`
+  - `packages/core/src/plugin/provider/xai.ts`
+  - `packages/core/src/config.ts`
+  - `packages/core/src/session/runner/model.ts`
+  - `packages/core/src/tool/tool.ts`
+  - `packages/llm/src/tool.ts`
+- **Observed vs. Expected**:
+  - **Observed**: Prompting a V2 session with `xai/grok-4.7` failed with `UnknownModelError` or xAI HTTP 400 `[invalid_client_tool_schema] send_feedback: tool parameter root must be an object type (root schema is a $ref)`.
+  - **Expected**: Both V1 CLI (`apexo run -m xai/grok-4.7`) and V2 Server (`POST /api/session/:id/prompt` with `model: { providerID: "xai", id: "grok-4.7" }`) resolve credentials and model metadata and complete assistant turns cleanly.
+- **Root Cause**:
+  - V2 `Credential.Service` only read `credential.json` and ignored V1 `auth.json` and `~/.grok/auth.json`; `packages/core/src/plugin/provider/xai.ts` had no `ctx.integration.register("xai", ...)` or `ctx.catalog.transform` to merge `~/.grok/models_cache.json` + `GROK_MODELS` with `@ai-sdk/xai` API routing; `packages/core/src/session/runner/model.ts` lacked `User-Agent: apexo/${InstallationVersion}` on the `xai` route; and `Schema.toJsonSchemaDocument` emitted `{ $ref: "#/$defs/..." }` at the root for annotated tool parameter schemas (`Feedback.ToolSave`, `Goal.Update`), which xAI's strict tool validator rejected.
+- **Fix**:
+  - Bridged V1 `auth.json` and `~/.grok/auth.json` in `packages/core/src/credential.ts` (including JWT `exp` normalization and refresh write-back), registered the `xai` integration and catalog transform in `packages/core/src/plugin/provider/xai.ts`, substituted `{env:VAR}` in `packages/core/src/config.ts`, set `User-Agent: apexo/${InstallationVersion}` in `packages/core/src/session/runner/model.ts`, and unwrapped root `$ref` entries in `toJsonSchema` in `packages/core/src/tool/tool.ts` and `packages/llm/src/tool.ts`.
+- **Verification**:
+  - Live V1 CLI (`apexo run -m xai/grok-4.7 "Reply with exactly PONG"`) and live V2 Server (`POST /api/session` + `POST /api/session/:id/prompt` with `model: { providerID: "xai", id: "grok-4.7" }`) both completed with assistant replies `"PONG"` and `"V2_PONG"` (`finish: "stop"`).
+
+---
+
+## #86 & #110 — V2 Goal Execution with `xai/grok-4.7` and Strict Token Budget Enforcement (`BUG-20261022-625`)
+
+- **Affected Scope**:
+  - `packages/core/src/session/goal-files.ts`
+  - `packages/core/src/session/goal-review.ts`
+  - `packages/core/src/session/goal-usage.ts`
+  - `packages/core/src/session/goal-runner.ts`
+  - `packages/core/src/session/runner/llm.ts`
+  - `packages/apexo/src/session/goal-review.ts`
+  - `packages/apexo/src/session/llm.ts`
+  - `packages/apexo/src/session/prompt.ts`
+- **Observed vs. Expected**:
+  - **Observed**: Creating a Goal in Desktop/V2 either stalled at `status: "infra_paused", phase: "planning", tokensUsed: 0` (because `fs.realpath` failed before `input.data` directory creation or tool schemas failed xAI validation) or, when given a small `tokenBudget` like `128`, recorded ~11,403 `tokensUsed` (`89x` over budget) from a single provider turn's static system/tool context.
+  - **Expected**: Goal planning writes `plan.md` via `goal_report_write` and advances into `status: "active", phase: "executing"`, and when `tokenBudget` is reached, `tokensUsed` is bounded to `tokenBudget` and the Goal transitions cleanly to `status: "budget_limited", phase: "idle"`.
+- **Root Cause**:
+  - `GoalFiles.layout` called `fs.realpath(input.data)` before ensuring `input.data` existed with `0o700` permissions; `goal-review.ts` did not unwrap `UnknownError.cause` when recording `infra_paused` errors; background `title()` generation ran inside `SessionGoalUsage.Current`; and `goal-usage.ts` added full provider static prompt context tokens without bounding real provider turns (`inputTokens >= 256`) to remaining `tokenBudget`.
+- **Fix**:
+  - Ensured `input.data` exists with `0o700` permissions before `realpath` in `goal-files.ts`, unwrapped `UnknownError.cause` in `goal-review.ts`, capped `maxOutputTokens` to remaining budget, excluded background `title()` calls from `SessionGoalUsage.Current`, and bounded real provider turn usage (`inputTokens >= 256`) to remaining `tokenBudget` in `goal-usage.ts` and `runner/llm.ts`.
+- **Verification**:
+  - Live V2 Server verification confirmed a Goal with `tokenBudget: 128` stopped at `{ status: "budget_limited", phase: "idle", tokensUsed: 128, tokenBudget: 128 }`, and a Goal with `tokenBudget: 500000` wrote `plan.md` and transitioned to `{ status: "active", phase: "executing", tokensUsed: 22348 }`.
+
+---
+
+## #111, #95, & #84 — Desktop Plugins Dialog Tab Scrolling, Immediate Slash Menu Refresh on Apply, and Stale PID Pruning on Uninstall (`BUG-20261022-626`)
+
+- **Affected Scope**:
+  - `packages/app/src/components/plugins.css`
+  - `packages/ui/src/components/dialog.css`
+  - `packages/app/src/components/plugins.tsx`
+  - `packages/core/src/config/plugin/command.ts`
+  - `packages/server/src/handlers/command.ts`
+  - `packages/app/src/context/server-sync.tsx`
+  - `packages/app/src/utils/server-compat.ts`
+  - `packages/core/src/plugin-store.ts`
+- **Observed vs. Expected**:
+  - **Observed**: Clicking `Installed` or `Sources` in the Desktop `Plugins` dialog updated accessibility selection without changing the visible pane properly; clicking `Apply to this project` after installing a plugin did not show its skill in the composer `/` menu until app restart; and uninstalling a plugin left a `Plugin data was kept because another running Apexo process is still using it` banner.
+  - **Expected**: Switching tabs updates `[data-active-tab]` and visible panel content immediately; `Apply to this project` injects bundle skills into the V2 command list and refreshes all open project directories so `/<plugin>:<skill>` appears immediately; and uninstalling prunes dead local reader PIDs during `captured.release()` so `cleanData` removes plugin data without a false retained-data banner.
+- **Root Cause**:
+  - Missing `min-height: 0` on `[data-slot="dialog-body"]` and `.plugins-store`; `packages/core/src/config/plugin/command.ts` only loaded commands from `config.entries()` and ignored `PluginBundleState.Service` skills; `reload()` in `plugins.tsx` only reloaded a single directory when launched from Home (`sdk.directory === ""`); and `captured.release()` in `plugin-store.ts` did not prune dead PIDs before `cleanData()` checked remaining lease files.
+- **Fix**:
+  - Added `min-height: 0` in `dialog.css` and `plugins.css` plus `data-active-tab={state.tab}` in `plugins.tsx`; injected `bundle.skills` into `packages/core/src/config/plugin/command.ts`; updated `plugins.tsx` and `server-sync.tsx` to reload all open project locations and refresh `command` queries; and pruned dead local PIDs during `captured.release()` in `plugin-store.ts`.
+- **Verification**:
+  - Live Desktop verification over CDP confirmed `Discover` -> `Installed` -> `Sources` tab transitions, installed `live-desktop-plugin`, clicked `Apply to this project`, verified `/live-desktop-plugin:live-desktop-skill` appeared immediately in the session `/` popover, and verified uninstalling produced zero retained-data notices (`hasRetainedBanner: false`).
+
+---
+
+## #112, #113, #114, #115, #116, #117, & #118 — CLI, Server Startup, Config Secret Redaction, and ESM Wrapper Fixes (`BUG-20261022-627` through `BUG-20261022-633`)
+
+- **Affected Scope**:
+  - `packages/apexo/src/cli/cmd/mcp.ts` (`#112`)
+  - `packages/apexo/src/cli/cmd/agent.ts` (`#113`)
+  - `packages/apexo/src/server/server.ts`, `packages/cli/src/commands/handlers/serve.ts` (`#114`)
+  - `packages/cli/src/commands/handlers/api.ts` (`#115`, `#116`)
+  - `packages/apexo/src/server/routes/instance/httpapi/handlers/config.ts`, `global.ts`, `provider.ts`, `server.ts`, `packages/desktop/src/main/index.ts`, `packages/core/src/v1/config/migrate.ts` (`#117`)
+  - `packages/apexo/bin/apexo` (`#118`)
+- **Observed vs. Expected**:
+  - **Observed**:
+    - `#112`: `apexo mcp remove <name>` threw `Cannot set property of an empty document` when `apexo.json` was empty.
+    - `#113`: `apexo agent create` hung indefinitely when invoked without a TTY and without all required non-interactive flags.
+    - `#114`: The first HTTP request sent immediately after `apexo serve` bound its listening socket hung forever.
+    - `#115` & `#116`: `apexo api <unknown-op>` printed a raw stack trace, and `apexo api GET /nonexistent` exited with empty output when the error body was empty.
+    - `#117`: `/config`, `/global/config`, and `/config/providers` returned plaintext resolved `apiKey` / `clientSecret` values and allowed HTTP caching.
+    - `#118`: `node ./packages/apexo/bin/apexo --version` crashed with `ReferenceError: require is not defined in ES module scope`.
+  - **Expected**: Clean CLI errors without hangs or raw stack traces, immediate handling of early HTTP requests on `serve`, `"***"` redaction + `Cache-Control: no-store` on config/provider routes (without stripping `Schema.Class` prototypes on `ConfigReference`), and ESM-compatible `bin/apexo`.
+- **Fix & Verification**:
+  - Verified all commands live via CLI and HTTP requests: `node ./packages/apexo/bin/apexo --version` (`0.0.0-main-202610201121`), `apexo agent create < /dev/null` (exit 1 with missing flags message), `apexo mcp remove nonexistent` on empty `apexo.json` (`MCP server not found: nonexistent`), `apexo api unknown.operation.id` (`Operation not found: unknown.operation.id`), `apexo api GET /v2/nonexistent-route` (`HTTP 404 Not Found: GET /v2/nonexistent-route`), and early socket connect on `apexo serve` returning `200 OK` with `cache-control: no-store` and `"apiKey":"***"`.
+  - Also verified in live Desktop over CDP: `#47` (`Invalid API key format` vs `(HTTP 401)` and returning to `Settings -> Providers` on Close), `#91` (`Select purple color` persisted with `aria-pressed="true"` on reopen), and `#90` (`Help` dialog `fit` height `480px`, `Check for Updates...` toast `"You're running the latest version (1.18.35)"`).
+

@@ -17,7 +17,7 @@ import { InstanceRef } from "@/effect/instance-ref"
 import { InstallationVersion } from "@apexo/core/installation/version"
 import path from "path"
 import { Global } from "@apexo/core/global"
-import { modify, applyEdits } from "jsonc-parser"
+import { modify, applyEdits, parse } from "jsonc-parser"
 import { Filesystem } from "@/util/filesystem"
 import { Effect } from "effect"
 import { LEGACY_APP_DIR_NAME, LEGACY_CONFIG_DIR, LEGACY_CONFIG_NAME } from "@apexo/core/legacy-compat"
@@ -439,7 +439,8 @@ async function resolveConfigPath(baseDir: string, global = false) {
 async function addMcpToConfig(name: string, mcpConfig: ConfigMCPV1.Info, configPath: string) {
   let text = "{}"
   if (await Filesystem.exists(configPath)) {
-    text = await Filesystem.readText(configPath)
+    const existing = await Filesystem.readText(configPath)
+    if (existing.trim()) text = existing
   }
 
   // Use jsonc-parser to modify while preserving comments
@@ -456,6 +457,18 @@ async function addMcpToConfig(name: string, mcpConfig: ConfigMCPV1.Info, configP
 async function removeMcpFromConfig(name: string, configPath: string) {
   if (!(await Filesystem.exists(configPath))) return false
   const text = await Filesystem.readText(configPath)
+  if (!text.trim()) return false
+  const parsed = parse(text, [], { allowTrailingComma: true })
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("mcp" in parsed) ||
+    !parsed.mcp ||
+    typeof parsed.mcp !== "object" ||
+    !(name in parsed.mcp)
+  ) {
+    return false
+  }
   const edits = modify(text, ["mcp", name], undefined, {
     formattingOptions: { tabSize: 2, insertSpaces: true },
   })

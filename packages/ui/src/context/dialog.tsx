@@ -49,7 +49,7 @@ function init() {
       timer.current = undefined
     }
     lock.value = false
-    current.onClose?.()
+    const onClose = current.onClose
     const closed = current.id
     const next = items.filter((item) => item.id !== closed)
     current.dispose()
@@ -58,6 +58,7 @@ function init() {
     if (next.length === 0 && typeof document !== "undefined" && document.body.style.pointerEvents === "none") {
       document.body.style.removeProperty("pointer-events")
     }
+    onClose?.()
   }
 
   createEffect(() => {

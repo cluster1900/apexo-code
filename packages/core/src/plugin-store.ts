@@ -378,11 +378,21 @@ export async function capture(root: string) {
       const current = await state(ownedRoot)
       const released = (current.data ?? []).map((entry) => ({
         ...entry,
-        readers: entry.readers.filter((reader) => reader.token !== token),
+        readers: entry.readers.filter((reader) => reader.token !== token && isReaderAlive(reader)),
       }))
       await save(ownedRoot, { ...current, data: released })
       await save(ownedRoot, { ...current, data: await cleanData(ownedRoot, released) })
     },
+  }
+}
+
+function isReaderAlive(reader: { pid: number; host: string }) {
+  if (reader.host !== os.hostname() || reader.pid === process.pid) return true
+  try {
+    process.kill(reader.pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code !== "ESRCH"
   }
 }
 

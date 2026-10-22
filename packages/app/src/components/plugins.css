@@ -5,8 +5,9 @@
   padding: 28px;
   color: var(--text-base);
   max-height: 78vh;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   user-select: text;
 }
 .settings-v2 .plugins-store,

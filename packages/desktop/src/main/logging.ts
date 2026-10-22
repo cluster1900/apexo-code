@@ -58,7 +58,10 @@ export async function exportDebugLogs() {
   try {
     write("main", "exporting debug logs", { output })
     await writeZip(output, [
-      { name: "manifest.json", data: Buffer.from(JSON.stringify(manifest(), null, 2)) },
+      {
+        name: "manifest.json",
+        data: Buffer.from(redactDebugLogContent(JSON.stringify(manifest(), null, 2)), "utf8"),
+      },
       ...collect(root, "desktop"),
       ...serverLogRoots().flatMap((dir, i) => collect(dir, `server-${i + 1}`)),
       ...collect(app.getPath("crashDumps"), "crashpad"),
@@ -185,10 +188,34 @@ function collect(dir: string, prefix: string): Entry[] {
   return result
 }
 
+const homePath = homedir()
+
+export function redactDebugLogContent(input: string): string {
+  let out = input
+  if (homePath && homePath.length > 1) {
+    out = out.split(homePath).join("~")
+  }
+  out = out.replace(/\/Users\/[^/\s"',;)\]]+/g, "/Users/<redacted>")
+  out = out.replace(/\/home\/[^/\s"',;)\]]+/g, "/home/<redacted>")
+  out = out.replace(/[A-Za-z]:\\Users\\[^\\\s"',;)\]]+/g, "C:\\Users\\<redacted>")
+  out = out.replace(
+    /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|authorization)["'\s:=]+(?:Bearer\s+)?)([A-Za-z0-9._~+/=-]{8,})/gi,
+    "$1[REDACTED]",
+  )
+  out = out.replace(/\b(xai-[A-Za-z0-9_-]{12,}|sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,})\b/g, "[REDACTED]")
+  return out
+}
+
 async function writeZip(output: string, entries: Entry[]) {
   const writer = new ZipWriter(new BlobWriter("application/zip"))
   for (const entry of entries) {
-    const data = entry.data ?? readFileSync(entry.path!)
+    const raw = entry.data ?? readFileSync(entry.path!)
+    const isTextLog =
+      entry.name.endsWith(".log") ||
+      entry.name.endsWith(".json") ||
+      entry.name.endsWith(".txt") ||
+      entry.name.endsWith(".netlog")
+    const data = isTextLog && !entry.data ? Buffer.from(redactDebugLogContent(raw.toString("utf8")), "utf8") : raw
     await writer.add(entry.name, new BlobReader(new Blob([new Uint8Array(data)])))
   }
   const zip = await writer.close()

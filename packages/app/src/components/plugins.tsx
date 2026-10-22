@@ -40,7 +40,12 @@ export function Plugins() {
     if (route.type === "draft")
       return route.dir || layout.projects?.list()?.[0]?.worktree || serverSync().data.path?.directory || undefined
     if (route.type === "session") return serverSync().session.get(route.sessionId)?.directory
-    return undefined
+    return (
+      layout.home.selection().directory ||
+      layout.projects?.list()?.[0]?.worktree ||
+      serverSync().data.path?.directory ||
+      undefined
+    )
   }
   const initialDismissedIds = (() => {
     if (typeof localStorage === "undefined") return [] as string[]
@@ -99,7 +104,7 @@ export function Plugins() {
     setState({ pending: true, error: false, errorMessage: "", reloadBusy: false })
     await client
       .then((plugins) => plugins.manage({ pluginStoreAction: action }, { signal, throwOnError: true }))
-      .then((result) => {
+      .then(async (result) => {
         if (signal.aborted) return
         if ((action.action === "install" || action.action === "uninstall") && action.id) {
           saveDismissedIds(
@@ -109,7 +114,38 @@ export function Plugins() {
         }
         setState("catalog", reconcile(result.data))
         setState({ form: "", sourceInput: "", confirm: undefined, error: false, errorMessage: "" })
-        if (["install", "update", "enable", "disable", "uninstall"].includes(action.action)) setState("changed", true)
+        if (["install", "update", "enable", "disable", "uninstall"].includes(action.action)) {
+          setState("changed", true)
+          if (action.action === "uninstall") {
+            const current = sdk()
+            if ((await current.protocol) === "v2") {
+              const dirs = Array.from(
+                new Set(
+                  [
+                    directory(),
+                    ...(layout.projects?.list()?.map((p) => p.worktree) ?? []),
+                    serverSync().data.path?.directory,
+                  ].filter((d): d is string => Boolean(d)),
+                ),
+              )
+              await Promise.all(
+                dirs.map((dir) =>
+                  current.client.v2.plugins
+                    .reload({ location: { directory: dir } }, { signal, throwOnError: false })
+                    .catch(() => undefined),
+                ),
+              )
+              await serverSync().reloadCommands?.(directory())
+              await refreshRuntime()
+              const refreshed = await client
+                .then((plugins) => plugins.list({}, { signal, throwOnError: true }))
+                .catch(() => undefined)
+              if (refreshed && !signal.aborted) {
+                setState("catalog", reconcile(refreshed.data))
+              }
+            }
+          }
+        }
       })
       .catch((err) => {
         if (signal.aborted) return
@@ -250,6 +286,21 @@ export function Plugins() {
           if (!signal.aborted) setState("reloadBusy", result.response.status === 409)
           throw result.error
         }
+        const otherDirs = Array.from(
+          new Set(
+            [
+              ...(layout.projects?.list()?.map((p) => p.worktree) ?? []),
+              serverSync().data.path?.directory,
+            ].filter((d): d is string => Boolean(d) && d !== target),
+          ),
+        )
+        await Promise.all(
+          otherDirs.map((dir) =>
+            current.client.v2.plugins
+              .reload({ location: { directory: dir } }, { signal, throwOnError: false })
+              .catch(() => undefined),
+          ),
+        )
         return
       }
       await current.client.plugins.reload({ directory: target }, { signal, throwOnError: true })
@@ -275,7 +326,12 @@ export function Plugins() {
       })
   }
   return (
-    <section class="plugins-store" aria-label={language.t("plugins.title")} data-component="plugins-store">
+    <section
+      class="plugins-store"
+      aria-label={language.t("plugins.title")}
+      data-component="plugins-store"
+      data-active-tab={state.tab}
+    >
       <header class="plugins-header">
         <div>
           <h1>{language.t("plugins.title")}</h1>

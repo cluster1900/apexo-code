@@ -11,6 +11,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
+import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
@@ -182,6 +183,10 @@ export const fromCatalogModel = (
         .with({
           endpoint: { baseURL },
           auth: key === undefined ? Auth.none : Auth.bearer(key),
+          headers: {
+            "User-Agent": `apexo/${InstallationVersion}`,
+            ...resolved.request.headers,
+          },
           providerOptions: {
             xai: { store: false },
             openai: { store: false },

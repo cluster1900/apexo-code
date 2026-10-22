@@ -69,11 +69,17 @@ export function createEditProjectModel(props: { project: LocalProject; server: S
     mutationFn: async () => {
       const name = store.name.trim() === folderName() ? "" : store.name.trim()
       const start = store.startup.trim()
+      const projectID =
+        props.project.id ||
+        (await serverCtx()
+          .sdk.client.project.current({ directory: props.project.worktree })
+          .then((result) => result.data?.id)
+          .catch(() => undefined))
 
-      if (props.project.id && props.project.id !== "global") {
+      if (projectID && projectID !== "global") {
         const project = await serverCtx()
           .sdk.client.project.update({
-            projectID: props.project.id,
+            projectID,
             directory: props.project.worktree,
             name,
             icon: { color: store.color || "", override: store.iconOverride || "" },
@@ -82,13 +88,16 @@ export function createEditProjectModel(props: { project: LocalProject; server: S
           .then((result) => result.data)
           .catch(() => undefined)
         if (project) {
+          const normalized = normalizeProjectInfo(project)
           serverCtx().sync.set("project", (items) =>
-            items.map((item) => (item.id === project.id ? normalizeProjectInfo(project) : item)),
+            items.some((item) => item.id === normalized.id)
+              ? items.map((item) => (item.id === normalized.id ? normalized : item))
+              : [...items, normalized],
           )
         } else {
           serverCtx().sync.set("project", (items) =>
             items.map((item) =>
-              item.id === props.project.id
+              item.id === projectID
                 ? {
                     ...item,
                     name: name || undefined,

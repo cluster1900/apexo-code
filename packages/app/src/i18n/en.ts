@@ -1987,4 +1987,5 @@ export const dict = {
   "command.session.unshare": "Unshare session",
   "command.prompt.Attach": "Add files",
   "command.colorScheme.cycle": "Cycle color scheme",
+  "desktop.updater.upToDate": "You're running the latest version ({{version}})",
 }

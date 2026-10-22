@@ -150,8 +150,9 @@ const layer = Layer.effect(
     const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)
 
     const loadFile = Effect.fnUntraced(function* (filepath: string) {
-      const text = yield* fs.readFileStringSafe(filepath)
-      if (!text) return
+      const raw = yield* fs.readFileStringSafe(filepath)
+      if (!raw) return
+      const text = raw.replace(/\{env:([^}]+)\}/g, (_, varName) => process.env[varName] || "")
 
       const errors: ParseError[] = []
       const input: unknown = parse(text, errors, { allowTrailingComma: true })

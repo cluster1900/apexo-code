@@ -9,7 +9,7 @@ import matter from "gray-matter"
 import { EOL } from "os"
 import type { Argv } from "yargs"
 import { Effect } from "effect"
-import { effectCmd } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
 
 type AgentMode = "all" | "primary" | "subagent"
 
@@ -59,6 +59,22 @@ const AgentCreateCommand = effectCmd({
         describe: "model to use in the format of provider/model",
       }),
   handler: Effect.fn("Cli.agent.create")(function* (args) {
+    const cliPath = args.path
+    const cliDescription = args.description
+    const cliMode = args.mode as AgentMode | undefined
+    const perms = args.permissions
+    const isFullyNonInteractive = Boolean(cliPath && cliDescription && cliMode && perms !== undefined)
+    if (!isFullyNonInteractive && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+      const missing = [
+        !cliPath ? "--path" : undefined,
+        !cliDescription ? "--description" : undefined,
+        !cliMode ? "--mode" : undefined,
+        perms === undefined ? "--permissions" : undefined,
+      ].filter((item): item is string => item !== undefined)
+      return yield* fail(
+        `Interactive agent creation requires a TTY. Provide ${missing.join(", ")} for non-interactive execution.`,
+      )
+    }
     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
     const { Agent } = yield* Effect.promise(() => import("../../agent/agent"))
     const { Provider } = yield* Effect.promise(() => import("@/provider/provider"))
@@ -69,13 +85,6 @@ const AgentCreateCommand = effectCmd({
     const runLocalEffect = <A, E>(effect: Effect.Effect<A, E>) =>
       Effect.runPromise(effect.pipe(Effect.provideService(InstanceRef, ctx)))
     yield* Effect.promise(async () => {
-      const cliPath = args.path
-      const cliDescription = args.description
-      const cliMode = args.mode as AgentMode | undefined
-      const perms = args.permissions
-
-      const isFullyNonInteractive = cliPath && cliDescription && cliMode && perms !== undefined
-
       if (!isFullyNonInteractive) {
         UI.empty()
         prompts.intro("Create agent")

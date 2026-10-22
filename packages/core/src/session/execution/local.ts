@@ -204,7 +204,11 @@ const layer = Layer.effect(
       interrupt: Effect.fn("SessionExecution.interruptWithHooks")(function* (sessionID, when) {
         const claim = yield* lifecycle.find(sessionID)
         if (!claim) return
-        const capture = { accepted: false }
+        const capture = { accepted: false, scheduleStopped: false }
+        if (!when && scheduleOwners.checkpoint(claim)()) {
+          scheduleOwners.stop(claim)
+          capture.scheduleStopped = true
+        }
         yield* coordinator
           .interrupt(claim, () => {
             if (when && !when()) return false
@@ -214,11 +218,14 @@ const layer = Layer.effect(
             scheduleOwners.stop(claim)
             memory.stopAutomatic(claim)
             capture.accepted = true
+            capture.scheduleStopped = true
             cancelling.add(sessionID)
             return true
           })
           .pipe(
-            Effect.ensuring(Effect.suspend(() => (capture.accepted ? scheduleOwners.joinStop(claim) : Effect.void))),
+            Effect.ensuring(
+              Effect.suspend(() => (capture.scheduleStopped ? scheduleOwners.joinStop(claim) : Effect.void)),
+            ),
             Effect.ensuring(Effect.suspend(() => (capture.accepted ? memory.joinAutomaticStop(claim) : Effect.void))),
             Effect.ensuring(
               Effect.sync(() => {

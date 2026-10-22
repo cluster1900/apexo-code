@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
-import { lstat, mkdir, mkdtemp, open, realpath, rename, unlink } from "node:fs/promises"
+import { chmod, lstat, mkdir, mkdtemp, open, realpath, rename, unlink } from "node:fs/promises"
 import path from "node:path"
 import { Schema } from "effect"
 import { Goal } from "@apexo/schema/goal"
@@ -28,6 +28,9 @@ export async function create(input: {
   changes?: { patch: string; manifest: string }
   owner?: { sessionID: SessionID; goalID: Goal.ID }
 }) {
+  await mkdir(input.data, { recursive: true, mode: 0o700 }).catch((error: unknown) => {
+    if (!exists(error)) throw error
+  })
   const root = path.join(await realpath(input.data), "goal-reviews")
   if (input.owner && !Schema.is(Goal.ID)(input.owner.goalID)) throw new Error("Invalid Goal report owner")
   const base = input.owner ? path.join(root, sessionDirectory(input.owner.sessionID), input.owner.goalID) : root
@@ -35,12 +38,19 @@ export async function create(input: {
     await mkdir(target, { mode: 0o700 }).catch((error: unknown) => {
       if (!exists(error)) throw error
     })
+    if (input.owner && process.platform !== "win32") {
+      const info = await lstat(target, { bigint: true })
+      if (info.isDirectory() && info.uid === BigInt(process.getuid!()) && (info.mode & 0o077n) !== 0n) {
+        await chmod(target, 0o700)
+      }
+    }
     await privateDirectory(target)
   }
   if (input.reportID && (!input.owner || !Schema.is(Goal.ReportID)(input.reportID)))
     throw new Error("Invalid reserved Goal report ID")
   const directory = input.reportID ? path.join(base, input.reportID) : await mkdtemp(path.join(base, "review-"))
   if (input.reportID) await mkdir(directory, { mode: 0o700 })
+  if (input.owner && process.platform !== "win32") await chmod(directory, 0o700)
   const identity = await lstat(directory, { bigint: true })
   const paths = {
     objective: path.join(directory, "objective.txt"),
@@ -53,7 +63,10 @@ export async function create(input: {
     changedFiles: path.join(directory, "changed-files.json"),
   }
   const workerScratch = input.workerScratch ?? path.join(directory, "worker")
-  if (!input.workerScratch) await mkdir(workerScratch, { mode: 0o700 })
+  if (!input.workerScratch) {
+    await mkdir(workerScratch, { mode: 0o700 })
+    if (input.owner && process.platform !== "win32") await chmod(workerScratch, 0o700)
+  }
   const allowed =
     input.kind === "planning"
       ? [paths.plan]

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-const childProcess = require("child_process")
-const fs = require("fs")
-const path = require("path")
-const os = require("os")
+import childProcess from "node:child_process"
+import fs from "node:fs"
+import path from "node:path"
+import os from "node:os"
+import { fileURLToPath } from "node:url"
 
 const forwardedSignals = ["SIGINT", "SIGTERM", "SIGHUP"]
 
-function run(target) {
-  const child = childProcess.spawn(target, process.argv.slice(2), {
+function run(target, prefixArgs = []) {
+  const child = childProcess.spawn(target, [...prefixArgs, ...process.argv.slice(2)], {
     stdio: "inherit",
   })
 
@@ -45,7 +46,7 @@ function run(target) {
 
 const envPath = process.env.APEXO_BIN_PATH
 
-const scriptPath = fs.realpathSync(__filename)
+const scriptPath = fs.realpathSync(fileURLToPath(import.meta.url))
 const scriptDir = path.dirname(scriptPath)
 
 //
@@ -169,6 +170,13 @@ const names = (() => {
 })()
 
 function findBinary(startDir) {
+  const distDir = path.resolve(startDir, "..", "dist")
+  if (fs.existsSync(distDir)) {
+    for (const name of names) {
+      const candidate = path.join(distDir, name, "bin", binary)
+      if (fs.existsSync(candidate)) return candidate
+    }
+  }
   let current = startDir
   for (;;) {
     const modules = path.join(current, "node_modules")
@@ -188,12 +196,17 @@ function findBinary(startDir) {
 
 const resolved = envPath || (fs.existsSync(cached) ? cached : findBinary(scriptDir))
 if (!resolved) {
-  console.error(
-    "It seems that your package manager failed to install the right version of the apexo CLI for your platform. You can try manually installing " +
-      names.map((n) => `\"${n}\"`).join(" or ") +
-      " package",
-  )
-  process.exit(1)
+  const srcEntry = path.resolve(scriptDir, "..", "src", "index.ts")
+  if (fs.existsSync(srcEntry)) {
+    run("bun", ["run", "--conditions=browser", srcEntry])
+  } else {
+    console.error(
+      "It seems that your package manager failed to install the right version of the apexo CLI for your platform. You can try manually installing " +
+        names.map((n) => `\"${n}\"`).join(" or ") +
+        " package",
+    )
+    process.exit(1)
+  }
+} else {
+  run(resolved)
 }
-
-run(resolved)

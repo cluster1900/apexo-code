@@ -6,7 +6,7 @@ import { PermissionSaved } from "@apexo/core/permission/saved"
 import { Context, Layer, Option } from "effect"
 import * as Effect from "effect/Effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
-import { createServer } from "node:http"
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { createRoutes } from "@apexo/server/routes"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
@@ -39,7 +39,35 @@ function listen(hostname: string, port: Option.Option<number>, password: string)
 function bind(hostname: string, port: number, password: string) {
   return Layer.build(
     HttpRouter.serve(createRoutes(password), { disableListenLog: true, disableLogger: true }).pipe(
-      Layer.provideMerge(NodeHttpServer.layer(() => createServer(), { port, host: hostname })),
+      Layer.provideMerge(
+        NodeHttpServer.layer(
+          () => {
+            const server = createServer()
+            const pending: Array<[IncomingMessage, ServerResponse]> = []
+            let ready = false
+            const onEarlyRequest = (req: IncomingMessage, res: ServerResponse) => {
+              if (ready) return
+              req.pause()
+              pending.push([req, res])
+            }
+            server.on("newListener", (event, listener) => {
+              if (event === "request" && listener !== onEarlyRequest) {
+                ready = true
+                server.off("request", onEarlyRequest)
+                queueMicrotask(() => {
+                  for (const [req, res] of pending.splice(0)) {
+                    server.emit("request", req, res)
+                    req.resume()
+                  }
+                })
+              }
+            })
+            server.on("request", onEarlyRequest)
+            return server
+          },
+          { port, host: hostname },
+        ),
+      ),
       Layer.provide(AppNodeBuilder.build(LayerNode.group([Credential.node, PermissionSaved.node]))),
     ),
   ).pipe(Effect.map((context) => Context.get(context, HttpServer.HttpServer).address))

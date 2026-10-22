@@ -11,6 +11,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ProviderAuthApiError } from "../groups/provider"
 import { ProviderV2 } from "@apexo/core/provider"
+import { redactProviderSecrets } from "./config"
 
 function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R>) {
   return self.pipe(
@@ -70,7 +71,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         }
       }
       return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
+        all: Object.values(providers).map(redactProviderSecrets),
         default: Provider.defaultModelIDs(providers),
         connected: Object.keys(providers).filter((id) => id in connected || credentials[id]),
       }

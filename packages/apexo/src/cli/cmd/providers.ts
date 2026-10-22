@@ -44,7 +44,7 @@ function validateApiKeyFormat(providerID: string, raw: string | undefined) {
     /(.)\1{7,}/i.test(trimmed) ||
     /(invalid|placeholder|example|dummy|fake|testkey|01234567|12345678|abcdefgh)/i.test(trimmed)
   ) {
-    return "Invalid API key"
+    return "Invalid API key format (placeholder or test key rejected)"
   }
   if (providerID === "anthropic" && (!trimmed.startsWith("sk-ant-") || trimmed.length < 24)) {
     return "Invalid Anthropic API key format"
@@ -66,7 +66,11 @@ export async function verifyProviderApiKey(
   const endpoints: Record<string, { url: string; headers: Record<string, string> }> = {
     anthropic: {
       url: "https://api.anthropic.com/v1/models",
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
     },
     openai: {
       url: "https://api.openai.com/v1/models",

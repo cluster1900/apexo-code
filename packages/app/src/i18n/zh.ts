@@ -653,6 +653,8 @@ export const dict = {
   "desktop.menu.documentation": "Apexo 文档",
   "desktop.menu.shareFeedback": "提供反馈",
   "desktop.menu.reportBug": "报告错误",
+  "desktop.menu.about": "关于 {{appName}}",
+  "desktop.menu.checkForUpdates": "检查更新...",
   "desktop.menu.ariaLabel": "Apexo 菜单",
 
   "desktop.recovery.action.relaunch": "重新启动",
@@ -1996,4 +1998,5 @@ export const dict = {
   "command.session.unshare": "取消分享会话",
   "command.prompt.Attach": "附加文件",
   "command.colorScheme.cycle": "切换配色方案",
+  "desktop.updater.upToDate": "当前已是最新版本（{{version}}）",
 } satisfies Partial<Record<Keys, string>>

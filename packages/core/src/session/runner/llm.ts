@@ -430,8 +430,14 @@ const layer = Layer.effect(
           const toolMaterialization =
             execution && plannedTools ? SessionExecutionPolicy.materialize(plannedTools) : plannedTools
           const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
+          const activeGoal = role ? yield* goals.get(role.attempt.sessionID) : goal
+          const remainingGoalTokens =
+            activeGoal?.tokenBudget !== undefined
+              ? Math.max(1, activeGoal.tokenBudget - activeGoal.tokensUsed)
+              : undefined
           const request = LLM.request({
             model,
+            ...(remainingGoalTokens !== undefined ? { generation: { maxTokens: remainingGoalTokens } } : {}),
             http: {
               headers: {
                 "x-apexo-session-id": session.id,

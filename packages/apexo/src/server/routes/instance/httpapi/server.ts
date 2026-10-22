@@ -162,7 +162,18 @@ const cors = (corsOptions?: CorsOptions & { hostname?: string }) => {
         ) {
           return HttpServerResponse.text("Forbidden: Invalid Origin header", { status: 403 })
         }
-        return yield* applyCors(effect)
+        const response = yield* applyCors(effect)
+        const pathname = new URL(request.url, "http://localhost").pathname
+        if (
+          (pathname === "/config" ||
+            pathname === "/config/providers" ||
+            pathname === "/global/config" ||
+            pathname === "/provider") &&
+          !response.headers["cache-control"]
+        ) {
+          return HttpServerResponse.setHeader(response, "Cache-Control", "no-store")
+        }
+        return response
       }),
     { global: true },
   )

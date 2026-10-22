@@ -48,13 +48,24 @@ export function WindowsAppMenu(props: {
     const version = props.platform.version ?? "dev"
     const channel = import.meta.env.VITE_APEXO_CHANNEL ?? (import.meta.env.DEV ? "dev" : "stable")
     dialog.show(() => (
-      <Dialog title={language.t("desktop.menu.about", { appName: "Apexo" })} class="w-full max-w-[380px] mx-auto">
+      <Dialog fit title={language.t("desktop.menu.about", { appName: "Apexo" })} class="w-full max-w-[380px] mx-auto">
         <div class="flex flex-col gap-3 px-6 pb-5 text-13-regular text-text-base">
           <div class="text-14-medium text-text-strong">{language.t("app.name.desktop")}</div>
           <div class="text-text-weak">
             {language.t("error.page.version", { version: `${version} (${channel})` })}
           </div>
-          <div class="flex justify-end gap-2 pt-2">
+          <div class="flex flex-wrap justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="large"
+              onClick={() => {
+                dialog.close()
+                runCommand("app.checkUpdates")
+              }}
+            >
+              {language.t("desktop.menu.checkForUpdates")}
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -77,6 +88,10 @@ export function WindowsAppMenu(props: {
   }
   const runEntry = (entry: DesktopMenuEntry) => {
     if (entry.type === "separator") return
+    if (entry.role === "about") {
+      openAboutDialog()
+      return
+    }
     if (entry.command === "session.new") {
       runNewSession()
       return
@@ -152,7 +167,7 @@ export function WindowsAppMenu(props: {
                       <DropdownMenu.Separator />
                     ) : (
                       <DesktopMenuItem
-                        label={entry.labelKey ? language.t(entry.labelKey) : ""}
+                        label={entry.labelKey ? language.t(entry.labelKey, { appName: "Apexo" }) : ""}
                         keybind={
                           entry.command === "session.new"
                             ? newSessionKeybind()
