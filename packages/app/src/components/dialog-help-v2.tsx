@@ -3,10 +3,11 @@ import { useDialog } from "@apexo/ui/context/dialog"
 import { ButtonV2 } from "@apexo/ui/v2/button-v2"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@apexo/ui/v2/dialog-v2"
 import { DividerV2 } from "@apexo/ui/v2/divider-v2"
-import { For } from "solid-js"
+import { For, Show } from "solid-js"
 import { useSettingsDialog } from "./settings-dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { showToast } from "@/utils/toast"
 
 const ISSUES_URL = "https://github.com/cluster1900/apexo-code/issues"
 
@@ -82,6 +83,43 @@ export function DialogHelpV2() {
         </div>
       </DialogBody>
       <DialogFooter>
+        <ButtonV2
+          type="button"
+          variant="outline"
+          data-action="help-check-updates"
+          onClick={() => {
+            if (!platform.checkUpdate) {
+              showToast({
+                title: language.t("desktop.menu.checkForUpdates"),
+                description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+              })
+              return
+            }
+            void platform
+              .checkUpdate()
+              .then((res) => {
+                if (res.updateAvailable && res.version) {
+                  showToast({
+                    title: language.t("toast.update.title"),
+                    description: language.t("toast.update.description", { version: res.version }),
+                  })
+                  return
+                }
+                showToast({
+                  title: language.t("desktop.menu.checkForUpdates"),
+                  description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+                })
+              })
+              .catch(() => {
+                showToast({
+                  title: language.t("desktop.menu.checkForUpdates"),
+                  description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+                })
+              })
+          }}
+        >
+          {language.t("desktop.menu.checkForUpdates")}
+        </ButtonV2>
         <ButtonV2 type="button" variant="outline" data-action="help-close" onClick={() => dialog.close()}>
           {language.t("common.close")}
         </ButtonV2>

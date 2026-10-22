@@ -17,29 +17,46 @@ type OpenApi = {
 export default Runtime.handler(
   Commands.commands.api,
   Effect.fn("cli.api")(function* (input) {
-    const daemon = yield* Daemon.Service
-    const transport = yield* daemon.transport()
-    const params = Option.getOrElse(input.param, () => ({}))
-    const request = yield* resolveRequest(transport, input.request, params)
-    const headers = new Headers(transport.headers)
-    for (const header of input.header) {
-      const index = header.indexOf(":")
-      if (index < 1) return yield* Effect.fail(new Error(`Invalid header, expected name:value: ${header}`))
-      headers.set(header.slice(0, index).trim(), header.slice(index + 1).trim())
-    }
-    const body = Option.getOrUndefined(input.data)
-    if (body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json")
+    yield* Effect.gen(function* () {
+      const daemon = yield* Daemon.Service
+      const transport = yield* daemon.transport()
+      const params = Option.getOrElse(input.param, () => ({}))
+      const request = yield* resolveRequest(transport, input.request, params)
+      const headers = new Headers(transport.headers)
+      for (const header of input.header) {
+        const index = header.indexOf(":")
+        if (index < 1) return yield* Effect.fail(new Error(`Invalid header, expected name:value: ${header}`))
+        headers.set(header.slice(0, index).trim(), header.slice(index + 1).trim())
+      }
+      const body = Option.getOrUndefined(input.data)
+      if (body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json")
 
-    const response = yield* Effect.tryPromise(() =>
-      fetch(new URL(request.path, transport.url), {
-        method: request.method,
-        headers,
-        body,
-      }),
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch(new URL(request.path, transport.url), {
+            method: request.method,
+            headers,
+            body,
+          }),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      })
+      const output = yield* Effect.promise(() => response.text())
+      if (output) {
+        process.stdout.write(output + (output.endsWith(EOL) ? "" : EOL))
+      } else if (!response.ok) {
+        const statusLine = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${request.method} ${request.path}`
+        process.stderr.write(statusLine + EOL)
+      }
+      if (!response.ok) process.exitCode = 1
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          const message = error instanceof Error ? error.message : String(error)
+          process.stderr.write(message + (message.endsWith(EOL) ? "" : EOL))
+          process.exitCode = 1
+        }),
+      ),
     )
-    const output = yield* Effect.promise(() => response.text())
-    if (output) process.stdout.write(output + (output.endsWith(EOL) ? "" : EOL))
-    if (!response.ok) process.exitCode = 1
   }),
 )
 
@@ -66,10 +83,13 @@ function resolveRequest(
   const raw = rawRequest(input)
   if (raw) return Effect.succeed(raw)
   if (input.length !== 1) return Effect.fail(new Error("Expected an operation name or an HTTP method and path"))
-  return Effect.tryPromise(async () => {
-    const response = await fetch(new URL("/openapi.json", transport.url), { headers: transport.headers })
-    if (!response.ok) throw new Error(`Failed to load OpenAPI document: HTTP ${response.status}`)
-    return resolveOperation((await response.json()) as OpenApi, input[0], params)
+  return Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(new URL("/openapi.json", transport.url), { headers: transport.headers })
+      if (!response.ok) throw new Error(`Failed to load OpenAPI document: HTTP ${response.status}`)
+      return resolveOperation((await response.json()) as OpenApi, input[0], params)
+    },
+    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   })
 }
 

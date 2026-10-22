@@ -300,7 +300,7 @@ const make = Effect.gen(function* () {
             const childMessages = yield* store.context(childID)
             const raw = childMessages
               .flatMap((msg) => (msg.type === "assistant" ? msg.content : []))
-              .flatMap((part) => (part.type === "text" ? [part.text] : []))
+              .flatMap((part) => (part.type === "text" || part.type === "reasoning" ? [part.text] : []))
               .join("\n")
               .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
               .trim()
@@ -378,15 +378,19 @@ const make = Effect.gen(function* () {
       plannerModel: settings?.planner_model,
       skepticModels: settings?.skeptic_models,
       useCurrentModelOnly,
-      stream: (request) =>
-        llm.stream(
+      stream: (request) => {
+        const remainingBudget =
+          info.tokenBudget !== undefined ? Math.max(1, info.tokenBudget - info.tokensUsed) : undefined
+        return llm.stream(
           LLM.request({
             model,
+            ...(remainingBudget !== undefined ? { generation: { maxTokens: remainingBudget } } : {}),
             system: [SystemPart.make(request.system)],
             messages: [Message.user(request.content)],
             tools: [],
           }),
-        ),
+        )
+      },
     })
   })
 

@@ -1518,6 +1518,12 @@ const layer = Layer.effect(
           if (!(yield* goal.prepare(msgs, children.flat()).pipe(Effect.orDie))) break
         }
         const goalAttempt = goal?.attempt ?? (yield* SessionGoalUsage.Current)
+        if (!goal && goalAttempt) {
+          const activeGoal = yield* SessionGoal.make(database.db)
+            .check(goalAttempt)
+            .pipe(Effect.orElseSucceed(() => undefined))
+          if (!activeGoal) break
+        }
         step++
         if (step === 1)
           yield* title({
@@ -1525,7 +1531,7 @@ const layer = Layer.effect(
             modelID: lastUser.model.modelID,
             providerID: lastUser.model.providerID,
             history: msgs,
-          }).pipe(Effect.provideService(SessionGoalUsage.Current, goalAttempt), Effect.ignore, Effect.forkIn(scope))
+          }).pipe(Effect.provideService(SessionGoalUsage.Current, undefined), Effect.ignore, Effect.forkIn(scope))
 
         const resolved = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
         // /context-window: the session's chosen size is the effective limit for overflow and auto-compaction.

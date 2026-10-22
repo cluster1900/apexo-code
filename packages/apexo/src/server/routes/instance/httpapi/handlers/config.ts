@@ -9,25 +9,75 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { markInstanceForDisposal } from "../lifecycle"
 
+function redactSecret<T>(value: T): T {
+  if (typeof value !== "string" || !value.length) return value
+  if (/^\{(env|file):[^}]+\}$/.test(value)) return value
+  return "***" as T
+}
+
+export function redactConfigSecrets<T extends ConfigV1.Info>(config: T): T {
+  const provider = config.provider
+    ? Object.fromEntries(
+        Object.entries(config.provider).map(([key, item]) => [
+          key,
+          item?.options && typeof item.options === "object" && "apiKey" in item.options
+            ? { ...item, options: { ...item.options, apiKey: redactSecret(item.options.apiKey) } }
+            : item,
+        ]),
+      )
+    : config.provider
+  const mcp = config.mcp
+    ? Object.fromEntries(
+        Object.entries(config.mcp).map(([key, item]) => [
+          key,
+          item &&
+          typeof item === "object" &&
+          "oauth" in item &&
+          item.oauth &&
+          typeof item.oauth === "object" &&
+          "clientSecret" in item.oauth
+            ? {
+                ...item,
+                oauth: { ...item.oauth, clientSecret: redactSecret(item.oauth.clientSecret) as string | undefined },
+              }
+            : item,
+        ]),
+      )
+    : config.mcp
+  return {
+    ...config,
+    ...(provider === config.provider ? {} : { provider }),
+    ...(mcp === config.mcp ? {} : { mcp }),
+  }
+}
+
+export function redactProviderSecrets(provider: Provider.Info): Provider.Info {
+  const pub = Provider.toPublicInfo(provider)
+  if (pub.options && typeof pub.options === "object" && "apiKey" in pub.options) {
+    pub.options = { ...pub.options, apiKey: redactSecret(pub.options.apiKey) }
+  }
+  return pub
+}
+
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
     const providerSvc = yield* Provider.Service
     const configSvc = yield* Config.Service
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
-      return yield* configSvc.get()
+      return redactConfigSecrets(yield* configSvc.get())
     })
 
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
       yield* configSvc.update(ctx.payload)
       yield* markInstanceForDisposal(yield* InstanceState.context)
-      return ctx.payload
+      return redactConfigSecrets(ctx.payload)
     })
 
     const providers = Effect.fn("ConfigHttpApi.providers")(function* () {
       const providers = yield* providerSvc.list()
       return {
-        providers: Object.values(providers).map(Provider.toPublicInfo),
+        providers: Object.values(providers).map(redactProviderSecrets),
         default: Provider.defaultModelIDs(providers),
       }
     })

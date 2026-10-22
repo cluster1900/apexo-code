@@ -142,12 +142,35 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
         })
       },
       async command(value: SessionCommandInput): Promise<SessionCommandOutput> {
-        if (value.command !== "loop") return input.current.session.command(value)
-        const text = await loopPrompt(input.legacy(input.directory), {
-          arguments: value.arguments ?? "",
-          directory: input.directory,
+        if (value.command === "loop") {
+          const text = await loopPrompt(input.legacy(input.directory), {
+            arguments: value.arguments ?? "",
+            directory: input.directory,
+          })
+          return current.session.prompt({ sessionID: value.sessionID, id: value.id, text, files: value.files })
+        }
+        const commands = await input
+          .legacy(input.directory)
+          .v2.command.list({ location: { directory: input.directory } }, { throwOnError: true })
+          .then((res) => res.data?.data ?? [])
+          .catch(() => [])
+        const matched = commands.find((item) => item.name === value.command)
+        const args = value.arguments?.trim() ?? ""
+        const text = matched?.template
+          ? matched.template.includes("$ARGUMENTS")
+            ? matched.template.replaceAll("$ARGUMENTS", args)
+            : args
+              ? `${matched.template}\n\n${args}`
+              : matched.template
+          : args
+            ? `/${value.command} ${args}`
+            : `/${value.command}`
+        return current.session.prompt({
+          sessionID: value.sessionID,
+          id: value.id,
+          text,
+          files: value.files,
         })
-        return current.session.prompt({ sessionID: value.sessionID, id: value.id, text, files: value.files })
       },
       async prompt(value: SessionPromptInput & LegacyPrompt): Promise<SessionPromptOutput> {
         const match = /^\/loop(?:[ \t]+|\r?\n|$)([\s\S]*)/u.exec(value.text ?? "")

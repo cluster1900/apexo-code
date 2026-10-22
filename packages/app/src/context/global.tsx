@@ -123,6 +123,7 @@ function createServerCtx(
     // icon from the database instead of using their individual overrides.
     const base = {
       ...metadata,
+      ...(projectID && !metadata?.id ? { id: projectID } : {}),
       ...project,
       ...(localMeta?.name !== undefined ? { name: localMeta.name || metadata?.name } : {}),
       ...(localMeta?.commands ? { commands: { ...metadata?.commands, ...localMeta.commands } } : {}),

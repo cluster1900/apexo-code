@@ -198,10 +198,14 @@ const main = Effect.gen(function* () {
   ensureLoopbackNoProxy()
   useEnvProxy()
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+  app.commandLine.appendSwitch("disable-http-cache")
+  try {
+    rmSync(join(app.getPath("userData"), "Cache", "Cache_Data"), { recursive: true, force: true })
+  } catch {}
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
   if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port"))
-    app.commandLine.appendSwitch("remote-debugging-port", "9222")
+    app.commandLine.appendSwitch("remote-debugging-port", process.env.APEXO_REMOTE_DEBUGGING_PORT ?? "9222")
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()

@@ -122,6 +122,9 @@ type PlatformBase = {
   /** Export collected diagnostic logs (desktop only) */
   exportDebugLogs?(): Promise<string>
 
+  /** Check for application updates (desktop only) */
+  checkUpdate?(): Promise<{ updateAvailable: boolean; version?: string }>
+
   /** Force focus styles on interactive elements through desktop devtools (desktop only) */
   setForceFocus?(enabled: boolean): Promise<void>
 

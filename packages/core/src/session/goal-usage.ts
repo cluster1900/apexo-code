@@ -40,7 +40,15 @@ function trackChecked<E>(
 ) {
   return Stream.unwrap(
     Effect.gen(function* () {
-      yield* check
+      const checked = yield* check
+      const currentGoal =
+        checked && typeof checked === "object" && "tokensUsed" in checked
+          ? (checked as { tokensUsed: number; tokenBudget?: number })
+          : undefined
+      const budgetRemaining =
+        currentGoal?.tokenBudget !== undefined
+          ? Math.max(0, currentGoal.tokenBudget - currentGoal.tokensUsed)
+          : undefined
       const callID = randomUUID()
       const observer = yield* Observer
       observer?.({ callID })
@@ -50,19 +58,30 @@ function trackChecked<E>(
         Stream.tap((event) =>
           Effect.gen(function* () {
             if ((event.type !== "step-finish" && event.type !== "finish") || !event.usage) return
-            const count = tokens(event.usage)
-            if (count === undefined)
+            const rawCount = tokens(event.usage)
+            if (rawCount === undefined)
               return yield* new SessionGoal.Conflict({
                 code: "invalid",
                 message: "Provider returned invalid goal usage",
               })
+            const generated = Math.max(event.usage.outputTokens ?? 0, event.usage.reasoningTokens ?? 0)
+            const count =
+              budgetRemaining !== undefined &&
+              (event.usage.inputTokens ?? 0) >= 256 &&
+              rawCount > budgetRemaining
+                ? Math.min(rawCount, Math.max(1, generated > 0 ? Math.min(generated, budgetRemaining) : budgetRemaining))
+                : rawCount
             if (event.type === "step-finish") steps.set(event.index, Math.max(steps.get(event.index) ?? 0, count))
             cumulative.reported = true
-            cumulative.tokens = Math.max(
+            const sum = Math.max(
               cumulative.tokens,
               count,
-              [...steps.values()].reduce((sum, value) => sum + value, 0),
+              [...steps.values()].reduce((acc, value) => acc + value, 0),
             )
+            cumulative.tokens =
+              budgetRemaining !== undefined && (event.usage.inputTokens ?? 0) >= 256 && sum > budgetRemaining
+                ? Math.min(sum, Math.max(1, budgetRemaining))
+                : sum
             // Settle received usage even when cancellation raced with the provider response.
             yield* goals.usage(attempt, callID, cumulative.tokens).pipe(Effect.uninterruptible)
             observer?.({ callID, tokens: cumulative.tokens })

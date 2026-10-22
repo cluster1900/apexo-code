@@ -198,7 +198,7 @@ const layer = Layer.effect(
                           !(yield* Effect.promise(() => Bun.file(files.paths.plan).exists()))
                         ) {
                           const raw = result.parts
-                            .flatMap((part) => (part.type === "text" ? [part.text] : []))
+                            .flatMap((part) => (part.type === "text" || part.type === "reasoning" ? [part.text] : []))
                             .join("\n")
                             .replace(/<think>[\s\S]*?<\/think>\s*/gi, "")
                             .trim()

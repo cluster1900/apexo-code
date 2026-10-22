@@ -294,6 +294,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         labelKey: "desktop.menu.documentation",
         href: "https://github.com/cluster1900/apexo-code#readme",
       },
+      { type: "item", labelKey: "desktop.menu.checkForUpdates", command: "app.checkUpdates" },
       { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export", platforms: ["windows"] },
       { type: "separator" },
       {
@@ -307,7 +308,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         href: "https://github.com/cluster1900/apexo-code/issues/new?template=bug-report.yml",
       },
       { type: "separator", platforms: ["windows"] },
-      { type: "item", role: "about", platforms: ["windows"] },
+      { type: "item", labelKey: "desktop.menu.about", role: "about", platforms: ["windows"] },
     ],
   },
 ]

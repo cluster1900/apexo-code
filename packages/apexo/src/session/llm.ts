@@ -110,6 +110,20 @@ const live: Layer.Layer<
         plugin,
         flags,
       })
+      const currentGoalAttempt = yield* SessionGoalUsage.Current
+      const currentGoalInfo = currentGoalAttempt
+        ? yield* goals.get(currentGoalAttempt.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+        : undefined
+      const remainingGoalBudget =
+        currentGoalInfo?.tokenBudget !== undefined
+          ? Math.max(1, currentGoalInfo.tokenBudget - currentGoalInfo.tokensUsed)
+          : undefined
+      const maxOutputTokens =
+        remainingGoalBudget !== undefined
+          ? prepared.params.maxOutputTokens !== undefined
+            ? Math.min(prepared.params.maxOutputTokens, remainingGoalBudget)
+            : remainingGoalBudget
+          : prepared.params.maxOutputTokens
 
       const bridge = yield* EffectBridge.make()
       const tracer = cfg.experimental?.openTelemetry
@@ -143,7 +157,7 @@ const live: Layer.Layer<
           temperature: prepared.params.temperature,
           topP: prepared.params.topP,
           topK: prepared.params.topK,
-          maxOutputTokens: prepared.params.maxOutputTokens,
+          maxOutputTokens,
           providerOptions: prepared.params.options,
           headers: prepared.headers,
           abort: input.abort,
@@ -224,7 +238,7 @@ const live: Layer.Layer<
           tools: prepared.tools,
           toolChoice: input.toolChoice,
           output: input.outputSchema ? Output.object({ schema: jsonSchema(input.outputSchema) }) : undefined,
-          maxOutputTokens: prepared.params.maxOutputTokens,
+          maxOutputTokens,
           abortSignal: input.abort,
           headers: prepared.headers,
           maxRetries: input.retries ?? 0,

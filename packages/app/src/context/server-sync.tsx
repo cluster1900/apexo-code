@@ -695,7 +695,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const dirs = new Set<string>()
     if (directory) dirs.add(directoryKey(directory))
     for (const dir of Object.keys(children.children)) {
-      if (children.active(dir) || !directory) dirs.add(dir)
+      dirs.add(dir)
     }
     await Promise.all(
       Array.from(dirs).map(async (dir) => {
