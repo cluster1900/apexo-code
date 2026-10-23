@@ -110,6 +110,7 @@ export function SessionComposerRegion(props: {
             <Show when={rolled()} keyed>
               {(revert) => (
                 <div
+                  class="mb-2"
                   style={{
                     "margin-top": `${-36 * controller.dockProgress()}px`,
                   }}
@@ -125,7 +126,7 @@ export function SessionComposerRegion(props: {
             </Show>
             <div
               classList={{
-                "relative z-[70]": true,
+                "relative z-20": true,
               }}
               style={{
                 "margin-top": `${-controller.lift()}px`,

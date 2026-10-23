@@ -53,6 +53,7 @@ export function redactConfigSecrets<T extends ConfigV1.Info>(config: T): T {
 
 export function redactProviderSecrets(provider: Provider.Info): Provider.Info {
   const pub = Provider.toPublicInfo(provider)
+  if (pub.key) pub.key = redactSecret(pub.key)
   if (pub.options && typeof pub.options === "object" && "apiKey" in pub.options) {
     pub.options = { ...pub.options, apiKey: redactSecret(pub.options.apiKey) }
   }

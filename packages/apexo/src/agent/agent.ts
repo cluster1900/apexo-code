@@ -17,6 +17,7 @@ import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@apexo/core/global"
+import { realpath } from "node:fs/promises"
 import path from "path"
 import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
@@ -105,9 +106,18 @@ const layer = Layer.effect(
               return (yield* (yield* Reference.Service).list()).map((reference) => reference.path)
             }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
           : []
+        const globalSvc = Option.getOrUndefined(yield* Effect.serviceOption(Global.Service))
+        const rawDataDirs = [...new Set([Global.Path.data, ...(globalSvc ? [globalSvc.data] : [])])]
+        const realDataDirs = yield* Effect.forEach(rawDataDirs, (dir) =>
+          Effect.promise(() => realpath(dir).catch(() => dir)),
+        )
+        const goalReviewGlobs = [...new Set([...rawDataDirs, ...realDataDirs])].map((dir) =>
+          path.join(dir, "goal-reviews", "*"),
+        )
         const whitelistedDirs = [
           Truncate.GLOB,
           path.join(Global.Path.tmp, "*"),
+          ...goalReviewGlobs,
           ...skillDirs.map((dir) => path.join(dir, "*")),
           ...referenceDirs.map((dir) => path.join(dir, "*")),
         ]

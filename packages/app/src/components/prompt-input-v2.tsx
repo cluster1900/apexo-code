@@ -541,6 +541,12 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   Object.defineProperty(controller, "memory", { value: memory })
   Object.defineProperty(controller, "goal", { value: goal })
 
+  createEffect(() => {
+    if (dialog.active && controller.state.popover.type !== "closed") {
+      controller.dispatch({ type: "popover.close" })
+    }
+  })
+
   command.register("prompt-input", () => [
     {
       id: "file.attach",

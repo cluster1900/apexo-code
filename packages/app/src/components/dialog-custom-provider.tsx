@@ -98,7 +98,6 @@ export function CustomProviderForm(props: { autofocus?: boolean; onComplete?: ()
 
   const setField = (key: "providerID" | "name" | "baseURL" | "apiKey", value: string) => {
     setForm(key, value)
-    if (key === "apiKey") return
     setForm("err", key, undefined)
   }
 
@@ -131,8 +130,50 @@ export function CustomProviderForm(props: { autofocus?: boolean; onComplete?: ()
     return output.result
   }
 
+  const verifyCustomEndpoint = async (result: NonNullable<ReturnType<typeof validate>>) => {
+    if (!result.key) return undefined
+    const base = result.config.options.baseURL.replace(/\/+$/, "")
+    const extraHeaders = result.config.options.headers ?? {}
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${result.key}`,
+      ...extraHeaders,
+    }
+    const res = await fetch(`${base}/models`, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(6000),
+    }).catch(() => undefined)
+    if (!res) return language.t("provider.connect.apiKey.invalid")
+    if (res.status === 401 || res.status === 403) {
+      return `${language.t("provider.connect.apiKey.invalid")} (HTTP ${res.status})`
+    }
+    if (res.status === 404) {
+      const modelID = Object.keys(result.config.models ?? {})[0] ?? "default"
+      const probe = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: modelID, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+        signal: AbortSignal.timeout(6000),
+      }).catch(() => undefined)
+      if (!probe) return language.t("provider.connect.apiKey.invalid")
+      if (probe.status === 401 || probe.status === 403 || !probe.ok) {
+        return `${language.t("provider.connect.apiKey.invalid")} (HTTP ${probe.status})`
+      }
+      return undefined
+    }
+    if (!res.ok) {
+      return `${language.t("provider.connect.apiKey.invalid")} (HTTP ${res.status})`
+    }
+    return undefined
+  }
+
   const saveMutation = useMutation(() => ({
     mutationFn: async (result: NonNullable<ReturnType<typeof validate>>) => {
+      const verifyError = await verifyCustomEndpoint(result)
+      if (verifyError) {
+        setForm("err", "apiKey", verifyError)
+        throw new Error(verifyError)
+      }
       const disabledProviders = serverSync().data.config.disabled_providers ?? []
       const nextDisabled = disabledProviders.filter((id) => id !== result.providerID)
 
@@ -232,6 +273,8 @@ export function CustomProviderForm(props: { autofocus?: boolean; onComplete?: ()
             description={language.t("provider.custom.field.apiKey.description")}
             value={form.apiKey}
             onChange={(v) => setField("apiKey", v)}
+            validationState={form.err.apiKey ? "invalid" : undefined}
+            error={form.err.apiKey}
           />
         </div>
 

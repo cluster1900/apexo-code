@@ -494,12 +494,12 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
   }
 }
 
-const STEALTH_MODEL_ID = /(?:^daybreak-|-terra(?:-|$))/i
+const STEALTH_MODEL_ID = /\b(daybreak|terra|sol|luna)\b/i
 
 export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
   const models: Record<string, Model> = {}
   for (const [key, model] of Object.entries(provider.models)) {
-    if (STEALTH_MODEL_ID.test(key) || STEALTH_MODEL_ID.test(model.id)) continue
+    if (STEALTH_MODEL_ID.test(key) || STEALTH_MODEL_ID.test(model.id) || STEALTH_MODEL_ID.test(model.name)) continue
     models[key] = fromModelsDevModel(provider, model)
     for (const [mode, opts] of Object.entries(model.experimental?.modes ?? {})) {
       const id = `${model.id}-${mode}`
@@ -852,7 +852,7 @@ const layer = Layer.effect(
             if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
             if (
               !runtimeFlags.enableExperimentalModels &&
-              /(?:^|[-_\s/])(sol|terra|daybreak)(?:$|[-_\s])/i.test(`${modelID} ${model.name ?? ""}`)
+              /(?:^|[-_\s/])(sol|terra|daybreak|luna)(?:$|[-_\s])/i.test(`${modelID} ${model.name ?? ""}`)
             )
               delete provider.models[modelID]
             // Native tier aliases remain callable by saved sessions, but are hidden in model pickers.

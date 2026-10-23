@@ -99,10 +99,26 @@ export function materialize(
                 value: "Tool is unavailable to this Goal role",
               },
             }
-          return yield* base.settle(input)
+          const callInput =
+            input.call.name === "read" &&
+            typeof input.call.input === "object" &&
+            input.call.input !== null &&
+            !("path" in input.call.input) &&
+            !("filePath" in input.call.input) &&
+            "file_path" in input.call.input
+              ? { ...input.call.input, path: (input.call.input as { file_path?: unknown }).file_path }
+              : input.call.input
+          return yield* base.settle({ ...input, call: { ...input.call, input: callInput } })
         }
         return yield* Effect.gen(function* () {
-          const value = yield* Schema.decodeUnknownEffect(Write)(input.call.input)
+          const rawInput =
+            typeof input.call.input === "object" && input.call.input !== null
+              ? (input.call.input as Record<string, unknown>)
+              : {}
+          const value = yield* Schema.decodeUnknownEffect(Write)({
+            ...rawInput,
+            path: rawInput.path ?? rawInput.file_path ?? rawInput.filePath,
+          })
           if (!role.files.allowed.includes(value.path))
             return {
               result: {

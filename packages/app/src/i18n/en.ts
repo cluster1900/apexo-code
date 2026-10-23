@@ -1988,4 +1988,6 @@ export const dict = {
   "command.prompt.Attach": "Add files",
   "command.colorScheme.cycle": "Cycle color scheme",
   "desktop.updater.upToDate": "You're running the latest version ({{version}})",
+  "desktop.updater.unavailable":
+    "Automatic updates are not configured for {{version}}. Check GitHub Releases for new versions.",
 }

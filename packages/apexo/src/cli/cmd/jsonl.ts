@@ -23,6 +23,61 @@ export function sessionListUrl(baseUrl: string, query: JsonlRequest["query"]) {
   return url
 }
 
+export async function handleJsonlLine(
+  line: string,
+  args: { url: string; password?: string; username?: string },
+): Promise<string> {
+  let rawId: string | number | null = null
+  let rawMethod: string | undefined
+  try {
+    const parsed = JSON.parse(line) as unknown
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>
+      if (typeof record.id === "string" || typeof record.id === "number") rawId = record.id
+      if (typeof record.method === "string") rawMethod = record.method
+    }
+  } catch {}
+
+  let request: JsonlRequest
+  try {
+    request = parseJsonlRequest(line)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return JSON.stringify({
+      id: rawId,
+      ...(rawMethod ? { method: rawMethod } : {}),
+      error: { message },
+    })
+  }
+
+  try {
+    const response = await fetch(sessionListUrl(args.url, request.query), {
+      headers: ServerAuth.headers(args),
+    })
+    if (!response.ok) {
+      const hint =
+        response.status === 401 ? " (Unauthorized — pass --password or set APEXO_SERVER_PASSWORD)" : ""
+      return JSON.stringify({
+        id: request.id ?? null,
+        method: request.method,
+        error: {
+          status: response.status,
+          message: `session.list failed: HTTP ${response.status}${hint}`,
+        },
+      })
+    }
+    const result: unknown = await response.json()
+    return JSON.stringify({ id: request.id ?? null, method: request.method, result })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return JSON.stringify({
+      id: request.id ?? null,
+      method: request.method,
+      error: { message: `session.list failed: ${message}` },
+    })
+  }
+}
+
 export const JsonlCommand = effectCmd({
   command: "jsonl",
   describe: "run a thin JSONL adapter for an existing Protocol/Client operation (supported method: session.list)",
@@ -45,13 +100,8 @@ export const JsonlCommand = effectCmd({
           Stream.runForEach((line) =>
             Effect.tryPromise({
               try: async () => {
-                const request = parseJsonlRequest(line)
-                const response = await fetch(sessionListUrl(args.url, request.query), {
-                  headers: ServerAuth.headers(args),
-                })
-                if (!response.ok) throw new Error(`session.list failed: HTTP ${response.status}`)
-                const result: unknown = await response.json()
-                process.stdout.write(JSON.stringify({ id: request.id ?? null, method: request.method, result }) + "\n")
+                const output = await handleJsonlLine(line, args)
+                process.stdout.write(output + "\n")
               },
               catch: (error) => new CliError({ message: String(error) }),
             }),

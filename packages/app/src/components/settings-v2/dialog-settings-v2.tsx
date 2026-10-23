@@ -1,6 +1,6 @@
 import { Plugins } from "../plugins"
 import { NativeMcpManager } from "../native-mcp-manager"
-import { Component, createMemo, createSignal, startTransition } from "solid-js"
+import { Component, createMemo, createSignal } from "solid-js"
 import { Dialog } from "@apexo/ui/v2/dialog-v2"
 import { TabsV2 } from "@apexo/ui/v2/tabs-v2"
 import { Icon } from "@apexo/ui/icon"
@@ -58,7 +58,7 @@ export const DialogSettings: Component<{
         orientation="vertical"
         variant="settings"
         value={tab()}
-        onChange={(value) => void startTransition(() => setTab(value))}
+        onChange={(value) => setTab(value)}
         class="settings-v2"
       >
         <TabsV2.List>
@@ -128,7 +128,14 @@ export const DialogSettings: Component<{
           <Plugins />
         </TabsV2.Content>
         <TabsV2.Content value="mcp" class="settings-v2-panel">
-          <SDKProvider directory={() => directory() ?? serverSync().data.path.directory ?? ""}>
+          <SDKProvider
+            directory={() =>
+              directory() ||
+              serverSync().data.path.directory ||
+              serverSync().data.project.find((p) => p.worktree && p.worktree !== "/")?.worktree ||
+              "/"
+            }
+          >
             <NativeMcpManager allowManageConfig />
           </SDKProvider>
         </TabsV2.Content>

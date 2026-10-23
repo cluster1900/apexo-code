@@ -11,24 +11,33 @@ export function DialogTimeline(props: { sessionID: string; onSelect: (messageID:
   const sync = useSync()
   const dialog = useDialog()
   const language = useLanguage()
-  const messages = createMemo(() =>
-    (sync().data.message[props.sessionID] ?? [])
+  const messages = createMemo(() => {
+    const seenIds = new Set<string>()
+    const seenContent = new Set<string>()
+    return (sync().data.message[props.sessionID] ?? [])
       .flatMap((message) => {
         if (message.role !== "user") return []
+        if (seenIds.has(message.id)) return []
+        seenIds.add(message.id)
         const part = (sync().data.part[message.id] ?? []).find(
           (item): item is TextPart => item.type === "text" && !item.synthetic && !item.ignored,
         )
         if (!part) return []
+        const text = part.text.replace(/\n/g, " ").slice(0, 200)
+        const time = new Date(message.time.created).toLocaleTimeString(undefined, { timeStyle: "short" })
+        const bucket = `${text}\0${Math.floor(message.time.created / 5000)}`
+        if (seenContent.has(bucket)) return []
+        seenContent.add(bucket)
         return [
           {
             id: message.id,
-            text: part.text.replace(/\n/g, " ").slice(0, 200),
-            time: new Date(message.time.created).toLocaleTimeString(undefined, { timeStyle: "short" }),
+            text,
+            time,
           },
         ]
       })
-      .reverse(),
-  )
+      .reverse()
+  })
   return (
     <Dialog title={language.t("command.session.timeline")}>
       <List

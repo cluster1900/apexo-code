@@ -115,17 +115,19 @@ export type OpenAIChatBody = Schema.Schema.Type<typeof OpenAIChatBody>
 // byte stream into strings, then `Protocol.jsonEvent` decodes each string into
 // this provider-native event shape.
 const OpenAIChatUsage = Schema.Struct({
-  prompt_tokens: Schema.optional(Schema.Number),
-  completion_tokens: Schema.optional(Schema.Number),
-  total_tokens: Schema.optional(Schema.Number),
+  prompt_tokens: optionalNull(Schema.Number),
+  completion_tokens: optionalNull(Schema.Number),
+  input_tokens: optionalNull(Schema.Number),
+  output_tokens: optionalNull(Schema.Number),
+  total_tokens: optionalNull(Schema.Number),
   prompt_tokens_details: optionalNull(
     Schema.Struct({
-      cached_tokens: Schema.optional(Schema.Number),
+      cached_tokens: optionalNull(Schema.Number),
     }),
   ),
   completion_tokens_details: optionalNull(
     Schema.Struct({
-      reasoning_tokens: Schema.optional(Schema.Number),
+      reasoning_tokens: optionalNull(Schema.Number),
     }),
   ),
 })
@@ -154,7 +156,7 @@ const OpenAIChatChoice = Schema.Struct({
 })
 
 const OpenAIChatEvent = Schema.Struct({
-  choices: Schema.Array(OpenAIChatChoice),
+  choices: optionalNull(Schema.Array(OpenAIChatChoice)),
   usage: optionalNull(OpenAIChatUsage),
 })
 type OpenAIChatEvent = Schema.Schema.Type<typeof OpenAIChatEvent>
@@ -390,16 +392,21 @@ const mapFinishReason = (reason: string | null | undefined): FinishReason => {
 // satisfied on both sides.
 const mapUsage = (usage: OpenAIChatEvent["usage"]): Usage | undefined => {
   if (!usage) return undefined
-  const cached = usage.prompt_tokens_details?.cached_tokens
-  const reasoning = usage.completion_tokens_details?.reasoning_tokens
-  const nonCached = ProviderShared.subtractTokens(usage.prompt_tokens, cached)
+  const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? undefined
+  const completionTokens = usage.completion_tokens ?? usage.output_tokens ?? undefined
+  const total = usage.total_tokens ?? undefined
+  if (promptTokens === undefined && completionTokens === undefined && total === undefined) return undefined
+  const cached = usage.prompt_tokens_details?.cached_tokens ?? undefined
+  const reasoning = usage.completion_tokens_details?.reasoning_tokens ?? undefined
+  const effectivePrompt = promptTokens ?? (total !== undefined && completionTokens === undefined ? total : undefined)
+  const nonCached = ProviderShared.subtractTokens(effectivePrompt, cached)
   return new Usage({
-    inputTokens: usage.prompt_tokens,
-    outputTokens: usage.completion_tokens,
+    inputTokens: effectivePrompt,
+    outputTokens: completionTokens,
     nonCachedInputTokens: nonCached,
     cacheReadInputTokens: cached,
     reasoningTokens: reasoning,
-    totalTokens: ProviderShared.totalTokens(usage.prompt_tokens, usage.completion_tokens, usage.total_tokens),
+    totalTokens: ProviderShared.totalTokens(effectivePrompt, completionTokens, total),
     providerMetadata: { openai: usage },
   })
 }
@@ -407,8 +414,10 @@ const mapUsage = (usage: OpenAIChatEvent["usage"]): Usage | undefined => {
 const step = (state: ParserState, event: OpenAIChatEvent) =>
   Effect.gen(function* () {
     const events: LLMEvent[] = []
-    const usage = mapUsage(event.usage) ?? state.usage
-    const choice = event.choices[0]
+    const nextUsage = mapUsage(event.usage)
+    const usage =
+      nextUsage && ((nextUsage.totalTokens ?? 0) > 0 || !state.usage) ? nextUsage : (state.usage ?? nextUsage)
+    const choice = event.choices?.[0]
     const finishReason = choice?.finish_reason ? mapFinishReason(choice.finish_reason) : state.finishReason
     const delta = choice?.delta
     const toolDeltas = delta?.tool_calls ?? []

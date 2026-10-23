@@ -797,8 +797,8 @@ export const dict = {
   "command.model.variant.cycle": "切换思考强度",
   "command.model.variant.cycle.description": "切换到下一个强度等级",
 
-  "command.prompt.mode.shell": "Shell",
-  "command.prompt.mode.normal": "Prompt",
+  "command.prompt.mode.shell": "终端命令模式",
+  "command.prompt.mode.normal": "提示词模式",
 
   "command.permissions.autoaccept.enable": "自动接受权限",
   "command.permissions.autoaccept.disable": "停止自动接受权限",
@@ -978,8 +978,8 @@ export const dict = {
   "prompt.placeholder.simple": "随便问点什么...",
   "prompt.placeholder.summarizeComments": "总结评论…",
   "prompt.placeholder.summarizeComment": "总结该评论…",
-  "prompt.mode.shell": "Shell",
-  "prompt.mode.normal": "Prompt",
+  "prompt.mode.shell": "终端命令模式",
+  "prompt.mode.normal": "提示词模式",
   "prompt.mode.shell.exit": "按 esc 退出",
   "session.child.promptDisabled": "无法向子智能体会话发送提示词。",
   "session.child.backToParent": "返回主会话。",
@@ -1999,4 +1999,5 @@ export const dict = {
   "command.prompt.Attach": "附加文件",
   "command.colorScheme.cycle": "切换配色方案",
   "desktop.updater.upToDate": "当前已是最新版本（{{version}}）",
+  "desktop.updater.unavailable": "当前版本（{{version}}）未启用自动更新，请前往 GitHub Releases 查看新版本。",
 } satisfies Partial<Record<Keys, string>>

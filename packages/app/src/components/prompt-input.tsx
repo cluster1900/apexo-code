@@ -529,6 +529,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const closePopover = () => setStore({ popover: null, slashMenu: false, slashMenuQuery: "" })
 
+  createEffect(() => {
+    if (dialog.active && store.popover) closePopover()
+  })
+
   const resetHistoryNavigation = (force = false) => {
     if (!force && (store.historyIndex < 0 || store.applyingHistory)) return
     setStore("historyIndex", -1)

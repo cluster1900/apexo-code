@@ -31,8 +31,13 @@ function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+function redactSecrets(value: string) {
+  return value.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.\u2026-]+[A-Za-z0-9_*]/gi, "[REDACTED]")
+}
+
 function unwrap(message: string) {
-  const text = message.replace(/^Error:\s*/, "").trim()
+  const redacted = redactSecrets(message)
+  const text = redacted.replace(/^Error:\s*/, "").trim()
 
   const parse = (value: string) => {
     try {
@@ -58,7 +63,7 @@ function unwrap(message: string) {
     }
   }
 
-  if (!record(json)) return message
+  if (!record(json)) return redacted
 
   const err = record(json.error) ? json.error : undefined
   if (err) {
@@ -77,7 +82,7 @@ function unwrap(message: string) {
   const reason = typeof json.error === "string" ? json.error : undefined
   if (reason) return reason
 
-  return message
+  return redacted
 }
 
 function same<T>(a: readonly T[], b: readonly T[]) {

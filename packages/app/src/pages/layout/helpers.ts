@@ -50,10 +50,11 @@ export const childSessionOnPath = (sessions: Session[] | undefined, rootID: stri
 export const displayName = (project: { name?: string; worktree: string }) => {
   if (project.name) return project.name
   const filename = getFilename(project.worktree)
-  if (filename === "Default Project") {
+  if (filename === "Default Project" || project.worktree === "/") {
     const loc = activeLocale()
     if (loc === "zh") return "默认项目"
     if (loc === "zht") return "預設專案"
+    return "Default Project"
   }
   return filename || project.worktree
 }
@@ -106,9 +107,11 @@ export function getProjectAvatarSource(id?: string, icon?: { color?: string; url
 export function projectForSession<T extends { id?: string; worktree: string; sandboxes?: string[] }>(
   session: Session,
   projects: T[],
-  byID: Map<string, T> = new Map(projects.flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
+  byID: Map<string, T> = new Map(
+    projects.flatMap((project) => (project.id && project.id !== "global" ? [[project.id, project] as const] : [])),
+  ),
 ) {
-  const direct = byID.get(session.projectID)
+  const direct = session.projectID && session.projectID !== "global" ? byID.get(session.projectID) : undefined
   if (direct) return direct
   const directory = pathKey(session.directory)
   return projects.find(

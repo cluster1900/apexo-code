@@ -126,21 +126,13 @@ const layer = Layer.effect(
 
     const legacyAll = Effect.fnUntraced(function* () {
       const fromEnv = process.env.APEXO_AUTH_CONTENT ? Option.getOrUndefined(parseJson(process.env.APEXO_AUTH_CONTENT)) : undefined
-      const authText = yield* Effect.promise(() =>
-        Bun.file(authFile)
-          .text()
-          .catch(() => ""),
-      )
+      const authText = yield* Effect.promise(() => fs.readFile(authFile, "utf8").catch(() => ""))
       const fromFile = authText ? Option.getOrUndefined(parseJson(authText)) : undefined
       const merged: Record<string, unknown> = {
         ...(fromFile && typeof fromFile === "object" ? (fromFile as Record<string, unknown>) : {}),
         ...(fromEnv && typeof fromEnv === "object" ? (fromEnv as Record<string, unknown>) : {}),
       }
-      const grokText = yield* Effect.promise(() =>
-        Bun.file(grokFile)
-          .text()
-          .catch(() => ""),
-      )
+      const grokText = yield* Effect.promise(() => fs.readFile(grokFile, "utf8").catch(() => ""))
       const grokParsed = grokText ? Option.getOrUndefined(parseJson(grokText)) : undefined
       if (
         grokParsed &&
@@ -189,11 +181,7 @@ const layer = Layer.effect(
     })
 
     const syncLegacyWrite = Effect.fnUntraced(function* (integrationID: Integration.ID, value: Value) {
-      const authText = yield* Effect.promise(() =>
-        Bun.file(authFile)
-          .text()
-          .catch(() => ""),
-      )
+      const authText = yield* Effect.promise(() => fs.readFile(authFile, "utf8").catch(() => ""))
       const current = authText ? Option.getOrUndefined(parseJson(authText)) : undefined
       const map: Record<string, unknown> =
         current && typeof current === "object" ? { ...(current as Record<string, unknown>) } : {}
@@ -216,13 +204,18 @@ const layer = Layer.effect(
       }
       yield* Effect.promise(async () => {
         await fs.mkdir(path.dirname(authFile), { recursive: true })
-        await Bun.write(authFile, JSON.stringify(map, null, 2), { mode: 0o600 })
+        await fs.writeFile(authFile, JSON.stringify(map, null, 2), { mode: 0o600 })
       }).pipe(Effect.ignore)
       if (integrationID === "xai" && value.type === "oauth") {
-        const hasGrok = yield* Effect.promise(() => Bun.file(grokFile).exists())
+        const hasGrok = yield* Effect.promise(() =>
+          fs
+            .access(grokFile)
+            .then(() => true)
+            .catch(() => false),
+        )
         if (hasGrok) {
           yield* Effect.promise(() =>
-            Bun.write(
+            fs.writeFile(
               grokFile,
               JSON.stringify(
                 {

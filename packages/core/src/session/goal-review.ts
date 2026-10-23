@@ -16,8 +16,13 @@ const Plan = Schema.Struct({
 
 function cleanJsonText(raw: string) {
   const withoutThink = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, "").trim()
-  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(withoutThink)
-  return fenced ? fenced[1].trim() : withoutThink
+  if (withoutThink.startsWith("{") && withoutThink.endsWith("}")) return withoutThink
+  const fenced = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(withoutThink)
+  if (fenced) return fenced[1].trim()
+  const firstBrace = withoutThink.indexOf("{")
+  const lastBrace = withoutThink.lastIndexOf("}")
+  if (firstBrace !== -1 && lastBrace > firstBrace) return withoutThink.slice(firstBrace, lastBrace + 1)
+  return withoutThink
 }
 
 export type Request = {

@@ -6,7 +6,9 @@ import { createMarkdownParser } from "@apexo/ui/context/marked-parser"
 import { Timeline } from "@/pages/session/timeline/rows"
 import { redactSecrets } from "@/utils/server-errors"
 import { validateCustomProvider } from "@/components/dialog-custom-provider-form"
-import { displayName } from "@/pages/layout/helpers"
+import { displayName, projectForSession } from "@/pages/layout/helpers"
+import { extractPromptFromParts } from "@/utils/prompt"
+import { dict as zhDict } from "@/i18n/zh"
 
 describe("stripInlineThink and readPartText", () => {
   test("getDirectory returns empty string for bare filenames without directory separators (#35)", () => {
@@ -147,7 +149,84 @@ describe("stripInlineThink and readPartText", () => {
     expect(res.err.providerID).toContain("minimax-custom")
   })
 
-  test("displayName returns Default Project title when set (#54)", () => {
+  test("displayName returns Default Project title when set (#54, #123)", () => {
     expect(displayName({ worktree: "/tmp/demo", name: "Default Project" })).toBe("Default Project")
+    expect(displayName({ worktree: "/" })).toBe("Default Project")
+  })
+
+  test("projectForSession never resolves global projectID to root '/' project (#123)", () => {
+    const projects = [
+      { id: "global", worktree: "/", time: { created: 1, updated: 1 }, sandboxes: [] },
+      { id: "proj-1", worktree: "/tmp/workspace-a", time: { created: 1, updated: 1 }, sandboxes: [] },
+    ]
+    expect(
+      projectForSession(
+        {
+          id: "ses-1",
+          slug: "ses-1",
+          projectID: "global",
+          directory: "/tmp/workspace-a",
+          title: "Test",
+          version: "1",
+          time: { created: 1, updated: 1 },
+        },
+        projects,
+      ),
+    )?.toEqual(projects[1])
+    expect(
+      projectForSession(
+        {
+          id: "ses-2",
+          slug: "ses-2",
+          projectID: "global",
+          directory: "/tmp/unlisted",
+          title: "Test",
+          version: "1",
+          time: { created: 1, updated: 1 },
+        },
+        projects,
+      ),
+    ).toBeUndefined()
+  })
+
+  test("validateCustomProvider rejects fake or placeholder API keys (#47)", () => {
+    const invalid = validateCustomProvider({
+      form: {
+        providerID: "qa-fake",
+        name: "QA Fake",
+        baseURL: "https://api.example.com/v1",
+        apiKey: "sk-invalid-qa-test-000",
+        models: [{ row: "r1", id: "fake-model", name: "Fake Model", err: {} }],
+        headers: [],
+        err: {},
+      },
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+      t: (key) => key,
+    })
+    expect(invalid.result).toBeUndefined()
+    expect(invalid.err.apiKey).toBe("provider.connect.apiKey.invalid")
+  })
+
+  test("zh locale translates prompt and shell shortcut labels (#54)", () => {
+    expect(zhDict["command.prompt.mode.shell"]).toBe("终端命令模式")
+    expect(zhDict["command.prompt.mode.normal"]).toBe("提示词模式")
+    expect(zhDict["prompt.mode.shell"]).toBe("终端命令模式")
+    expect(zhDict["prompt.mode.normal"]).toBe("提示词模式")
+  })
+
+  test("extractPromptFromParts uses the first non-empty user text part (#128)", () => {
+    expect(
+      extractPromptFromParts([
+        { id: "p1", sessionID: "s1", messageID: "m1", type: "text", text: "Message 2" },
+        {
+          id: "p2",
+          sessionID: "s1",
+          messageID: "m1",
+          type: "text",
+          text: "Much longer second text part that should not override the user's primary message",
+        },
+      ]),
+    ).toEqual([{ type: "text", content: "Message 2", start: 0, end: 9 }])
   })
 })

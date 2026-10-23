@@ -91,7 +91,13 @@ export function DialogHelpV2() {
             if (!platform.checkUpdate) {
               showToast({
                 title: language.t("desktop.menu.checkForUpdates"),
-                description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+                description: language.t("desktop.updater.unavailable" as never, { version: platform.version ?? "dev" }),
+                actions: [
+                  {
+                    label: language.t("grok.releaseNotes"),
+                    onClick: () => platform.openExternal("https://github.com/cluster1900/apexo-code/releases"),
+                  },
+                ],
               })
               return
             }
@@ -113,15 +119,12 @@ export function DialogHelpV2() {
               .catch(() => {
                 showToast({
                   title: language.t("desktop.menu.checkForUpdates"),
-                  description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+                  description: language.t("desktop.updater.unavailable" as never, { version: platform.version ?? "dev" }),
                 })
               })
           }}
         >
           {language.t("desktop.menu.checkForUpdates")}
-        </ButtonV2>
-        <ButtonV2 type="button" variant="outline" data-action="help-close" onClick={() => dialog.close()}>
-          {language.t("common.close")}
         </ButtonV2>
       </DialogFooter>
     </Dialog>

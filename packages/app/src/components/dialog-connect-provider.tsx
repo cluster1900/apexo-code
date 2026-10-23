@@ -938,7 +938,18 @@ function ProviderConnection(props: {
           headers: { Authorization: `Bearer ${key}` },
         },
       }
-      const target = endpoints[props.provider]
+      const customBase =
+        typeof serverSync().data.config.provider?.[props.provider]?.options?.baseURL === "string"
+          ? (serverSync().data.config.provider?.[props.provider]?.options?.baseURL as string).replace(/\/+$/, "")
+          : undefined
+      const target =
+        endpoints[props.provider] ??
+        (customBase
+          ? {
+              url: `${customBase}/models`,
+              headers: { Authorization: `Bearer ${key}` },
+            }
+          : undefined)
       if (!target) return undefined
       const res = await fetch(target.url, {
         method: "GET",

@@ -125,6 +125,17 @@ export const SettingsServersV2: Component = () => {
                       <Show when={controller.canDefault() && isDefault()}>
                         <Tag>{language.t("dialog.server.status.default")}</Tag>
                       </Show>
+                      <Show when={!ServerConnection.builtin(item)}>
+                        <IconButtonV2
+                          type="button"
+                          variant="ghost-muted"
+                          size="small"
+                          data-action="server-delete"
+                          icon={<IconV2 name="trash" />}
+                          aria-label={language.t("dialog.server.menu.delete")}
+                          onClick={() => controller.handleRemove(key)}
+                        />
+                      </Show>
                       <ServerRowMenu server={item} controller={controller} onEdit={openEdit} />
                     </div>
                   </div>

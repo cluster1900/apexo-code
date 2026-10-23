@@ -2,6 +2,7 @@ import { VIM_SCROLL_EVENT } from "@/utils/vim-mode"
 import type { FilePart, Project, UserMessage, VcsFileDiff } from "@apexo/sdk/v2"
 import { getFilename } from "@apexo/core/util/path"
 import { useDialog } from "@apexo/ui/context/dialog"
+import { Dialog } from "@apexo/ui/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {
   batch,
@@ -1884,11 +1885,7 @@ export default function Page() {
         capturePrompt: prompt.capture,
         optimistic: (promptSession) => {
           roll(sessionID, next ? { messageID: next.id } : undefined, target)
-          if (next) {
-            promptSession.set(draft(next.id))
-            return
-          }
-          promptSession.reset()
+          promptSession.set(draft(id))
         },
         request: () =>
           !next
@@ -1942,7 +1939,7 @@ export default function Page() {
     download()
   }
 
-  const deleteMessage = async (input: { sessionID: string; messageID: string }) => {
+  const performDeleteMessage = async (input: { sessionID: string; messageID: string }) => {
     if (input.sessionID !== params.id) return
     const sessionID = input.sessionID
     const target = sync()
@@ -1958,6 +1955,37 @@ export default function Page() {
       roll(sessionID, last, target)
       fail(error)
     }
+  }
+
+  const deleteMessage = (input: { sessionID: string; messageID: string }) => {
+    if (input.sessionID !== params.id) return
+    void dialog.show(() => (
+      <Dialog title={language.t("common.delete")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {line(input.messageID)}
+            </span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              data-action="message-delete-confirm"
+              onClick={() => {
+                dialog.close()
+                void performDeleteMessage(input)
+              }}
+            >
+              {language.t("common.delete")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
   }
 
   const retryMessage = async (input: { sessionID: string; messageID: string }) => {

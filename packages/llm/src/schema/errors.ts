@@ -115,7 +115,7 @@ export class ProviderInternalReason extends Schema.Class<ProviderInternalReason>
   http: Schema.optional(HttpContext),
 }) {
   get retryable() {
-    return true
+    return this.status !== 501 && this.status !== 505
   }
 }
 

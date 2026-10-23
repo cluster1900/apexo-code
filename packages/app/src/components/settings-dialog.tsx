@@ -86,7 +86,13 @@ export function useSettingsCommand() {
         if (!platform.checkUpdate) {
           showToast({
             title: language.t("desktop.menu.checkForUpdates"),
-            description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+            description: language.t("desktop.updater.unavailable" as never, { version: platform.version ?? "dev" }),
+            actions: [
+              {
+                label: language.t("grok.releaseNotes"),
+                onClick: () => platform.openExternal("https://github.com/cluster1900/apexo-code/releases"),
+              },
+            ],
           })
           return
         }
@@ -108,7 +114,7 @@ export function useSettingsCommand() {
           .catch(() => {
             showToast({
               title: language.t("desktop.menu.checkForUpdates"),
-              description: language.t("desktop.updater.upToDate", { version: platform.version ?? "dev" }),
+              description: language.t("desktop.updater.unavailable" as never, { version: platform.version ?? "dev" }),
             })
           })
       },

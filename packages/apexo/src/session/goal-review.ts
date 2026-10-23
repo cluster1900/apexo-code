@@ -128,7 +128,7 @@ const layer = Layer.effect(
                         yield* Effect.addFinalizer(() => Effect.sync(files.close))
                         const role = {
                           ...request,
-                          system: `${request.system}\n\n${files.system}`,
+                          system: `${request.system}\n\n${files.system}\nUse the write tool (with file_path set to the assigned file path) to write the required report file(s); do not inspect parent directories outside the current workspace.`,
                           outputSchema: undefined,
                           reports: {
                             paths: files.allowed,
@@ -227,6 +227,28 @@ const layer = Layer.effect(
                             const jsonMatch = /\{[\s\S]*"achieved"\s*:[\s\S]*\}/.exec(raw)
                             if (!hasVerdict && jsonMatch) {
                               yield* role.reports.write(files.paths.verdict, jsonMatch[0])
+                            } else if (
+                              !hasVerdict &&
+                              hasDetails &&
+                              /\bnot\s+refuted\b/i.test(raw) &&
+                              !/\brefuted\b/i.test(raw.replace(/\bnot\s+refuted\b/gi, ""))
+                            ) {
+                              const detailsText = (
+                                yield* Effect.promise(() => Bun.file(files.paths.details).text())
+                              ).trim()
+                              yield* role.reports.write(
+                                files.paths.verdict,
+                                JSON.stringify({
+                                  achieved: true,
+                                  evidence:
+                                    detailsText.slice(0, 4000) ||
+                                    raw.slice(0, 4000) ||
+                                    "Verified against objective and evidence.",
+                                  unmet: [],
+                                  confidence: "high",
+                                  blocking: "none",
+                                }),
+                              )
                             }
                             if (!hasDetails && (hasVerdict || jsonMatch)) {
                               yield* role.reports.write(

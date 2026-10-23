@@ -13,6 +13,7 @@ import { SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@apexo/core/provider"
+import { ProviderInternalReason } from "@apexo/llm"
 
 const providerID = ProviderV2.ID.make("test")
 const retryProvider = "test"
@@ -319,6 +320,45 @@ describe("session.retry.retryable", () => {
     )
 
     expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
+  })
+
+  test("does not retry 501 Not Implemented or 505 HTTP Version Not Supported errors (#124)", () => {
+    expect(
+      new ProviderInternalReason({
+        message: "501 Not Implemented",
+        status: 501,
+      }).retryable,
+    ).toBe(false)
+    expect(
+      new ProviderInternalReason({
+        message: "505 HTTP Version Not Supported",
+        status: 505,
+      }).retryable,
+    ).toBe(false)
+    expect(
+      new ProviderInternalReason({
+        message: "502 Bad Gateway",
+        status: 502,
+      }).retryable,
+    ).toBe(true)
+
+    const http501 = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "501 Not Implemented",
+        isRetryable: false,
+        statusCode: 501,
+      }).toObject(),
+    )
+    expect(SessionRetry.retryable(http501, retryProvider)).toBeUndefined()
+
+    const http505 = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "HTTP Version Not Supported",
+        isRetryable: false,
+        statusCode: 505,
+      }).toObject(),
+    )
+    expect(SessionRetry.retryable(http505, retryProvider)).toBeUndefined()
   })
 
   test("retries ZlibError decompression failures", () => {

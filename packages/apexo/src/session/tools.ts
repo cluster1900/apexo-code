@@ -108,10 +108,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         // A resumed reviewer must not reuse an old approval to override a newly inherited denial.
         if (
           goalRole &&
-          req.patterns.some((pattern) =>
-            [ruleset, input.agent.permission, goalRole.parentPermission].some(
-              (rules) => Permission.evaluate(req.permission, pattern, rules).action === "deny",
-            ),
+          req.patterns.some(
+            (pattern) =>
+              [ruleset, input.agent.permission, goalRole.parentPermission].some(
+                (rules) => Permission.evaluate(req.permission, pattern, rules).action === "deny",
+              ) ||
+              (req.permission === "external_directory" &&
+                Permission.evaluate(req.permission, pattern, ruleset).action !== "allow"),
           )
         )
           return yield* new PermissionV1.DeniedError({ ruleset })
@@ -219,20 +222,29 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 { tool: "write", sessionID: ctx.sessionID, callID: ctx.callID },
                 { args },
               )
+              const rawArgs = args as { file_path?: unknown; filePath?: unknown; path?: unknown; content?: unknown }
+              const filePath =
+                typeof rawArgs.file_path === "string"
+                  ? rawArgs.file_path
+                  : typeof rawArgs.filePath === "string"
+                    ? rawArgs.filePath
+                    : typeof rawArgs.path === "string"
+                      ? rawArgs.path
+                      : undefined
               if (
-                typeof args.file_path !== "string" ||
-                typeof args.content !== "string" ||
-                !reports.paths.includes(args.file_path)
+                typeof filePath !== "string" ||
+                typeof rawArgs.content !== "string" ||
+                !reports.paths.includes(filePath)
               )
                 throw new Error("Goal role can write only its assigned report files")
               yield* ctx.ask({
                 permission: "edit",
-                patterns: [args.file_path],
+                patterns: [filePath],
                 always: [],
-                metadata: { path: args.file_path },
+                metadata: { path: filePath },
               })
-              yield* reports.write(args.file_path, args.content)
-              const output = { title: args.file_path, output: "Goal report saved", metadata: { path: args.file_path } }
+              yield* reports.write(filePath, rawArgs.content)
+              const output = { title: filePath, output: "Goal report saved", metadata: { path: filePath } }
               yield* plugin.trigger(
                 "tool.execute.after",
                 { tool: "write", sessionID: ctx.sessionID, callID: ctx.callID, args },
