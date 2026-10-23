@@ -49,7 +49,12 @@ export function createHomeSessionsController(home: HomeController) {
     return new Set(directories(project).map(pathKey))
   })
   const projectByID = createMemo(
-    () => new Map(home.project.list().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
+    () =>
+      new Map(
+        home.project
+          .list()
+          .flatMap((project) => (project.id && project.id !== "global" ? [[project.id, project] as const] : [])),
+      ),
   )
   const storedProjects = createMemo(() =>
     home.server
@@ -348,7 +353,9 @@ function buildHomeSessionRecords(input: {
     ? input.sessions().filter((session) => selected.has(pathKey(session.directory)))
     : input.sessions()
   const stored = input.storedProjects()
-  const storedByID = new Map(stored.flatMap((project) => (project.id ? [[project.id, project] as const] : [])))
+  const storedByID = new Map(
+    stored.flatMap((project) => (project.id && project.id !== "global" ? [[project.id, project] as const] : [])),
+  )
   return [...new Map(sessions.map((session) => [session.id, session] as const)).values()]
     .sort(compareSessionTime)
     .flatMap((session) => {

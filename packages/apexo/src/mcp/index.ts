@@ -35,7 +35,7 @@ import { McpCatalog } from "./catalog"
 import { McpEvent } from "@apexo/schema/mcp-event"
 import { McpBrowser } from "./browser"
 
-const DEFAULT_TIMEOUT = 30_000
+const DEFAULT_TIMEOUT = 5_000
 const CLIENT_OPTIONS = {
   capabilities: {
     // upstream issue #11948
@@ -227,7 +227,8 @@ const layer = Layer.effect(
             },
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           }),
-        (t, exit) => (Exit.isFailure(exit) ? Effect.tryPromise(() => t.close()).pipe(Effect.ignore) : Effect.void),
+        (t, exit) =>
+          Exit.isFailure(exit) ? Effect.tryPromise(() => withTimeout(t.close(), 500)).pipe(Effect.ignore) : Effect.void,
       )
     })
 

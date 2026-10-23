@@ -28,7 +28,7 @@ function tr(translator: Translator | undefined, key: string, text: string, vars?
 }
 
 export function redactSecrets(message: string) {
-  return message.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.-]+[A-Za-z0-9_*]/gi, "[REDACTED]")
+  return message.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.\u2026-]+[A-Za-z0-9_*]/gi, "[REDACTED]")
 }
 
 export function formatServerError(error: unknown, translate?: Translator, fallback?: string) {

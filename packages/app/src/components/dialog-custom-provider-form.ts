@@ -38,6 +38,7 @@ export type FormState = {
     providerID?: string
     name?: string
     baseURL?: string
+    apiKey?: string
   }
 }
 
@@ -56,6 +57,15 @@ export function validateCustomProvider(input: ValidateArgs) {
 
   const env = apiKey.match(/^\{env:([^}]+)\}$/)?.[1]?.trim()
   const key = apiKey && !env ? apiKey : undefined
+
+  const keyError =
+    key &&
+    (/\s/.test(key) ||
+      key.length < 16 ||
+      /(.)\1{7,}/i.test(key) ||
+      /(invalid|placeholder|example|dummy|fake|testkey|01234567|12345678|abcdefgh)/i.test(key))
+      ? input.t("provider.connect.apiKey.invalid")
+      : undefined
 
   const idError = !providerID
     ? input.t("provider.custom.error.providerID.required")
@@ -133,9 +143,10 @@ export function validateCustomProvider(input: ValidateArgs) {
     providerID: idError ?? existsError,
     name: nameError,
     baseURL: urlError,
+    apiKey: keyError,
   }
 
-  const ok = !idError && !existsError && !nameError && !urlError && modelsValid && headersValid
+  const ok = !idError && !existsError && !nameError && !urlError && !keyError && modelsValid && headersValid
   if (!ok) return { err, models, headers }
 
   return {

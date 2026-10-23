@@ -276,7 +276,7 @@ export namespace Timeline {
   }
 
   function redactSecrets(value: string) {
-    return value.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.-]+[A-Za-z0-9_*]/gi, "[REDACTED]")
+    return value.replace(/\b(sk|xai|key)-[A-Za-z0-9_*.\u2026-]+[A-Za-z0-9_*]/gi, "[REDACTED]")
   }
 
   function unwrapErrorMessage(message: string) {

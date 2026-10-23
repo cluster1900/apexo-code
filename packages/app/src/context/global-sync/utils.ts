@@ -61,6 +61,8 @@ export function normalizePermissionRequest(input: PermissionV2Request | Permissi
   }
 }
 
+const STEALTH_MODEL_ID = /\b(daybreak|terra|sol|luna)\b/i
+
 export function normalizeProviderList(
   providers: ProviderListOutput["data"] | ProviderV2Info[] | ProviderListResponse,
   models?: ModelListOutput["data"] | ModelV2Info[],
@@ -75,7 +77,10 @@ export function normalizeProviderList(
           {
             ...provider,
             models: Object.fromEntries(
-              Object.entries(provider.models).filter(([, model]) => model.status !== "deprecated"),
+              Object.entries(provider.models).filter(
+                ([, model]) =>
+                  model.status !== "deprecated" && !STEALTH_MODEL_ID.test(`${model.id} ${model.name ?? ""}`),
+              ),
             ),
           },
         ]),
@@ -97,7 +102,7 @@ export function normalizeProviderList(
 
   for (const model of models ?? []) {
     const provider = all.get(model.providerID)
-    if (!provider || model.status === "deprecated") continue
+    if (!provider || model.status === "deprecated" || STEALTH_MODEL_ID.test(`${model.id} ${model.name ?? ""}`)) continue
     const cost = model.cost.find((item) => item.tier === undefined) ?? model.cost[0]
     provider.models[model.id] = {
       id: model.id,

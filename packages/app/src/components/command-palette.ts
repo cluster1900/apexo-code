@@ -250,9 +250,13 @@ export function createServerSessionEntries(props: {
     })
     if (current.signal.aborted) return []
     const opened = props.opened()
-    const openedByID = new Map(opened.flatMap((project) => (project.id ? [[project.id, project] as const] : [])))
+    const openedByID = new Map(
+      opened.flatMap((project) => (project.id && project.id !== "global" ? [[project.id, project] as const] : [])),
+    )
     const stored = props.stored().map((project) => ({ ...project, expanded: false }))
-    const storedByID = new Map(stored.map((project) => [project.id, project] as const))
+    const storedByID = new Map(
+      stored.flatMap((project) => (project.id && project.id !== "global" ? [[project.id, project] as const] : [])),
+    )
     return props
       .load(search, current.signal)
       .then((result) =>

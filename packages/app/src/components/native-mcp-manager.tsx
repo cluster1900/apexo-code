@@ -1,6 +1,8 @@
-import { createEffect, createMemo, For, on, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@apexo/ui/button"
+import { useDialog } from "@apexo/ui/context/dialog"
+import { Dialog } from "@apexo/ui/dialog"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
@@ -21,7 +23,18 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
   const sdk = useSDK()
   const serverSync = useServerSync()
   const language = useLanguage()
+  const dialog = useDialog()
   const manager = useMcpManager()
+  const [runtimeStatus, setRuntimeStatus] = createSignal<Record<string, ReturnType<typeof sync>["data"]["mcp"][string]>>(
+    {},
+  )
+  const [localConfigMcp, setLocalConfigMcp] = createSignal<NonNullable<ReturnType<typeof serverSync>["data"]["config"]["mcp"]>>(
+    {},
+  )
+  const effectiveConfigMcp = () => ({
+    ...(serverSync().data.config.mcp ?? {}),
+    ...localConfigMcp(),
+  })
   const [state, setState] = createStore({
     search: "",
     adding: false,
@@ -32,6 +45,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
     saving: false,
     addError: "",
     deletedNames: [] as string[],
+    confirmDelete: "",
   })
   const startAdd = () => {
     setState({
@@ -41,10 +55,11 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       type: "local",
       target: "",
       addError: "",
+      confirmDelete: "",
     })
   }
   const startEdit = (name: string) => {
-    const cfg = serverSync().data.config.mcp?.[name]
+    const cfg = effectiveConfigMcp()[name]
     const type = cfg && "type" in cfg ? cfg.type : "local"
     const target =
       cfg && "type" in cfg
@@ -59,13 +74,24 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       type,
       target,
       addError: "",
+      confirmDelete: "",
     })
   }
   const deleteServer = async (name: string) => {
-    const nextMcp = { ...(serverSync().data.config.mcp ?? {}) }
+    const nextMcp = { ...effectiveConfigMcp() }
     delete nextMcp[name]
+    setState("confirmDelete", "")
     setState("deletedNames", (prev) => [...prev.filter((item) => item !== name), name])
-    serverSync().set("config", "mcp", nextMcp)
+    setLocalConfigMcp((prev) => {
+      const next = { ...prev }
+      delete next[name]
+      return next
+    })
+    setRuntimeStatus((prev) => {
+      const next = { ...prev }
+      delete next[name]
+      return next
+    })
     await sdk()
       .client.mcp.disconnect({ name })
       .catch(() => undefined)
@@ -73,6 +99,38 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       .updateConfig({ mcp: nextMcp })
       .catch(() => undefined)
     manager.refresh.mutate()
+  }
+  const promptDeleteServer = (name: string) => {
+    setState("confirmDelete", name)
+    dialog.push(() => (
+      <Dialog title={language.t("common.delete")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <span class="text-14-regular text-text-strong">{name}</span>
+          <div class="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="large"
+              onClick={() => {
+                setState("confirmDelete", "")
+                dialog.close()
+              }}
+            >
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              onClick={() => {
+                dialog.close()
+                void deleteServer(name)
+              }}
+            >
+              {language.t("common.delete")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
   }
   const addServer = async (event: SubmitEvent) => {
     event.preventDefault()
@@ -82,10 +140,10 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
     setState({ saving: true, addError: "" })
     const config =
       state.type === "local"
-        ? { type: "local" as const, command: target.split(/\s+/).filter(Boolean), enabled: true }
-        : { type: "remote" as const, url: target, enabled: true }
+        ? { type: "local" as const, command: target.split(/\s+/).filter(Boolean), enabled: true, timeout: 5000 }
+        : { type: "remote" as const, url: target, enabled: true, timeout: 5000 }
     try {
-      const nextMcp = { ...(serverSync().data.config.mcp ?? {}) }
+      const nextMcp = { ...effectiveConfigMcp() }
       if (state.editingName && state.editingName !== name) {
         delete nextMcp[state.editingName]
         await sdk()
@@ -93,11 +151,11 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
           .catch(() => undefined)
       }
       nextMcp[name] = config
-      await sdk().client.mcp.add({ name, config })
-      serverSync().set("config", "mcp", nextMcp)
-      await serverSync().updateConfig({
-        mcp: nextMcp,
-      })
+      setLocalConfigMcp(nextMcp)
+      setRuntimeStatus((prev) => ({
+        ...prev,
+        [name]: { status: "pending" },
+      }))
       setState({
         adding: false,
         editingName: "",
@@ -105,11 +163,43 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
         target: "",
         saving: false,
         addError: "",
-        deletedNames: state.deletedNames.filter(
-          (item) => item !== name && (state.editingName && state.editingName !== name ? true : true),
-        ).concat(state.editingName && state.editingName !== name ? [state.editingName] : []),
+        deletedNames: state.deletedNames
+          .filter((item) => item !== name)
+          .concat(state.editingName && state.editingName !== name ? [state.editingName] : []),
       })
-      manager.refresh.mutate()
+      const addRes = await Promise.race([
+        sdk()
+          .client.mcp.add({ name, config })
+          .catch(() => ({ data: undefined })),
+        new Promise<{ data: undefined }>((resolve) => setTimeout(() => resolve({ data: undefined }), 5500)),
+      ])
+      let nextStatus: ReturnType<typeof sync>["data"]["mcp"][string] = {
+        status: "failed",
+        error: language.t("common.requestFailed"),
+      }
+      if (addRes.data && typeof addRes.data === "object") {
+        const entries = addRes.data as Record<string, ReturnType<typeof sync>["data"]["mcp"][string]>
+        if (name in entries && entries[name]) {
+          nextStatus = entries[name]
+        }
+        setRuntimeStatus((prev) => ({
+          ...prev,
+          ...(name in entries ? entries : { [name]: nextStatus }),
+        }))
+      } else {
+        setRuntimeStatus((prev) => ({
+          ...prev,
+          [name]: nextStatus,
+        }))
+      }
+      void serverSync()
+        .updateConfig({
+          mcp: nextMcp,
+        })
+        .then(() => {
+          if (nextStatus.status === "connected") manager.refresh.mutate()
+        })
+        .catch(() => undefined)
     } catch (err) {
       setState({
         saving: false,
@@ -118,15 +208,23 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
     }
   }
   const canManageConfig = () => Boolean(props.allowManageConfig)
+  const failed = () => sync().data.mcp_error || manager.refresh.isError
+  const loading = () => !sync().data.mcp_ready || manager.refresh.isPending
   const statusMap = createMemo(() => {
     const merged: Record<string, ReturnType<typeof sync>["data"]["mcp"][string]> = {
       ...(sync().data.mcp ?? {}),
+      ...runtimeStatus(),
     }
     if (canManageConfig()) {
-      for (const [name, cfg] of Object.entries(serverSync().data.config.mcp ?? {})) {
+      for (const [name, cfg] of Object.entries(effectiveConfigMcp())) {
         if (!cfg || !("type" in cfg)) continue
         if (!(name in merged)) {
-          merged[name] = cfg.enabled === false ? { status: "disabled" } : { status: "connected" }
+          merged[name] =
+            cfg.enabled === false
+              ? { status: "disabled" }
+              : loading()
+                ? { status: "pending" }
+                : { status: "failed", error: language.t("common.requestFailed") }
         }
       }
     }
@@ -140,8 +238,6 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       .filter((name) => name.toLowerCase().includes(state.search.toLowerCase()))
       .sort((a, b) => a.localeCompare(b)),
   )
-  const failed = () => sync().data.mcp_error || manager.refresh.isError
-  const loading = () => !sync().data.mcp_ready || manager.refresh.isPending
   createEffect(on(sync, () => manager.refresh.mutate()))
 
   // Server identity owns ephemeral authorization controls across status refetches.
@@ -260,14 +356,36 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
             >
               {language.t("common.edit")}
             </Button>
-            <Button
-              size="small"
-              variant="ghost"
-              data-action="delete"
-              onClick={() => void deleteServer(name)}
+            <Show
+              when={state.confirmDelete === name}
+              fallback={
+                <Button
+                  size="small"
+                  variant="ghost"
+                  data-action="delete"
+                  onClick={() => promptDeleteServer(name)}
+                >
+                  {language.t("common.delete")}
+                </Button>
+              }
             >
-              {language.t("common.delete")}
-            </Button>
+              <Button
+                size="small"
+                variant="secondary"
+                data-action="delete-confirm"
+                onClick={() => void deleteServer(name)}
+              >
+                {language.t("common.delete")}
+              </Button>
+              <Button
+                size="small"
+                variant="ghost"
+                data-action="delete-cancel"
+                onClick={() => setState("confirmDelete", "")}
+              >
+                {language.t("common.cancel")}
+              </Button>
+            </Show>
           </Show>
         </div>
       </div>
@@ -275,12 +393,25 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
   }
 
   return (
-    <div data-component="native-mcp-manager" class="flex flex-col gap-3 p-3">
+    <div data-component="native-mcp-manager" class={props.allowManageConfig ? "flex flex-col" : "flex flex-col gap-3 p-3"}>
       <Show when={props.allowManageConfig}>
         <div class="settings-v2-tab-header">
-          <h2 class="settings-v2-tab-title">{language.t("settings.mcp.title")}</h2>
+          <div class="settings-v2-tab-header-row">
+            <h2 class="settings-v2-tab-title">{language.t("settings.mcp.title")}</h2>
+            <Show when={!state.adding}>
+              <Button
+                size="small"
+                variant="secondary"
+                data-action="mcp-add-toggle"
+                onClick={() => startAdd()}
+              >
+                {`+ ${language.t("settings.mcp.title")}`}
+              </Button>
+            </Show>
+          </div>
         </div>
       </Show>
+      <div class={props.allowManageConfig ? "settings-v2-tab-body flex flex-col gap-3" : "flex flex-col gap-3"}>
       <p class="text-12-regular text-text-weak">{language.t("mcp.runtime.hint")}</p>
       <div class="flex items-center gap-2">
         <input
@@ -293,16 +424,6 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
         <Button size="small" variant="ghost" disabled={loading()} onClick={() => manager.refresh.mutate()}>
           {language.t("mcp.runtime.refresh")}
         </Button>
-        <Show when={props.allowManageConfig && !state.adding}>
-          <Button
-            size="small"
-            variant="secondary"
-            data-action="mcp-add-toggle"
-            onClick={() => startAdd()}
-          >
-            {`+ ${language.t("settings.mcp.title")}`}
-          </Button>
-        </Show>
       </div>
       <Show when={props.allowManageConfig && state.adding}>
         <form class="flex flex-col gap-2 rounded-md border border-border-base p-3" onSubmit={addServer}>
@@ -372,6 +493,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       </Show>
       <div class="flex flex-col gap-3">
         <For each={items()}>{(name) => <Row name={name} status={statusMap()[name]} />}</For>
+      </div>
       </div>
     </div>
   )

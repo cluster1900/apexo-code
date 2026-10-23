@@ -160,6 +160,7 @@ export const ModelsDevPlugin = define({
           })
 
           for (const model of Object.values(item.models)) {
+            if (/\b(daybreak|terra|sol|luna)\b/i.test(`${model.id} ${model.name}`)) continue
             const baseCost = cost(model.cost)
             catalog.model.update(providerID, model.id, (draft) => applyModel(draft, model, { cost: baseCost }))
             for (const [mode, options] of Object.entries(model.experimental?.modes ?? {})) {

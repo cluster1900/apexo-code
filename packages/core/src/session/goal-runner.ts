@@ -6,6 +6,8 @@ export * as SessionGoalRunner from "./goal-runner"
 
 import { LLM, LLMClient, Message, SystemPart } from "@apexo/llm"
 import { Cause, Context, Effect, Exit, Layer } from "effect"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { eq } from "drizzle-orm"
 import { Goal } from "@apexo/schema/goal"
 import { AgentV2 } from "../agent"
@@ -222,17 +224,6 @@ const make = Effect.gen(function* () {
                     .where(eq(SessionTable.id, childID))
                     .run()
                     .pipe(Effect.orDie)
-                  yield* store.setPermissions({
-                    sessionID: childID,
-                    permissions: [
-                      ...(parent.info?.permissions ?? []).map((rule) => ({
-                        permission: rule.action,
-                        pattern: rule.resource,
-                        action: rule.effect,
-                      })),
-                      ...(permissions ?? []),
-                    ],
-                  })
                   const reportID = yield* goals.reserveReport(request.attempt)
                   const files = yield* Effect.tryPromise(() =>
                     SessionGoalFiles.create({
@@ -263,6 +254,38 @@ const make = Effect.gen(function* () {
                     }),
                   )
                   yield* Effect.addFinalizer(() => Effect.sync(files.close))
+                  const reviewDir = path.dirname(files.paths.objective)
+                  const realReviewDir = yield* Effect.promise(() =>
+                    fs.realpath(reviewDir).catch(() => reviewDir),
+                  )
+                  const reviewPatterns = [...new Set([reviewDir, realReviewDir])].map((dir) =>
+                    path.join(dir, "*").replaceAll("\\", "/"),
+                  )
+                  yield* store.setPermissions({
+                    sessionID: childID,
+                    permissions: [
+                      ...(parent.info?.permissions ?? []).map((rule) => ({
+                        permission: rule.action,
+                        pattern: rule.resource,
+                        action:
+                          rule.action === "external_directory" && rule.effect === "ask"
+                            ? ("deny" as const)
+                            : rule.effect,
+                      })),
+                      ...(permissions ?? []).map((rule) => ({
+                        ...rule,
+                        action:
+                          rule.permission === "external_directory" && rule.action === "ask"
+                            ? ("deny" as const)
+                            : rule.action,
+                      })),
+                      ...reviewPatterns.map((pattern) => ({
+                        permission: "external_directory",
+                        pattern,
+                        action: "allow" as const,
+                      })),
+                    ],
+                  })
                   const owner = yield* managed.owned(childID)
                   const inputID = SessionMessage.ID.create()
                   yield* roles.attach(childID, {
@@ -293,10 +316,14 @@ const make = Effect.gen(function* () {
             .pipe(Effect.orDie)
           yield* setup.run.pipe(Effect.orDie)
           yield* goals.check(request.attempt)
-          if (
-            request.kind === "planning" &&
-            !(yield* Effect.promise(() => Bun.file(setup.files.paths.plan).exists()))
-          ) {
+          const fileExists = (filePath: string) =>
+            Effect.promise(() =>
+              fs
+                .access(filePath)
+                .then(() => true)
+                .catch(() => false),
+            )
+          if (request.kind === "planning" && !(yield* fileExists(setup.files.paths.plan))) {
             const childMessages = yield* store.context(childID)
             const raw = childMessages
               .flatMap((msg) => (msg.type === "assistant" ? msg.content : []))
@@ -316,8 +343,8 @@ const make = Effect.gen(function* () {
             yield* Effect.tryPromise(() => setup.files.write(setup.files.paths.plan, fallbackPlan))
           }
           if (request.kind === "verifying") {
-            const hasVerdict = yield* Effect.promise(() => Bun.file(setup.files.paths.verdict).exists())
-            const hasDetails = yield* Effect.promise(() => Bun.file(setup.files.paths.details).exists())
+            const hasVerdict = yield* fileExists(setup.files.paths.verdict)
+            const hasDetails = yield* fileExists(setup.files.paths.details)
             if (!hasVerdict || !hasDetails) {
               const childMessages = yield* store.context(childID)
               const raw = childMessages
@@ -329,6 +356,24 @@ const make = Effect.gen(function* () {
               const jsonMatch = /\{[\s\S]*"achieved"\s*:[\s\S]*\}/.exec(raw)
               if (!hasVerdict && jsonMatch) {
                 const verdictText = jsonMatch[0]
+                yield* Effect.tryPromise(() => setup.files.write(setup.files.paths.verdict, verdictText))
+              } else if (
+                !hasVerdict &&
+                hasDetails &&
+                /\bnot\s+refuted\b/i.test(raw) &&
+                !/\brefuted\b/i.test(raw.replace(/\bnot\s+refuted\b/gi, ""))
+              ) {
+                const detailsText = (yield* Effect.promise(() =>
+                  fs.readFile(setup.files.paths.details, "utf8").catch(() => ""),
+                )).trim()
+                const verdictText = JSON.stringify({
+                  achieved: true,
+                  evidence:
+                    detailsText.slice(0, 4000) || raw.slice(0, 4000) || "Verified against objective and evidence.",
+                  unmet: [],
+                  confidence: "high",
+                  blocking: "none",
+                })
                 yield* Effect.tryPromise(() => setup.files.write(setup.files.paths.verdict, verdictText))
               }
               if (!hasDetails && (hasVerdict || jsonMatch)) {

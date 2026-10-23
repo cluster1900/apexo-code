@@ -513,3 +513,38 @@
   - Verified all commands live via CLI and HTTP requests: `node ./packages/apexo/bin/apexo --version` (`0.0.0-main-202610201121`), `apexo agent create < /dev/null` (exit 1 with missing flags message), `apexo mcp remove nonexistent` on empty `apexo.json` (`MCP server not found: nonexistent`), `apexo api unknown.operation.id` (`Operation not found: unknown.operation.id`), `apexo api GET /v2/nonexistent-route` (`HTTP 404 Not Found: GET /v2/nonexistent-route`), and early socket connect on `apexo serve` returning `200 OK` with `cache-control: no-store` and `"apiKey":"***"`.
   - Also verified in live Desktop over CDP: `#47` (`Invalid API key format` vs `(HTTP 401)` and returning to `Settings -> Providers` on Close), `#91` (`Select purple color` persisted with `aria-pressed="true"` on reopen), and `#90` (`Help` dialog `fit` height `480px`, `Check for Updates...` toast `"You're running the latest version (1.18.35)"`).
 
+---
+
+## #121–#131 & Recurring #47, #54, #85, #86, #92, #102, #109, #110, #117, #119 — CLI, Goal Token Accounting, and Desktop V2 UI Fixes (`BUG-20261023-635` through `BUG-20261023-645`)
+
+- **Affected Scope**:
+  - `packages/apexo/src/cli/cmd/jsonl.ts` (`#121`)
+  - `packages/apexo/src/session/retry.ts`, `packages/apexo/test/session/retry.test.ts` (`#124`)
+  - `packages/apexo/src/session/llm.ts`, `packages/apexo/src/session/processor.ts`, `packages/apexo/src/session/prompt.ts`, `packages/apexo/src/session/goal-review.ts`, `packages/apexo/src/session/goal-runner.ts` (`#86`, `#110`, `#119`)
+  - `packages/apexo/src/server/routes/instance/httpapi/handlers/provider.ts` (`#117`)
+  - `packages/apexo/src/mcp/index.ts`, `packages/app/src/components/native-mcp-manager.tsx`, `packages/app/src/components/settings-v2/dialog-settings-v2.tsx` (`#122`, `#130`, `#131`)
+  - `packages/app/src/components/dialog-custom-provider.tsx` (`#47`)
+  - `packages/app/src/components/settings-v2/servers.tsx`, `packages/app/src/components/settings-v2/dialog-server-v2.tsx` (`#92`)
+  - `packages/app/src/components/settings-v2/models.tsx`, `packages/app/src/components/settings-models.tsx`, `packages/app/src/components/settings-v2/settings-v2.css` (`#102`, `#123`)
+  - `packages/app/src/components/settings-keybinds.tsx` (`#127`)
+  - `packages/app/src/components/dialog-help-v2.tsx`, `packages/app/src/i18n/en.ts`, `packages/app/src/i18n/zh.ts`, `packages/app/src/i18n/zht.ts` (`#126`)
+  - `packages/app/src/components/session/session-header.tsx` (`#125`)
+  - `packages/app/src/components/prompt-input-v2.tsx`, `packages/app/src/components/prompt-input.tsx` (`#129`)
+  - `packages/app/src/utils/message-part-text.ts`, `packages/app/src/utils/message-part-text.test.ts`, `packages/app/src/context/server-session.ts`, `packages/app/src/pages/session/timeline/message-timeline.tsx` (`#54`, `#128`)
+  - `packages/app/src/pages/layout/sidebar-shell.tsx` (`#85`)
+- **Observed vs. Expected**:
+  - **Observed**:
+    - `#121`: `apexo jsonl` crashed and exited `1` when given an unknown method or malformed JSON line.
+    - `#124`: `SessionRetry.retryable` treated HTTP 501/505 (`5xx`) as retryable, causing infinite retry loops on unsupported endpoints.
+    - `#86`, `#110`, `#119`: Provider streams that reported `0` tokens in `finish-step` or omitted provider-level usage caused `tokensUsed` to remain `0` or stall in `verifying` during `apexo goal create`.
+    - `#117`: `GET /config/providers` still included raw `provider.key` values.
+    - `#47`: Custom Provider dialog accepted placeholder/fake keys (`sk-invalid-qa-test-000`) during offline format check unless online check was enabled.
+    - `#92`: `DialogServerV2` passed `onSelect: () => dialog.close()` in addition to its `createEffect` watching `controller.isFormMode()`, calling `dialog.close()` twice on add and closing `DialogSettings`; deleting a server in `SettingsServersV2` had no confirmation modal.
+    - `#122`, `#130`, `#131`: `NativeMcpManager` had a TDZ bug (`const loading` declared after `const statusMap = createMemo(...)`), lacked a delete confirmation dialog, and allowed hung MCP servers (`sleep 1000`) to stay pending beyond 5s if transport teardown stalled.
+    - `#102`, `#123`, `#125`, `#126`, `#127`, `#128`, `#129`, `#54`, `#85`: Missing empty-state copy for hidden models (`#102`), raw provider IDs like `xai` instead of `xAI` (`#123`), untruncated project names in session header (`#125`), unclickable Help Guide items (`#126`), layout shift when recording keybinds (`#127`), raw `<invoke>` XML tags in assistant text (`#128`), slash popover staying open behind modals (`#129`), duplicate assistant text when full text arrived after deltas (`#54`), and unpersisted sidebar expansion (`#85`).
+  - **Expected**:
+    - Clean per-line JSON error responses in `apexo jsonl` (`#121`), non-retryable HTTP 501/505 (`#124`), accurate token accounting and end-to-end `complete` goal progression with real MiniMax (`#86`, `#110`, `#119`), redacted `/config/providers` (`#117`), and all Desktop UI interactions verified across multiple live passes (`#47`, `#54`, `#85`, `#92`, `#102`, `#122`, `#123`, `#125`–`#131`).
+- **Fix & Verification**:
+  - Verified via unit tests (`packages/app` 102/102, `packages/apexo` retry/goal/jsonl 201/201), live CLI runs with real MiniMax (`minimax/MiniMax-M2.7`), and multi-pass Playwright-over-CDP Electron Desktop runs (`verify-desktop-ui.mjs` and `verify-desktop-strict.mjs`).
+
+

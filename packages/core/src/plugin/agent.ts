@@ -1,5 +1,6 @@
 export * as AgentPlugin from "./agent"
 
+import { realpath } from "node:fs/promises"
 import path from "path"
 import { define } from "./internal"
 import { Effect } from "effect"
@@ -136,8 +137,16 @@ export const Plugin = define({
   id: "agent",
   effect: Effect.fn(function* (ctx) {
     const location = yield* Location.Service
+    const global = yield* Global.Service
     const worktree = location.directory
-    const whitelistedDirs = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
+    const rawDataDirs = [...new Set([Global.Path.data, global.data])]
+    const realDataDirs = yield* Effect.forEach(rawDataDirs, (dir) =>
+      Effect.promise(() => realpath(dir).catch(() => dir)),
+    )
+    const goalReviewGlobs = [...new Set([...rawDataDirs, ...realDataDirs])].map((dir) =>
+      path.join(dir, "goal-reviews", "*"),
+    )
+    const whitelistedDirs = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*"), ...goalReviewGlobs]
     const readonlyExternalDirectory: PermissionV2.Ruleset = [
       { action: "external_directory", resource: "*", effect: "ask" },
       ...whitelistedDirs.map(

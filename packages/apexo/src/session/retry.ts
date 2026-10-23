@@ -84,8 +84,9 @@ export function retryable(error: Err, provider: string): Retryable | undefined {
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
     const status = error.data.statusCode
-    // 5xx errors are transient server failures and should always be retried,
-    // even when the provider SDK doesn't explicitly mark them as retryable.
+    if (status === 501 || status === 505) return undefined
+    // Transient 5xx errors (excluding 501 Not Implemented / 505 Version Not Supported)
+    // should be retried even when the provider SDK doesn't explicitly mark them as retryable.
     if (
       !error.data.isRetryable &&
       !(status !== undefined && status >= 500) &&
@@ -98,6 +99,7 @@ export function retryable(error: Err, provider: string): Retryable | undefined {
 
   const message = isRecord(error.data) ? error.data.message : undefined
   if (typeof message !== "string") return undefined
+  if (/\bHTTP (?:501|505)\b|\bstatus(?: code)? (?:501|505)\b/i.test(message)) return undefined
   const lower = message.toLowerCase()
   if (lower.includes("too_many_requests")) return { message: "Too Many Requests" }
   if (lower.includes("exhausted") || lower.includes("unavailable")) return { message: "Provider is overloaded" }

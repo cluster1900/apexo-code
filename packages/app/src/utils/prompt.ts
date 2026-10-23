@@ -43,11 +43,7 @@ function textPartValue(parts: Part[]) {
   const candidates = parts
     .filter((part): part is TextPart => part.type === "text")
     .filter((part) => !part.synthetic && !part.ignored)
-  return candidates.reduce((best: TextPart | undefined, part) => {
-    if (!best) return part
-    if (part.text.length > best.text.length) return part
-    return best
-  }, undefined)
+  return candidates.find((part) => part.text.trim().length > 0) ?? candidates[0]
 }
 
 /**

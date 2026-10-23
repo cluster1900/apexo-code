@@ -144,7 +144,7 @@ export function createSessionComposerRegionController(input: {
     dock: () => (store.ready && input.state.dock()) || value() > 0.001,
     dockProgress: value,
     dockHeight: () => Math.max(78, store.height),
-    lift: () => (input.revert()?.items.length ? 18 : 36 * value()),
+    lift: () => (input.revert()?.items.length ? 0 : 36 * value()),
     setDockBodyRef: (el: HTMLDivElement) => setStore("body", el),
   }
 }

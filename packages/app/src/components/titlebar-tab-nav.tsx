@@ -260,6 +260,7 @@ export function TabNavItem(props: {
             titleEl = el
             titleEl.textContent = title() ?? ""
           }}
+          title={title() ?? ""}
           data-slot="tab-title"
           data-titlebar-tab-title
           class="min-w-0 flex-1 outline-none leading-4"
@@ -432,6 +433,7 @@ export function DraftTabItem(props: {
             <IconV2 name="edit" />
           </span>
           <span
+            title={props.title}
             data-titlebar-tab-title
             class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap outline-none leading-4"
           >

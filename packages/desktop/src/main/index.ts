@@ -10,7 +10,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, session } from "electron"
 
 import { Deferred, Effect, Fiber } from "effect"
 import contextMenu from "electron-context-menu"
@@ -200,7 +200,29 @@ const main = Effect.gen(function* () {
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
   app.commandLine.appendSwitch("disable-http-cache")
   try {
-    rmSync(join(app.getPath("userData"), "Cache", "Cache_Data"), { recursive: true, force: true })
+    const appDataRoot = app.getPath("appData")
+    const cacheRoot =
+      process.env.XDG_CACHE_HOME ??
+      join(app.getPath("home"), process.platform === "darwin" ? "Library/Caches" : ".cache")
+    const candidateIds = [
+      ...Object.values(APP_IDS),
+      ...Object.values(APP_IDS).map((id) => id.replace(/^com\.apexolab\.desktop/, LEGACY_DESKTOP_APP_ID)),
+      ...Object.values(APP_NAMES),
+      "Electron",
+    ]
+    const roots = new Set<string>([
+      app.getPath("userData"),
+      app.getPath("sessionData"),
+      ...candidateIds.map((id) => join(appDataRoot, id)),
+      ...candidateIds.map((id) => join(cacheRoot, id)),
+    ])
+    for (const root of roots) {
+      for (const subdir of [["Cache", "Cache_Data"], ["Cache"], ["Code Cache"]]) {
+        try {
+          rmSync(join(root, ...subdir), { recursive: true, force: true })
+        } catch {}
+      }
+    }
   } catch {}
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
@@ -273,6 +295,7 @@ const main = Effect.gen(function* () {
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
 
   yield* Effect.promise(() => app.whenReady())
+  yield* Effect.promise(() => session.defaultSession.clearCache()).pipe(Effect.ignore)
 
   yield* Effect.promise(() => cleanupStoreFiles(app.getPath("userData"))).pipe(
     Effect.tap((result) =>

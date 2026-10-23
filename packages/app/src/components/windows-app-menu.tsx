@@ -74,9 +74,6 @@ export function WindowsAppMenu(props: {
             >
               {language.t("grok.releaseNotes")}
             </Button>
-            <Button type="button" variant="primary" size="large" onClick={() => dialog.close()}>
-              {language.t("common.close")}
-            </Button>
           </div>
         </div>
       </Dialog>

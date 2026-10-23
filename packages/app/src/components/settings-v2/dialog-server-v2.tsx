@@ -16,7 +16,6 @@ export const DialogServerV2: Component<{
   const dialog = useDialog()
   const language = useLanguage()
   const controller = useServerManagementController({
-    onSelect: () => dialog.close(),
     navigateOnAdd: false,
   })
   const [opened, setOpened] = createSignal(false)

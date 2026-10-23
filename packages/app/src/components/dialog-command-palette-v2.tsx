@@ -283,6 +283,7 @@ function PaletteRow(props: {
       type="button"
       class="command-palette-v2-row group"
       role="option"
+      title={props.item.description ? `${props.item.title} — ${props.item.description}` : props.item.title}
       aria-selected={props.active}
       data-active={props.active ? "" : undefined}
       onMouseMove={(event) => {

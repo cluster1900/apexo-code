@@ -94,23 +94,44 @@ export function NewSessionStatus(props: { mount: Accessor<HTMLElement | null>; v
   )
 }
 
+function useProviderReady(directory: Accessor<string>) {
+  const serverSync = useServerSync()
+  return createMemo(() =>
+    directory() ? serverSync().child(directory())[0].provider_ready : serverSync().data.ready,
+  )
+}
+
 function NoProviderOnboardingCard() {
   const language = useLanguage()
   const dialog = useDialog()
   const sdk = useSDK()
-  const serverSync = useServerSync()
+  const providerReady = useProviderReady(() => sdk().directory)
   const providers = useProviders(() => sdk().directory)
+  const [persistedState, setPersistedState, , persistedReady] = persisted(
+    Persist.global("new-session.provider-onboarding"),
+    createStore({ dismissed: false }),
+  )
+  const hasExplicitProvider = createMemo(() =>
+    providers
+      .connected()
+      .some((p) => p.source === "api" || p.source === "config" || p.source === "custom"),
+  )
   const visible = createMemo(
-    () => serverSync().child(sdk().directory)[0].provider_ready && providers.connected().length === 0,
+    () =>
+      providerReady() &&
+      persistedReady() &&
+      (providers.connected().length === 0 || (!hasExplicitProvider() && !persistedState.dismissed)),
   )
 
   const openConnectProvider = () => {
+    setPersistedState("dismissed", true)
     void import("@/components/dialog-connect-provider").then(({ DialogConnectProvider }) => {
       void dialog.show(() => <DialogConnectProvider directory={() => sdk().directory} />)
     })
   }
 
   const openCustomProvider = () => {
+    setPersistedState("dismissed", true)
     void import("@/components/dialog-custom-provider").then(({ DialogCustomProvider }) => {
       void dialog.show(() => <DialogCustomProvider onBack={() => dialog.close()} />)
     })
@@ -143,7 +164,7 @@ function ProviderTip() {
   const language = useLanguage()
   const dialog = useDialog()
   const sdk = useSDK()
-  const serverSync = useServerSync()
+  const providerReady = useProviderReady(() => sdk().directory)
   const providers = useProviders(() => sdk().directory)
   const [persistedState, setPersistedState, , persistedReady] = persisted(
     Persist.global("new-session.provider-tip"),
@@ -151,7 +172,7 @@ function ProviderTip() {
   )
   const visible = createMemo(
     () =>
-      serverSync().child(sdk().directory)[0].provider_ready &&
+      providerReady() &&
       persistedReady() &&
       providers.paid().length === 0 &&
       Date.now() - persistedState.dismissedAt >= providerTipDismissalDuration,

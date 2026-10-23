@@ -138,12 +138,14 @@
 .command-palette-v2-row-text {
   display: flex;
   min-width: 0;
+  flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .command-palette-v2-title {
-  min-width: 0;
+  flex-shrink: 0;
+  max-width: 65%;
   overflow: hidden;
   color: var(--v2-text-text-base);
   font-size: 13px;
@@ -157,6 +159,7 @@
 .command-palette-v2-description,
 .command-palette-v2-meta {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   color: var(--v2-text-text-muted);
   font-size: 13px;
@@ -168,7 +171,7 @@
 }
 
 .command-palette-v2-meta {
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .command-palette-v2-file-path {

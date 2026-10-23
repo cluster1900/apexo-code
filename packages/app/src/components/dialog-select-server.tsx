@@ -297,7 +297,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
 
       resetAdd()
       if (options.navigateOnAdd === false) {
-        server.add(conn)
+        server.add(conn, { activate: false })
         options.onSelect?.()
         return
       }
