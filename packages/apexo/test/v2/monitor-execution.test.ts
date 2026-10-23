@@ -184,11 +184,15 @@ it.live(
               command: "echo $$ > deleting; while true; do sleep 1; done",
             },
           })
-          const deletingPid = yield* Effect.tryPromise(() => Bun.file(path.join(directory, "deleting")).text()).pipe(
-            Effect.retry({ times: 100, schedule: Schedule.spaced("10 millis") }),
-          )
+          const deletingPid = yield* Effect.tryPromise(async () => {
+            const text = (await Bun.file(path.join(directory, "deleting")).text()).trim()
+            const pid = Number(text)
+            if (!Number.isInteger(pid) || pid <= 0) throw new Error("pending pid")
+            return pid
+          }).pipe(Effect.retry({ times: 100, schedule: Schedule.spaced("10 millis") }))
           yield* sessions.remove(parent.id)
-          expect(() => process.kill(Number(deletingPid), 0)).toThrow()
+          yield* jobs.wait({ id: deleted.id })
+          expect(() => process.kill(deletingPid, 0)).toThrow()
           expect(yield* processes.read(deleted.id)).toBeUndefined()
         }).pipe(
           Effect.provide(locations.get(parent.location)),
