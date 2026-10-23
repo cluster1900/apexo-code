@@ -48,6 +48,28 @@ function show(out: string, stream: NodeJS.WriteStream = process.stdout) {
   stream.write(out)
 }
 
+function normalizeUnknownArgsMessage(msg: string, rawArgs: string[]) {
+  const match = /^Unknown arguments?: (.+)$/.exec(msg)
+  if (!match) return msg
+  const items = match[1]
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const rawFlags = new Set(
+    rawArgs
+      .filter((arg) => arg.startsWith("-"))
+      .map((arg) => arg.replace(/^--?(?:no-)?/, "").split("=")[0]),
+  )
+  const camelExpansions = new Set(
+    items
+      .filter((item) => item.includes("-"))
+      .map((item) => item.replace(/-([a-z0-9])/gi, (_, c: string) => c.toUpperCase())),
+  )
+  const filtered = items.filter((item) => !camelExpansions.has(item) || rawFlags.has(item))
+  const finalItems = filtered.length > 0 ? filtered : items
+  return `Unknown argument${finalItems.length === 1 ? "" : "s"}: ${finalItems.join(", ")}`
+}
+
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
   .scriptName("apexo")
@@ -128,7 +150,7 @@ const cli = yargs(args)
     if (err) throw err
     if (msg) {
       UI.empty()
-      UI.error(msg)
+      UI.error(normalizeUnknownArgsMessage(msg, args))
     }
     process.exit(1)
   })

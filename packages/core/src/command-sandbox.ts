@@ -96,6 +96,48 @@ export const make = Effect.gen(function* () {
           }),
       })
     })
+  const probeBackend = Effect.scoped(
+    Effect.gen(function* () {
+      if (backendKind === "none") return
+      const policy = yield* CommandSandboxPaths.resolve({
+        workspace: location.directory,
+        profile: "workspace",
+        home: global.home,
+        protected: [
+          global.config,
+          global.data,
+          global.state,
+          global.cache,
+          ...PROJECT_PROTECTED_NAMES.map((name) => path.join(location.directory, name)),
+        ],
+      })
+      if (CommandSandboxPolicy.isOff(policy)) return
+      const probe = yield* prepare(policy, { shell: "/bin/sh", command: "exit 0", cwd: policy.workspace })
+      const result = yield* appProcess
+        .run(probe.command, { timeout: Duration.seconds(3), maxOutputBytes: 512, maxErrorBytes: 1024 })
+        .pipe(
+          Effect.mapError(
+            () =>
+              new CommandSandboxPolicy.Failure({
+                code: "unavailable",
+                message: "The command sandbox backend could not start.",
+              }),
+          ),
+        )
+      if (!probe.confirm(result) || result.exitCode !== 0)
+        return yield* new CommandSandboxPolicy.Failure({
+          code: "unavailable",
+          message: "The command sandbox backend did not confirm policy application.",
+        })
+      backend.availability = "available"
+    }),
+  ).pipe(
+    Effect.catch(() =>
+      Effect.sync(() => {
+        backend.availability = "unavailable"
+      }),
+    ),
+  )
   return {
     /** Explicit selection only; configuration documents are not security defaults. */
     preflight: (profile: Sandbox.Profile) =>
@@ -149,6 +191,9 @@ export const make = Effect.gen(function* () {
       ),
     status: (sessionID: SessionSchema.ID): Effect.Effect<Sandbox.Status, SessionLifecycle.Closed> =>
       Effect.gen(function* () {
+        if (backendKind !== "none" && backend.availability !== "available") {
+          yield* probeBackend
+        }
         const current = yield* sessions.inspect(sessionID)
         const receipt = receipts.get(current.claim)
         const failure = failures.get(current.claim)

@@ -40,6 +40,16 @@ import "./titlebar.css"
 import { newTabTooltipKeybind } from "./command-tooltip-keybind"
 import { normalizeSessionInfo } from "@/utils/session"
 import { announceSessionRestoration } from "@/utils/session-restore"
+import { useDirectoryPicker } from "@/components/directory-picker"
+import { homeProjectDirectories } from "@/pages/layout/helpers"
+import {
+  downloadSessionExport,
+  fetchSessionExport,
+  importSessionFromFile,
+  sessionExportFilename,
+} from "@/utils/session-export"
+import { sessionHref } from "@/utils/session-route"
+import { showToast } from "@/utils/toast"
 
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
@@ -172,6 +182,7 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
           {(_) => {
             const layout = useLayout()
             const global = useGlobal()
+            const pickDirectory = useDirectoryPicker()
 
             const tabs = useTabs()
             const tabsStore = tabs.store
@@ -302,6 +313,169 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
                 onSelect: toggleHome,
               },
             ])
+
+            const resolveActiveServer = () => {
+              const route = layout.route()
+              const targetKey =
+                route.type === "session" || route.type === "draft"
+                  ? (route.server ?? server.key)
+                  : (layout.home.selection().server ?? server.key)
+              return (
+                global.servers.list().find((item) => ServerConnection.key(item) === targetKey) ??
+                global.servers.list()[0]
+              )
+            }
+
+            const resolveActiveDirectory = (conn: ServerConnection.Any) => {
+              const route = layout.route()
+              if (route.type === "session") {
+                const activeSession = session()
+                if (activeSession?.directory) return activeSession.directory
+              }
+              if (route.type === "draft") {
+                const activeTab = currentTab()
+                return route.dir ?? (activeTab?.type === "draft" ? activeTab.directory : undefined)
+              }
+              const selectedDir = layout.home.selection().directory
+              if (selectedDir) return selectedDir
+              return global.ensureServerCtx(conn).projects.list()[0]?.worktree
+            }
+
+            const resolveExportTarget = async () => {
+              const route = layout.route()
+              if (route.type === "session") {
+                const conn = resolveActiveServer()
+                return conn ? { conn, sessionID: route.sessionId } : undefined
+              }
+              const sessionTab = tabsStore.find((item) => item.type === "session")
+              if (sessionTab && sessionTab.type === "session") {
+                const conn = global.servers.list().find((item) => ServerConnection.key(item) === sessionTab.server)
+                if (conn) return { conn, sessionID: sessionTab.sessionId }
+              }
+              const conn = resolveActiveServer()
+              if (!conn) return undefined
+              const ctx = global.ensureServerCtx(conn)
+              const directory = resolveActiveDirectory(conn)
+              const listed = await ctx.sdk.client.session
+                .list({ ...(directory ? { directory } : {}), roots: true, limit: 1 })
+                .catch(() => undefined)
+              const first = listed?.data?.[0]
+              return first ? { conn, sessionID: first.id } : undefined
+            }
+
+            command.register("titlebar-file", () => {
+              const route = layout.route()
+              return [
+                {
+                  id: "project.open",
+                  title: language.t("command.project.open"),
+                  category: language.t("command.category.project"),
+                  keybind: "mod+o",
+                  onSelect: () => {
+                    const conn = resolveActiveServer()
+                    if (!conn) return
+                    pickDirectory({
+                      server: conn,
+                      title: language.t("command.project.open"),
+                      multiple: true,
+                      onSelect: (result) => {
+                        const dirs = homeProjectDirectories(result)
+                        const ctx = global.ensureServerCtx(conn)
+                        dirs.forEach((directory) => ctx.projects.open(directory))
+                        const first = dirs[0]
+                        if (first) {
+                          layout.home.setSelection({ server: ServerConnection.key(conn), directory: first })
+                        }
+                      },
+                    })
+                  },
+                },
+                {
+                  id: "session.import",
+                  title: language.t("command.session.import"),
+                  description: language.t("command.session.import.description"),
+                  category: language.t("command.category.session"),
+                  onSelect: () => {
+                    const conn = resolveActiveServer()
+                    if (!conn) return
+                    const ctx = global.ensureServerCtx(conn)
+                    const directory = resolveActiveDirectory(conn)
+                    void importSessionFromFile({
+                      url: ctx.sdk.url,
+                      directory,
+                      title: language.t("command.session.import"),
+                    })
+                      .then((imported) => {
+                        if (!imported) return
+                        ctx.sync.homeSessions.apply({
+                          type: "session.created",
+                          properties: { sessionID: imported.id, info: imported },
+                        })
+                        showToast({
+                          variant: "success",
+                          icon: "circle-check",
+                          title: language.t("toast.session.import.success.title"),
+                          description: language.t("toast.session.import.success.description", {
+                            title: imported.title || imported.id,
+                          }),
+                        })
+                        navigate(sessionHref(ServerConnection.key(conn), imported.id))
+                      })
+                      .catch((err) => {
+                        showToast({
+                          variant: "error",
+                          title: language.t("toast.session.import.failed.title"),
+                          description:
+                            err instanceof Error ? err.message : language.t("toast.session.import.failed.description"),
+                        })
+                      })
+                  },
+                },
+                route.type !== "session"
+                  ? {
+                      id: "session.export",
+                      title: language.t("command.session.export"),
+                      description: language.t("command.session.export.description"),
+                      category: language.t("command.category.session"),
+                      onSelect: () => {
+                        void resolveExportTarget().then((target) => {
+                          if (!target) return
+                          const ctx = global.ensureServerCtx(target.conn)
+                          return fetchSessionExport({
+                            sessionID: target.sessionID,
+                            client: ctx.sdk.client,
+                          })
+                            .then((data) => {
+                              const filename = sessionExportFilename(data.info)
+                              return downloadSessionExport(filename, data, language.t("command.session.export"))
+                            })
+                            .then((saved) => {
+                              if (!saved) return
+                              showToast({
+                                variant: "success",
+                                icon: "circle-check",
+                                title: language.t("toast.session.export.success.title"),
+                                description: language.t("toast.session.export.success.description", {
+                                  filename: saved,
+                                }),
+                              })
+                            })
+                            .catch((err) => {
+                              showToast({
+                                variant: "error",
+                                title: language.t("toast.session.export.failed.title"),
+                                description:
+                                  err instanceof Error
+                                    ? err.message
+                                    : language.t("toast.session.export.failed.description"),
+                              })
+                            })
+                        })
+                      },
+                    }
+                  : undefined,
+              ].filter((v) => v !== undefined)
+            })
 
             command.register("tabs", () => {
               const current = currentTab()

@@ -94,7 +94,7 @@ export function createHomeSessionsController(home: HomeController) {
   const [searchFilter, setSearchFilter] = createSignal("")
   const indexedSessions = createMemo(() =>
     showArchived()
-      ? homeSessions().archivedSessions(sessionLoad.data).slice(0, HOME_SESSION_LIMIT)
+      ? homeSessions().archivedSessions(sessionLoad.data, sessionEventLoad.data).slice(0, HOME_SESSION_LIMIT)
       : retainHomeSessions(
           homeSessions().sessions(sessionLoad.data, sessionEventLoad.data),
           HOME_SESSION_LIMIT,
@@ -263,7 +263,7 @@ export function createHomeSessionsController(home: HomeController) {
                 if (match.found) draft.session.splice(match.index, 1)
               }),
             )
-            homeSessions().remove(session.id)
+            homeSessions().remove(session)
             showToast({
               title: language.t("command.session.archive"),
               description: session.title,

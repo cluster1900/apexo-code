@@ -27,9 +27,9 @@ export function WindowsAppMenu(props: {
     lastFocused = active instanceof HTMLElement ? active : undefined
   }
   const commandDisabled = (id: string) => {
-    const option = props.command.options.find((option) => option.id === id)
-    if (!option) return true
-    return option.disabled ?? false
+    const matches = props.command.options.filter((option) => option.id === id)
+    if (matches.length === 0) return true
+    return matches.every((option) => option.disabled ?? false)
   }
   const runCommand = (id: string) => {
     if (commandDisabled(id)) return

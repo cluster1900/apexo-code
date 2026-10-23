@@ -404,8 +404,13 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     const optionMap = createMemo(() => {
       const map = new Map<string, CommandOption>()
       for (const option of options()) {
-        map.set(option.id, option)
-        map.set(actionId(option.id), option)
+        if (!map.has(option.id) || (map.get(option.id)?.disabled && !option.disabled)) {
+          map.set(option.id, option)
+        }
+        const base = actionId(option.id)
+        if (!map.has(base) || (map.get(base)?.disabled && !option.disabled)) {
+          map.set(base, option)
+        }
       }
       return map
     })
