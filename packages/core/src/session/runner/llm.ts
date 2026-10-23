@@ -433,7 +433,7 @@ const layer = Layer.effect(
           const activeGoal = role ? yield* goals.get(role.attempt.sessionID) : goal
           const remainingGoalTokens =
             activeGoal?.tokenBudget !== undefined
-              ? Math.max(1, activeGoal.tokenBudget - activeGoal.tokensUsed)
+              ? Math.min(32_000, Math.max(1, activeGoal.tokenBudget - activeGoal.tokensUsed))
               : undefined
           const request = LLM.request({
             model,

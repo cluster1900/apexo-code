@@ -44,8 +44,12 @@ export function setDefaultServerUrl(url: string | null) {
 export function preferAppEnv(userDataPath: string) {
   const shell = process.platform === "win32" ? null : getUserShell()
   const shellEnv = shell ? loadShellEnv(shell, getLogger()) : null
+  const explicitEnv = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
   Object.assign(process.env, {
     ...shellEnv,
+    ...explicitEnv,
     APEXO_EXPERIMENTAL_ICON_DISCOVERY: "true",
     APEXO_EXPERIMENTAL_FILEWATCHER: "true",
     APEXO_CLIENT: "desktop",

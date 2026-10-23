@@ -39,11 +39,17 @@ function selectionFromFileUrl(url: string): Extract<Inline, { type: "file" }>["s
   }
 }
 
+function stripSystemReminder(value: string) {
+  if (!/<system-reminder>/i.test(value)) return value
+  return value.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "").trim()
+}
+
 function textPartValue(parts: Part[]) {
   const candidates = parts
     .filter((part): part is TextPart => part.type === "text")
     .filter((part) => !part.synthetic && !part.ignored)
-  return candidates.find((part) => part.text.trim().length > 0) ?? candidates[0]
+    .filter((part) => !/^\s*<system-reminder>[\s\S]*<\/system-reminder>\s*$/i.test(part.text))
+  return candidates.find((part) => stripSystemReminder(part.text).trim().length > 0) ?? candidates[0]
 }
 
 /**
@@ -52,7 +58,7 @@ function textPartValue(parts: Part[]) {
  */
 export function extractPromptFromParts(parts: Part[], opts?: { directory?: string; attachmentName?: string }): Prompt {
   const textPart = textPartValue(parts)
-  const text = textPart?.text ?? ""
+  const text = stripSystemReminder(textPart?.text ?? "")
   const directory = opts?.directory
   const attachmentName = opts?.attachmentName ?? "attachment"
 

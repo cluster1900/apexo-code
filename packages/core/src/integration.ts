@@ -173,6 +173,7 @@ export interface Interface extends State.Transformable<Draft> {
       readonly key: string
       /** User-facing label for the stored credential. */
       readonly label?: string
+      readonly allowCustom?: boolean
     }) => Effect.Effect<void, AuthorizationError>
     /** Starts a stateful OAuth attempt. */
     readonly oauth: (input: {
@@ -448,7 +449,7 @@ export const locationLayer = Layer.effect(
             .get()
             .integrations.get(input.integrationID)
             ?.methods.some((method) => method.type === "key")
-          if (!method) return yield* Effect.die(`Key method not found: ${input.integrationID}`)
+          if (!method && !input.allowCustom) return yield* Effect.die(`Key method not found: ${input.integrationID}`)
           yield* credentials.create({
             integrationID: input.integrationID,
             label: input.label,

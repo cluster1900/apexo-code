@@ -425,7 +425,7 @@ const make = Effect.gen(function* () {
       useCurrentModelOnly,
       stream: (request) => {
         const remainingBudget =
-          info.tokenBudget !== undefined ? Math.max(1, info.tokenBudget - info.tokensUsed) : undefined
+          info.tokenBudget !== undefined ? Math.min(32_000, Math.max(1, info.tokenBudget - info.tokensUsed)) : undefined
         return llm.stream(
           LLM.request({
             model,

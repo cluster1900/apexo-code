@@ -1,4 +1,5 @@
 import { Cause, Context, Effect, Layer, Option, Stream } from "effect"
+import fs from "fs/promises"
 import path from "node:path"
 import { Database } from "@apexo/core/database/database"
 import { LayerNode } from "@apexo/core/effect/layer-node"
@@ -193,10 +194,14 @@ const layer = Layer.effect(
                             ),
                           )
                         }
-                        if (
-                          request.kind === "planning" &&
-                          !(yield* Effect.promise(() => Bun.file(files.paths.plan).exists()))
-                        ) {
+                        const fileExists = (filePath: string) =>
+                          Effect.promise(() =>
+                            fs.access(filePath).then(
+                              () => true,
+                              () => false,
+                            ),
+                          )
+                        if (request.kind === "planning" && !(yield* fileExists(files.paths.plan))) {
                           const raw = result.parts
                             .flatMap((part) => (part.type === "text" || part.type === "reasoning" ? [part.text] : []))
                             .join("\n")
@@ -214,8 +219,8 @@ const layer = Layer.effect(
                           yield* role.reports.write(files.paths.plan, fallbackPlan)
                         }
                         if (request.kind === "verifying") {
-                          const hasVerdict = yield* Effect.promise(() => Bun.file(files.paths.verdict).exists())
-                          const hasDetails = yield* Effect.promise(() => Bun.file(files.paths.details).exists())
+                          const hasVerdict = yield* fileExists(files.paths.verdict)
+                          const hasDetails = yield* fileExists(files.paths.details)
                           if (!hasVerdict || !hasDetails) {
                             const raw = result.parts
                               .flatMap((part) =>
@@ -234,7 +239,7 @@ const layer = Layer.effect(
                               !/\brefuted\b/i.test(raw.replace(/\bnot\s+refuted\b/gi, ""))
                             ) {
                               const detailsText = (
-                                yield* Effect.promise(() => Bun.file(files.paths.details).text())
+                                yield* Effect.promise(() => fs.readFile(files.paths.details, "utf8").catch(() => ""))
                               ).trim()
                               yield* role.reports.write(
                                 files.paths.verdict,

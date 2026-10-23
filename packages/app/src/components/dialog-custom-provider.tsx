@@ -121,6 +121,7 @@ export function CustomProviderForm(props: { autofocus?: boolean; onComplete?: ()
       t: language.t,
       disabledProviders: serverSync().data.config.disabled_providers ?? [],
       existingProviderIDs: new Set(serverSync().data.provider.all.keys()),
+      skipKeyFormatHeuristic: true,
     })
     batch(() => {
       setForm("err", output.err)
@@ -143,7 +144,14 @@ export function CustomProviderForm(props: { autofocus?: boolean; onComplete?: ()
       headers,
       signal: AbortSignal.timeout(6000),
     }).catch(() => undefined)
-    if (!res) return language.t("provider.connect.apiKey.invalid")
+    if (!res) {
+      await fetch(`${base}/models`, {
+        method: "GET",
+        mode: "no-cors",
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => undefined)
+      return language.t("provider.connect.apiKey.invalid")
+    }
     if (res.status === 401 || res.status === 403) {
       return `${language.t("provider.connect.apiKey.invalid")} (HTTP ${res.status})`
     }

@@ -201,6 +201,7 @@ const AnthropicStreamDelta = Schema.Struct({
   signature: Schema.optional(Schema.String),
   stop_reason: optionalNull(Schema.String),
   stop_sequence: optionalNull(Schema.String),
+  usage: Schema.optional(AnthropicUsage),
 })
 
 const AnthropicEvent = Schema.Struct({
@@ -592,14 +593,20 @@ const mapUsage = (usage: AnthropicUsage | undefined): Usage | undefined => {
 // field prefers `right` when defined, falls back to `left`. `inputTokens` is
 // recomputed from the merged breakdown so the inclusive total stays
 // consistent with `nonCached + cacheRead + cacheWrite`.
+const pickToken = (left: number | undefined, right: number | undefined) => {
+  if (right !== undefined && right > 0) return right
+  if (left !== undefined && left > 0) return left
+  return right ?? left
+}
+
 const mergeUsage = (left: Usage | undefined, right: Usage | undefined) => {
   if (!left) return right
   if (!right) return left
-  const nonCachedInputTokens = right.nonCachedInputTokens ?? left.nonCachedInputTokens
-  const cacheReadInputTokens = right.cacheReadInputTokens ?? left.cacheReadInputTokens
-  const cacheWriteInputTokens = right.cacheWriteInputTokens ?? left.cacheWriteInputTokens
+  const nonCachedInputTokens = pickToken(left.nonCachedInputTokens, right.nonCachedInputTokens)
+  const cacheReadInputTokens = pickToken(left.cacheReadInputTokens, right.cacheReadInputTokens)
+  const cacheWriteInputTokens = pickToken(left.cacheWriteInputTokens, right.cacheWriteInputTokens)
   const inputTokens = ProviderShared.sumTokens(nonCachedInputTokens, cacheReadInputTokens, cacheWriteInputTokens)
-  const outputTokens = right.outputTokens ?? left.outputTokens
+  const outputTokens = pickToken(left.outputTokens, right.outputTokens)
   return new Usage({
     inputTokens,
     outputTokens,
@@ -780,7 +787,7 @@ const onContentBlockStop = Effect.fn("AnthropicMessages.onContentBlockStop")(fun
 })
 
 const onMessageDelta = (state: ParserState, event: AnthropicEvent): StepResult => {
-  const usage = mergeUsage(state.usage, mapUsage(event.usage))
+  const usage = mergeUsage(state.usage, mapUsage(event.usage ?? event.delta?.usage ?? event.message?.usage))
   const events: LLMEvent[] = []
   const lifecycle = Lifecycle.finish(state.lifecycle, events, {
     reason: mapFinishReason(event.delta?.stop_reason),

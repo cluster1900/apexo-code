@@ -898,7 +898,29 @@ function ProviderConnection(props: {
       return undefined
     }
 
-    async function verifyApiKeyOnline(raw: string) {
+    function resolveCustomBase() {
+      const providerInfo = provider()
+      const cfgProvider = serverSync().data.config.provider?.[props.provider]
+      const modelInfo = Object.values(providerInfo?.models ?? {}).find(
+        (m) => typeof m?.api?.url === "string" && m.api.url.trim().length > 0,
+      )
+      const npm = cfgProvider?.npm ?? modelInfo?.api?.npm
+      if (npm === "@ai-sdk/anthropic") return undefined
+      const optionUrl =
+        typeof providerInfo?.options?.baseURL === "string" && providerInfo.options.baseURL.trim().length > 0
+          ? providerInfo.options.baseURL
+          : typeof cfgProvider?.options?.baseURL === "string" && cfgProvider.options.baseURL.trim().length > 0
+            ? (cfgProvider.options.baseURL as string)
+            : typeof cfgProvider?.api === "string" && cfgProvider.api.trim().length > 0
+              ? cfgProvider.api
+              : undefined
+      const isCustomOrConfig =
+        providerInfo?.source === "custom" || providerInfo?.source === "config" || Boolean(cfgProvider)
+      const rawBase = optionUrl ?? (isCustomOrConfig ? modelInfo?.api?.url : undefined)
+      return typeof rawBase === "string" && rawBase.trim() ? rawBase.trim().replace(/\/+$/, "") : undefined
+    }
+
+    async function verifyApiKeyOnline(raw: string): Promise<{ verified: boolean; error?: string }> {
       const key = raw.trim()
       const endpoints: Record<string, { url: string; headers: Record<string, string> }> = {
         anthropic: {
@@ -938,31 +960,40 @@ function ProviderConnection(props: {
           headers: { Authorization: `Bearer ${key}` },
         },
       }
-      const customBase =
-        typeof serverSync().data.config.provider?.[props.provider]?.options?.baseURL === "string"
-          ? (serverSync().data.config.provider?.[props.provider]?.options?.baseURL as string).replace(/\/+$/, "")
-          : undefined
+      const customBase = resolveCustomBase()
+      const extraHeaders =
+        typeof provider()?.options?.headers === "object" && provider()?.options?.headers !== null
+          ? (provider()?.options?.headers as Record<string, string>)
+          : {}
       const target =
         endpoints[props.provider] ??
         (customBase
           ? {
               url: `${customBase}/models`,
-              headers: { Authorization: `Bearer ${key}` },
+              headers: { Authorization: `Bearer ${key}`, ...extraHeaders },
             }
           : undefined)
-      if (!target) return undefined
+      if (!target) return { verified: false }
       const res = await fetch(target.url, {
         method: "GET",
         headers: target.headers,
         signal: AbortSignal.timeout(6000),
       }).catch(() => undefined)
       if (!res) {
-        return language.t("provider.connect.apiKey.invalid")
+        if (customBase) {
+          await fetch(target.url, {
+            method: "GET",
+            mode: "no-cors",
+            signal: AbortSignal.timeout(3000),
+          }).catch(() => undefined)
+          return { verified: true }
+        }
+        return { verified: true, error: language.t("provider.connect.apiKey.invalid") }
       }
       if (!res.ok) {
-        return `${language.t("provider.connect.apiKey.invalid")} (HTTP ${res.status})`
+        return { verified: true, error: `${language.t("provider.connect.apiKey.invalid")} (HTTP ${res.status})` }
       }
-      return undefined
+      return { verified: true }
     }
 
     async function handleSubmit(e: SubmitEvent) {
@@ -971,15 +1002,26 @@ function ProviderConnection(props: {
       const form = e.currentTarget as HTMLFormElement
       const formData = new FormData(form)
       const rawKey = (formData.get("apiKey") as string) ?? ""
-      const validationError = validateApiKey(rawKey)
-      if (validationError) {
-        setFormStore("error", validationError)
+      const trimmed = rawKey.trim()
+      if (!trimmed) {
+        setFormStore("error", language.t("provider.connect.apiKey.required"))
         return
       }
-      const onlineError = await verifyApiKeyOnline(rawKey)
-      if (onlineError) {
-        setFormStore("error", onlineError)
+      if (/\s/.test(trimmed)) {
+        setFormStore("error", language.t("provider.connect.apiKey.invalid"))
         return
+      }
+      const online = await verifyApiKeyOnline(rawKey)
+      if (online.error) {
+        setFormStore("error", online.error)
+        return
+      }
+      if (!online.verified) {
+        const validationError = validateApiKey(rawKey)
+        if (validationError) {
+          setFormStore("error", validationError)
+          return
+        }
       }
 
       setFormStore("error", undefined)
@@ -995,6 +1037,12 @@ function ProviderConnection(props: {
         setFormStore("error", formatError(result.error, language.t("common.requestFailed")))
         return
       }
+      await serverSDK()
+        .client.auth.set({
+          providerID: props.provider,
+          auth: { type: "api", key: rawKey.trim() },
+        })
+        .catch(() => undefined)
       await complete()
     }
 

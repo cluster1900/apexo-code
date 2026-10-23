@@ -98,11 +98,12 @@ export const loadMcpQuery = (
     queryKey: [scope, directory, "mcp"] as const,
     queryFn: async ({ signal }) => {
       if ((await protocol) === "v2" && legacy) {
+        const v1Signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(1500)]) : AbortSignal.timeout(1500)
         const [v2Status, v1Status] = await Promise.all([
           legacy.v2.mcp.status({ location: { directory } }, { signal, throwOnError: true }).then((r) => r.data),
           legacy.mcp?.status
             ? legacy.mcp
-                .status({}, { signal })
+                .status({}, { signal: v1Signal })
                 .then((r) => r.data ?? {})
                 .catch(() => ({}))
             : Promise.resolve({}),

@@ -105,12 +105,12 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const global = Option.getOrUndefined(yield* Effect.serviceOption(Global.Service))
-    const home = global?.home ?? Global.Path.home
+    const global = yield* Global.Service
+    const home = global.home
     const dataDir =
-      global && global.home !== Global.Path.home && global.data === Global.Path.data
+      global.home !== Global.Path.home && global.data === Global.Path.data
         ? path.join(global.home, ".local", "share", Global.APP_DIR_NAME)
-        : (global?.data ?? Global.Path.data)
+        : global.data
     const authFile = path.join(dataDir, "auth.json")
     const grokFile = path.join(home, ".grok", "auth.json")
     const decode = Schema.decodeUnknownSync(Value)
@@ -319,4 +319,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, Global.node] })

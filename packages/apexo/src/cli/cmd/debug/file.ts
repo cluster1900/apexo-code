@@ -1,4 +1,5 @@
 import { EOL } from "os"
+import fs from "fs/promises"
 import path from "node:path"
 import { Cause, Effect } from "effect"
 import { FileSystem } from "@apexo/core/filesystem"
@@ -20,7 +21,12 @@ const resolveWorkspaceRelativePath = Effect.fnUntraced(function* (rawPath: strin
   const resolved = path.resolve(cwd, rawPath)
   const rel = path.relative(cwd, resolved)
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    const exists = yield* Effect.promise(() => Bun.file(resolved).exists())
+    const exists = yield* Effect.promise(() =>
+      fs.access(resolved).then(
+        () => true,
+        () => false,
+      ),
+    )
     return yield* fail(
       exists
         ? `Path is outside the current workspace (${cwd}): ${rawPath}`

@@ -95,7 +95,14 @@ export function normalizeProviderList(
       name: provider.name,
       source: "custom",
       env: [],
-      options: "request" in provider ? provider.request.body : (provider.settings ?? {}),
+      options:
+        "request" in provider
+          ? {
+              ...provider.request.body,
+              ...(provider.api.url ? { baseURL: provider.api.url } : {}),
+              ...(Object.keys(provider.request.headers ?? {}).length > 0 ? { headers: provider.request.headers } : {}),
+            }
+          : (provider.settings ?? {}),
       models: {},
     })
   }
