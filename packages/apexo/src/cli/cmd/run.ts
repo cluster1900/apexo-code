@@ -882,6 +882,7 @@ const CompatibilityRunCommand = effectCmd({
         }
 
         const printedTextParts = new Set<string>()
+        const printedErrors = new Set<string>()
         const toggles = new Map<string, boolean>()
 
         // Consume one subscribed event stream for the active session and mirror it
@@ -1048,11 +1049,14 @@ const CompatibilityRunCommand = effectCmd({
             if (event.type === "session.error") {
               const props = event.properties
               if (props.sessionID !== sessionID || !props.error) continue
-              let err = String(props.error.name)
-              if ("data" in props.error && props.error.data && "message" in props.error.data) {
+              const formatted = FormatError(props.error)
+              let err = formatted ?? String(props.error.name)
+              if (!formatted && "data" in props.error && props.error.data && "message" in props.error.data) {
                 err = String(props.error.data.message)
               }
               error = error ? error + EOL + err : err
+              if (printedErrors.has(err)) continue
+              printedErrors.add(err)
               if (args.format === "streaming-json") {
                 emit("error", { message: err })
                 continue
@@ -1210,7 +1214,13 @@ const CompatibilityRunCommand = effectCmd({
                   await Promise.race([completed, Bun.sleep(3500)])
                   return
                 }
-                if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
+                const formatted = formatRunError(result.error)
+                if (!printedErrors.has(formatted)) {
+                  printedErrors.add(formatted)
+                  if (!emit("error", { error: result.error })) UI.error(formatted)
+                }
+                stream.abort()
+                await completed
                 process.exitCode = 1
                 return
               }
@@ -1232,7 +1242,13 @@ const CompatibilityRunCommand = effectCmd({
                 await Promise.race([completed, Bun.sleep(3500)])
                 return
               }
-              if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
+              const formatted = formatRunError(result.error)
+              if (!printedErrors.has(formatted)) {
+                printedErrors.add(formatted)
+                if (!emit("error", { error: result.error })) UI.error(formatted)
+              }
+              stream.abort()
+              await completed
               process.exitCode = 1
               return
             }

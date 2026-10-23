@@ -12,7 +12,8 @@
   - `packages/apexo/test/v2/session-mcp-attachment.test.ts`
   - `packages/apexo/test/cli/run/run-process.test.ts`
   - `packages/apexo/script/run-tests.ts`
-- **Occurrences**: 2 Linux CI runs (`unit (linux)` on PR #4).
+- **Occurrences**: 3 Linux CI runs (`unit (linux)` on PR #4 and PR #142).
+- **Linked Constraint**: [RULE-20261023-001](../../rules/pid-file-polling.md)
 
 ## Observed Behavior
 
@@ -62,7 +63,7 @@ bun test test/v2/lsp-socket-native.test.ts test/v2/memory-legacy-native.test.ts 
 1. In `packages/apexo/test/fixture/lsp-native-socket.ts`, invoke `listen(fd, 1)` via `bun:ffi` inside the `server.listen` callback so the kernel updates `sk_max_ack_backlog` to `1`.
 2. In `packages/apexo/test/v2/memory-legacy-native.test.ts`, await `settled(operations, session, ...)` before asserting terminal receipt status.
 3. In `packages/apexo/src/cli/cmd/acp.ts`, register the `stdin` `"end"` / `"close"` promise before constructing the `ReadableStream` (and resolve immediately if `process.stdin.readableEnded`), and use an explicit `forward(source, target)` loop that awaits `target.write(chunk, callback)`.
-4. In `packages/apexo/test/v2/monitor-execution.test.ts`, shorten the inter-byte delay to `sleep 0.01` and await `awaitOutput("😀")` and `awaitOutput("ERROR中文")` before `awaitPending`.
+4. In `packages/apexo/test/v2/monitor-execution.test.ts`, shorten the inter-byte delay to `sleep 0.01`, await `awaitOutput("😀")` and `awaitOutput("ERROR中文")` before `awaitPending`, validate `Number.isInteger(pid) && pid > 0` when polling `deleting`, and await `jobs.wait({ id: deleted.id })` after `sessions.remove(parent.id)`.
 5. In `packages/apexo/test/v2/process-execution.test.ts`, require non-empty trimmed text in `fileText`.
 6. In `packages/apexo/test/v2/session-mcp-attachment.test.ts`, advance `TestClock` to `Math.max(first.expiresAt, second.expiresAt) + 1`.
 7. In `packages/apexo/test/v2/memory-batch-dream-native.test.ts`, `packages/apexo/test/cli/run/run-process.test.ts`, and `packages/apexo/script/run-tests.ts`, use `30 seconds` for batch Dream settlement, `cliIt.live` for full CLI subprocess tests, and cap default shard concurrency at `2`.

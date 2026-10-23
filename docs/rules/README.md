@@ -2,7 +2,7 @@
 
 This directory stores actionable constraints distilled from bugs that have recurred **3 to 5 times** across independent runs. **Before changing code, read this index first (do not read `docs/testing/` before coding)**, and open a specific rule file only when your change touches its scope. Only inspect or update `docs/testing/` when running tests or recording a bug fix. See [AGENTS.md](../../AGENTS.md#bug-records-and-recurring-constraints) for the full workflow.
 
-**Active constraints: 26.** Count only verified independent occurrences; never invent historical counts or merge timeouts with unconfirmed root causes.
+**Active constraints: 27.** Count only verified independent occurrences; never invent historical counts or merge timeouts with unconfirmed root causes.
 
 Each constraint uses a stable `RULE-` ID, states a one-line `MUST / NEVER` summary in the table below, and documents its scope, required behavior, verification steps, and source bug record (with at least 3 occurrences). The corresponding bug record in `docs/testing/` must link back to the rule.
 
@@ -35,6 +35,7 @@ Each constraint uses a stable `RULE-` ID, states a one-line `MUST / NEVER` summa
 | RULE-20261015-022 | [Runner domain error contract](runner-domain-error-contract.md) | New typed domain failures in SessionRunner | **MUST** add each real domain failure to the runner contract and verify consumers; **NEVER** erase it with casts or broad cause conversion | [BUG-20261015-133](../testing/types/process-runner-error-contract.md) |
 
 | RULE-20261015-023 | [Pinned Effect.try options](effect-try-options.md) | Synchronous exception conversion on Effect v4 | **MUST** use explicit `{ try, catch }`; **NEVER** use the obsolete callback-only overload | [BUG-20261014-006](../testing/types/goal-changes-effect-try.md) |
+| RULE-20261023-001 | [Non-empty positive PID validation when polling shell PID files](pid-file-polling.md) | Process/monitor fixtures polling `echo $$ > pid` | **MUST** verify `Number.isInteger(pid) && pid > 0` before returning a polled PID; **NEVER** pass `Number("")` (`0`) to `process.kill(pid, 0)` | [BUG-20261017-001](../testing/test-stability/linux-ci-socket-stream-memory.md) |
 
 Keep this index and the active count in sync whenever adding or consolidating rules. If the active count exceeds 300, consolidate similar constraints by behavior and scope until at most 300 active rules remain. Preserve all effective requirements, exceptions, source links, and an old-ID-to-new-ID mapping below; merged IDs do not count toward the active total.
 

@@ -166,6 +166,17 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     info(language.t("grok.effort.set", { level: variant }))
   }
 
+  const guideTitle = (title: string) => {
+    const keyMap: Record<string, string> = {
+      "Getting Started": "grok.docs.guide.gettingStarted",
+      Goals: "grok.docs.guide.goals",
+      Plugins: "grok.docs.guide.plugins",
+      Memory: "grok.docs.guide.memory",
+      Workflows: "grok.docs.guide.workflows",
+    }
+    return keyMap[title] ? language.t(keyMap[title] as never) : title
+  }
+
   const docs = (args = "") => {
     const target = resolveDocs(args)
     if (target) return platform.openExternal(target.url)
@@ -174,7 +185,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       <DialogGrokList
         title={language.t("grok.docs")}
         items={[
-          ...docsGuides.map((guide) => ({ title: guide.title, value: guide.url })),
+          ...docsGuides.map((guide) => ({ title: guideTitle(guide.title), value: guide.url })),
           { title: language.t("grok.docs.web"), value: docsURL },
         ]}
         onSelect={(item) => platform.openExternal(item.value)}
@@ -467,8 +478,16 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     dialog.show(() => (
       <DialogGrokList
         title={language.t("grok.tutorial")}
-        items={tutorialTopics.map((topic, index) => ({ title: `${index + 1}. ${topic.title}`, value: index }))}
-        onSelect={(item) => text(tutorialTopics[item.value]!.title, [tutorialTopics[item.value]!.body])}
+        items={tutorialTopics.map((topic, index) => ({
+          title: `${index + 1}. ${language.t(`grok.tutorial.${index + 1}.title` as never) || topic.title}`,
+          value: index,
+        }))}
+        onSelect={(item) =>
+          text(
+            language.t(`grok.tutorial.${item.value + 1}.title` as never) || tutorialTopics[item.value]!.title,
+            [language.t(`grok.tutorial.${item.value + 1}.body` as never) || tutorialTopics[item.value]!.body],
+          )
+        }
       />
     ))
 

@@ -235,6 +235,10 @@ export const dict = {
   "workflow.refresh": "Refresh runs",
   "workflow.valid": "Source is valid.",
   "workflow.invalid": "Source validation failed.",
+  "workflow.invalidQuery": "Please enter a research question.",
+  "workflow.invalidBudget": "Agent budget must be an integer between 1 and 1024.",
+  "workflow.invalidConcurrency": "Concurrent agents must be an integer between 1 and 16.",
+  "workflow.invalidArgs": "Arguments must be a valid JSON object.",
   "workflow.invalidInput":
     "Enter valid arguments, an agent budget from 1 to 1024, and concurrency from 1 to 16. Resuming a limited run requires a larger budget.",
   "workflow.error": "Operation failed. Your input is kept. Refresh to check the latest state.",
@@ -900,6 +904,7 @@ export const dict = {
   "common.loading": "Loading",
   "common.loading.ellipsis": "...",
   "common.cancel": "Cancel",
+  "common.undo": "Undo",
   "common.clear": "Clear",
   "common.open": "Open",
   "common.connect": "Connect",
@@ -1990,4 +1995,34 @@ export const dict = {
   "desktop.updater.upToDate": "You're running the latest version ({{version}})",
   "desktop.updater.unavailable":
     "Automatic updates are not configured for {{version}}. Check GitHub Releases for new versions.",
+  "grok.docs.guide.gettingStarted": "Getting Started",
+  "grok.docs.guide.goals": "Goals",
+  "grok.docs.guide.plugins": "Plugins",
+  "grok.docs.guide.memory": "Memory",
+  "grok.docs.guide.workflows": "Workflows",
+  "grok.docs.issues": "GitHub Issues",
+  "grok.tutorial.1.title": "Your first prompt",
+  "grok.tutorial.1.body":
+    "Describe the change you want in plain language. Apexo reads the code, proposes edits and runs tools; you approve anything risky.",
+  "grok.tutorial.2.title": "Attaching context",
+  "grok.tutorial.2.body":
+    "Type @ to attach files or folders, paste images, or use /resources to attach MCP resources.",
+  "grok.tutorial.3.title": "Navigation",
+  "grok.tutorial.3.body":
+    "Use /sessions to switch sessions, /timeline to jump to a message, and /history to reuse an earlier prompt.",
+  "grok.tutorial.4.title": "Slash commands",
+  "grok.tutorial.4.body":
+    "Type / to open the command menu. Built-in commands, plugin commands and user-invocable skills all appear there.",
+  "grok.tutorial.5.title": "Plan mode",
+  "grok.tutorial.5.body":
+    "Run /plan to plan before editing, /view-plan to read the saved plan, then approve it to start building.",
+  "grok.tutorial.6.title": "Goals",
+  "grok.tutorial.6.body":
+    "Run /goal <objective> [--budget N] to let Apexo work autonomously until independent reviewers verify the result.",
+  "grok.tutorial.7.title": "Customization",
+  "grok.tutorial.7.body":
+    "Use /settings, /themes, /models, /effort and /agents. Plugins, hooks and skills extend Apexo further.",
+  "grok.tutorial.8.title": "Switching from another tool",
+  "grok.tutorial.8.body":
+    "Apexo reads AGENTS.md and CLAUDE.md, Claude-style skills and plugins, and MCP servers from your config.",
 }

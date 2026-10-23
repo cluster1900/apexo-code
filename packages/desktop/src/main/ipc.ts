@@ -1,5 +1,5 @@
 import type { RuntimeProfileState } from "../preload/types"
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { stat, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
@@ -222,6 +222,15 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     if (!app) {
+      if (process.platform === "linux") {
+        const isDir = await stat(path).then(
+          (info) => info.isDirectory(),
+          () => false,
+        )
+        if (isDir) {
+          return openLinuxDirectory(path)
+        }
+      }
       return Promise.race([
         shell.openPath(path),
         new Promise<string>((resolve) => setTimeout(() => resolve(""), 1500)),
@@ -313,4 +322,41 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   win.webContents.send("deep-link", urls)
+}
+
+const LINUX_FILE_MANAGERS = [
+  "nautilus",
+  "dolphin",
+  "thunar",
+  "nemo",
+  "pcmanfm",
+  "pcmanfm-qt",
+  "caja",
+  "spacefm",
+  "rox-filer",
+] as const
+
+async function openLinuxDirectory(targetPath: string): Promise<string> {
+  for (const bin of LINUX_FILE_MANAGERS) {
+    const found = await new Promise<boolean>((resolve) => {
+      execFile("which", [bin], (err) => resolve(!err))
+    })
+    if (found) {
+      const child = spawn(bin, [targetPath], { detached: true, stdio: "ignore" })
+      child.unref()
+      return ""
+    }
+  }
+  const defaultDesktop = await new Promise<string>((resolve) => {
+    execFile("xdg-mime", ["query", "default", "inode/directory"], (err, stdout) => {
+      resolve(err ? "" : stdout.trim())
+    })
+  })
+  if (defaultDesktop && !/chrome|chromium|firefox|brave|vivaldi|opera|edge|epiphany|midori/i.test(defaultDesktop)) {
+    return Promise.race([
+      shell.openPath(targetPath),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), 1500)),
+    ])
+  }
+  throw new Error("No file manager is installed on this system to open folder")
 }

@@ -547,4 +547,41 @@
 - **Fix & Verification**:
   - Verified via unit tests (`packages/app` 102/102, `packages/apexo` retry/goal/jsonl 201/201), live CLI runs with real MiniMax (`minimax/MiniMax-M2.7`), and multi-pass Playwright-over-CDP Electron Desktop runs (`verify-desktop-ui.mjs` and `verify-desktop-strict.mjs`).
 
+---
+
+## #132–#141 — Desktop Session Archive/Undo, Help Dialog Localization, Workflow Validation, Linux File Menu & Folder Open, Command Sandbox Probe, and CLI Error Deduplication (`BUG-20261023-646` through `BUG-20261023-654`)
+
+- **Affected Scope**:
+  - `packages/app/src/context/global-sync/home-session-index.ts`, `packages/app/src/pages/home/home-sessions-controller.tsx`, `packages/app/src/pages/session/session-archive.ts` (`#132`)
+  - `packages/app/src/i18n/en.ts`, `packages/app/src/i18n/zh.ts` (`#133`, `#134`, `#135`)
+  - `packages/app/src/components/dialog-help-v2.tsx`, `packages/app/src/components/grok-commands.tsx` (`#134`)
+  - `packages/app/src/components/workflow-dialog.tsx` (`#135`)
+  - `packages/app/src/components/titlebar.tsx`, `packages/app/src/components/windows-app-menu.tsx`, `packages/app/src/context/command.tsx` (`#136`)
+  - `packages/desktop/src/main/ipc.ts` (`#137`)
+  - `packages/core/src/command-sandbox.ts` (`#138`)
+  - `packages/apexo/src/cli/cmd/run.ts` (`#140`)
+  - `packages/apexo/src/index.ts` (`#141`)
+- **Observed vs. Expected**:
+  - **Observed**:
+    - `#132`: Archiving a session (or forked session) from the Home session list or session header spliced the session out of `index.sessions` when the `session.updated` SSE event arrived without adding it to `index.archivedSessions`, and the subsequent `.remove(sessionID)` call saw `at === -1` and returned `index` unchanged — causing archived sessions to vanish from both `All` and `Archived` views.
+    - `#133`: The archive toast's Undo button called `language.t("common.undo")`, which was missing from `en.ts` and `zh.ts`, rendering a blank unlabeled button.
+    - `#134`: `DialogHelpV2` and `/docs` / `/tutorial` rendered raw English `docsGuides` (`Getting Started`, `Goals`, `Plugins`, `Memory`, `Workflows`), `GitHub Issues`, and `tutorialTopics` (1–8) even when the app language was Chinese (`zh`).
+    - `#135`: Clicking `Start workflow` (`启动工作流`) with an empty research question (`query`) in `WorkflowDialog` displayed the generic budget/concurrency error (`workflow.invalidInput`) instead of asking for a research question.
+    - `#136`: On Linux/Windows (`WindowsAppMenu`), `Open Project`, `Import Session`, and `Export Session` in the `File` menu were disabled because `project.open`, `session.import`, and Home/Draft-scope `session.export` were only registered in `LegacyLayout`, not in the V2 `Titlebar` (`NewLayout`), and `optionMap` / `commandDisabled` could let a disabled command registration shadow an enabled one.
+    - `#137`: `open-path` in `packages/desktop/src/main/ipc.ts` called `shell.openPath(path)` directly on Linux, which fell back to `xdg-open` opening `file:///...` directory listings in Chrome on minimal Xvfb desktops.
+    - `#138`: `CommandSandbox.status(sessionID)` returned `backend.availability: "unchecked"` (`Not checked` / `未检查`) for any session that had not yet run `preflight` with a non-`"off"` profile, even after clicking `Refresh status`.
+    - `#140`: `apexo run -m "openai/definitely-not-a-real-model-xyz" "hi"` printed the error twice (`Error: ProviderModelNotFoundError` from the SSE `session.error` loop and `Error: Model not found: ...` from `result.error`).
+    - `#141`: Passing an unknown hyphenated CLI flag (`apexo --nonexistent-flag`) printed both the kebab-case flag and its yargs camelCase expansion (`Unknown arguments: nonexistent-flag, nonexistentFlag`).
+  - **Expected**:
+    - Archived sessions immediately appear under `Archived` (`已归档`) and restore cleanly via the labeled `Undo` / `撤销` toast button or `Unarchive` button (`#132`, `#133`).
+    - Help dialog has a single header `×` close button and fully localized guide links and tutorial topics in Chinese (`#134`).
+    - Workflow dialog reports field-specific validation messages (`workflow.invalidQuery`, `workflow.invalidBudget`, `workflow.invalidConcurrency`) (`#135`).
+    - `File` menu `Open Project`, `Import Session`, and `Export Session` are registered and enabled in V2 `Titlebar` (`#136`).
+    - Linux directory `open-path` launches an installed GUI file manager detached and refuses browser `inode/directory` fallback (`#137`).
+    - `CommandSandbox.status(sessionID)` probes backend availability when unchecked so `Refresh status` immediately shows `Available` / `Unavailable` (`#138`).
+    - CLI invalid model errors and unknown flag errors are formatted and printed once (`#140`, `#141`).
+- **Verification**:
+  - Verified across 3 consecutive live passes in the rebuilt Electron Desktop app over CDP (`verify_new_issues.ts`) and live CLI runs.
+
+
 

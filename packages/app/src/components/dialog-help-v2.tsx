@@ -11,6 +11,14 @@ import { showToast } from "@/utils/toast"
 
 const ISSUES_URL = "https://github.com/cluster1900/apexo-code/issues"
 
+const GUIDE_TITLE_KEYS: Record<string, string> = {
+  "Getting Started": "grok.docs.guide.gettingStarted",
+  Goals: "grok.docs.guide.goals",
+  Plugins: "grok.docs.guide.plugins",
+  Memory: "grok.docs.guide.memory",
+  Workflows: "grok.docs.guide.workflows",
+}
+
 export function DialogHelpV2() {
   const dialog = useDialog()
   const language = useLanguage()
@@ -18,10 +26,13 @@ export function DialogHelpV2() {
   const openShortcuts = useSettingsDialog("shortcuts")
 
   const guides = () => [
-    ...docsGuides.map((guide) => ({ title: guide.title, url: guide.url })),
+    ...docsGuides.map((guide) => ({
+      title: GUIDE_TITLE_KEYS[guide.title] ? language.t(GUIDE_TITLE_KEYS[guide.title] as never) : guide.title,
+      url: guide.url,
+    })),
     { title: language.t("grok.docs.web"), url: docsURL },
     { title: language.t("grok.releaseNotes"), url: releaseNotesURL(platform.version ?? "") },
-    { title: "GitHub Issues", url: ISSUES_URL },
+    { title: language.t("grok.docs.issues"), url: ISSUES_URL },
   ]
 
   return (
@@ -73,9 +84,11 @@ export function DialogHelpV2() {
                   class="flex flex-col gap-1 rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-2.5"
                 >
                   <div class="text-[12px] font-[530] text-v2-text-text-base">
-                    {index() + 1}. {topic.title}
+                    {index() + 1}. {language.t(`grok.tutorial.${index() + 1}.title` as never) || topic.title}
                   </div>
-                  <div class="text-[12px] leading-relaxed text-v2-text-text-muted">{topic.body}</div>
+                  <div class="text-[12px] leading-relaxed text-v2-text-text-muted">
+                    {language.t(`grok.tutorial.${index() + 1}.body` as never) || topic.body}
+                  </div>
                 </div>
               )}
             </For>

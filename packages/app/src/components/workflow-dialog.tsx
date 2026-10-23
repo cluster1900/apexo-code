@@ -32,14 +32,20 @@ export function WorkflowDialog(props: {
     concurrency: "4",
     pending: false,
     error: false,
-    invalid: false,
+    invalid: undefined as
+      | "workflow.invalidQuery"
+      | "workflow.invalidBudget"
+      | "workflow.invalidConcurrency"
+      | "workflow.invalidArgs"
+      | "workflow.invalidInput"
+      | undefined,
     validation: undefined as WorkflowValidation | undefined,
     confirm: undefined as string | undefined,
     budgets: {} as Record<string, string>,
   })
   const run = async (work: () => Promise<void>) => {
     if (state.pending) return
-    setState({ pending: true, error: false, invalid: false })
+    setState({ pending: true, error: false, invalid: undefined })
     await work().catch(() => { if (!lifetime.signal.aborted) setState("error", true) }).finally(() => {
       if (!lifetime.signal.aborted) setState("pending", false)
     })
@@ -59,10 +65,18 @@ export function WorkflowDialog(props: {
     if (!lifetime.signal.aborted) setState("validation", result.data)
   }
   const start = async () => {
+    if (state.source === "builtin:deep-research" && !state.query.trim()) {
+      setState("invalid", "workflow.invalidQuery")
+      return
+    }
     const budget = Number(state.budget)
+    if (!Number.isInteger(budget) || budget < 1 || budget > 1024) {
+      setState("invalid", "workflow.invalidBudget")
+      return
+    }
     const concurrency = Number(state.concurrency)
-    if (!Number.isInteger(budget) || budget < 1 || budget > 1024 || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16 || (state.source === "builtin:deep-research" && !state.query.trim())) {
-      setState("invalid", true)
+    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) {
+      setState("invalid", "workflow.invalidConcurrency")
       return
     }
     const args = state.source === "builtin:deep-research" ? { query: state.query } : JSON.parse(state.args)
@@ -75,7 +89,7 @@ export function WorkflowDialog(props: {
     if (action === "resume") {
       const budget = Number(state.budgets[entry.id] ?? entry.agentBudget)
       if (!Number.isInteger(budget) || budget < entry.agentBudget || budget > 1024 || (entry.status === "budget_limited" && budget <= entry.agentBudget)) {
-        setState("invalid", true)
+        setState("invalid", "workflow.invalidInput")
         return
       }
       if (entry.resumeBlockedReason) return
@@ -125,7 +139,7 @@ export function WorkflowDialog(props: {
           <Button data-testid="workflow-refresh" variant="ghost" disabled={state.pending} onClick={() => void run(load)}>{language.t("workflow.refresh")}</Button>
         </div>
         <Show when={state.validation}>{(result) => <div data-testid="workflow-validation"><p>{language.t(result().valid ? "workflow.valid" : "workflow.invalid")}</p><For each={result().diagnostics}>{(diagnostic) => <p class="whitespace-pre-wrap">{diagnostic}</p>}</For></div>}</Show>
-        <Show when={state.invalid}><p role="alert" class="text-text-critical-base">{language.t("workflow.invalidInput")}</p></Show>
+        <Show when={state.invalid}>{(key) => <p role="alert" class="text-text-critical-base">{language.t(key())}</p>}</Show>
         <Show when={state.error}><p role="alert" class="text-text-critical-base">{language.t("workflow.error")}</p></Show>
         <h3 class="text-14-medium text-text-strong">{language.t("workflow.runs")}</h3>
         <Show when={!state.runs.length}><p class="text-13-regular text-text-weak">{language.t("workflow.empty")}</p></Show>
