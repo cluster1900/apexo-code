@@ -23,9 +23,9 @@ export function DialogTimeline(props: { sessionID: string; onSelect: (messageID:
           (item): item is TextPart => item.type === "text" && !item.synthetic && !item.ignored,
         )
         if (!part) return []
-        const text = part.text.replace(/\n/g, " ").slice(0, 200)
+        const text = part.text.replace(/\s+/g, " ").trim().slice(0, 200)
         const time = new Date(message.time.created).toLocaleTimeString(undefined, { timeStyle: "short" })
-        const bucket = `${text}\0${Math.floor(message.time.created / 5000)}`
+        const bucket = `${text}\0${time}`
         if (seenContent.has(bucket)) return []
         seenContent.add(bucket)
         return [

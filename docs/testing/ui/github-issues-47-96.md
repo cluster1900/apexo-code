@@ -583,5 +583,40 @@
 - **Verification**:
   - Verified across 3 consecutive live passes in the rebuilt Electron Desktop app over CDP (`verify_new_issues.ts`) and live CLI runs.
 
+---
+
+## Follow-Up Regression Audit on Open Issues `#47`–`#130` (`BUG-20261023-655`)
+
+- **Affected Scope**:
+  - `packages/app/src/context/global-sync/utils.ts`, `packages/app/src/components/dialog-connect-provider.tsx`, `packages/app/src/components/dialog-custom-provider-form.ts`, `packages/app/src/components/dialog-custom-provider.tsx`, `packages/server/src/handlers/integration.ts`, `packages/desktop/src/main/server.ts` (`#47`)
+  - `packages/app/src/components/native-mcp-manager.tsx`, `packages/app/src/context/server-sync.tsx` (`#130`)
+  - `packages/app/src/components/titlebar-tab-nav.tsx`, `packages/app/src/pages/layout/helpers.ts` (`#85`)
+  - `packages/core/src/session/runner/publish-llm-event.ts`, `packages/llm/src/protocols/anthropic-messages.ts` (`#119`)
+  - `packages/apexo/src/session/goal-review.ts`, `packages/apexo/src/cli/cmd/debug/file.ts`, `packages/core/src/session/goal-review.ts`, `packages/core/src/session/goal-runner.ts`, `packages/core/src/session/runner/llm.ts`, `packages/apexo/src/session/llm.ts` (`#86`, `#109`, `#110`)
+  - `packages/apexo/src/cli/cmd/jsonl.ts` (`#121`)
+  - `packages/app/src/i18n/zht.ts`, `packages/app/src/pages/session/command-palette.ts`, `packages/app/src/components/dialog-timeline.tsx`, `packages/app/src/components/dialog-command-palette-v2.css`, `packages/app/src/utils/prompt.ts`, `packages/app/src/pages/session/timeline/model.ts` (`#54`, `#123`, `#125`, `#127`, `#128`)
+- **Observed vs. Expected**:
+  - **Observed**:
+    - `#47`: In `DialogConnectProvider`, `resolveCustomBase()` only checked `providerInfo.source === "custom"` (missing V1 config providers with `source === "config"` because `normalizeProviderList` stripped `baseURL` from `provider.options`), and ran heuristic key length/pattern rejection (`length < 16`, `/invalid/i`) before `verifyApiKeyOnline`, preventing `GET <baseURL>/models` from reaching custom/loopback OpenAI servers for short valid keys (`sk-valid-key`) or invalid keys (`sk-invalid-qa-test-000`). In addition, `preferAppEnv` in `packages/desktop/src/main/server.ts` overwrote explicit `process.env` variables (`XDG_CONFIG_HOME`, `APEXO_CONFIG_DIR`) with `loadShellEnv`.
+    - `#130`: `NativeMcpManager` placed the `+ MCP` action button inside `DialogV2.Header` next to the close `×` button instead of the body toolbar, rendered a custom title block below the header, and displayed `"Loading"` for uninitialized local MCP servers on V2 when `server-sync.tsx` kept stub statuses.
+    - `#85`: `TitlebarTabNav` rendered a hover tooltip portal on session tabs without setting a native `title={props.tab.title}` attribute on `[data-titlebar-tab]` or its inner `<a>` trigger.
+    - `#119`: `publish-llm-event.ts` did not fall back to `input + output + reasoning + cacheRead + cacheWrite` when `event.usage.totalTokens` was `0`, and `anthropic-messages.ts` overwrote `inputTokens` on `message_delta` when the provider emitted `input_tokens: 0` in the trailing delta after reporting non-zero `input_tokens` in `message_start`.
+    - `#86`, `#109`, `#110`: `packages/apexo/src/session/goal-review.ts` and `packages/apexo/src/cli/cmd/debug/file.ts` still contained `Bun.file(...)` calls that failed inside the Electron Node.js sidecar, and `packages/core/src/session/runner/llm.ts`, `goal-runner.ts`, and `packages/apexo/src/session/llm.ts` set single-turn `maxTokens` directly to `remainingGoalTokens` without capping at `32_000`, causing MiniMax to return HTTP 400 (`does not support max tokens > 196608`) when `tokenBudget >= 200000`.
+    - `#121`: `apexo jsonl` HTTP connection/auth errors did not include the target URL and `--url` / `--password` / `APEXO_SERVER_PASSWORD` guidance.
+  - **Expected**:
+    - `#47`: Custom/loopback OpenAI providers always probe `GET <baseURL>/models` with `Authorization: Bearer <key>` before offline heuristics; HTTP 401 keeps the input open with an explicit `(HTTP 401)` error, and HTTP 200 accepts short valid keys (`sk-valid-key`).
+    - `#130`: `MCP` title sits in `DialogV2.Header`, `+ MCP` sits in the body toolbar below the header, and uninitialized MCP servers do not get stuck on `"Loading"`.
+    - `#85`: `[data-titlebar-tab]` and its `<a>` trigger expose native `title` attributes matching the session title.
+    - `#119`, `#86`, `#109`, `#110`: `v2.session.prompt`, Workflows, and Goal planning/execution run cleanly in the Electron Node.js sidecar with MiniMax and record non-zero token usage.
+- **Verification**:
+  - Rebuilt `packages/apexo/dist/node/node.js` and `packages/desktop/out/` (`cd packages/desktop && bun run build`) and verified live in Electron Desktop over CDP + Node sidecar + CLI (`/tmp/verify-electron-and-cli.mjs`):
+    - `#47`: Invalid key `sk-invalid-qa-test-000` sent `GET /v1/models` (`Bearer sk-invalid-qa-test-000`), displayed `(HTTP 401)`, and kept the input open; valid short key `sk-valid-key` sent `GET /v1/models` (`Bearer sk-valid-key`), succeeded (`200 OK`), and closed the dialog.
+    - `#130`: `titleParentIsHeader: true`, `addBtnInHeader: false` (`top: 237` vs header `top: 140`), `loadingStatusVisible: false`.
+    - `#85`: `tabTitle` and `triggerTitle` both matched the active session title.
+    - `#119`: `v2.session.prompt` recorded `tokens: { input: 9553, output: 31, reasoning: 0, cache: { read: 188, write: 0 } }`.
+    - `#109`: `workflow/launch` completed both stages in the Electron Node sidecar (`status: "completed", phase: "step-two", agentsSpent: 2, tokens: 6203`).
+    - `#86` & `#110`: Goal mode in the Electron Node sidecar completed planning (`plannerFiles: true`, `planning_completed`) and transitioned to `status: "active", phase: "executing", workerRounds: 1, tokensUsed: 182817`.
+
+
 
 

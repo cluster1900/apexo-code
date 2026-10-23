@@ -192,6 +192,7 @@ export function TabNavItem(props: {
       data-slot="titlebar-tab-item"
       data-title-overflow={titleOverflowing()}
       data-editing={editing()}
+      title={[title(), projectName(), previewPath()].filter(Boolean).join(" — ") || undefined}
       class="group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] px-1.5"
       classList={{ invisible: props.hidden }}
       data-active={props.active}
@@ -215,6 +216,7 @@ export function TabNavItem(props: {
         data-slot="tab-link"
         data-titlebar-tab-link
         href={props.href}
+        title={[title(), projectName(), previewPath()].filter(Boolean).join(" — ") || undefined}
         draggable={false}
         onDragStart={(event) => {
           event.preventDefault()

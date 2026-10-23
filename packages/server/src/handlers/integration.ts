@@ -1,4 +1,6 @@
+import { Catalog } from "@apexo/core/catalog"
 import { Integration } from "@apexo/core/integration"
+import { ProviderV2 } from "@apexo/core/provider"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -51,11 +53,44 @@ export const IntegrationHandler = HttpApiBuilder.group(Api, "server.integration"
         "integration.connect.key",
         Effect.fn(function* (ctx) {
           const service = yield* Integration.Service
+          const catalog = yield* Catalog.Service
+          const provider = yield* catalog.provider.get(ProviderV2.ID.make(ctx.params.integrationID))
+          const existing = yield* service.get(ctx.params.integrationID)
+          const isAnthropic = provider?.api.type === "aisdk" && provider.api.package === "@ai-sdk/anthropic"
+          const customBase = !isAnthropic ? provider?.api.url?.replace(/\/+$/, "") : undefined
+          const shouldVerifyOnline =
+            Boolean(customBase) &&
+            (!existing || /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(\/|$)/i.test(customBase!))
+          if (shouldVerifyOnline && customBase) {
+            const verify = yield* Effect.promise(() =>
+              fetch(`${customBase}/models`, {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${ctx.payload.key.trim()}`,
+                  ...(provider?.request.headers ?? {}),
+                },
+                signal: AbortSignal.timeout(6000),
+              }).then(
+                (res) => ({ ok: res.ok || res.status === 404, status: res.status }),
+                () => ({ ok: false, status: 0 }),
+              ),
+            )
+            if (!verify.ok) {
+              return yield* new InvalidRequestError({
+                message:
+                  verify.status > 0
+                    ? `Invalid API key (HTTP ${verify.status})`
+                    : "Invalid API key: endpoint verification failed",
+                kind: "integration_authorization",
+              })
+            }
+          }
           yield* authorize(
             service.connection.key({
               integrationID: ctx.params.integrationID,
               key: ctx.payload.key,
               label: ctx.payload.label,
+              allowCustom: Boolean(provider),
             }),
           )
           return HttpApiSchema.NoContent.make()

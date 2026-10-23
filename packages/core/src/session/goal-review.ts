@@ -298,7 +298,7 @@ function inferSession(goals: SessionGoal.Interface, execute: Execute, request: R
     const result = yield* execute(request).pipe(
       Effect.provideService(SessionGoalUsage.Current, request.attempt),
       Effect.provideService(SessionGoalUsage.Observer, (receipt) => receipts.set(receipt.callID, receipt.tokens)),
-      Effect.timeout(timeoutMs ?? 120_000),
+      Effect.timeout(timeoutMs ?? 240_000),
     )
     yield* goals.check(request.attempt)
     if (!result.text.trim() || result.text.length > 65_536)
@@ -374,7 +374,7 @@ function infer(
           if (event.type === "finish") output.finished = event.reason === "stop"
         }),
       ),
-      Effect.timeout(timeoutMs ?? 120_000),
+      Effect.timeout(timeoutMs ?? 240_000),
       Effect.onExit(() =>
         !output.usage
           ? goals.usageMissing(request.attempt).pipe(

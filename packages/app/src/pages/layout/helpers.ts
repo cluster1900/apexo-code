@@ -48,9 +48,11 @@ export const childSessionOnPath = (sessions: Session[] | undefined, rootID: stri
 }
 
 export const displayName = (project: { name?: string; worktree: string }) => {
-  if (project.name) return project.name
+  if (project.name && project.name !== "/" && (project.worktree !== "/" || project.name !== "Default Project")) {
+    return project.name
+  }
   const filename = getFilename(project.worktree)
-  if (filename === "Default Project" || project.worktree === "/") {
+  if (filename === "Default Project" || project.worktree === "/" || filename === "/") {
     const loc = activeLocale()
     if (loc === "zh") return "默认项目"
     if (loc === "zht") return "預設專案"

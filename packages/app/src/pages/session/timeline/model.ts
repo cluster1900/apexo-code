@@ -47,7 +47,22 @@ export function createTimelineModel(input: {
     const id = input.sessionID()
     return !id || isTimelineReady(sync().data.message[id], serverSync().session.history.loading(id))
   })
-  const userMessages = createMemo(() => selectUserMessages(messages()), emptyUserMessages, { equals: same })
+  const userMessages = createMemo(
+    () =>
+      selectUserMessages(messages()).filter((message) => {
+        const parts = sync().data.part[message.id]
+        if (!parts || parts.length === 0) return true
+        return !parts.every(
+          (part) =>
+            part.type === "text" &&
+            (Boolean(part.synthetic) ||
+              Boolean(part.ignored) ||
+              /^\s*<system-reminder>[\s\S]*<\/system-reminder>\s*$/i.test(part.text)),
+        )
+      }),
+    emptyUserMessages,
+    { equals: same },
+  )
   const visibleUserMessages = createMemo(
     () => {
       return selectVisibleUserMessages(userMessages(), input.revertMessageID())

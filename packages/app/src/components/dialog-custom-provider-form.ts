@@ -47,6 +47,7 @@ type ValidateArgs = {
   t: Translator
   disabledProviders: string[]
   existingProviderIDs: Set<string>
+  skipKeyFormatHeuristic?: boolean
 }
 
 export function validateCustomProvider(input: ValidateArgs) {
@@ -61,9 +62,10 @@ export function validateCustomProvider(input: ValidateArgs) {
   const keyError =
     key &&
     (/\s/.test(key) ||
-      key.length < 16 ||
-      /(.)\1{7,}/i.test(key) ||
-      /(invalid|placeholder|example|dummy|fake|testkey|01234567|12345678|abcdefgh)/i.test(key))
+      (!input.skipKeyFormatHeuristic &&
+        (key.length < 16 ||
+          /(.)\1{7,}/i.test(key) ||
+          /(invalid|placeholder|example|dummy|fake|testkey|01234567|12345678|abcdefgh)/i.test(key))))
       ? input.t("provider.connect.apiKey.invalid")
       : undefined
 

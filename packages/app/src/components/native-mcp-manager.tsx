@@ -209,7 +209,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
   }
   const canManageConfig = () => Boolean(props.allowManageConfig)
   const failed = () => sync().data.mcp_error || manager.refresh.isError
-  const loading = () => !sync().data.mcp_ready || manager.refresh.isPending
+  const loading = () => !sync().data.mcp_ready
   const statusMap = createMemo(() => {
     const merged: Record<string, ReturnType<typeof sync>["data"]["mcp"][string]> = {
       ...(sync().data.mcp ?? {}),
@@ -222,7 +222,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
           merged[name] =
             cfg.enabled === false
               ? { status: "disabled" }
-              : loading()
+              : !sync().data.mcp_ready
                 ? { status: "pending" }
                 : { status: "failed", error: language.t("common.requestFailed") }
         }
@@ -238,7 +238,11 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       .filter((name) => name.toLowerCase().includes(state.search.toLowerCase()))
       .sort((a, b) => a.localeCompare(b)),
   )
-  createEffect(on(sync, () => manager.refresh.mutate()))
+  createEffect(
+    on(sync, () => {
+      if (!sync().data.mcp_ready) manager.refresh.mutate()
+    }),
+  )
 
   // Server identity owns ephemeral authorization controls across status refetches.
   function Row(props: { name: string; status: ReturnType<typeof sync>["data"]["mcp"][string] }) {
@@ -396,19 +400,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
     <div data-component="native-mcp-manager" class={props.allowManageConfig ? "flex flex-col" : "flex flex-col gap-3 p-3"}>
       <Show when={props.allowManageConfig}>
         <div class="settings-v2-tab-header">
-          <div class="settings-v2-tab-header-row">
-            <h2 class="settings-v2-tab-title">{language.t("settings.mcp.title")}</h2>
-            <Show when={!state.adding}>
-              <Button
-                size="small"
-                variant="secondary"
-                data-action="mcp-add-toggle"
-                onClick={() => startAdd()}
-              >
-                {`+ ${language.t("settings.mcp.title")}`}
-              </Button>
-            </Show>
-          </div>
+          <h2 class="settings-v2-tab-title">{language.t("settings.mcp.title")}</h2>
         </div>
       </Show>
       <div class={props.allowManageConfig ? "settings-v2-tab-body flex flex-col gap-3" : "flex flex-col gap-3"}>
@@ -421,9 +413,19 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
           value={state.search}
           onInput={(event) => setState("search", event.currentTarget.value)}
         />
-        <Button size="small" variant="ghost" disabled={loading()} onClick={() => manager.refresh.mutate()}>
+        <Button size="small" variant="ghost" disabled={loading() || manager.refresh.isPending} onClick={() => manager.refresh.mutate()}>
           {language.t("mcp.runtime.refresh")}
         </Button>
+        <Show when={props.allowManageConfig && !state.adding}>
+          <Button
+            size="small"
+            variant="secondary"
+            data-action="mcp-add-toggle"
+            onClick={() => startAdd()}
+          >
+            {`+ ${language.t("settings.mcp.title")}`}
+          </Button>
+        </Show>
       </div>
       <Show when={props.allowManageConfig && state.adding}>
         <form class="flex flex-col gap-2 rounded-md border border-border-base p-3" onSubmit={addServer}>
@@ -483,7 +485,7 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
           {language.t("common.requestFailed")}
         </p>
       </Show>
-      <Show when={loading()}>
+      <Show when={loading() && items().length === 0}>
         <p role="status" class="text-12-regular text-text-weak">
           {language.t("common.loading")}
         </p>

@@ -156,6 +156,10 @@
   white-space: nowrap;
 }
 
+.command-palette-v2-title:only-child {
+  max-width: 100%;
+}
+
 .command-palette-v2-description,
 .command-palette-v2-meta {
   min-width: 0;

@@ -20,8 +20,8 @@ const tokens = (usage: Usage | undefined) => {
   const read = safe(usage?.cacheReadInputTokens)
   const write = safe(usage?.cacheWriteInputTokens)
   return {
-    input: safe(usage?.nonCachedInputTokens),
-    output: safe(usage?.visibleOutputTokens),
+    input: safe(usage?.nonCachedInputTokens ?? usage?.inputTokens),
+    output: safe(usage?.visibleOutputTokens ?? usage?.outputTokens),
     reasoning,
     cache: { read, write },
   }

@@ -56,7 +56,9 @@ export async function handleJsonlLine(
     })
     if (!response.ok) {
       const hint =
-        response.status === 401 ? " (Unauthorized — pass --password or set APEXO_SERVER_PASSWORD)" : ""
+        response.status === 401
+          ? ` (Unauthorized against ${args.url} — pass --url, --password, or set APEXO_SERVER_PASSWORD)`
+          : ` (against ${args.url})`
       return JSON.stringify({
         id: request.id ?? null,
         method: request.method,

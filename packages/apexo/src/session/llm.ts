@@ -120,9 +120,7 @@ const live: Layer.Layer<
           : undefined
       const maxOutputTokens =
         remainingGoalBudget !== undefined
-          ? prepared.params.maxOutputTokens !== undefined
-            ? Math.min(prepared.params.maxOutputTokens, remainingGoalBudget)
-            : remainingGoalBudget
+          ? Math.min(prepared.params.maxOutputTokens ?? 32_000, remainingGoalBudget)
           : prepared.params.maxOutputTokens
 
       const bridge = yield* EffectBridge.make()

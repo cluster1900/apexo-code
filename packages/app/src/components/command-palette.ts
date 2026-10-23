@@ -270,7 +270,7 @@ export function createServerSessionEntries(props: {
               id: `session:${props.server}:${session.id}`,
               type: "session" as const,
               title: session.title || props.untitled(),
-              description: project ? displayName(project) : getFilename(session.directory),
+              description: displayName(project ?? { worktree: session.directory }),
               category: props.category(),
               directory: session.directory,
               sessionID: session.id,
