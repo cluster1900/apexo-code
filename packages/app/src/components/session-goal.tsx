@@ -266,7 +266,13 @@ export function SessionGoalDialog(props: { sessionID: string; objective?: string
                     </section>
                   )}
                 </Show>
-                <Show when={info().message && !["user_paused", "budget_limited"].includes(info().status)}>
+                <Show
+                  when={
+                    info().message &&
+                    info().status !== "user_paused" &&
+                    (info().status !== "budget_limited" || info().message !== "Token budget exhausted")
+                  }
+                >
                   <details open={info().status !== "complete"}>
                     <summary>{language.t("goal.details")}</summary>
                     <p class="whitespace-pre-wrap break-words">{info().message}</p>

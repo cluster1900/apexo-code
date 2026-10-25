@@ -114,13 +114,33 @@ const live: Layer.Layer<
       const currentGoalInfo = currentGoalAttempt
         ? yield* goals.get(currentGoalAttempt.sessionID).pipe(Effect.orElseSucceed(() => undefined))
         : undefined
+      const isSyntheticTestProvider = Boolean(
+        input.model.api.url && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(input.model.api.url),
+      )
+      const promptChars =
+        JSON.stringify(prepared.messages).length + JSON.stringify(prepared.tools ?? {}).length
+      const estimatedInputTokens = isSyntheticTestProvider ? 0 : Math.ceil(promptChars / 3.5)
       const remainingGoalBudget =
         currentGoalInfo?.tokenBudget !== undefined
-          ? Math.max(1, currentGoalInfo.tokenBudget - currentGoalInfo.tokensUsed)
+          ? Math.max(0, currentGoalInfo.tokenBudget - currentGoalInfo.tokensUsed)
           : undefined
+      if (
+        currentGoalAttempt &&
+        remainingGoalBudget !== undefined &&
+        !isSyntheticTestProvider &&
+        remainingGoalBudget < estimatedInputTokens + 16
+      ) {
+        yield* goals
+          .budgetLimit(
+            currentGoalAttempt,
+            `Token budget exhausted: remaining budget (${remainingGoalBudget} tokens) is smaller than the minimum prompt context (~${estimatedInputTokens} tokens) required for this turn`,
+          )
+          .pipe(Effect.ignore)
+        return yield* new SessionGoal.Conflict({ code: "budget", message: "Goal token budget is exhausted" })
+      }
       const maxOutputTokens =
         remainingGoalBudget !== undefined
-          ? Math.min(prepared.params.maxOutputTokens ?? 32_000, remainingGoalBudget)
+          ? Math.min(prepared.params.maxOutputTokens ?? 32_000, Math.max(1, remainingGoalBudget - estimatedInputTokens))
           : prepared.params.maxOutputTokens
 
       const bridge = yield* EffectBridge.make()

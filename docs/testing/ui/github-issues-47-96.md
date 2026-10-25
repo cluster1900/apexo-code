@@ -652,6 +652,44 @@
 - **Verification**:
   - Verified with `bun turbo typecheck --concurrency=2` (21/21 pass), `packages/client` & `packages/sdk/js` `check:generated`, `packages/apexo` `test:httpapi` (346/346 pass), full `bun turbo test`, live CLI `v2.session.prompt` / `v2.session.wait` / `v2.session.get` / `v2.session.messages` with `xai/grok-4.7`, and two full passes of live Electron Desktop UI verification (`#92`, `#54`, `#134`, `#102`, `#144`, `#109`, `#110`).
 
+---
+
+## Follow-Up Fixes for Remaining Issues `#92`, `#110`, `#118`, and `#119` (`BUG-20261025-664` through `BUG-20261025-667`)
+
+- **Affected Scope**:
+  - `packages/app/src/utils/server-health.ts`, `packages/app/src/components/dialog-select-server.tsx`, `packages/app/src/components/dialog-select-server.test.ts` (`#92`)
+  - `packages/core/src/session/goal.ts`, `packages/core/src/session/goal-usage.ts`, `packages/core/src/session/goal-review.ts`, `packages/core/src/session/goal-runner.ts`, `packages/core/src/session/runner/llm.ts`, `packages/apexo/src/session/llm.ts`, `packages/app/src/components/session-goal.tsx`, `packages/apexo/test/session/goal.test.ts` (`#110`)
+  - `packages/apexo/bin/apexo` (`#118`)
+  - `packages/core/src/session/run-coordinator.ts`, `packages/core/src/session/runner/llm.ts`, `packages/server/src/handlers/session.ts`, `packages/apexo/test/e2e/v2-session.e2e.test.ts` (`#119`)
+- **Observed vs. Expected**:
+  - **Observed**:
+    - `#92` (`BUG-20261025-664`):
+      1. Entering an unreachable loopback URL (e.g., `http://127.0.0.1:4999`) with credentials (`apexo` / `wrongpass`) in `Add Server` falsely displayed `"身份验证失败（401/403）"` instead of `"无法连接到服务器"`, because `checkAuthFailure` fell back to probing `builtin.http.url` whenever `direct` failed (`status === 0`) on a localhost hostname.
+      2. Entering an unroutable IP (`http://192.0.2.1`) kept the button stuck on `"检查中…"` for >60 seconds because `defaultTimeoutMs` in `server-health.ts` was `30_000` (with 2 retries) and `checkAuthFailure` had no abort timeout and ran sequentially after `checkServerHealth`.
+    - `#110` (`BUG-20261025-665`):
+      1. `SessionGoalUsage.track` in `packages/core/src/session/goal-usage.ts` clamped real provider turns (`inputTokens >= 256`) to `remainingBudget`, so a Goal with `--budget 128` displayed `128 / 128` in the Goal panel even though the planning child session actually dispatched an LLM request and consumed `7,070` tokens (`input 6754 + output 128`).
+      2. When a Goal's `tokenBudget` (e.g., `--budget 128`) was smaller than the minimum single-turn system+tool+prompt input length (~3,000–6,000 tokens), the runner still dispatched the LLM request instead of stopping (`status: "budget_limited"`) before calling the provider.
+    - `#118` (`BUG-20261025-666`):
+      - On macOS (`darwin-arm64`) with Node v25, `packages/apexo/bin/apexo`'s source fallback path (`spawnSync("bun", ...)`) relied on `bun` being in `PATH` even when `bun` was installed in `~/.bun/bin/bun` or `/opt/homebrew/bin/bun`, and needed full verification across `./packages/apexo/bin/apexo`, `node ./packages/apexo/bin/apexo`, `bun ./packages/apexo/bin/apexo`, and the fallback path on macOS Apple Silicon (`darwin-arm64`).
+    - `#119` (`BUG-20261025-667`):
+      - When `v2.session.create` was called with an invalid/nonexistent model (e.g., `grok-NOPE-9` or `MiniMax-NOPE-9`), followed by `v2.session.prompt` (`resume: true`) and `v2.session.wait`:
+        1. `models.resolve(session)` in `packages/core/src/session/runner/llm.ts` failed before `createLLMEventPublisher`, so no assistant failure message (`SessionEvent.Step.Started` + `SessionEvent.Step.Failed`) was recorded in `v2.session.messages` and `time.updated` in `v2.session.get` did not advance.
+        2. Because `v2.session.prompt` wakes the session asynchronously via `SessionExecution.wake(sessionID)` and `ModelUnavailableError` fails in ~2ms before a subsequent `v2.session.wait` request arrives, `active.get(key)` in `SessionRunCoordinator` was already deleted by the time `wait` ran, AND `packages/server/src/handlers/session.ts` had `.pipe(Effect.ignore)` on `execution.wait(path.sessionID)`, causing `v2.session.wait` to return `204 No Content` (exit 0) instead of surfacing the failure.
+  - **Expected**:
+    - `#92`: Closed/unreachable ports always report `"无法连接到服务器"` (`status === 0` returns `false` from `checkAuthFailure` without falling back to `builtin.http`); only genuine HTTP `401`/`403` responses from the target server report `"身份验证失败（401/403）"`; and unroutable hosts (`192.0.2.1`) fail within ~2.5s.
+    - `#110`: `tokensUsed` honestly records real `input + output` tokens without clamping; and when `remainingBudget` is smaller than the minimum prompt context required for a planning, evaluation, verification, or worker turn, the Goal immediately transitions to `status: "budget_limited"` before dispatching the LLM request (`0` provider tokens wasted) with an explicit message explaining that the remaining budget is smaller than the minimum prompt context.
+    - `#118`: `packages/apexo/bin/apexo` works cleanly under direct execution, `node` (Node v25), `bun`, and source fallback on macOS Apple Silicon (`darwin-arm64`).
+    - `#119`: Invalid model sessions record a durable assistant message with `error.message` (`"Model unavailable: <provider>/<model>"`), update `time.updated`, and cause `v2.session.wait` to fail with HTTP 503 (`ServiceUnavailable`) and the model error message even if the background wake fiber settled before `wait` arrived.
+- **Root Cause & Fix**:
+  - `#92`: Removed the `builtin` fallback from `checkAuthFailure` in `packages/app/src/components/dialog-select-server.tsx`, added a `1500ms` `AbortController` timeout per probe, returned `false` immediately when `status === 0`, lowered `defaultTimeoutMs` in `packages/app/src/utils/server-health.ts` to `3_000`, and executed `checkServerHealth(conn.http, { timeoutMs: 2500, retryCount: 0 })` and `checkAuthFailure(conn.http)` concurrently via `Promise.all`.
+  - `#110`: Removed the `remainingBudget` clamping from `packages/core/src/session/goal-usage.ts`; added `goals.budgetLimit(attempt, message)` to `packages/core/src/session/goal.ts` and allowed `goal-review.ts` to treat `Conflict({ code: "budget" })` as a clean budget stop; added pre-dispatch minimum prompt token checks in `packages/core/src/session/goal-runner.ts`, `packages/core/src/session/runner/llm.ts`, and `packages/apexo/src/session/llm.ts`; and updated `packages/app/src/components/session-goal.tsx` to display `goal.tokensUsed > goal.tokenBudget` in danger styling.
+  - `#118`: Added `resolveBun()` in `packages/apexo/bin/apexo` to resolve `bun` from `process.versions.bun ? process.execPath`, `BUN_INSTALL`, `~/.bun/bin/bun`, `/opt/homebrew/bin/bun`, `/usr/local/bin/bun`, or `"bun"`, and rebuilt the `apexo-darwin-arm64` binary.
+  - `#119`: Added `Effect.tapError` on `models.resolve(session)` in `packages/core/src/session/runner/llm.ts` to publish `SessionEvent.Step.Started` + `SessionEvent.Step.Failed` (`publisher.failAssistant(error.message)`) when model resolution fails; tracked `unobservedFailure` per session key in `packages/core/src/session/run-coordinator.ts` when an unobserved background `wake` fiber fails so the next `wait(key)` surfaces the failure cause; and replaced `.pipe(Effect.ignore)` in `packages/server/src/handlers/session.ts`'s `wait` handler with `HttpApiError.ServiceUnavailable`.
+- **Verification**:
+  - Unit & E2E tests: `packages/apexo/test/e2e/v2-session.e2e.test.ts`, `v2-goal.e2e.test.ts`, `v2-compaction.e2e.test.ts`, `v2-task-goal.e2e.test.ts`, `test/session/goal.test.ts`, and `test/session/control-coordinator.test.ts` all pass (`91/91`).
+  - Live CLI and Electron Desktop verification across multiple passes for `#92`, `#110`, `#118`, and `#119`.
+
+
 
 
 

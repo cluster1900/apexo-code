@@ -271,7 +271,7 @@ export function make(goals: SessionGoal.Interface) {
                 const error =
                   Cause.isUnknownError(rawError) && rawError.cause instanceof Error ? rawError.cause : rawError
                 if (error instanceof SessionGoal.StorageError) return Effect.fail(error)
-                if (error instanceof SessionGoal.Conflict && ["missing", "stale", "inactive"].includes(error.code))
+                if (error instanceof SessionGoal.Conflict && ["missing", "stale", "inactive", "budget"].includes(error.code))
                   return current
                 return pause(
                   "infra_paused",
@@ -322,9 +322,7 @@ function infer(
   timeoutMs?: number,
 ) {
   return Effect.gen(function* () {
-    const checked = yield* goals.check(request.attempt)
-    const budgetRemaining =
-      checked.tokenBudget !== undefined ? Math.max(0, checked.tokenBudget - checked.tokensUsed) : undefined
+    yield* goals.check(request.attempt)
     const started = yield* Clock.currentTimeMillis
     const output = { text: "", finished: false, usage: false, total: 0 }
     const steps = new Map<number, number>()
@@ -342,27 +340,16 @@ function infer(
           }
           if (event.type !== "step-finish" && event.type !== "finish") return
           if (event.usage) {
-            const rawTokens = SessionGoalUsage.tokens(event.usage)
-            if (rawTokens === undefined)
+            const tokens = SessionGoalUsage.tokens(event.usage)
+            if (tokens === undefined)
               return yield* new ReviewFailure({ message: "Provider returned invalid goal usage" })
-            const generated = Math.max(event.usage.outputTokens ?? 0, event.usage.reasoningTokens ?? 0)
-            const tokens =
-              budgetRemaining !== undefined &&
-              (event.usage.inputTokens ?? 0) >= 256 &&
-              rawTokens > budgetRemaining
-                ? Math.min(rawTokens, Math.max(1, generated > 0 ? Math.min(generated, budgetRemaining) : budgetRemaining))
-                : rawTokens
             output.usage = true
             if (event.type === "step-finish") steps.set(event.index, Math.max(steps.get(event.index) ?? 0, tokens))
-            const sum = Math.max(
+            output.total = Math.max(
               output.total,
               tokens,
               [...steps.values()].reduce((acc, item) => acc + item, 0),
             )
-            output.total =
-              budgetRemaining !== undefined && (event.usage.inputTokens ?? 0) >= 256 && sum > budgetRemaining
-                ? Math.min(sum, Math.max(1, budgetRemaining))
-                : sum
             // Once received, usage survives cancellation even if the verdict is discarded.
             const info = yield* goals.usage(request.attempt, request.callID, output.total).pipe(Effect.uninterruptible)
             if (info.status !== "active")

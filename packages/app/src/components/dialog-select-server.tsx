@@ -256,24 +256,15 @@ export function useServerManagementController(options: { onSelect?: () => void; 
           Authorization: `Basic ${authTokenFromCredentials({ username: http.username, password: http.password })}`,
         }
       : undefined
-    const probe = async (baseUrl: string) => {
-      for (const path of ["/api/health", "/global/health"]) {
-        const status = await fetcher(`${baseUrl}${path}`, { headers })
-          .then((res) => res.status)
-          .catch(() => 0)
-        if (status === 401 || status === 403) return true
-        if (status > 0 && status !== 404) return false
-      }
-      return undefined
-    }
-    const direct = await probe(http.url)
-    if (direct !== undefined) return direct
-    if (http.password && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(http.url)) {
-      const builtin = server.list.find(ServerConnection.builtin)
-      if (builtin && builtin.http.url !== http.url) {
-        const fallback = await probe(builtin.http.url)
-        if (fallback !== undefined) return fallback
-      }
+    for (const path of ["/api/health", "/global/health"]) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 1_500)
+      const status = await fetcher(`${http.url}${path}`, { headers, signal: controller.signal })
+        .then((res) => res.status)
+        .catch(() => 0)
+        .finally(() => clearTimeout(timer))
+      if (status === 401 || status === 403) return true
+      if (status === 0 || status !== 404) return false
     }
     return false
   }
@@ -293,9 +284,11 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       if (store.addServer.name.trim()) conn.displayName = store.addServer.name.trim()
       if (store.addServer.password) conn.http.password = store.addServer.password
       if (store.addServer.password && store.addServer.username) conn.http.username = store.addServer.username
-      const result = await checkServerHealth(conn.http)
+      const [result, authFailed] = await Promise.all([
+        checkServerHealth(conn.http, { timeoutMs: 2_500, retryCount: 0 }),
+        checkAuthFailure(conn.http),
+      ])
       if (!result.healthy) {
-        const authFailed = await checkAuthFailure(conn.http)
         setStore("addServer", {
           error: authFailed
             ? language.t("dialog.server.add.authError")
@@ -349,9 +342,11 @@ export function useServerManagementController(options: { onSelect?: () => void; 
         displayName: name,
         http: { url: normalized, username, password },
       }
-      const result = await checkServerHealth(conn.http)
+      const [result, authFailed] = await Promise.all([
+        checkServerHealth(conn.http, { timeoutMs: 2_500, retryCount: 0 }),
+        checkAuthFailure(conn.http),
+      ])
       if (!result.healthy) {
-        const authFailed = await checkAuthFailure(conn.http)
         setStore("editServer", {
           error: authFailed
             ? language.t("dialog.server.add.authError")
