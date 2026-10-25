@@ -65,6 +65,7 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 - Reproduction: root `GITHUB_ACTIONS=false bun turbo test --concurrency=2`; select the batch alone from Apexo with `APEXO_TEST_SHARD=10/17 bun run script/run-tests.ts`.
 - Expected: each test and fixture terminates within its bounded deadline, allowing the batch to report results.
 - Verification attempt: unchanged exact batch with per-test output passed 283 tests, one existing skip and 1407 assertions in 85.03 seconds. No hang recurred, so no fix or common cause with #156 is claimed.
+- Recurrence: the full local gate at `3b55b85` passed 16/17 batches, including Memory batch 5 in 67.37 seconds, but batch 10 again reached the watchdog (600.05 seconds, exit 137). Overall: 5/6 tasks in 13m28.506s. A separate replay of all 29 batch files stalled in the same `__wait4_nocancel` state with one exiting bash child and was manually stopped after capturing its process sample. That interrupted replay is not a pass. The exact blocking call and root cause remain unknown; no timeout or product behavior was changed for this symptom.
 
 ## BUG-20261025-014 — Nested PR Agent retries exhaust the job deadline
 
