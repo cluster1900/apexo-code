@@ -1554,53 +1554,68 @@ it.live(
   30000,
 )
 
-it.live(
-  "joining an active explicit resume preserves the drain's automatic idle epoch",
-  () =>
-    fixture(
-      (session) =>
-        Effect.gen(function* () {
-          const sessions = yield* SessionV2.Service
-          const operations = yield* SessionMemoryOperation.Service
-          const llm = yield* TestLLMServer
-          const response = Promise.withResolvers<void>()
-          yield* Effect.addFinalizer(() => Effect.sync(() => response.resolve()))
-          yield* llm.hold("Retain the bounded queue convention.", response.promise)
-          yield* sessions.prompt({
-            sessionID: session.id,
-            prompt: { text: "Retain the bounded queue convention for the project." },
-          })
-          yield* llm.wait(1)
-          const joined = yield* sessions.resume(session.id).pipe(Effect.forkChild)
-          yield* Effect.yieldNow
-          yield* Effect.sleep(50)
-          expect(joined.pollUnsafe()).toBeUndefined()
-          yield* llm.text("## Queue\nUse bounded ownership.")
-          response.resolve()
-          yield* Fiber.join(joined)
-          const receipt = yield* pollWithTimeout(
-            operations.list(session.id).pipe(Effect.map((items) => items.find((item) => item.state === "finished"))),
-            "joined resume lost the automatic epoch",
-            "5 seconds",
-          ).pipe(
-            Effect.tapError(() =>
-              Effect.gen(function* () {
-                const receipts = yield* operations.list(session.id)
-                const hits = yield* llm.hits
-                console.error(
-                  "Joined resume state",
-                  JSON.stringify({ receipts, calls: hits.length, requests: hits.map((hit) => hit.body.messages) }),
-                )
-              }),
-            ),
-          )
-          expect(receipt.result?.status).toBe("completed")
-          expect(yield* llm.calls).toBe(2)
-        }),
-      true,
-      { idle_timeout_secs: 1 },
-    ),
-  30000,
+Array.of(0, 6_000).forEach((latency) =>
+  it.live(
+    `joining an active explicit resume preserves the drain's automatic idle epoch (${latency}ms flush latency)`,
+    () =>
+      fixture(
+        (session) =>
+          Effect.gen(function* () {
+            const sessions = yield* SessionV2.Service
+            const operations = yield* SessionMemoryOperation.Service
+            const llm = yield* TestLLMServer
+            const response = Promise.withResolvers<void>()
+            yield* Effect.addFinalizer(() => Effect.sync(() => response.resolve()))
+            yield* llm.hold("Retain the bounded queue convention.", response.promise)
+            yield* sessions.prompt({
+              sessionID: session.id,
+              prompt: { text: "Retain the bounded queue convention for the project." },
+            })
+            yield* llm.wait(1)
+            const joined = yield* sessions.resume(session.id).pipe(Effect.forkChild)
+            yield* Effect.yieldNow
+            yield* Effect.sleep(50)
+            expect(joined.pollUnsafe()).toBeUndefined()
+            const flush = Promise.withResolvers<void>()
+            yield* Effect.addFinalizer(() => Effect.sync(() => flush.resolve()))
+            yield* llm.hold("## Queue\nUse bounded ownership.", flush.promise)
+            yield* llm
+              .wait(2)
+              .pipe(
+                Effect.andThen(Effect.sleep(latency)),
+                Effect.andThen(Effect.sync(() => flush.resolve())),
+                Effect.forkChild,
+              )
+            response.resolve()
+            yield* Fiber.join(joined)
+            const receipt = yield* pollWithTimeout(
+              operations
+                .list(session.id)
+                .pipe(Effect.map((items) => items.find((item) => item.kind === "flush" && item.backend === "legacy"))),
+              "joined resume did not admit automatic Memory work",
+              "5 seconds",
+            ).pipe(
+              // Admission proves epoch preservation; provider completion has its own bounded wait.
+              Effect.flatMap((receipt) => settled(operations, session, receipt.id)),
+              Effect.tapError(() =>
+                Effect.gen(function* () {
+                  const receipts = yield* operations.list(session.id)
+                  const hits = yield* llm.hits
+                  console.error(
+                    "Joined resume state",
+                    JSON.stringify({ receipts, calls: hits.length, requests: hits.map((hit) => hit.body.messages) }),
+                  )
+                }),
+              ),
+            )
+            expect(receipt.result?.status).toBe("completed")
+            expect(yield* llm.calls).toBe(2)
+          }),
+        true,
+        { idle_timeout_secs: 1 },
+      ),
+    30000,
+  ),
 )
 
 it.live(
