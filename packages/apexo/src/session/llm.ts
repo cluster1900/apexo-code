@@ -93,6 +93,14 @@ const live: Layer.Layer<
         mode: input.agent.mode,
       })
 
+      const variant = input.user.model.variant
+      if (!input.small && variant && variant !== "default" && !Object.hasOwn(input.model.variants ?? {}, variant))
+        return yield* Effect.fail(
+          new Error(
+            `Unsupported variant "${variant}" for ${input.model.providerID}/${input.model.id}. Available variants: ${["default", ...Object.keys(input.model.variants ?? {})].join(", ")}`,
+          ),
+        )
+
       const [language, cfg, item, info] = yield* Effect.all(
         [
           provider.getLanguage(input.model),
@@ -120,8 +128,7 @@ const live: Layer.Layer<
         input.model.providerID === "test" ||
           (rawProviderUrl && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(rawProviderUrl)),
       )
-      const promptChars =
-        JSON.stringify(prepared.messages).length + JSON.stringify(prepared.tools ?? {}).length
+      const promptChars = JSON.stringify(prepared.messages).length + JSON.stringify(prepared.tools ?? {}).length
       const estimatedInputTokens = isSyntheticTestProvider ? 0 : Math.ceil(promptChars / 3.5)
       const remainingGoalBudget =
         currentGoalInfo?.tokenBudget !== undefined

@@ -150,6 +150,7 @@ describe("session messages endpoint", () => {
         yield* fill(session.id, 520)
 
         const res = yield* request(`/session/${session.id}/message?limit=510`)
+        if (res.status !== 200) console.error("Legacy message limit rejected", yield* res.text)
         expect(res.status).toBe(200)
         const body = yield* json<SessionV1.WithParts[]>(res)
         expect(body).toHaveLength(510)

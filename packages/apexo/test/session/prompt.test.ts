@@ -5,6 +5,7 @@ import { Database } from "@apexo/core/database/database"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { SessionProjector } from "@apexo/core/session/projector"
 import { SessionGoal } from "@apexo/core/session/goal"
+import { MAX_STEPS_PROMPT } from "@apexo/core/session/runner/max-steps"
 import { Goal } from "@apexo/schema/goal"
 import { SessionGoalModel } from "@/session/goal-review"
 import { eq } from "drizzle-orm"
@@ -364,72 +365,100 @@ grokWithChildren.instance("goal execution waits for its background child before 
     expect(yield* server.llm.misses).toHaveLength(0)
   }),
 )
-
-grok.instance("goal execution automatically continues after rejection and preserves the original objective", () =>
-  Effect.gen(function* () {
-    const server = yield* useServerConfig(providerCfg)
-    const sessions = yield* Session.Service
-    const prompt = yield* SessionPrompt.Service
-    const database = yield* Database.Service
-    const goals = SessionGoal.make(database.db)
-    const chat = yield* sessions.create({ title: "Goal execution" })
-    yield* prompt.prompt({
-      sessionID: chat.id,
-      model: ref,
-      noReply: true,
-      parts: [{ type: "text", text: "Implement A and B" }],
-    })
-    const goal = yield* goals.create(chat.id, {
-      id: Goal.ID.create(),
-      objective: "ORIGINAL_FULL_SCOPE: implement A and B and verify both",
-    })
-    for (const text of [
-      '{"plan":"Implement A and B, verify both"}',
-      "A is ready",
-      goalCandidate,
-      '{"confidence":"high","blocking":"none","achieved":false,"evidence":"Only A was checked","unmet":["Implement and verify B"]}',
-      "B is now ready and both tests pass",
-      goalCandidate,
-      '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
-      '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
-      '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
-    ])
-      yield* goalReply(server.llm, text, { usage: { input: 20, output: 10 } })
-    yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
-    if ((yield* goals.get(chat.id))?.status === "infra_paused") {
-      const children = yield* sessions.children(chat.id)
-      const errors = yield* Effect.forEach(children, (child) =>
-        sessions
-          .messages({ sessionID: child.id })
-          .pipe(
-            Effect.map((messages) =>
-              messages.flatMap((message) =>
-                message.info.role === "assistant" && message.info.error ? [message.info.error] : [],
+;[undefined, 1].forEach((steps) =>
+  grok.instance(
+    `goal execution automatically continues after rejection and preserves the original objective (steps=${steps ?? "unlimited"})`,
+    () =>
+      Effect.gen(function* () {
+        const server = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          ...(steps
+            ? {
+                agent: { build: { steps }, inspector: { prompt: "Review the complete objective" } },
+                goal: {
+                  planner_model: { model: "test/test-model", agent_type: "inspector" },
+                  skeptic_models: [{ model: "test/test-model", agent_type: "inspector" }],
+                },
+              }
+            : {}),
+        }))
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const database = yield* Database.Service
+        const goals = SessionGoal.make(database.db)
+        const chat = yield* sessions.create({ title: "Goal execution" })
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: ref,
+          noReply: true,
+          parts: [{ type: "text", text: "Implement A and B" }],
+        })
+        const goal = yield* goals.create(chat.id, {
+          id: Goal.ID.create(),
+          objective: "ORIGINAL_FULL_SCOPE: implement A and B and verify both",
+        })
+        for (const text of [
+          '{"plan":"Implement A and B, verify both"}',
+          "A is ready",
+          goalCandidate,
+          '{"confidence":"high","blocking":"none","achieved":false,"evidence":"Only A was checked","unmet":["Implement and verify B"]}',
+          "B is now ready and both tests pass",
+          goalCandidate,
+          '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
+          '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
+          '{"confidence":"high","blocking":"none","achieved":true,"evidence":"A and B tests passed","unmet":[]}',
+        ])
+          yield* goalReply(server.llm, text, { usage: { input: 20, output: 10 } })
+        yield* prompt.runGoal({ sessionID: chat.id, goalID: goal.id })
+        if ((yield* goals.get(chat.id))?.status === "infra_paused") {
+          const children = yield* sessions.children(chat.id)
+          const errors = yield* Effect.forEach(children, (child) =>
+            sessions
+              .messages({ sessionID: child.id })
+              .pipe(
+                Effect.map((messages) =>
+                  messages.flatMap((message) =>
+                    message.info.role === "assistant" && message.info.error ? [message.info.error] : [],
+                  ),
+                ),
               ),
-            ),
-          ),
-      )
-      yield* Effect.logError(
-        "Goal fixture transport errors",
-        errors,
-        "received model requests",
-        yield* server.llm.calls,
-      )
-    }
-    expect(yield* goals.get(chat.id)).toMatchObject({
-      status: "complete",
-      tokensUsed: 270,
-      workerRounds: 2,
-      verificationRounds: 2,
-    })
-    const requests = yield* server.llm.inputs
-    expect(requests).toHaveLength(18)
-    expect(JSON.stringify(requests[1])).toContain("ORIGINAL_FULL_SCOPE")
-    expect(JSON.stringify(requests[7])).toContain("Implement and verify B")
-    const messages = yield* sessions.messages({ sessionID: chat.id })
-    expect(messages.filter((item) => item.info.role === "user")).toHaveLength(1)
-    expect(messages.filter((item) => item.info.role === "assistant")).toHaveLength(2)
-  }),
+          )
+          yield* Effect.logError(
+            "Goal fixture transport errors",
+            errors,
+            "received model requests",
+            yield* server.llm.calls,
+          )
+        }
+        expect(yield* goals.get(chat.id)).toMatchObject({
+          status: "complete",
+          tokensUsed: 270,
+          workerRounds: 2,
+          verificationRounds: 2,
+        })
+        const requests = yield* server.llm.inputs
+        expect(requests).toHaveLength(18)
+        expect(JSON.stringify(requests[1])).toContain("ORIGINAL_FULL_SCOPE")
+        expect(JSON.stringify(requests[7])).toContain("Implement and verify B")
+        // The second worker call must carry the evaluator's correction as a new turn.
+        // Gemini rejects assistant-prefill requests, which this full execution used to produce.
+        const workerRequests = (yield* server.llm.hits).filter((call) =>
+          JSON.stringify(call.body).includes("The user explicitly started this persistent goal"),
+        )
+        expect(workerRequests).toHaveLength(2)
+        expect((workerRequests[1].body.messages as { role: string }[]).at(-1)).toMatchObject({ role: "user" })
+        if (steps) {
+          for (const request of workerRequests)
+            expect((request.body.messages as { role: string; content: string }[]).at(-1)).toMatchObject({
+              role: "user",
+              content: MAX_STEPS_PROMPT,
+            })
+        }
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        expect(messages.filter((item) => item.info.role === "user")).toHaveLength(1)
+        expect(messages.filter((item) => item.info.role === "assistant")).toHaveLength(2)
+      }),
+  ),
 )
 ;(process.platform === "win32" ? grok.instance.skip : grok.instance)(
   "background notification after a goal ends does not inherit its expired billing attempt",

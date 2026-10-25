@@ -22,7 +22,7 @@ jobs:
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
         startsWith(github.event.comment.body, '/')))
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: PR Agent action step
         uses: the-pr-agent/pr-agent@main
@@ -37,6 +37,10 @@ jobs:
           config.custom_model_max_tokens: "128000"
           config.max_model_tokens: "64000"
           config.ai_timeout: "300"
+          # Avoid multiplying client retries by handler retries before reaching the fallback.
+          config.num_retries: "0"
+          config.retry_same_model_on_timeout: "false"
+          config.propagate_tool_errors: "true"
           config.response_language: "zh-CN"
           pr_reviewer.extra_instructions: "请用简体中文输出所有审查内容。重点关注正确性 bug、安全问题（密钥泄露、注入、权限）、资源泄漏、错误处理缺失和缺少测试。"
           pr_code_suggestions.extra_instructions: "请用简体中文写建议说明。"

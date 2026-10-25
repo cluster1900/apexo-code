@@ -16,6 +16,7 @@ import { Credential } from "@apexo/core/credential"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { Catalog } from "@apexo/core/catalog"
+import { State } from "@apexo/core/state"
 import { Location } from "@apexo/core/location"
 import { Project } from "@apexo/core/project"
 import { AbsolutePath } from "@apexo/core/schema"
@@ -335,15 +336,17 @@ const providerUnavailable = testEffect(
   AppNodeBuilder.build(LayerNode.group([Provider.node, node]), [[Antigravity.node, unavailableLayer]]),
 )
 
-providerUnavailable.instance("V1 provider list does not crash when antigravity auth is stored but native agy is unavailable", () =>
-  Effect.gen(function* () {
-    const models = yield* Provider.Service
-    const auth = yield* Service
-    yield* auth.set("antigravity", { type: "external", method: 0 })
-    yield* Effect.addFinalizer(() => auth.remove("antigravity").pipe(Effect.orDie))
-    const catalog = yield* models.list()
-    expect(catalog[ProviderV2.ID.make("antigravity")]).toBeUndefined()
-  }),
+providerUnavailable.instance(
+  "V1 provider list does not crash when antigravity auth is stored but native agy is unavailable",
+  () =>
+    Effect.gen(function* () {
+      const models = yield* Provider.Service
+      const auth = yield* Service
+      yield* auth.set("antigravity", { type: "external", method: 0 })
+      yield* Effect.addFinalizer(() => auth.remove("antigravity").pipe(Effect.orDie))
+      const catalog = yield* models.list()
+      expect(catalog[ProviderV2.ID.make("antigravity")]).toBeUndefined()
+    }),
 )
 
 const provider = testEffect(
@@ -471,8 +474,9 @@ const v2 = testEffect(
 v2.live("V2 resolves the same grouped models, native defaults and reasoning variants", () =>
   Effect.gen(function* () {
     // This built-in uses Effect services directly, not the public plugin context.
-    yield* AntigravityPlugin.effect({} as Parameters<typeof AntigravityPlugin.effect>[0])
+    yield* State.batch(AntigravityPlugin.effect({} as Parameters<typeof AntigravityPlugin.effect>[0]))
     const catalog = yield* Catalog.Service
+    expect((yield* catalog.model.available()).map((model) => model.id)).toContain(ModelV2.ID.make("gemini-flash"))
     const client = yield* LLMClient.Service
     const providerID = ProviderV2.ID.make("antigravity")
     const credential = { type: "key" as const, key: "fixture-secret", metadata: { projectID: "project" } }

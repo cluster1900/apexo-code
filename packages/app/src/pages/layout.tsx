@@ -889,7 +889,8 @@ export default function LegacyLayout(props: ParentProps) {
     const directory = currentDir() ?? currentProject()?.worktree ?? layout.projects.list()[0]?.worktree
     try {
       const session = await importSessionFromFile({
-        url: serverSDK().url,
+        server: serverSDK().server.http,
+        fetch: platform.fetch,
         directory,
         title: language.t("command.session.import"),
       })
@@ -1019,7 +1020,8 @@ export default function LegacyLayout(props: ParentProps) {
         slash: "exit",
         slashAliases: ["quit"],
         // Closing the last window keeps the app running on macOS, so Electron quits through the main process.
-        onSelect: () => (platform.runDesktopMenuAction ? void platform.runDesktopMenuAction("app.quit") : window.close()),
+        onSelect: () =>
+          platform.runDesktopMenuAction ? void platform.runDesktopMenuAction("app.quit") : window.close(),
       },
       {
         id: "session.toggle.timestamps",

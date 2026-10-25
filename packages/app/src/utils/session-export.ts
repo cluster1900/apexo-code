@@ -1,5 +1,7 @@
 import type { Message, Part, Session } from "@apexo/sdk/v2/client"
 import { sessionTitle } from "./session-title"
+import { authTokenFromCredentials } from "./server"
+import type { ServerConnection } from "@/context/server"
 
 // Matches the exact `{ info, messages: [{ info, parts }] }` structure produced by `apexo export` CLI
 export type SessionExportData = {
@@ -31,9 +33,7 @@ export async function fetchSessionExport(input: {
     throw new Error(`Session not found: ${input.sessionID}`)
   }
   const messages =
-    messagesRes?.data && messagesRes.data.length > 0
-      ? messagesRes.data
-      : (input.fallbackMessages ?? messagesRes?.data)
+    messagesRes?.data && messagesRes.data.length > 0 ? messagesRes.data : (input.fallbackMessages ?? messagesRes?.data)
   if (!messages) {
     throw new Error(`Failed to load messages for session: ${input.sessionID}`)
   }
@@ -84,10 +84,10 @@ async function pickSessionJsonText(title?: string): Promise<string | null> {
 }
 
 export async function importSessionFromFile(input: {
-  url: string
+  server: ServerConnection.HttpBase
+  fetch?: typeof fetch
   directory?: string
   title?: string
-  headers?: Record<string, string>
 }): Promise<Session | null> {
   const text = await pickSessionJsonText(input.title)
   if (!text) return null
@@ -95,20 +95,30 @@ export async function importSessionFromFile(input: {
   if (!parsed || typeof parsed !== "object" || !parsed.info || !Array.isArray(parsed.messages)) {
     throw new Error("Invalid session export file")
   }
+  return importSessionExport({ ...input, data: parsed as SessionExportData })
+}
+
+export async function importSessionExport(input: {
+  server: ServerConnection.HttpBase
+  fetch?: typeof fetch
+  directory?: string
+  data: SessionExportData
+}): Promise<Session> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
-    ...(input.headers ?? {}),
   }
+  if (input.server.password)
+    headers.Authorization = `Basic ${authTokenFromCredentials({ username: input.server.username, password: input.server.password })}`
   if (input.directory) {
-    headers["x-apexo-directory"] = input.directory
+    headers["x-apexo-directory"] = encodeURIComponent(input.directory)
   }
-  const response = await fetch(`${input.url.replace(/\/+$/, "")}/session`, {
+  const response = await (input.fetch ?? fetch)(`${input.server.url.replace(/\/+$/, "")}/session`, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      title: parsed.info.title,
-      info: parsed.info,
-      messages: parsed.messages,
+      title: input.data.info.title,
+      info: input.data.info,
+      messages: input.data.messages,
     }),
   })
   if (!response.ok) {

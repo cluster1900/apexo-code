@@ -76,13 +76,17 @@ test("exact cancellation and Location closure own callbacks and write no credent
   }
 })
 test("denial, issuer mismatch and expiration never commit tokens", async () => {
-  for (const mode of ["denied", "invalidIssuer", "expiry"] as const) {
-    const f = await setup({ timeout: mode === "expiry" ? 100 : 5000 })
+  for (const mode of ["denied", "invalidIssuer", "expiry", "expiry-startup"] as const) {
+    const expiry = mode === "expiry" || mode === "expiry-startup"
+    const f = await setup({ timeout: mode === "expiry-startup" ? 1 : expiry ? 100 : 5000 })
     try {
-      if (mode !== "expiry") f.state[mode] = true
-      const start = await f.manager.start("reference", new AbortController().signal)
-      if (mode !== "expiry") await fetch(start.authorizationUrl)
+      if (!expiry) f.state[mode] = true
+      const starting = f.manager.start("reference", new AbortController().signal)
+      // Expiry owns discovery too; readiness may reject before returning a consent URL.
+      if (expiry) await starting.catch((error) => expect(error).toBeInstanceOf(McpOAuth.Failure))
+      if (!expiry) await fetch((await starting).authorizationUrl)
       await wait(() => f.manager.status("reference", f.definition).flow?.phase === "failed")
+      if (expiry) expect(f.manager.status("reference", f.definition).flow?.error).toBe("expired")
       expect(await f.store.read(f.identity)).toEqual({})
       expect(f.state.grants).toBe(0)
     } finally {

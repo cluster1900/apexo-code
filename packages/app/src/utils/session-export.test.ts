@@ -1,5 +1,13 @@
+import { createServer } from "node:http"
+import { once } from "node:events"
 import { expect, test } from "bun:test"
-import { sessionResponse, sessionTrace, sessionTranscript, sessionUsage, type SessionExportData } from "./session-export"
+import {
+  sessionResponse,
+  sessionTrace,
+  sessionTranscript,
+  sessionUsage,
+  type SessionExportData,
+} from "./session-export"
 
 const assistant = (id: string, parentID: string, modelID: string, input: number, output: number, cost: number) => ({
   info: {
@@ -90,4 +98,60 @@ test("sessionResponse picks the Nth-latest assistant response with text", () => 
   expect(sessionResponse(withTool, 3)).toBe("answer msg_a1")
   expect(sessionResponse(withTool, 4)).toBeUndefined()
   expect(sessionResponse(withTool, 0)).toBeUndefined()
+})
+
+test("session import uses selected server auth, encoded directory and platform transport", async () => {
+  const { importSessionExport } = await import("./session-export")
+  const requests: { authorization: string | null; directory: string | null; body: unknown }[] = []
+  const server = createServer(async (request, response) => {
+    response.setHeader("access-control-allow-origin", "*")
+    response.setHeader("access-control-allow-methods", "POST, OPTIONS")
+    response.setHeader("access-control-allow-headers", "authorization, content-type, x-apexo-directory")
+    if (request.method === "OPTIONS") {
+      response.end()
+      return
+    }
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    const authorization = request.headers.authorization ?? null
+    requests.push({
+      authorization,
+      directory: String(request.headers["x-apexo-directory"]),
+      body: JSON.parse(Buffer.concat(chunks).toString()),
+    })
+    response.setHeader("content-type", "application/json")
+    response.statusCode = authorization === `Basic ${btoa("custom:import-password")}` ? 200 : 401
+    response.end(JSON.stringify(data.info))
+  })
+  server.listen(0, "127.0.0.1")
+  await once(server, "listening")
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Expected a TCP server")
+  try {
+    const calls: string[] = []
+    const transport: typeof fetch = Object.assign(
+      (url: RequestInfo | URL, init?: RequestInit) => {
+        calls.push(String(url))
+        return fetch(`http://127.0.0.1:${address.port}`, init)
+      },
+      { preconnect: fetch.preconnect },
+    )
+    const imported = await importSessionExport({
+      server: { url: "http://selected-server", username: "custom", password: "import-password" },
+      fetch: transport,
+      directory: "/project/中文 space",
+      data,
+    })
+    expect(imported).toEqual(data.info)
+    expect(calls).toEqual(["http://selected-server/session"])
+    expect(requests).toEqual([
+      {
+        authorization: `Basic ${btoa("custom:import-password")}`,
+        directory: encodeURIComponent("/project/中文 space"),
+        body: { title: data.info.title, info: data.info, messages: data.messages },
+      },
+    ])
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+  }
 })

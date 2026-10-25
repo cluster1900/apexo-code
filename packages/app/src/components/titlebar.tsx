@@ -408,7 +408,8 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
                     const ctx = global.ensureServerCtx(conn)
                     const directory = resolveActiveDirectory(conn)
                     void importSessionFromFile({
-                      url: ctx.sdk.url,
+                      server: ctx.sdk.server.http,
+                      fetch: platform.fetch,
                       directory,
                       title: language.t("command.session.import"),
                     })

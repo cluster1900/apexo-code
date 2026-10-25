@@ -390,7 +390,9 @@ const layer = Layer.effect(
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
       const idx = input.history.findLastIndex(real)
       if (idx === -1) return
-      const hadSuccess = input.history.some((m) => m.info.role === "assistant" && !m.info.error && m.info.time.completed)
+      const hadSuccess = input.history.some(
+        (m) => m.info.role === "assistant" && !m.info.error && m.info.time.completed,
+      )
       if (input.history.filter(real).length > 1 && hadSuccess) return
 
       const context = input.history.slice(0, idx + 1)
@@ -1599,7 +1601,10 @@ const layer = Layer.effect(
           ? []
           : McpToolIndex.summaries(
               SessionTools.mcpEntries(
-                Permission.visibleTools(yield* mcp.tools(), Permission.merge(agent.permission, session.permission ?? [])),
+                Permission.visibleTools(
+                  yield* mcp.tools(),
+                  Permission.merge(agent.permission, session.permission ?? []),
+                ),
               ),
             )
         const mcpReminder = McpToolIndex.fullReminder(mcpServers)
@@ -1702,6 +1707,9 @@ const layer = Layer.effect(
             MessageV2.toModelMessagesEffect(msgs, model),
             memoryContext.context({ sessionID, messages: msgs, agent }),
           ])
+          // An independent review starts another worker turn, not an assistant prefill.
+          // Gemini rejects histories ending in a model response even when system guidance changes.
+          const goalContinuation = goal && modelMsgs.at(-1)?.role === "assistant" ? goal.system() : undefined
           const system = [
             ...env,
             ...instructions,
@@ -1710,7 +1718,7 @@ const layer = Layer.effect(
             ...(mcpInstructions ? [mcpInstructions] : []),
             ...(mcpReminder ? [`<system-reminder>\n${mcpReminder}\n</system-reminder>`] : []),
             ...(skills ? [skills] : []),
-            ...(goal ? [goal.system()] : []),
+            ...(goal && !goalContinuation ? [goal.system()] : []),
             ...(goalRole ? [goalRole.system, `Original goal objective: ${goalRole.objective}`] : []),
           ]
           const format = lastUser.format ?? { type: "text" as const }
@@ -1725,10 +1733,11 @@ const layer = Layer.effect(
             system,
             messages: [
               ...modelMsgs,
+              ...(goalContinuation ? [{ role: "user" as const, content: goalContinuation }] : []),
               ...(steered && initialUser
                 ? [{ role: "user" as const, content: SessionReminders.steering(initialUser) }]
                 : []),
-              ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
+              ...(isLastStep ? [{ role: "user" as const, content: MAX_STEPS_PROMPT }] : []),
             ],
             tools,
             model,
