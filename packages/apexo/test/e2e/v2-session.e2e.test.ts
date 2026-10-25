@@ -162,6 +162,36 @@ describe("V2 HTTP end-to-end session execution", () => {
         // See docs/known-issues.md for why an unread body hangs shutdown on Bun 1.3.14.
         const interrupt = yield* HttpClient.execute(HttpClientRequest.post(`${route}/interrupt`))
         expect(interrupt.status).toBe(204)
+
+        const invalidCreated = yield* post("/api/session", {
+          location: { directory: instance.directory },
+          model: { providerID: "v2-test", id: "grok-NOPE-9" },
+        })
+        expect(invalidCreated.status).toBe(200)
+        const invalidSession = (yield* Schema.decodeUnknownEffect(SessionResponse)(yield* invalidCreated.json)).data
+        const invalidRoute = `/api/session/${invalidSession.id}`
+        const invalidPrompt = yield* post(`${invalidRoute}/prompt`, {
+          id: "msg_v2_invalid_model",
+          prompt: { text: "Reply OK" },
+          delivery: "steer",
+          resume: true,
+        })
+        expect(invalidPrompt.status).toBe(200)
+        yield* Effect.sleep("50 millis")
+        const invalidWait = yield* HttpClient.execute(HttpClientRequest.post(`${invalidRoute}/wait`))
+        expect(invalidWait.status).toBe(503)
+        expect(yield* invalidWait.text).toContain("Model unavailable: v2-test/grok-NOPE-9")
+        const invalidMessages = yield* HttpClient.get(`${invalidRoute}/message`).pipe(
+          Effect.flatMap((response) => response.json),
+          Effect.flatMap(Schema.decodeUnknownEffect(MessagesResponse)),
+          Effect.map((response) => response.data),
+        )
+        expect(invalidMessages).toContainEqual(
+          expect.objectContaining({
+            type: "assistant",
+            error: expect.objectContaining({ message: "Model unavailable: v2-test/grok-NOPE-9" }),
+          }),
+        )
       }),
     { git: true },
     30000,

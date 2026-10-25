@@ -5,7 +5,7 @@ import { SessionLifecycle } from "./lifecycle"
 export * as SessionGoalRunner from "./goal-runner"
 
 import { LLM, LLMClient, Message, SystemPart } from "@apexo/llm"
-import { Cause, Context, Effect, Exit, Layer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Option, Stream } from "effect"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { eq } from "drizzle-orm"
@@ -125,6 +125,30 @@ const make = Effect.gen(function* () {
           const agent = selection.agent.id
           const modelRef = selection.execution.model
           const roleExecution = selection.execution
+          const resolvedRoleModel = yield* models
+            .resolve({ ...session, agent, model: modelRef })
+            .pipe(Effect.option)
+          const roleBaseURL =
+            Option.isSome(resolvedRoleModel) && typeof resolvedRoleModel.value.route.endpoint.baseURL === "string"
+              ? resolvedRoleModel.value.route.endpoint.baseURL
+              : undefined
+          const isSyntheticRoleProvider = Boolean(
+            roleBaseURL && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(roleBaseURL),
+          )
+          const currentAttemptGoal = yield* goals.check(request.attempt)
+          if (!isSyntheticRoleProvider && currentAttemptGoal.tokenBudget !== undefined) {
+            const remaining = Math.max(0, currentAttemptGoal.tokenBudget - currentAttemptGoal.tokensUsed)
+            const minPromptChars =
+              (selection.agent.info?.system?.length ?? 0) + request.system.length + request.content.length
+            const estimatedMinTokens = Math.ceil(minPromptChars / 3.5)
+            if (remaining < estimatedMinTokens + 16) {
+              yield* goals.budgetLimit(
+                request.attempt,
+                `Token budget exhausted: remaining budget (${remaining} tokens) is smaller than the minimum prompt context (~${estimatedMinTokens} tokens) required for ${request.kind}`,
+              )
+              return yield* new SessionGoal.Conflict({ code: "budget", message: "Goal token budget is exhausted" })
+            }
+          }
           const previousClaim = request.previousSessionID
             ? yield* lifecycle.capture(request.previousSessionID).pipe(Effect.orDie)
             : undefined
@@ -423,19 +447,47 @@ const make = Effect.gen(function* () {
       plannerModel: settings?.planner_model,
       skepticModels: settings?.skeptic_models,
       useCurrentModelOnly,
-      stream: (request) => {
-        const remainingBudget =
-          info.tokenBudget !== undefined ? Math.min(32_000, Math.max(1, info.tokenBudget - info.tokensUsed)) : undefined
-        return llm.stream(
-          LLM.request({
-            model,
-            ...(remainingBudget !== undefined ? { generation: { maxTokens: remainingBudget } } : {}),
-            system: [SystemPart.make(request.system)],
-            messages: [Message.user(request.content)],
-            tools: [],
+      stream: (request) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const currentEvalGoal = yield* goals.check(request.attempt)
+            const baseURL = typeof model.route.endpoint.baseURL === "string" ? model.route.endpoint.baseURL : undefined
+            const isSyntheticProvider = Boolean(
+              baseURL && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(baseURL),
+            )
+            const estimatedEvalTokens = isSyntheticProvider
+              ? 0
+              : Math.ceil((request.system.length + request.content.length) / 3.5)
+            const remainingEvalBudget =
+              currentEvalGoal.tokenBudget !== undefined
+                ? Math.max(0, currentEvalGoal.tokenBudget - currentEvalGoal.tokensUsed)
+                : undefined
+            if (
+              remainingEvalBudget !== undefined &&
+              !isSyntheticProvider &&
+              remainingEvalBudget < estimatedEvalTokens + 16
+            ) {
+              yield* goals.budgetLimit(
+                request.attempt,
+                `Token budget exhausted: remaining budget (${remainingEvalBudget} tokens) is smaller than the minimum prompt context (~${estimatedEvalTokens} tokens) required for evaluation`,
+              )
+              return yield* new SessionGoal.Conflict({ code: "budget", message: "Goal token budget is exhausted" })
+            }
+            const remainingBudget =
+              remainingEvalBudget !== undefined
+                ? Math.min(32_000, Math.max(1, remainingEvalBudget - estimatedEvalTokens))
+                : undefined
+            return llm.stream(
+              LLM.request({
+                model,
+                ...(remainingBudget !== undefined ? { generation: { maxTokens: remainingBudget } } : {}),
+                system: [SystemPart.make(request.system)],
+                messages: [Message.user(request.content)],
+                tools: [],
+              }),
+            )
           }),
-        )
-      },
+        ),
     })
   })
 

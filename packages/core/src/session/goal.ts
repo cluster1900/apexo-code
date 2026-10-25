@@ -790,6 +790,15 @@ export function make(db: Database.Interface["db"]) {
         }),
       ),
 
+    budgetLimit: (input: Attempt, message = "Token budget exhausted") =>
+      change(input, (state, now) =>
+        Effect.gen(function* () {
+          yield* requireAttempt(state, input)
+          if (["complete", "budget_limited"].includes(state.info.status)) return state.info
+          return yield* save(state, stop(state, "budget_limited", message), now, "budget_exceeded", message)
+        }),
+      ),
+
     pauseRevision: (input: Target, revision: number, reason: Pause, message?: string) =>
       change(input, (state, now) => {
         if (state.info.revision !== revision)

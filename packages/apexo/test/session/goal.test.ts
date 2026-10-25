@@ -787,6 +787,29 @@ it.live("budget exhaustion during review preserves usage and refuses the verdict
     expect(result.info?.status).toBe("budget_limited")
     expect(result.info?.tokensUsed).toBe(30)
     expect(result.info?.plan).toBeUndefined()
+
+    const pre = yield* fixture(128)
+    const preResult = yield* SessionGoalReview.make(pre.goals).run({
+      target: pre.target,
+      kind: "planning",
+      evidence: "source evidence",
+      execute: (request) =>
+        pre.goals
+          .budgetLimit(
+            request.attempt,
+            "Token budget exhausted: remaining budget (128 tokens) is smaller than the minimum prompt context",
+          )
+          .pipe(
+            Effect.andThen(
+              Effect.fail(new SessionGoal.Conflict({ code: "budget", message: "Goal token budget is exhausted" })),
+            ),
+          ),
+      stream: () => Stream.empty,
+    })
+    expect(preResult.applied).toBe(false)
+    expect(preResult.info?.status).toBe("budget_limited")
+    expect(preResult.info?.tokensUsed).toBe(0)
+    expect(preResult.info?.message).toContain("smaller than the minimum prompt context")
   }),
 )
 

@@ -100,7 +100,39 @@ const layer = Layer.effect(
                   const run = (selection: typeof selected, resume: boolean) =>
                     Effect.scoped(
                       Effect.gen(function* () {
-                        const info = yield* SessionGoal.make(database.db).check(request.attempt)
+                        const goals = SessionGoal.make(database.db)
+                        const info = yield* goals.check(request.attempt)
+                        const roleModelInfo = yield* provider
+                          .getModel(selection.execution.model.providerID, selection.execution.model.id)
+                          .pipe(Effect.option)
+                        const roleProviderInfo = yield* provider
+                          .getProvider(selection.execution.model.providerID)
+                          .pipe(Effect.option)
+                        const roleBaseUrl =
+                          (Option.isSome(roleModelInfo) ? roleModelInfo.value.api.url : "") ||
+                          (Option.isSome(roleProviderInfo) && typeof roleProviderInfo.value?.options?.baseURL === "string"
+                            ? roleProviderInfo.value.options.baseURL
+                            : "")
+                        const isSyntheticProvider = Boolean(
+                          selection.execution.model.providerID === "test" ||
+                            (roleBaseUrl && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(roleBaseUrl)),
+                        )
+                        if (!isSyntheticProvider && info.tokenBudget !== undefined) {
+                          const remaining = Math.max(0, info.tokenBudget - info.tokensUsed)
+                          const minPromptChars =
+                            (selection.agent.prompt?.length ?? 0) + request.system.length + request.content.length
+                          const estimatedMinTokens = Math.ceil(minPromptChars / 3.5)
+                          if (remaining < estimatedMinTokens + 16) {
+                            yield* goals.budgetLimit(
+                              request.attempt,
+                              `Token budget exhausted: remaining budget (${remaining} tokens) is smaller than the minimum prompt context (~${estimatedMinTokens} tokens) required for ${request.kind}`,
+                            )
+                            return yield* new SessionGoal.Conflict({
+                              code: "budget",
+                              message: "Goal token budget is exhausted",
+                            })
+                          }
+                        }
                         if (request.kind === "evaluating")
                           return yield* Effect.fail(new Error("Evaluator cannot open report files"))
                         const material =

@@ -194,11 +194,35 @@ function findBinary(startDir) {
   }
 }
 
+function resolveBun() {
+  if (process.versions && process.versions.bun && process.execPath) return process.execPath
+  const exe = platform === "windows" ? "bun.exe" : "bun"
+  const candidates = [
+    process.env.BUN_INSTALL ? path.join(process.env.BUN_INSTALL, "bin", exe) : "",
+    path.join(os.homedir(), ".bun", "bin", exe),
+    "/opt/homebrew/bin/bun",
+    "/usr/local/bin/bun",
+  ].filter(Boolean)
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return exe
+}
+
 const resolved = envPath || (fs.existsSync(cached) ? cached : findBinary(scriptDir))
 if (!resolved) {
   const srcEntry = path.resolve(scriptDir, "..", "src", "index.ts")
   if (fs.existsSync(srcEntry)) {
-    run("bun", ["run", "--conditions=browser", srcEntry])
+    const pkgPath = path.resolve(scriptDir, "..", "package.json")
+    const pkgVersion = (() => {
+      try {
+        return JSON.parse(fs.readFileSync(pkgPath, "utf8")).version
+      } catch {
+        return undefined
+      }
+    })()
+    const defineArgs = pkgVersion ? [`--define=APEXO_VERSION=${JSON.stringify(String(pkgVersion))}`] : []
+    run(resolveBun(), ["run", ...defineArgs, "--conditions=browser", srcEntry])
   } else {
     console.error(
       "It seems that your package manager failed to install the right version of the apexo CLI for your platform. You can try manually installing " +

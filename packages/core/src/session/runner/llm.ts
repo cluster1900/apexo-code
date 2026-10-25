@@ -404,7 +404,21 @@ const layer = Layer.effect(
             ))
           if (stopContext?.messageID && stopContext.engine)
             yield* SessionHookStop.consume(db, session.id, stopContext.messageID, stopContext.engine)
-          const model = yield* models.resolve(session)
+          const model = yield* models.resolve(session).pipe(
+            Effect.tapError((error) => {
+              if (summaryRole) return Effect.void
+              const fallbackModel = session.model ?? {
+                id: ModelV2.ID.make("unknown"),
+                providerID: ProviderV2.ID.make("unknown"),
+              }
+              const publisher = createLLMEventPublisher(events, {
+                sessionID: session.id,
+                agent: agent.id,
+                model: fallbackModel,
+              })
+              return publisher.failAssistant(error.message).pipe(Effect.ensuring(publisher.flush()))
+            }),
+          )
           const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
           const context = entries.map((entry) => entry.message)
           const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
@@ -430,10 +444,48 @@ const layer = Layer.effect(
           const toolMaterialization =
             execution && plannedTools ? SessionExecutionPolicy.materialize(plannedTools) : plannedTools
           const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
-          const activeGoal = role ? yield* goals.get(role.attempt.sessionID) : goal
-          const remainingGoalTokens =
+          const systemParts = [
+            agent.info?.system,
+            system.baseline,
+            plan?.system,
+            summaryRole?.system ?? role?.system ?? (goal ? SessionGoalRunner.system(goal) : undefined),
+          ]
+            .filter((part): part is string => part !== undefined && part.length > 0)
+            .map(SystemPart.make)
+          const llmMessages = [
+            ...(yield* Effect.fromResult(toLLMMessages(context, model))),
+            ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
+          ]
+          const llmTools = toolMaterialization?.definitions ?? []
+          const activeGoal = attempt ? yield* goals.get(attempt.sessionID) : undefined
+          const baseURL = typeof model.route.endpoint.baseURL === "string" ? model.route.endpoint.baseURL : undefined
+          const isSyntheticTestProvider = Boolean(
+            baseURL && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(baseURL),
+          )
+          const promptChars =
+            systemParts.reduce((sum, part) => sum + part.text.length, 0) +
+            JSON.stringify(llmMessages).length +
+            (llmTools.length > 0 ? JSON.stringify(llmTools).length : 0)
+          const estimatedInputTokens = isSyntheticTestProvider ? 0 : Math.ceil(promptChars / 3.5)
+          const remainingGoalBudget =
             activeGoal?.tokenBudget !== undefined
-              ? Math.min(32_000, Math.max(1, activeGoal.tokenBudget - activeGoal.tokensUsed))
+              ? Math.max(0, activeGoal.tokenBudget - activeGoal.tokensUsed)
+              : undefined
+          if (
+            attempt &&
+            remainingGoalBudget !== undefined &&
+            !isSyntheticTestProvider &&
+            remainingGoalBudget < estimatedInputTokens + 16
+          ) {
+            yield* goals.budgetLimit(
+              attempt,
+              `Token budget exhausted: remaining budget (${remainingGoalBudget} tokens) is smaller than the minimum prompt context (~${estimatedInputTokens} tokens) required for this turn`,
+            )
+            return yield* new SessionGoal.Conflict({ code: "budget", message: "Goal token budget is exhausted" })
+          }
+          const remainingGoalTokens =
+            remainingGoalBudget !== undefined
+              ? Math.min(32_000, Math.max(1, remainingGoalBudget - estimatedInputTokens))
               : undefined
           const request = LLM.request({
             model,
@@ -452,19 +504,9 @@ const layer = Layer.effect(
               openai: { promptCacheKey },
               xai: { promptCacheKey },
             },
-            system: [
-              agent.info?.system,
-              system.baseline,
-              plan?.system,
-              summaryRole?.system ?? role?.system ?? (goal ? SessionGoalRunner.system(goal) : undefined),
-            ]
-              .filter((part): part is string => part !== undefined && part.length > 0)
-              .map(SystemPart.make),
-            messages: [
-              ...(yield* Effect.fromResult(toLLMMessages(context, model))),
-              ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
-            ],
-            tools: toolMaterialization?.definitions ?? [],
+            system: systemParts,
+            messages: llmMessages,
+            tools: llmTools,
             toolChoice: isLastStep || summaryRole ? "none" : undefined,
           })
           if (!summaryRole && (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request })))

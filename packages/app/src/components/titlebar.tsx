@@ -155,6 +155,13 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
       keybind: "mod+]",
       onSelect: forward,
     },
+    {
+      id: "titlebar.search.toggle",
+      title: `${language.t("settings.general.row.showSearch.title")} — ${language.t("settings.general.row.showSearch.description")}`,
+      description: language.t("settings.general.row.showSearch.description"),
+      category: language.t("command.category.view"),
+      onSelect: () => settings.general.setShowSearch(!settings.general.showSearch()),
+    },
   ])
 
   return (

@@ -25,6 +25,7 @@ type Entry<E> = {
   readonly controls: Control[]
   owner?: Fiber.Fiber<void, never>
   mode: "drain" | "control"
+  observed: boolean
   pendingWake: boolean
   pendingForce: boolean
   stopping: boolean
@@ -38,12 +39,14 @@ export const make = <Key, E>(options: {
 }): Effect.Effect<Coordinator<Key, E>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const active = new Map<Key, Entry<E>>()
+    const unobservedFailure = new Map<Key, Cause.Cause<E>>()
     const available = (key: Key) => options.available?.(key) ?? true
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
-    const makeEntry = (): Entry<E> => ({
+    const makeEntry = (observed = false): Entry<E> => ({
       done: Deferred.makeUnsafe<void, E>(),
       controls: [],
       mode: "drain",
+      observed,
       pendingWake: false,
       pendingForce: false,
       stopping: false,
@@ -113,8 +116,12 @@ export const make = <Key, E>(options: {
       for (const control of entry.controls) control.cancel()
       entry.controls.length = 0
       const successor = entry.pendingWake && available(key) ? makeEntry() : undefined
-      if (successor === undefined) active.delete(key)
-      else {
+      if (successor === undefined) {
+        active.delete(key)
+        if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause) && !entry.observed) {
+          unobservedFailure.set(key, exit.cause)
+        }
+      } else {
         active.set(key, successor)
         start(key, successor, "drain", false, true)
       }
@@ -123,13 +130,15 @@ export const make = <Key, E>(options: {
     const run = (key: Key): Effect.Effect<void, E> =>
       Effect.uninterruptibleMask((restore) => {
         if (!available(key)) return restore(Effect.interrupt)
+        unobservedFailure.delete(key)
         const entry = active.get(key)
         if (entry !== undefined) {
           if (entry.stopping) return restore(Deferred.await(entry.done).pipe(Effect.andThen(run(key))))
           if (entry.mode === "control") entry.pendingForce = true
+          entry.observed = true
           return restore(Deferred.await(entry.done))
         }
-        const next = makeEntry()
+        const next = makeEntry(true)
         active.set(key, next)
         start(key, next, "drain", true)
         return restore(Deferred.await(next.done))
@@ -137,25 +146,36 @@ export const make = <Key, E>(options: {
     const wake = (key: Key) =>
       Effect.sync(() => {
         if (!available(key)) return
+        unobservedFailure.delete(key)
         const entry = active.get(key)
         if (entry !== undefined) {
           entry.pendingWake = true
           return
         }
-        const next = makeEntry()
+        const next = makeEntry(false)
         active.set(key, next)
         start(key, next, "drain", false)
       })
     const wait = (key: Key) =>
       Effect.suspend(() => {
         const entry = active.get(key)
-        return entry ? Deferred.await(entry.done) : Effect.void
+        if (entry) {
+          entry.observed = true
+          return Deferred.await(entry.done)
+        }
+        const failed = unobservedFailure.get(key)
+        if (failed) {
+          unobservedFailure.delete(key)
+          return Effect.failCause(failed)
+        }
+        return Effect.void
       })
     const control = <A, CE>(key: Key, action: Effect.Effect<A, CE>): Effect.Effect<A, CE | ControlCancelled> =>
       Effect.uninterruptibleMask((restore) => {
         const previous = active.get(key)
         if (!available(key) || previous?.stopping) return Effect.fail(new ControlCancelled())
-        const entry = previous ?? makeEntry()
+        unobservedFailure.delete(key)
+        const entry = previous ?? makeEntry(true)
         const result = Deferred.makeUnsafe<A, CE | ControlCancelled>()
         const item: Control = {
           state: "queued",
@@ -191,6 +211,7 @@ export const make = <Key, E>(options: {
       })
     const interrupt = (key: Key, when?: () => boolean): Effect.Effect<void> =>
       Effect.suspend(() => {
+        unobservedFailure.delete(key)
         const entry = active.get(key)
         if (entry?.owner === undefined || (when && !when())) return Effect.void
         entry.stopping = true

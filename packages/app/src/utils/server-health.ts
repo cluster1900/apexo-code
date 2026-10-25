@@ -7,14 +7,14 @@ import { createStore, reconcile } from "solid-js/store"
 
 export type ServerHealth = { healthy: boolean; version?: string }
 
-interface CheckServerHealthOptions {
+export interface CheckServerHealthOptions {
   timeoutMs?: number
   signal?: AbortSignal
   retryCount?: number
   retryDelayMs?: number
 }
 
-const defaultTimeoutMs = 30_000
+const defaultTimeoutMs = 3_000
 const defaultRetryCount = 2
 const defaultRetryDelayMs = 100
 const cacheMs = 750
@@ -118,18 +118,18 @@ export function useCheckServerHealth() {
   const platform = usePlatform()
   const fetcher = platform.fetch ?? globalThis.fetch
 
-  return (http: ServerConnection.HttpBase) => {
+  return (http: ServerConnection.HttpBase, opts?: CheckServerHealthOptions) => {
     const key = cacheKey(http)
     const hit = healthCache.get(key)
     const now = Date.now()
-    if (hit && hit.fetch === fetcher && (!hit.done || now - hit.at < cacheMs)) return hit.promise
-    const promise = checkServerHealth(http, fetcher).finally(() => {
+    if (!opts && hit && hit.fetch === fetcher && (!hit.done || now - hit.at < cacheMs)) return hit.promise
+    const promise = checkServerHealth(http, fetcher, opts).finally(() => {
       const next = healthCache.get(key)
       if (!next || next.promise !== promise) return
       next.done = true
       next.at = Date.now()
     })
-    healthCache.set(key, { at: now, done: false, fetch: fetcher, promise })
+    if (!opts) healthCache.set(key, { at: now, done: false, fetch: fetcher, promise })
     return promise
   }
 }

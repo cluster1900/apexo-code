@@ -323,7 +323,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                     message: `Session not found: ${error.sessionID}`,
                   })
                 : new ServiceUnavailableError({
-                    message: "Session execution failed. Check server logs for details.",
+                    message:
+                      "message" in error && typeof error.message === "string" && error.message.trim()
+                        ? `Session execution failed: ${error.message}`
+                        : "Session execution failed. Check server logs for details.",
                     service: "session.wait",
                   }),
             ),
