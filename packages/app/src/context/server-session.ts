@@ -885,6 +885,13 @@ export function createServerSession(
   const projectV2 = (reduction: V2SessionReduction) => {
     reduction.touched.forEach((messageID) => messageLoads.get(reduction.sessionID)?.touchedSource.add(messageID))
     setData("session_message", reduction.sessionID, reconcile(reduction.messages))
+    if (reduction.removed?.length) {
+      batch(() => {
+        for (const messageID of reduction.removed ?? []) {
+          apply({ type: "message.removed", properties: { sessionID: reduction.sessionID, messageID } })
+        }
+      })
+    }
     if (reduction.touched.length === 0) return
 
     const touched = new Set(reduction.touched)
@@ -1003,8 +1010,14 @@ export function createServerSession(
         return
       case "session.updated": {
         const info = (event.properties as { info: Session }).info
+        const wasArchived = Boolean(data.info[info.id]?.time.archived)
         remember(info)
-        if (info.time.archived) evict([info.id])
+        if (info.time.archived && !wasArchived && !protectedSessions().has(info.id)) evict([info.id])
+        return
+      }
+      case "session.error": {
+        const props = event.properties as { sessionID?: string } | undefined
+        if (props?.sessionID) setData("session_status", props.sessionID, { type: "idle" })
         return
       }
       case "session.deleted": {

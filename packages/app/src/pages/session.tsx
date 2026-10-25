@@ -1950,7 +1950,7 @@ export default function Page() {
       await sdk().api.session.revert.stage({ sessionID, messageID: input.messageID })
       await sdk().api.session.revert.commit({ sessionID }).catch(() => undefined)
       roll(sessionID, undefined, target)
-      await target.session.sync(sessionID).catch(() => undefined)
+      await target.session.sync(sessionID, { force: true }).catch(() => undefined)
     } catch (error) {
       roll(sessionID, last, target)
       fail(error)
@@ -1994,8 +1994,10 @@ export default function Page() {
     const target = sync()
     const userMsg = userMessages().find((item) => item.id === input.messageID)
     const promptDraft = draft(input.messageID)
+    const savedModel =
+      userMsg?.model?.providerID && userMsg?.model?.modelID ? userMsg.model : undefined
     const model =
-      userMsg?.model ??
+      savedModel ??
       (local.model.current()
         ? { providerID: local.model.current()!.provider.id, modelID: local.model.current()!.id }
         : undefined)
@@ -2006,7 +2008,7 @@ export default function Page() {
       })
       return
     }
-    const agent = userMsg?.agent ?? local.agent.current()?.name ?? "build"
+    const agent = userMsg?.agent || info()?.agent || local.agent.current()?.name || "build"
     const last = target.session.get(sessionID)?.revert
     roll(sessionID, { messageID: input.messageID }, target)
     try {

@@ -12,6 +12,7 @@ import {
   XaiAuthPlugin,
 } from "../../src/plugin/xai"
 import { OAUTH_DUMMY_KEY } from "../../src/auth"
+import { Provider } from "../../src/provider/provider"
 
 function makeJwt(payload: object): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")
@@ -650,6 +651,11 @@ describe("plugin.xai", () => {
                 context_window: 500_000,
                 reasoning_efforts: [{ effort: "medium" }, { effort: "xhigh" }],
               },
+              {
+                id: "grok-imagine-video-1.5-lite",
+                name: "Grok Imagine Video 1.5 Lite",
+                output_modalities: ["video"],
+              },
             ],
           }),
         )
@@ -660,6 +666,7 @@ describe("plugin.xai", () => {
           "grok-4.6",
           "grok-4.5",
           "grok-4.8-preview",
+          "grok-imagine-video-1.5-lite",
         ])
         const hooks = await XaiAuthPlugin({} as any, { grokDir })
         const models = await hooks.provider!.models!({ models: {} } as any, {})
@@ -670,7 +677,15 @@ describe("plugin.xai", () => {
           limit: { context: 256_000, output: 64_000 },
         })
         expect(Object.keys(models["grok-4.7"].variants ?? {})).toEqual(["low", "medium", "high", "xhigh"])
+        expect(models["grok-4.7"].variants?.low).toEqual({ reasoningEffort: "low" })
         expect(Object.keys(models["grok-4.8-preview"].variants ?? {})).toEqual(["medium", "xhigh"])
+        expect(models["grok-imagine-video-1.5-lite"].capabilities.output).toMatchObject({
+          text: false,
+          video: true,
+        })
+        const sorted = Provider.sort(Object.values(models) as any)
+        expect(sorted[0]?.id).toBe("grok-4.7")
+        expect(sorted.some((m) => m.id === "grok-imagine-video-1.5-lite")).toBe(false)
       } finally {
         await fs.rm(grokDir, { recursive: true, force: true })
       }

@@ -9,6 +9,7 @@ export type V2SessionReduction = {
   sessionID: string
   messages: SessionMessageInfo[]
   touched: string[]
+  removed?: string[]
   missing?: string
 }
 
@@ -401,6 +402,16 @@ export function createV2SessionReducer() {
           update(source, current.id, () => failed),
           [failed.id],
         )
+      }
+      case "session.revert.committed": {
+        const index = source.findIndex((item) => item.id === event.data.to)
+        if (index < 0) return result([...source])
+        return {
+          sessionID,
+          messages: source.slice(0, index),
+          touched: [],
+          removed: source.slice(index).map((item) => item.id),
+        }
       }
       default:
         return

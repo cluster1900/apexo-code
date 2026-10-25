@@ -449,7 +449,27 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         clear: async (value: Parameters<ServerApi["session"]["revert"]["clear"]>[0]) => {
           await legacy().session.unrevert(value)
         },
-        commit: input.current.session.revert.commit,
+        commit: async (value: Parameters<ServerApi["session"]["revert"]["commit"]>[0]) => {
+          const session = await legacy()
+            .session.get({ sessionID: value.sessionID })
+            .then((res) => res.data)
+            .catch(() => undefined)
+          const revert = session?.revert
+          if (revert?.messageID && !revert.partID) {
+            const msgs = await legacy()
+              .session.messages({ sessionID: value.sessionID })
+              .then((res) => res.data ?? [])
+              .catch(() => [])
+            const index = msgs.findIndex((msg) => msg.info.id === revert.messageID)
+            const remove = index < 0 ? [] : msgs.slice(index)
+            for (const msg of remove) {
+              await legacy()
+                .session.deleteMessage({ sessionID: value.sessionID, messageID: msg.info.id })
+                .catch(() => undefined)
+            }
+          }
+          await input.current.session.revert.commit(value).catch(() => undefined)
+        },
       },
     },
     project: {

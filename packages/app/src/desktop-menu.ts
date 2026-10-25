@@ -292,7 +292,8 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       {
         type: "item",
         labelKey: "desktop.menu.documentation",
-        href: "https://github.com/cluster1900/apexo-code#readme",
+        command: "help.open",
+        accelerator: { macos: "F1", windows: "F1" },
       },
       { type: "item", labelKey: "desktop.menu.checkForUpdates", command: "app.checkUpdates" },
       { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export", platforms: ["windows"] },

@@ -71,10 +71,14 @@ function string(value: unknown) {
 function cleanBranding(value: string) {
   return value
     .replace(/\bfor Grok Build\b/gi, "for Apexo")
+    .replace(/\bdirectly from Grok Build\b/gi, "directly from Apexo")
     .replace(/\bdirectly from Grok\b/gi, "directly from Apexo")
+    .replace(/\bfrom Grok\b/gi, "from Apexo")
+    .replace(/\bGive Grok\b/gi, "Give Apexo")
+    .replace(/\bGrok integration\b/gi, "Apexo integration")
     .replace(/\bGrok Build Official Plugins\b/gi, "Official Plugins")
     .replace(/\bGrok Build\b/g, "Apexo")
-    .replace(/^xai-official$/i, "official")
+    .replace(/^xai-official$/i, "Official")
     .replace(/^xAI$/i, "Official")
 }
 function strings(value: unknown) {

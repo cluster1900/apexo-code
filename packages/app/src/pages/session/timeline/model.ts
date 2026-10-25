@@ -1,5 +1,5 @@
 import type { Message, UserMessage } from "@apexo/sdk/v2"
-import { createMemo, createResource, onCleanup, untrack, type Accessor } from "solid-js"
+import { createEffect, createMemo, createResource, onCleanup, untrack, type Accessor } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { same } from "@/utils/same"
@@ -39,6 +39,13 @@ export function createTimelineModel(input: {
       return sync().session.sync(id)
     },
   )
+  createEffect(() => {
+    const id = input.sessionID()
+    if (!id) return
+    if (sync().data.message[id] !== undefined) return
+    if (serverSync().session.history.loading(id)) return
+    void sync().session.sync(id)
+  })
   const messages = createMemo(() => {
     const id = input.sessionID()
     return id ? (sync().data.message[id] ?? []) : []

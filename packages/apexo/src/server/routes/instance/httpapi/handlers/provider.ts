@@ -73,7 +73,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return {
         all: Object.values(providers).map(redactProviderSecrets),
         default: Provider.defaultModelIDs(providers),
-        connected: Object.keys(providers).filter((id) => id in connected || credentials[id]),
+        connected: Object.keys(providers).filter(
+          (id) => id in connected || (Boolean(credentials[id]) && Object.keys(providers[id]?.models ?? {}).length > 0),
+        ),
       }
     })
 

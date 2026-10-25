@@ -75,6 +75,7 @@ export function useSettingsCommand() {
       id: "help.open",
       title: language.t("sidebar.help"),
       category: language.t("command.category.settings"),
+      keybind: "f1",
       slash: "help",
       onSelect: help,
     },

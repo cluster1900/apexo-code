@@ -36,11 +36,6 @@ export const SettingsModelsV2: Component = () => {
     sortBy: (a, b) => a.name.localeCompare(b.name),
     groupBy: (x) => x.provider.id,
     sortGroupsBy: (a, b) => {
-      const aCustom = a.items[0]?.provider.source === "config" || !popularProviders.includes(a.category)
-      const bCustom = b.items[0]?.provider.source === "config" || !popularProviders.includes(b.category)
-      if (aCustom && !bCustom) return -1
-      if (!aCustom && bCustom) return 1
-
       const aIndex = popularProviders.indexOf(a.category)
       const bIndex = popularProviders.indexOf(b.category)
       const aPopular = aIndex >= 0
@@ -49,6 +44,11 @@ export const SettingsModelsV2: Component = () => {
       if (aPopular && !bPopular) return -1
       if (!aPopular && bPopular) return 1
       if (aPopular && bPopular) return aIndex - bIndex
+
+      const aCustom = a.items[0]?.provider.source === "config"
+      const bCustom = b.items[0]?.provider.source === "config"
+      if (aCustom && !bCustom) return -1
+      if (!aCustom && bCustom) return 1
 
       const aName = a.items[0].provider.name
       const bName = b.items[0].provider.name

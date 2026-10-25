@@ -14,6 +14,7 @@ import { SettingsModelsV2 } from "./models"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@apexo/ui/context/dialog"
+import { useHelpDialog } from "../dialog-help-v2"
 import { useLayout } from "@/context/layout"
 import { useTabs } from "@/context/tabs"
 import { useServerSync } from "@/context/server-sync"
@@ -28,6 +29,7 @@ export const DialogSettings: Component<{
   const layout = useLayout()
   const tabs = useTabs()
   const serverSync = useServerSync()
+  const help = useHelpDialog()
   const [tab, setTab] = createSignal(props.defaultValue ?? "general")
   const directory = createMemo(() => {
     const route = layout.route()
@@ -106,9 +108,20 @@ export const DialogSettings: Component<{
                 </div>
               </div>
             </div>
-            <div class="settings-v2-nav-footer">
-              <span>{language.t("app.name.desktop")}</span>
-              <span>v{platform.version}</span>
+            <div class="flex flex-col gap-2 w-full">
+              <button
+                type="button"
+                data-action="settings-open-help"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-13-regular text-text-weak hover:text-text-strong hover:bg-surface-base-hover transition-colors"
+                onClick={help}
+              >
+                <Icon name="help" size="small" />
+                <span>{language.t("sidebar.help")}</span>
+              </button>
+              <div class="settings-v2-nav-footer">
+                <span>{language.t("app.name.desktop")}</span>
+                <span>v{platform.version}</span>
+              </div>
             </div>
           </div>
         </TabsV2.List>

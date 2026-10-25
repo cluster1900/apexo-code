@@ -324,6 +324,28 @@ integration.live("external connections persist only a reference and resolve the 
   }),
 )
 
+const unavailableLayer = Layer.succeed(Antigravity.Service, {
+  available: Effect.succeed(false),
+  connect: Effect.succeed(false),
+  command: Effect.succeed("agy"),
+  session: Effect.fail(new Antigravity.Error({ message: "unavailable", loginRequired: true })),
+  models: Effect.succeed([]),
+})
+const providerUnavailable = testEffect(
+  AppNodeBuilder.build(LayerNode.group([Provider.node, node]), [[Antigravity.node, unavailableLayer]]),
+)
+
+providerUnavailable.instance("V1 provider list does not crash when antigravity auth is stored but native agy is unavailable", () =>
+  Effect.gen(function* () {
+    const models = yield* Provider.Service
+    const auth = yield* Service
+    yield* auth.set("antigravity", { type: "external", method: 0 })
+    yield* Effect.addFinalizer(() => auth.remove("antigravity").pipe(Effect.orDie))
+    const catalog = yield* models.list()
+    expect(catalog[ProviderV2.ID.make("antigravity")]).toBeUndefined()
+  }),
+)
+
 const provider = testEffect(
   AppNodeBuilder.build(LayerNode.group([Provider.node, node]), [[Antigravity.node, nativeLayer]]),
 )

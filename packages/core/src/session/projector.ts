@@ -1,6 +1,6 @@
 export * as SessionProjector from "./projector"
 
-import { and, desc, eq, gt, or, sql } from "drizzle-orm"
+import { and, desc, eq, gte, or, sql } from "drizzle-orm"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -92,6 +92,7 @@ function applyUsage(
   sessionID: (typeof SessionV1.Event.MessageUpdated.Type)["data"]["sessionID"],
   value: Usage,
   sign = 1,
+  timeUpdated?: number,
 ) {
   return db
     .update(SessionTable)
@@ -102,7 +103,7 @@ function applyUsage(
       tokens_reasoning: sql`${SessionTable.tokens_reasoning} + ${value.tokens.reasoning * sign}`,
       tokens_cache_read: sql`${SessionTable.tokens_cache_read} + ${value.tokens.cache.read * sign}`,
       tokens_cache_write: sql`${SessionTable.tokens_cache_write} + ${value.tokens.cache.write * sign}`,
-      time_updated: sql`${SessionTable.time_updated}`,
+      time_updated: timeUpdated ?? sql`${SessionTable.time_updated}`,
     })
     .where(eq(SessionTable.id, sessionID))
     .run()
@@ -414,10 +415,16 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Step.Ended, (event) =>
       Effect.gen(function* () {
         yield* run(db, event)
-        yield* applyUsage(db, event.data.sessionID, {
-          cost: event.data.cost,
-          tokens: event.data.tokens,
-        })
+        yield* applyUsage(
+          db,
+          event.data.sessionID,
+          {
+            cost: event.data.cost,
+            tokens: event.data.tokens,
+          },
+          1,
+          DateTime.toEpochMillis(event.data.timestamp),
+        )
       }),
     )
     yield* events.project(SessionEvent.Step.Failed, (event) => run(db, event))
@@ -465,24 +472,31 @@ const layer = Layer.effectDiscard(
           )
           .get()
           .pipe(Effect.orDie)
-        if (!boundary) return yield* Effect.die(`Revert boundary message not found: ${event.data.messageID}`)
-        yield* db
-          .delete(SessionMessageTable)
-          .where(
-            and(eq(SessionMessageTable.session_id, event.data.sessionID), gt(SessionMessageTable.seq, boundary.seq)),
-          )
-          .run()
-          .pipe(Effect.orDie)
-        yield* db
-          .delete(SessionInputTable)
-          .where(
-            and(
-              eq(SessionInputTable.session_id, event.data.sessionID),
-              or(gt(SessionInputTable.admitted_seq, boundary.seq), gt(SessionInputTable.promoted_seq, boundary.seq)),
-            ),
-          )
-          .run()
-          .pipe(Effect.orDie)
+        if (boundary) {
+          yield* db
+            .delete(SessionMessageTable)
+            .where(
+              and(
+                eq(SessionMessageTable.session_id, event.data.sessionID),
+                gte(SessionMessageTable.seq, boundary.seq),
+              ),
+            )
+            .run()
+            .pipe(Effect.orDie)
+          yield* db
+            .delete(SessionInputTable)
+            .where(
+              and(
+                eq(SessionInputTable.session_id, event.data.sessionID),
+                or(
+                  gte(SessionInputTable.admitted_seq, boundary.seq),
+                  gte(SessionInputTable.promoted_seq, boundary.seq),
+                ),
+              ),
+            )
+            .run()
+            .pipe(Effect.orDie)
+        }
         yield* db
           .update(SessionTable)
           .set({ revert: null, time_updated: DateTime.toEpochMillis(event.data.timestamp) })

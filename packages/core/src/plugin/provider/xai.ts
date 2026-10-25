@@ -236,6 +236,8 @@ export const XAIPlugin = define({
             }
             model.status = "active"
             model.enabled = true
+            model.time.released =
+              item.id === "grok-4.7" ? Date.parse("2026-04-15") : model.time.released || Date.parse("2026-03-09")
             model.limit = { context: item.context_window, output: 64_000 }
             model.capabilities = {
               tools: true,
@@ -245,7 +247,7 @@ export const XAIPlugin = define({
             model.variants = item.efforts.map((effort) => ({
               id: ModelV2.VariantID.make(effort),
               headers: {},
-              body: { reasoningEffort: effort },
+              body: { reasoning: { effort } },
             }))
           })
         }
