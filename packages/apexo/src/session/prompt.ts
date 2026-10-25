@@ -1737,7 +1737,7 @@ const layer = Layer.effect(
               ...(steered && initialUser
                 ? [{ role: "user" as const, content: SessionReminders.steering(initialUser) }]
                 : []),
-              ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
+              ...(isLastStep ? [{ role: "user" as const, content: MAX_STEPS_PROMPT }] : []),
             ],
             tools,
             model,

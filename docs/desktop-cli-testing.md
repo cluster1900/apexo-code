@@ -73,10 +73,10 @@ Report every matrix row with evidence or a concrete blocker. Never equate unexec
 
 Use the same real Gemini 3.8 Flash account and isolated fixtures. Keep the original audit as historical evidence; record the new run separately.
 
-1. Repeat default and native CLI text/coding calls, valid Low/High variants, and an invalid variant. Verify the invalid request exits nonzero before inference. Repeat preview create/prompt/wait/messages and Desktop deep-research.
+1. Repeat default and native CLI text/coding calls, valid Low/High variants, and both an invalid variant and inherited `toString` in each protocol. Verify the invalid request exits nonzero before inference. Repeat preview create/prompt/wait/messages and Desktop deep-research.
 2. Export a session from project A, import it in B, then fork from A and B. Require a prompt actionable mismatch error for A and a usable independent fork for B.
 3. In a newly built Desktop window, submit two consecutive prompts and compare Context raw message IDs and counters with the authenticated server transcript. Exercise timestamp-changing optimistic confirmation in actual cache tests.
 4. Export through the native Save dialog and import through the native Open dialog. Verify complete history and continue the imported conversation.
 5. Interrupt a TUI shell task with an empty queue, start another task, enqueue while it is active, and verify automatic delivery after the task finishes.
-6. Exercise Goal planning, review and completion with sufficient budget. Verify an evaluator rejection starts a new user turn before provider continuation; separately retain the real-provider comparison for the formerly rejected assistant-ending request.
+6. Exercise Goal planning, review and completion with sufficient budget. Verify an evaluator rejection starts a new user turn before provider continuation; repeat with a one-step worker and require the final-step reminder to preserve a user-ending request. Run one-step CLI controls in both protocols: require a model response and no HTTP 400; retain the native `turn_limit` terminal outcome. Separately retain the real-provider comparison for the formerly rejected assistant-ending request.
 7. Run all five CI gate commands plus app unit tests, production Desktop/app builds and the session/Context production benchmark. Use comparable machine load for before/after timing. Open the fix PR and wait for every required check to pass on its head commit.

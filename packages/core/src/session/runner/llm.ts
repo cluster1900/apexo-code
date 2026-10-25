@@ -454,7 +454,7 @@ const layer = Layer.effect(
             .map(SystemPart.make)
           const llmMessages = [
             ...(yield* Effect.fromResult(toLLMMessages(context, model))),
-            ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
+            ...(isLastStep ? [Message.user(MAX_STEPS_PROMPT)] : []),
           ]
           const llmTools = toolMaterialization?.definitions ?? []
           const activeGoal = attempt ? yield* goals.get(attempt.sessionID) : undefined

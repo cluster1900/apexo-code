@@ -94,7 +94,7 @@ const live: Layer.Layer<
       })
 
       const variant = input.user.model.variant
-      if (!input.small && variant && variant !== "default" && !input.model.variants?.[variant])
+      if (!input.small && variant && variant !== "default" && !Object.hasOwn(input.model.variants ?? {}, variant))
         return yield* Effect.fail(
           new Error(
             `Unsupported variant "${variant}" for ${input.model.providerID}/${input.model.id}. Available variants: ${["default", ...Object.keys(input.model.variants ?? {})].join(", ")}`,

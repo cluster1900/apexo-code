@@ -11,17 +11,77 @@ import { reply } from "../../lib/llm-server"
 import { cliIt } from "../../lib/cli-process"
 
 describe("apexo run (non-interactive subprocess)", () => {
-  cliIt.live(
-    "rejects an unsupported explicit variant before calling the provider",
-    ({ llm, apexo }) =>
-      Effect.gen(function* () {
-        const result = yield* apexo.run("do not send this", { extraArgs: ["--variant", "typo-effort"] })
-        apexo.expectExit(result, 1)
-        expect(result.stderr).toContain('Unsupported variant "typo-effort"')
-        expect(result.stderr).toContain("Available variants: default")
-        expect(yield* llm.hits).toHaveLength(0)
-      }),
-    60_000,
+  ;["typo-effort", "toString"].forEach((variant) =>
+    cliIt.live(
+      `rejects unsupported explicit variant ${variant} before calling the provider`,
+      ({ llm, apexo }) =>
+        Effect.gen(function* () {
+          const result = yield* apexo.run("do not send this", { extraArgs: ["--variant", variant] })
+          apexo.expectExit(result, 1)
+          expect(result.stderr).toContain(`Unsupported variant "${variant}"`)
+          expect(result.stderr).toContain("Available variants: default")
+          expect(yield* llm.hits).toHaveLength(0)
+        }),
+      60_000,
+    ),
+  )
+  ;["typo-effort", "toString", undefined].forEach((variant) =>
+    cliIt.live(
+      variant
+        ? `native rejects unsupported explicit variant ${variant} before calling the provider`
+        : "native sends the final-step reminder as a user turn",
+      ({ llm, apexo, home }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(home, "apexo.json"),
+              JSON.stringify({
+                agents: { limited: { mode: "primary", steps: 1 } },
+                providers: {
+                  test: {
+                    api: {
+                      type: "aisdk",
+                      package: "@ai-sdk/openai-compatible",
+                      url: llm.url,
+                      settings: { apiKey: "test-key" },
+                    },
+                    models: {
+                      "test-model": {
+                        capabilities: { tools: true, input: ["text"], output: ["text"] },
+                        limit: { context: 100000, output: 4096 },
+                      },
+                    },
+                  },
+                },
+              }),
+            ),
+          )
+          if (!variant) yield* llm.text("limited response")
+          const result = yield* apexo.run("reply with the step limit", {
+            agent: "limited",
+            format: "json",
+            extraArgs: ["--dir", home, "--session-protocol", "native", ...(variant ? ["--variant", variant] : [])],
+            env: { APEXO_CONFIG_CONTENT: "", APEXO_DISABLE_PROJECT_CONFIG: "" },
+          })
+          if (!variant) {
+            apexo.expectExit(result, 1)
+            expect(result.stdout).toContain("limited response")
+            expect(result.stdout).toContain('"reason":"turn_limit"')
+            const requests = yield* llm.hits
+            expect(requests).toHaveLength(1)
+            expect((requests[0].body.messages as { role: string; content: string }[]).at(-1)).toMatchObject({
+              role: "user",
+              content: expect.stringContaining("MAXIMUM STEPS REACHED"),
+            })
+            return
+          }
+          apexo.expectExit(result, 1)
+          expect(result.stdout).toContain("Variant unavailable")
+          expect(result.stdout).toContain(variant)
+          expect(yield* llm.hits).toHaveLength(0)
+        }),
+      60_000,
+    ),
   )
 
   cliIt.live(
