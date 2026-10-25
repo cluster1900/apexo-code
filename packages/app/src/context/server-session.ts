@@ -107,12 +107,16 @@ type MessageLoadBaseline = Pick<
 function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
   if (items.length === 0) return { ...page, observed: [] as { messageID: string; parts: Part[] }[] }
   const session = [...page.session]
+  const ids = new Set(session.map((message) => message.id))
   const part = new Map(page.part.map((item) => [item.id, item.part]))
   const observed: { messageID: string; parts: Part[] }[] = []
   for (const item of items) {
-    const result = Binary.search(session, messageKey(item.message), messageKey)
-    const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
+    const found = ids.has(item.message.id)
+    if (!found) {
+      const result = Binary.search(session, messageKey(item.message), messageKey)
+      session.splice(result.index, 0, item.message)
+      ids.add(item.message.id)
+    }
     const current = part.get(item.message.id)
     const confirmed = found ? item.parts.filter((part) => current?.some((value) => value.id === part.id)) : []
     if (found) observed.push({ messageID: item.message.id, parts: confirmed })
@@ -1069,8 +1073,10 @@ export function createServerSession(
         if (result.found) setData("message", info.sessionID, result.index, reconcile(info))
         if (!result.found)
           setData("message", info.sessionID, (value = []) => {
-            const next = value.slice()
-            next.splice(result.index, 0, info)
+            // Admission timestamps may differ from the optimistic timestamp; reconcile by identity.
+            const next = value.filter((message) => message.id !== info.id)
+            const position = Binary.search(next, messageKey(info), messageKey)
+            next.splice(position.index, 0, info)
             return next
           })
         return

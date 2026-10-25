@@ -285,7 +285,11 @@ export function applyDirectoryEvent(input: {
         "message",
         info.sessionID,
         produce((draft) => {
-          draft.splice(result.index, 0, info)
+          // Server admission can change an optimistic timestamp; ID remains the identity.
+          const previous = draft.findIndex((message) => message.id === info.id)
+          if (previous >= 0) draft.splice(previous, 1)
+          const next = Binary.search(draft, messageKey(info), messageKey)
+          draft.splice(next.index, 0, info)
         }),
       )
       break

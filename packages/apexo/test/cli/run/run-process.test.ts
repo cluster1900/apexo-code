@@ -5,10 +5,51 @@
 // `APEXO_CONFIG_CONTENT` providing the test provider config inline.
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import { mkdir } from "node:fs/promises"
+import path from "node:path"
 import { reply } from "../../lib/llm-server"
 import { cliIt } from "../../lib/cli-process"
 
 describe("apexo run (non-interactive subprocess)", () => {
+  cliIt.live(
+    "rejects an unsupported explicit variant before calling the provider",
+    ({ llm, apexo }) =>
+      Effect.gen(function* () {
+        const result = yield* apexo.run("do not send this", { extraArgs: ["--variant", "typo-effort"] })
+        apexo.expectExit(result, 1)
+        expect(result.stderr).toContain('Unsupported variant "typo-effort"')
+        expect(result.stderr).toContain("Available variants: default")
+        expect(yield* llm.hits).toHaveLength(0)
+      }),
+    60_000,
+  )
+
+  cliIt.live(
+    "fork reports a session directory mismatch instead of waiting for events",
+    ({ llm, apexo, home }) =>
+      Effect.gen(function* () {
+        const other = path.join(home, "other")
+        yield* Effect.promise(() => mkdir(other))
+        yield* llm.text("original")
+        const env = { APEXO_DB: path.join(home, "fork.db") }
+        const original = yield* apexo.run("reply original", { format: "json", env })
+        apexo.expectExit(original, 0)
+        const sessionID = apexo.parseJsonEvents(original.stdout).find((event) => typeof event.sessionID === "string")!
+          .sessionID as string
+        // A different --dir exercises the same placement mismatch as a session relocated by import.
+        const result = yield* apexo.run("fork", {
+          extraArgs: ["--dir", other, "--session", sessionID, "--fork"],
+          timeoutMs: 15_000,
+          env,
+        })
+        apexo.expectExit(result, 1)
+        expect(result.stderr).toContain("belongs to")
+        expect(result.stderr).toContain("Retry with --dir")
+        expect(yield* llm.calls).toBe(1)
+      }),
+    60_000,
+  )
+
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
   cliIt.live(
@@ -424,7 +465,9 @@ describe("apexo run (non-interactive subprocess)", () => {
         })
         expect(result.exitCode).toBe(1)
         expect(result.stdout).toBe("started\n")
-        expect(result.stderr).toContain("the wait for background work ran out after 1 s and exit stopped 1 background task")
+        expect(result.stderr).toContain(
+          "the wait for background work ran out after 1 s and exit stopped 1 background task",
+        )
         expect(result.durationMs).toBeLessThan(25_000)
         // Agent turns carry tools; the session title request does not.
         const turns = (yield* llm.hits).filter((hit) => Array.isArray(hit.body.tools) && hit.body.tools.length > 0)

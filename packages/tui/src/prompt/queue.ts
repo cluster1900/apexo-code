@@ -23,6 +23,7 @@ export function createPromptQueue(input: {
         () => {
           batch(() => {
             setStore("items", sessionID, (items) => items.slice(1))
+            if (!store.items[sessionID]?.length) setStore("paused", sessionID, false)
             setStore("sending", sessionID, false)
           })
         },
@@ -42,7 +43,7 @@ export function createPromptQueue(input: {
     sending: (sessionID: string) => store.sending[sessionID] ?? false,
     paused: (sessionID: string) => store.paused[sessionID] ?? false,
     pause(sessionID: string) {
-      setStore("paused", sessionID, true)
+      if (store.items[sessionID]?.length) setStore("paused", sessionID, true)
     },
     push(draft: PromptDraft) {
       setStore("items", draft.sessionID, (items = []) => [...items, structuredClone(unwrap(draft))])

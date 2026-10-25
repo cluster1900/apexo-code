@@ -39,6 +39,8 @@ export const AntigravityPlugin = define({
       }),
     )
 
+    // Plugin boot batches transforms; authentication needs the registered method materialized now.
+    yield* integrations.reload()
     yield* integrations.connection.external({ integrationID, methodID }).pipe(Effect.ignore)
 
     yield* catalog.transform((draft) =>

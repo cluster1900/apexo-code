@@ -426,6 +426,13 @@ grok.instance("goal execution automatically continues after rejection and preser
     expect(requests).toHaveLength(18)
     expect(JSON.stringify(requests[1])).toContain("ORIGINAL_FULL_SCOPE")
     expect(JSON.stringify(requests[7])).toContain("Implement and verify B")
+    // The second worker call must carry the evaluator's correction as a new turn.
+    // Gemini rejects assistant-prefill requests, which this full execution used to produce.
+    const workerRequests = (yield* server.llm.hits).filter((call) =>
+      JSON.stringify(call.body).includes("The user explicitly started this persistent goal"),
+    )
+    expect(workerRequests).toHaveLength(2)
+    expect((workerRequests[1].body.messages as { role: string }[]).at(-1)).toMatchObject({ role: "user" })
     const messages = yield* sessions.messages({ sessionID: chat.id })
     expect(messages.filter((item) => item.info.role === "user")).toHaveLength(1)
     expect(messages.filter((item) => item.info.role === "assistant")).toHaveLength(2)

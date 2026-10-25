@@ -543,6 +543,15 @@ const CompatibilityRunCommand = effectCmd({
           const current = await resolveSession(sdk, args.session)
 
           if (args.fork) {
+            if (
+              directory &&
+              (args.attach
+                ? current.directory !== directory
+                : Filesystem.resolve(current.directory) !== Filesystem.resolve(directory))
+            )
+              throw new Error(
+                `Session ${current.id} belongs to ${current.directory}. Retry with --dir ${JSON.stringify(current.directory)} to fork it.`,
+              )
             const forked = await sdk.session.fork({
               sessionID: current.id,
             })
@@ -1087,10 +1096,7 @@ const CompatibilityRunCommand = effectCmd({
               } else {
                 const rejectedMessage = `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`
                 error = error ? error + EOL + rejectedMessage : rejectedMessage
-                UI.println(
-                  UI.Style.TEXT_WARNING_BOLD + "!",
-                  UI.Style.TEXT_NORMAL + rejectedMessage,
-                )
+                UI.println(UI.Style.TEXT_WARNING_BOLD + "!", UI.Style.TEXT_NORMAL + rejectedMessage)
                 await client.permission.reply({
                   requestID: permission.id,
                   reply: "reject",

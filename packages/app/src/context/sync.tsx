@@ -64,13 +64,17 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   if (items.length === 0) return { ...page, confirmed: [] as string[] }
 
   const session = [...page.session]
+  const ids = new Set(session.map((message) => message.id))
   const part = new Map(page.part.map((item) => [item.id, sortParts(item.part)]))
   const confirmed: string[] = []
 
   for (const item of items) {
-    const result = Binary.search(session, messageKey(item.message), messageKey)
-    const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
+    const found = ids.has(item.message.id)
+    if (!found) {
+      const result = Binary.search(session, messageKey(item.message), messageKey)
+      session.splice(result.index, 0, item.message)
+      ids.add(item.message.id)
+    }
 
     const current = part.get(item.message.id)
     if (found && hasParts(current, item.parts)) {
@@ -93,12 +97,14 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
 export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, messageKey(input.message), messageKey)
-    messages.splice(result.index, 0, input.message)
+    if (!messages.some((message) => message.id === input.message.id)) {
+      const result = Binary.search(messages, messageKey(input.message), messageKey)
+      messages.splice(result.index, 0, input.message)
+    }
   } else {
     draft.message[input.sessionID] = [input.message]
   }
-  draft.part[input.message.id] = sortParts(input.parts)
+  draft.part[input.message.id] = mergeParts(draft.part[input.message.id], sortParts(input.parts))
 }
 
 export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticRemoveInput) {

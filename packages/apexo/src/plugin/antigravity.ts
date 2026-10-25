@@ -59,7 +59,10 @@ export function createAntigravityFetch(
         {
           error: {
             code: response.status,
-            message: `Antigravity request failed (HTTP ${response.status}). Open agy to check your account.`,
+            message:
+              response.status === 400
+                ? "Antigravity rejected the request (HTTP 400). Review the conversation and model request settings."
+                : `Antigravity request failed (HTTP ${response.status}). Open agy to check your account.`,
             status: "ANTIGRAVITY_ERROR",
           },
         },
