@@ -1582,6 +1582,17 @@ it.live(
             operations.list(session.id).pipe(Effect.map((items) => items.find((item) => item.state === "finished"))),
             "joined resume lost the automatic epoch",
             "5 seconds",
+          ).pipe(
+            Effect.tapError(() =>
+              Effect.gen(function* () {
+                const receipts = yield* operations.list(session.id)
+                const hits = yield* llm.hits
+                console.error(
+                  "Joined resume state",
+                  JSON.stringify({ receipts, calls: hits.length, requests: hits.map((hit) => hit.body.messages) }),
+                )
+              }),
+            ),
           )
           expect(receipt.result?.status).toBe("completed")
           expect(yield* llm.calls).toBe(2)

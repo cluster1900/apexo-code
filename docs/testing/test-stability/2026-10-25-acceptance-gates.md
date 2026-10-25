@@ -43,4 +43,33 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 - An attempted in-process `--rerun-each 5` control passed first, then produced four `ManagedRuntime disposed` fixture-reuse failures. Those are not HTTP 400 recurrences and are not counted as endpoint evidence.
 - In this second full gate, the OAuth, task metadata and native Plan batches all passed. That is a successful control, not proof that #156 or #157 is fixed.
 
-See [the regression report](../desktop-cli/2026-10-25-regression.md) for final full-gate and CI outcomes. None of these observations is promoted to a recurring constraint.
+## BUG-20261025-012 — Linux joined-resume Memory completion times out
+
+- Status: investigating; GitHub [#159](https://github.com/cluster1900/apexo-code/issues/159). Do not equate this symptom with the already-fixed epoch invalidation in [BUG-20261015-341](../runtime/native-memory-joined-resume.md).
+- Scope: `test/v2/memory-legacy-native.test.ts`, `joining an active explicit resume preserves the drain's automatic idle epoch`.
+- Observed: two Linux CI attempts on `6108a2b` failed after 7682.79 ms and 6308.37 ms with `joined resume lost the automatic epoch`; each batch otherwise passed 296 tests. The same revision passed batch 5 locally, plus six focused controls.
+- Reproduction: root `GITHUB_ACTIONS=false APEXO_TEST_SHARD=5/6 bun turbo test --filter=apexo --concurrency=2 --log-order=stream --log-prefix=none`. The fixture holds a provider response, forks explicit resume, sleeps 50 ms, releases the response and polls for a finished automatic receipt for five seconds.
+- Expected: explicit resume joins the active drain, preserves its epoch, and automatic idle Memory work completes with two total provider calls.
+- Investigation: adding a controlled 100 ms delay before resume locally invalidated the fixture's 50 ms readiness assumption and produced a failed Memory receipt. This demonstrates a scheduling weakness, but is not the same error as either Linux timeout and does not establish their cause. The artificial delay was removed.
+- Current change: print actual receipts and provider requests when the unchanged completion poll fails. No timeout or assertion is relaxed. Root cause and fix verification remain pending.
+
+## BUG-20261025-013 — Local batch reaches its watchdog without a test failure report
+
+- Status: unresolved; GitHub [#160](https://github.com/cluster1900/apexo-code/issues/160).
+- Scope: final-head macOS full gate at `6108a2b`, batch 10/17, 29 files.
+- Observed: 16 batches passed; batch 10 was killed by the existing 600-second watchdog with exit 137. A process sample showed its main thread waiting in `__wait4_nocancel`; unsymbolized Bun frames do not identify the caller or child. The failure-only log did not identify the active test.
+- Reproduction: root `GITHUB_ACTIONS=false bun turbo test --concurrency=2`; select the batch alone from Apexo with `APEXO_TEST_SHARD=10/17 bun run script/run-tests.ts`.
+- Expected: each test and fixture terminates within its bounded deadline, allowing the batch to report results.
+- Verification attempt: unchanged exact batch with per-test output passed 283 tests, one existing skip and 1407 assertions in 85.03 seconds. No hang recurred, so no fix or common cause with #156 is claimed.
+
+## BUG-20261025-014 — Nested PR Agent retries exhaust the job deadline
+
+- Scope: `.github/workflows/pr-agent.yml`; GitHub [#161](https://github.com/cluster1900/apexo-code/issues/161).
+- Observed: two successive PR #155 heads completed automatic review but were cancelled at the 20-minute deadline during suggestion generation. An earlier nominal 300-second model request consumed about 903 seconds before another handler retry; the latest suggestion call remained active from 13:31:24 until cancellation at 13:42:35 UTC.
+- Reproduction: synchronize a substantial PR while the configured MiniMax provider is slow, with default client and handler retries and `ai_timeout=300`.
+- Expected: timeout failures reach the existing fallback within a bounded budget; both automatic phases complete or report their actual failure.
+- Cause: completion-client retries multiply the handler's same-model retry loop. The [upstream configuration](https://github.com/the-pr-agent/pr-agent/blob/main/pr_agent/settings/configuration.toml) and [handler](https://github.com/the-pr-agent/pr-agent/blob/main/pr_agent/algo/ai_handlers/litellm_ai_handler.py) expose both controls.
+- Change: disable nested client retries and same-model timeout replay, retain the existing fallback and both automatic phases, allow 30 minutes for all phases, and propagate tool failures. Test checks and branch protection remain intact.
+- Verification: source configuration checked against the upstream implementation; final workflow execution remains pending and is recorded on PR #155.
+
+See [the regression report](../desktop-cli/2026-10-25-regression.md) and PR #155 for final full-gate and CI outcomes. None of these observations is promoted to a recurring constraint.
