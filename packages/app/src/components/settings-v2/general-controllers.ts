@@ -1,6 +1,7 @@
 import { createMemo, createResource, onMount, type Accessor } from "solid-js"
 import type { ColorScheme } from "@apexo/ui/theme/context"
 import { useTheme } from "@apexo/ui/theme/context"
+import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -73,6 +74,7 @@ export function createShellSettingsController() {
 }
 
 export function createAppearanceSettingsController() {
+  const language = useLanguage()
   const settings = useSettings()
   const theme = useTheme()
   const themes = createMemo(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
@@ -93,12 +95,12 @@ export function createAppearanceSettingsController() {
       ui: createMemo(() => ({
         value: sansInput(settings.appearance.uiFont()),
         family: sansFontFamily(settings.appearance.uiFont()),
-        placeholder: sansDefault,
+        placeholder: language.t("settings.general.row.uiFont.placeholder"),
       })),
       code: createMemo(() => ({
         value: monoInput(settings.appearance.font()),
         family: monoFontFamily(settings.appearance.font()),
-        placeholder: monoDefault,
+        placeholder: language.t("settings.general.row.font.placeholder"),
       })),
       terminal: createMemo(() => ({
         value: terminalInput(settings.appearance.terminalFont()),

@@ -215,7 +215,7 @@ const KEYBIND_TITLE_KEYS: Partial<Record<string, Parameters<LanguageContext["t"]
   "common.goForward": "common.goForward",
   "settings.open": "command.settings.open",
   "file.open": "command.file.open",
-  "file.attach": "command.prompt.Attach",
+  "file.attach": "prompt.action.attachFile",
   "prompt.mode.shell": "command.prompt.mode.shell",
   "prompt.mode.normal": "command.prompt.mode.normal",
   "steps.toggle": "command.steps.toggle",

@@ -42,28 +42,28 @@ const DEFAULT_GROK_MODELS = [
     id: "grok-4.7",
     name: "Grok 4.7",
     context_window: 256_000,
-    release_date: "",
+    release_date: "2026-04-15",
     efforts: [...DEFAULT_GROK_EFFORTS],
   },
   {
     id: "grok-4.7-build-fast",
     name: "Grok 4.7 Fast",
     context_window: 256_000,
-    release_date: "",
+    release_date: "2026-04-14",
     efforts: [...DEFAULT_GROK_EFFORTS],
   },
   {
     id: "grok-4.6",
     name: "Grok 4.6",
     context_window: 256_000,
-    release_date: "",
+    release_date: "2026-03-01",
     efforts: [...DEFAULT_GROK_EFFORTS],
   },
   {
     id: "grok-4.5",
     name: "Grok 4.5",
     context_window: 256_000,
-    release_date: "",
+    release_date: "2026-02-01",
     efforts: [...DEFAULT_GROK_EFFORTS],
   },
 ] as const
@@ -90,20 +90,28 @@ function defaultGrokDir() {
 export async function readGrokCliAuth(grokDir = defaultGrokDir()): Promise<Auth.Info | undefined> {
   const raw = await Filesystem.readJson(path.join(grokDir, "auth.json")).catch(() => undefined)
   if (!isRecord(raw)) return
-  const candidates = [raw[GROK_OIDC_ENTRY_KEY], ...Object.values(raw)]
+  const candidates = [raw[GROK_OIDC_ENTRY_KEY], raw, ...Object.values(raw)]
   for (const item of candidates) {
     if (!isRecord(item)) continue
-    if (
-      typeof item.key === "string" &&
-      item.key.length > 0 &&
-      typeof item.refresh_token === "string" &&
-      item.refresh_token.length > 0
-    ) {
-      const parsed = typeof item.expires_at === "string" ? Date.parse(item.expires_at) : NaN
+    const token =
+      typeof item.key === "string" && item.key.length > 0
+        ? item.key
+        : typeof item.access_token === "string" && item.access_token.length > 0
+          ? item.access_token
+          : undefined
+    if (token && typeof item.refresh_token === "string" && item.refresh_token.length > 0) {
+      const parsed =
+        typeof item.expires_at === "number"
+          ? item.expires_at < 1e12
+            ? item.expires_at * 1000
+            : item.expires_at
+          : typeof item.expires_at === "string"
+            ? Date.parse(item.expires_at)
+            : NaN
       const expires = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
       return {
         type: "oauth",
-        access: item.key,
+        access: token,
         refresh: item.refresh_token,
         expires,
       }
@@ -353,6 +361,9 @@ export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOp
         const models: typeof provider.models = {}
         for (const item of extra) {
           const existing = provider.models[item.id]
+          const isVideo = /video/i.test(item.id)
+          const isImage = /image|imagine/i.test(item.id) && !isVideo
+          const isText = !isVideo && !isImage
           models[item.id] = {
             id: item.id,
             providerID: "xai",
@@ -364,22 +375,22 @@ export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOp
             name: item.name,
             family: item.id,
             capabilities: existing?.capabilities ?? {
-              temperature: true,
-              reasoning: true,
-              attachment: true,
-              toolcall: true,
+              temperature: isText,
+              reasoning: isText && item.efforts.length > 0,
+              attachment: isText,
+              toolcall: isText,
               input: {
                 text: true,
                 audio: false,
-                image: true,
+                image: isText || isImage || isVideo,
                 video: false,
                 pdf: false,
               },
               output: {
-                text: true,
+                text: isText,
                 audio: false,
-                image: false,
-                video: false,
+                image: isImage,
+                video: isVideo,
                 pdf: false,
               },
               interleaved: false,

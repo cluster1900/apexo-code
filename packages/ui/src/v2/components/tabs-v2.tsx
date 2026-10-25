@@ -49,7 +49,16 @@ function TabsV2List(props: TabsV2ListProps) {
 }
 
 function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children", "onMiddleClick", "subtext"])
+  const [split, rest] = splitProps(props, [
+    "class",
+    "classList",
+    "children",
+    "onMiddleClick",
+    "subtext",
+    "onPointerDown",
+    "onClick",
+  ])
+  const state = { pointerActivated: false }
   return (
     <div
       data-slot="tabs-v2-trigger-wrapper"
@@ -70,7 +79,22 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
         }
       }}
     >
-      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value}>
+      <Kobalte.Trigger
+        {...rest}
+        data-slot="tabs-v2-trigger"
+        data-value={props.value}
+        onPointerDown={(e) => {
+          state.pointerActivated = true
+          if (typeof split.onPointerDown === "function") split.onPointerDown(e)
+        }}
+        onClick={(e) => {
+          if (typeof split.onClick === "function") split.onClick(e)
+          if (!state.pointerActivated && !e.defaultPrevented && !props.disabled) {
+            e.currentTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+          }
+          state.pointerActivated = false
+        }}
+      >
         <span class="inline-flex items-center gap-2" data-slot="tabs-v2-trigger-content">
           {split.children}
           <Show when={split.subtext}>

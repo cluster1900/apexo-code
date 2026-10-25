@@ -515,7 +515,7 @@ export const SettingsGeneral: Component = () => {
               type="text"
               value={sans()}
               onChange={(value) => settings.appearance.setUIFont(value)}
-              placeholder={sansDefault}
+              placeholder={language.t("settings.general.row.uiFont.placeholder")}
               spellcheck={false}
               autocorrect="off"
               autocomplete="off"
@@ -538,7 +538,7 @@ export const SettingsGeneral: Component = () => {
               type="text"
               value={mono()}
               onChange={(value) => settings.appearance.setFont(value)}
-              placeholder={monoDefault}
+              placeholder={language.t("settings.general.row.font.placeholder")}
               spellcheck={false}
               autocorrect="off"
               autocomplete="off"

@@ -225,6 +225,12 @@ const layer = Layer.effect(
           return Option.getOrUndefined(
             pipe(
               yield* result.model.available(),
+              Array.filter(
+                (item) =>
+                  item.status === "active" &&
+                  (item.capabilities.output.length === 0 ||
+                    item.capabilities.output.some((cap) => cap.startsWith("text"))),
+              ),
               Array.sortWith((item) => item.time.released, Order.flip(Order.Number)),
               Array.head,
             ),

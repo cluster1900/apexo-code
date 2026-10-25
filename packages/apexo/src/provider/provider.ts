@@ -790,11 +790,13 @@ const layer = Layer.effect(
           const stored = yield* auth.get(providerID).pipe(Effect.orDie)
           if (!stored) continue
           if (!plugin.auth.loader) continue
+          const target = database[plugin.auth.provider]
+          if (!target) continue
 
           const options = yield* Effect.promise(() =>
             plugin.auth!.loader!(
               () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
-              toPublicInfo(database[plugin.auth!.provider]),
+              toPublicInfo(target),
             ),
           )
           const opts = options ?? {}
@@ -1138,10 +1140,13 @@ const layer = Layer.effect(
 
 const priority = ["gpt-5", "claude-sonnet-4", "grok-4", "gemini-3-pro"]
 const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
-export function sort<T extends { id: string; status?: string }>(models: T[]) {
+export function sort<T extends { id: string; status?: string; capabilities?: { output?: { text?: boolean } } }>(
+  models: T[],
+) {
   return sortBy(
-    models.filter((model) => model.status !== "deprecated"),
+    models.filter((model) => model.status !== "deprecated" && model.capabilities?.output?.text !== false),
     [(model) => priority.findIndex((filter) => model.id.includes(filter)), "desc"],
+    [(model) => (model.id === "grok-4.7" ? 0 : 1), "asc"],
     [(model) => (model.id.includes("latest") ? 0 : 1), "asc"],
     [(model) => model.id, "desc"],
   )

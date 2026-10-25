@@ -58,6 +58,7 @@ import { createSessionLineage } from "@/pages/session/session-lineage"
 import { SessionPage, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
 import { NewHome } from "@/pages/home"
 import { LegacyHome } from "@/pages/home/legacy-home"
+import { useHelpDialog } from "@/components/dialog-help-v2"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 
@@ -316,9 +317,19 @@ function DesktopCommands() {
   const command = useCommand()
   const language = useLanguage()
   const platform = usePlatform()
+  const help = useHelpDialog()
 
   command.register("desktop", () => {
-    const commands: CommandOption[] = []
+    const commands: CommandOption[] = [
+      {
+        id: "help.open",
+        title: language.t("sidebar.help"),
+        category: language.t("command.category.settings"),
+        keybind: "f1",
+        slash: "help",
+        onSelect: help,
+      },
+    ]
     if (platform.platform === "desktop" && platform.exportDebugLogs) {
       commands.push({
         id: "logs.export",

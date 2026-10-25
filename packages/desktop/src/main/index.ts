@@ -397,18 +397,27 @@ const main = Effect.gen(function* () {
       }
 
       const res = yield* Deferred.make<number, unknown>()
-      const socket = createServer()
-      socket.on("error", (e) => Deferred.failSync(res, () => e))
-      socket.listen(0, "127.0.0.1", () => {
-        const address = socket.address()
-        if (typeof address !== "object" || !address) {
-          socket.close()
-          Deferred.failSync(res, () => new Error("Failed to get port"))
-          return
-        }
-        const port = address.port
-        socket.close(() => Effect.runSync(Deferred.succeed(res, port)))
-      })
+      const tryListen = (candidate: number) => {
+        const socket = createServer()
+        socket.on("error", (e) => {
+          if (candidate !== 0) {
+            tryListen(0)
+            return
+          }
+          Deferred.failSync(res, () => e)
+        })
+        socket.listen(candidate, "127.0.0.1", () => {
+          const address = socket.address()
+          if (typeof address !== "object" || !address) {
+            socket.close()
+            Deferred.failSync(res, () => new Error("Failed to get port"))
+            return
+          }
+          const resolvedPort = address.port
+          socket.close(() => Effect.runSync(Deferred.succeed(res, resolvedPort)))
+        })
+      }
+      tryListen(4096)
 
       return yield* Deferred.await(res)
     })

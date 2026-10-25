@@ -515,7 +515,11 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
           : undefined
       },
       variant: {
-        options: () => variants().map((value) => ({ id: value, label: value })),
+        options: () =>
+          variants().map((value) => ({
+            id: value,
+            label: value === "default" ? language.t("common.default") : value,
+          })),
         current: () => props.controls.model.selection.variant.current() ?? "default",
         onSelect: (value) => props.controls.model.selection.variant.set(value === "default" ? undefined : value),
         keybind: () => command.keybindParts("model.variant.cycle"),

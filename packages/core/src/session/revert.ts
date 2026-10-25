@@ -1,6 +1,6 @@
 export * as SessionRevert from "./revert"
 
-import { and, asc, eq, gt } from "drizzle-orm"
+import { and, asc, eq, gte } from "drizzle-orm"
 import { DateTime, Effect, Schema } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -9,7 +9,8 @@ import { Snapshot } from "../snapshot"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
-import { SessionMessageTable } from "./sql"
+import { MessageTable, SessionMessageTable } from "./sql"
+import { SessionV1 } from "../v1/session"
 
 export class MessageNotFoundError extends Schema.TaggedErrorClass<MessageNotFoundError>()(
   "Session.MessageNotFoundError",
@@ -32,7 +33,18 @@ const plan = Effect.fn("SessionRevert.plan")(function* (input: BoundaryInput) {
     .where(and(eq(SessionMessageTable.session_id, input.sessionID), eq(SessionMessageTable.id, input.messageID)))
     .get()
     .pipe(Effect.orDie)
-  if (!boundary) return yield* new MessageNotFoundError(input)
+  if (!boundary) {
+    const legacy = yield* db
+      .select({ id: MessageTable.id })
+      .from(MessageTable)
+      .where(
+        and(eq(MessageTable.session_id, input.sessionID), eq(MessageTable.id, SessionV1.MessageID.make(input.messageID))),
+      )
+      .get()
+      .pipe(Effect.orDie)
+    if (!legacy) return yield* new MessageNotFoundError(input)
+    return new Map<RelativePath, Snapshot.ID>()
+  }
   const rows = yield* db
     .select()
     .from(SessionMessageTable)
@@ -40,7 +52,7 @@ const plan = Effect.fn("SessionRevert.plan")(function* (input: BoundaryInput) {
       and(
         eq(SessionMessageTable.session_id, input.sessionID),
         eq(SessionMessageTable.type, "assistant"),
-        gt(SessionMessageTable.seq, boundary.seq),
+        gte(SessionMessageTable.seq, boundary.seq),
       ),
     )
     .orderBy(asc(SessionMessageTable.seq))

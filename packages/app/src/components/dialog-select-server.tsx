@@ -256,10 +256,26 @@ export function useServerManagementController(options: { onSelect?: () => void; 
           Authorization: `Basic ${authTokenFromCredentials({ username: http.username, password: http.password })}`,
         }
       : undefined
-    const status = await fetcher(`${http.url}/global/health`, { headers })
-      .then((res) => res.status)
-      .catch(() => 0)
-    return status === 401 || status === 403
+    const probe = async (baseUrl: string) => {
+      for (const path of ["/api/health", "/global/health"]) {
+        const status = await fetcher(`${baseUrl}${path}`, { headers })
+          .then((res) => res.status)
+          .catch(() => 0)
+        if (status === 401 || status === 403) return true
+        if (status > 0 && status !== 404) return false
+      }
+      return undefined
+    }
+    const direct = await probe(http.url)
+    if (direct !== undefined) return direct
+    if (http.password && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(http.url)) {
+      const builtin = server.list.find(ServerConnection.builtin)
+      if (builtin && builtin.http.url !== http.url) {
+        const fallback = await probe(builtin.http.url)
+        if (fallback !== undefined) return fallback
+      }
+    }
+    return false
   }
 
   const addMutation = useMutation(() => ({

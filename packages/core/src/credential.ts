@@ -134,35 +134,54 @@ const layer = Layer.effect(
       }
       const grokText = yield* Effect.promise(() => fs.readFile(grokFile, "utf8").catch(() => ""))
       const grokParsed = grokText ? Option.getOrUndefined(parseJson(grokText)) : undefined
-      if (
-        grokParsed &&
-        typeof grokParsed === "object" &&
-        "access_token" in grokParsed &&
-        typeof grokParsed.access_token === "string" &&
-        grokParsed.access_token &&
-        "refresh_token" in grokParsed &&
-        typeof grokParsed.refresh_token === "string" &&
-        grokParsed.refresh_token
-      ) {
-        const exp =
-          jwtExp(grokParsed.access_token) ??
-          ("expires_at" in grokParsed && typeof grokParsed.expires_at === "number"
-            ? grokParsed.expires_at > 1e12
-              ? grokParsed.expires_at
-              : grokParsed.expires_at * 1000
-            : Date.now() + 3600_000)
+      const grokCandidates: Array<{ access: string; refresh: string; exp: number }> = []
+      if (grokParsed && typeof grokParsed === "object") {
+        const record = grokParsed as Record<string, unknown>
+        if (
+          typeof record.access_token === "string" &&
+          record.access_token &&
+          typeof record.refresh_token === "string" &&
+          record.refresh_token
+        ) {
+          const exp =
+            jwtExp(record.access_token) ??
+            (typeof record.expires_at === "number"
+              ? record.expires_at > 1e12
+                ? record.expires_at
+                : record.expires_at * 1000
+              : Date.now() + 3600_000)
+          grokCandidates.push({ access: record.access_token, refresh: record.refresh_token, exp })
+        }
+        for (const [k, v] of Object.entries(record)) {
+          if (!k.startsWith("https://auth.x.ai") || !v || typeof v !== "object") continue
+          const entry = v as Record<string, unknown>
+          const access = typeof entry.key === "string" ? entry.key : typeof entry.access_token === "string" ? entry.access_token : undefined
+          const refresh = typeof entry.refresh_token === "string" ? entry.refresh_token : undefined
+          if (!access || !refresh) continue
+          const exp =
+            jwtExp(access) ??
+            (typeof entry.expires_at === "number"
+              ? entry.expires_at > 1e12
+                ? entry.expires_at
+                : entry.expires_at * 1000
+              : Date.now() + 3600_000)
+          grokCandidates.push({ access, refresh, exp })
+        }
+      }
+      const bestGrok = grokCandidates.sort((a, b) => b.exp - a.exp)[0]
+      if (bestGrok) {
         const existingXai = merged["xai"]
         const existingAccess =
           existingXai && typeof existingXai === "object" && "access" in existingXai && typeof existingXai.access === "string"
             ? existingXai.access
             : undefined
         const existingExp = existingAccess ? (jwtExp(existingAccess) ?? 0) : 0
-        if (!existingXai || exp >= existingExp) {
+        if (!existingXai || bestGrok.exp >= existingExp) {
           merged["xai"] = {
             type: "oauth",
-            access: grokParsed.access_token,
-            refresh: grokParsed.refresh_token,
-            expires: exp,
+            access: bestGrok.access,
+            refresh: bestGrok.refresh,
+            expires: bestGrok.exp,
           }
         }
       }
@@ -214,20 +233,27 @@ const layer = Layer.effect(
             .catch(() => false),
         )
         if (hasGrok) {
+          const existingGrokText = yield* Effect.promise(() => fs.readFile(grokFile, "utf8").catch(() => ""))
+          const existingGrokParsed = existingGrokText ? Option.getOrUndefined(parseJson(existingGrokText)) : undefined
+          const grokMap: Record<string, unknown> =
+            existingGrokParsed && typeof existingGrokParsed === "object"
+              ? { ...(existingGrokParsed as Record<string, unknown>) }
+              : {}
+          const expiresSec = Math.floor(value.expires / 1000)
+          grokMap.access_token = value.access
+          grokMap.refresh_token = value.refresh
+          grokMap.expires_at = expiresSec
+          for (const [k, v] of Object.entries(grokMap)) {
+            if (!k.startsWith("https://auth.x.ai") || !v || typeof v !== "object") continue
+            grokMap[k] = {
+              ...(v as Record<string, unknown>),
+              key: value.access,
+              refresh_token: value.refresh,
+              expires_at: expiresSec,
+            }
+          }
           yield* Effect.promise(() =>
-            fs.writeFile(
-              grokFile,
-              JSON.stringify(
-                {
-                  access_token: value.access,
-                  refresh_token: value.refresh,
-                  expires_at: Math.floor(value.expires / 1000),
-                },
-                null,
-                2,
-              ),
-              { mode: 0o600 },
-            ),
+            fs.writeFile(grokFile, JSON.stringify(grokMap, null, 2), { mode: 0o600 }),
           ).pipe(Effect.ignore)
         }
       }

@@ -8,10 +8,10 @@ import { selectProviderCatalog } from "./provider-catalog"
 export const popularProviders = ["xai", "openai", "anthropic", "google"]
 const popularProviderSet = new Set(popularProviders)
 
-export function useProviders(directory: Accessor<string | undefined>) {
+export function useProviders(directory?: Accessor<string | undefined>) {
   const serverSync = useServerSync()
   const params = useParams()
-  const dir = () => (directory ? directory() : decode64(params.dir))
+  const dir = () => directory?.() || decode64(params.dir)
   const providers = () => {
     const value = dir()
     const projectStore = value ? serverSync().child(value)[0] : undefined

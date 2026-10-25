@@ -224,12 +224,13 @@ export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, creden
   )
 
 export const supported = (model: ModelV2.Info) =>
-  model.providerID === "antigravity" ||
-  (model.api.type === "aisdk" &&
-    (model.api.package === "@ai-sdk/openai" ||
-      model.api.package === "@ai-sdk/xai" ||
-      model.api.package === "@ai-sdk/anthropic" ||
-      (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined)))
+  (model.capabilities.output.length === 0 || model.capabilities.output.some((cap) => cap.startsWith("text"))) &&
+  (model.providerID === "antigravity" ||
+    (model.api.type === "aisdk" &&
+      (model.api.package === "@ai-sdk/openai" ||
+        model.api.package === "@ai-sdk/xai" ||
+        model.api.package === "@ai-sdk/anthropic" ||
+        (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined))))
 
 /** Resolves models from the catalog belonging to the current Location runtime. */
 export const locationLayer = Layer.effect(
