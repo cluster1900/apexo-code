@@ -105,10 +105,17 @@ const layer = Layer.effect(
                         const roleModelInfo = yield* provider
                           .getModel(selection.execution.model.providerID, selection.execution.model.id)
                           .pipe(Effect.option)
+                        const roleProviderInfo = yield* provider
+                          .getProvider(selection.execution.model.providerID)
+                          .pipe(Effect.option)
+                        const roleBaseUrl =
+                          (Option.isSome(roleModelInfo) ? roleModelInfo.value.api.url : "") ||
+                          (Option.isSome(roleProviderInfo) && typeof roleProviderInfo.value?.options?.baseURL === "string"
+                            ? roleProviderInfo.value.options.baseURL
+                            : "")
                         const isSyntheticProvider = Boolean(
-                          Option.isSome(roleModelInfo) &&
-                            roleModelInfo.value.api.url &&
-                            /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(roleModelInfo.value.api.url),
+                          selection.execution.model.providerID === "test" ||
+                            (roleBaseUrl && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(roleBaseUrl)),
                         )
                         if (!isSyntheticProvider && info.tokenBudget !== undefined) {
                           const remaining = Math.max(0, info.tokenBudget - info.tokensUsed)

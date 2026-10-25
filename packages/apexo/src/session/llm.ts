@@ -114,8 +114,11 @@ const live: Layer.Layer<
       const currentGoalInfo = currentGoalAttempt
         ? yield* goals.get(currentGoalAttempt.sessionID).pipe(Effect.orElseSucceed(() => undefined))
         : undefined
+      const rawProviderUrl =
+        input.model.api.url || (typeof item?.options?.baseURL === "string" ? item.options.baseURL : "")
       const isSyntheticTestProvider = Boolean(
-        input.model.api.url && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(input.model.api.url),
+        input.model.providerID === "test" ||
+          (rawProviderUrl && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(rawProviderUrl)),
       )
       const promptChars =
         JSON.stringify(prepared.messages).length + JSON.stringify(prepared.tools ?? {}).length

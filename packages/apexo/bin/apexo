@@ -213,7 +213,16 @@ const resolved = envPath || (fs.existsSync(cached) ? cached : findBinary(scriptD
 if (!resolved) {
   const srcEntry = path.resolve(scriptDir, "..", "src", "index.ts")
   if (fs.existsSync(srcEntry)) {
-    run(resolveBun(), ["run", "--conditions=browser", srcEntry])
+    const pkgPath = path.resolve(scriptDir, "..", "package.json")
+    const pkgVersion = (() => {
+      try {
+        return JSON.parse(fs.readFileSync(pkgPath, "utf8")).version
+      } catch {
+        return undefined
+      }
+    })()
+    const defineArgs = pkgVersion ? [`--define=APEXO_VERSION=${JSON.stringify(String(pkgVersion))}`] : []
+    run(resolveBun(), ["run", ...defineArgs, "--conditions=browser", srcEntry])
   } else {
     console.error(
       "It seems that your package manager failed to install the right version of the apexo CLI for your platform. You can try manually installing " +
