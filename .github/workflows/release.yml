@@ -193,10 +193,14 @@ jobs:
       APEXO_VERSION: ${{ needs.version.outputs.version }}
       APEXO_CHANNEL: prod
       APEXO_UNSIGNED: "1"
+      NODE_OPTIONS: --max-old-space-size=6144
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       APEXO_WORKFLOW_ARTIFACTS: ${{ github.workspace }}/workflow-artifacts
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
       - uses: ./.github/actions/setup-bun
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -247,8 +251,18 @@ jobs:
       - name: Create release and upload verified artifacts
         shell: bash
         run: |
+          mv artifacts/cli/npm/manifest.json artifacts/cli/npm-manifest.json
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+            cat > release-notes.md <<EOF
+          Install the CLI with \`npm install -g apexo-code@${GITHUB_REF_NAME#v}\`, or download a standalone CLI archive below. Keep the CLI and its workflow interpreter together.
+
+          Desktop installers are available for macOS Apple Silicon, Linux x64, and Windows x64. The current macOS build uses an ad-hoc signature without notarization; the Windows build has no publisher certificate.
+
+          [Detailed installation guide](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/installation.md) · [Release automation guide](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/releases.md)
+
+          Verify downloads using the attached \`SHA256SUMS\`.
+          EOF
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md --generate-notes
           fi
           find artifacts -type f ! -name manifest.json ! -name SHA256SUMS -print0 | sort -z |
             while IFS= read -r -d '' file; do

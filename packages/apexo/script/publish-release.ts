@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 
-import { $ } from "bun"
 import path from "node:path"
 
 // The launcher is last, so users never resolve a version with missing platform packages.
@@ -17,5 +16,10 @@ for (const pkg of manifest.packages as { name: string; filename: string; integri
     continue
   }
   if (response.status !== 404) throw new Error(`Registry returned ${response.status} for ${pkg.name}`)
-  await $`npm publish ${path.join(directory, pkg.filename)} --access public --tag latest --ignore-scripts`
+  // Preserve the terminal so npm can complete the first publisher's web/2FA challenge.
+  const child = Bun.spawn(
+    ["npm", "publish", path.join(directory, pkg.filename), "--access", "public", "--tag", "latest", "--ignore-scripts"],
+    { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+  )
+  if ((await child.exited) !== 0) throw new Error(`npm publish failed for ${pkg.name}`)
 }

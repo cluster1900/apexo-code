@@ -19,7 +19,7 @@ an explicit version for a build without publishing.
 - Desktop: macOS arm64 DMG/ZIP, Linux x64 AppImage/DEB/RPM, and Windows x64 NSIS.
   CLI support for an architecture does not imply a Desktop installer for it.
 - A GitHub Release containing the CLI archives, npm tarballs, Desktop installers,
-  and SHA256 checksums. Build-only runs retain these as Actions artifacts.
+  an npm package manifest, and SHA256 checksums. Build-only runs retain these as Actions artifacts.
 
 The release job waits for all six native CLI npm installation smoke tests and
 all three Desktop packaging jobs. It verifies `--version` through the installed
@@ -40,8 +40,10 @@ name, set the repository Actions variable `NPM_PACKAGE`; its platform packages
 use the same name followed by the platform suffix.
 
 For the first publication, use `npm login` with an account that can publish the
-chosen package names. Once the workflow artifacts are downloaded and extracted
-into `packages/apexo/dist`, publish the exact tested tarballs with:
+chosen package names. Download the workflow artifacts into `packages/apexo/dist`, or download
+`npm-manifest.json` and all thirteen `.tgz` files from the GitHub Release into
+`packages/apexo/dist/npm`, renaming `npm-manifest.json` to `manifest.json`.
+Publish the exact tested tarballs with:
 
 ```bash
 bun packages/apexo/script/publish-release.ts

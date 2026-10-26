@@ -61,6 +61,62 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
 - `bun run check:generated` from `packages/client` and `packages/sdk/js`: passed.
 - `bun run test:httpapi` from `packages/apexo`: coverage, auth, and effect each
   passed 346 scenarios with zero failures, skips, or missing routes.
-- Cross-platform CI and registry publication are pending. Registry authentication
-  has been verified; successful local installation is not a claim that the
-  package is published.
+- The first PR release build produced all twelve CLI targets and passed all six
+  native npm installation checks (Linux, macOS, Windows; x64 and arm64). The
+  Windows Desktop installer also passed. See
+  [run 40264955859](https://github.com/cluster1900/apexo-code/actions/runs/40264955859).
+  Linux/macOS Desktop corrections are recorded below.
+- Registry publication is pending. Registry authentication has been verified;
+  successful local installation is not a claim that the package is published.
+
+## BUG-20261025-RELEASE-LINUX: Missing Linux package maintainer
+
+- **Scope:** Desktop DEB/RPM packaging in the release workflow.
+- **Observed:** The first PR build produced an AppImage, then DEB packaging failed
+  with `Please specify author 'email' in the application package.json`.
+- **Expected:** All configured Linux installer formats build in CI.
+- **Reproduction:** Run the Linux Desktop package job from PR #166's first release
+  workflow run, or package the same configuration on Linux.
+- **Root cause:** The application author had no email and Linux packaging had no
+  explicit maintainer. electron-builder requires one of those metadata sources.
+- **Fix:** Configure the repository owner's GitHub noreply identity as the Linux
+  maintainer. Install RPM tooling explicitly instead of assuming runner contents.
+  Correct the user guide to the target-specific `x86_64`/`amd64` installer names.
+- **Verification:** The original failure is recorded in release run
+  [40264955859](https://github.com/cluster1900/apexo-code/actions/runs/40264955859),
+  job 121386270206. Configuration typing passed; the corrected CI build is pending.
+
+## BUG-20261025-RELEASE-HEAP: macOS runner exhausts the renderer build heap
+
+- **Scope:** The macOS Desktop renderer build on the hosted arm64 runner.
+- **Observed:** After transforming the renderer modules, Node aborted with
+  `Ineffective mark-compacts near heap limit` at approximately 2 GiB. The same
+  source builds on the local machine with its larger default heap.
+- **Expected:** The hosted runner completes the renderer and installer builds.
+- **Reproduction:** Run the original macOS Desktop release job on `macos-15`
+  without an explicit Node heap budget.
+- **Root cause:** Node's automatic heap limit on the hosted runner is smaller than
+  this renderer build's working set; the fatal V8 allocation report identifies
+  the exhausted heap rather than a source or signing failure.
+- **Fix:** Set `NODE_OPTIONS=--max-old-space-size=6144` for Desktop CI builds.
+- **Verification:** The original failure is recorded in release run
+  [40264955859](https://github.com/cluster1900/apexo-code/actions/runs/40264955859),
+  job 121386270252. The corrected hosted build is pending.
+
+## BUG-20261025-RELEASE-TTY: Preserve interactive npm authentication
+
+- **Scope:** First publication from an authenticated local terminal.
+- **Observed:** A real terminal diagnostic using Bun shell reports the npm-style
+  child's stdout as non-TTY. npm's authentication implementation only opens a
+  web/2FA retry when both input and output are terminals.
+- **Expected:** A first publisher can complete the registry's authentication
+  challenge from the release script.
+- **Reproduction:** In a terminal, run a Node TTY diagnostic through Bun shell;
+  compare it with `Bun.spawn` using inherited input, output, and error streams.
+- **Root cause:** Bun shell captures child output, which removes npm's terminal
+  detection despite the parent process running in a real terminal.
+- **Fix:** Spawn `npm publish` with all three standard streams inherited and
+  propagate a failed child exit. CI OIDC publication remains noninteractive.
+- **Verification:** The shell diagnostic reported `true undefined`; the inherited
+  spawn diagnostic reports `true true`. The real first-publication challenge is
+  still pending and is not claimed as verified by this diagnostic alone.

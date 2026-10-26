@@ -102,6 +102,7 @@ const getBase = (appId: string): Configuration => ({
   linux: {
     icon: `resources/icons`,
     category: "Development",
+    maintainer: "Apexo <17867268+cluster1900@users.noreply.github.com>",
     executableName: appId,
     desktop: {
       entry: {

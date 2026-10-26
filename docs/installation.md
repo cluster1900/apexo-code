@@ -172,9 +172,9 @@ Download the installer matching your system from the release Assets:
 | System              | Desktop download                          | Installation                                                                                        |
 | ------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | macOS Apple Silicon | `apexo-desktop-mac-arm64.dmg` (or `.zip`) | Open the DMG and drag Apexo to Applications; or extract the ZIP and move Apexo.app to Applications. |
-| Linux x64           | `apexo-desktop-linux-x64.AppImage`        | Make executable with `chmod +x`, then run it.                                                       |
-| Debian/Ubuntu x64   | `apexo-desktop-linux-x64.deb`             | `sudo apt install ./apexo-desktop-linux-x64.deb`                                                    |
-| Fedora/RHEL x64     | `apexo-desktop-linux-x64.rpm`             | `sudo dnf install ./apexo-desktop-linux-x64.rpm`                                                    |
+| Linux x64           | `apexo-desktop-linux-x86_64.AppImage`     | Make executable with `chmod +x`, then run it.                                                       |
+| Debian/Ubuntu x64   | `apexo-desktop-linux-amd64.deb`           | `sudo apt install ./apexo-desktop-linux-amd64.deb`                                                  |
+| Fedora/RHEL x64     | `apexo-desktop-linux-x86_64.rpm`          | `sudo dnf install ./apexo-desktop-linux-x86_64.rpm`                                                 |
 | Windows x64         | `apexo-desktop-win-x64.exe`               | Run the installer; it installs for the current user.                                                |
 
 Only the Desktop architectures listed here have installers. The CLI supports
