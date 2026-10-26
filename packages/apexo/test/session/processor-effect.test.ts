@@ -5,7 +5,7 @@ import { LayerNode } from "@apexo/core/effect/layer-node"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
 import { tool } from "ai"
-import { Cause, Effect, Exit, Fiber, Layer, References, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, References, Schema, Stream } from "effect"
 import path from "path"
 import z from "zod"
 import type { Agent } from "../../src/agent/agent"
@@ -976,6 +976,66 @@ it.live(
             title: "Inspect task",
             metadata: { sessionId: chat.id, model: ref },
           })
+        }),
+      { config: providerCfg },
+    ),
+  10_000,
+)
+
+it.live(
+  "interrupted tool completion survives processor cleanup",
+  () =>
+    provideTmpdirServer(
+      ({ dir, llm }) =>
+        Effect.gen(function* () {
+          const { processors, session, provider } = yield* boot()
+          const events = yield* EventV2Bridge.Service
+          yield* llm.toolHang("task", { prompt: "inspect" })
+          const chat = yield* session.create({})
+          const parent = yield* user(chat.id, "interrupted completion")
+          const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          const model = yield* provider.getModel(ref.providerID, ref.modelID)
+          const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+          const run = yield* handle
+            .process({
+              user: parent,
+              sessionID: chat.id,
+              model,
+              agent: agent(),
+              system: [],
+              messages: [{ role: "user", content: "interrupted completion" }],
+              tools: {},
+            })
+            .pipe(Effect.forkChild)
+          yield* pollWithTimeout(
+            MessageV2.parts(msg.id).pipe(
+              Effect.map((parts) => parts.find((part) => part.type === "tool" && part.callID === "call_1")),
+            ),
+            "tool call never started",
+          )
+          yield* handle.updateToolCall("call_1", (part) => ({
+            ...part,
+            state: { status: "running", input: part.state.input, time: { start: Date.now() } },
+          }))
+          const off = yield* events.listen((event) => {
+            if (event.type !== SessionV1.Event.PartUpdated.type) return Effect.void
+            const data = Schema.decodeUnknownSync(SessionV1.Event.PartUpdated.data)(event.data)
+            if (data.sessionID !== chat.id || data.part.type !== "tool" || data.part.state.status !== "completed")
+              return Effect.void
+            // Interrupt the publisher after the real durable commit, before local settlement.
+            return Effect.withFiber((fiber) => Effect.sync(() => fiber.interruptUnsafe(fiber.id)))
+          })
+          yield* Effect.addFinalizer(() => off)
+          const completion = yield* handle
+            .completeToolCall("call_1", { title: "Complete", output: "done", metadata: { complete: true } })
+            .pipe(Effect.forkChild)
+          const exit = yield* Fiber.await(completion)
+          const committed = (yield* MessageV2.parts(msg.id)).find((part) => part.type === "tool")
+          yield* Fiber.interrupt(run)
+          const cleaned = (yield* MessageV2.parts(msg.id)).find((part) => part.type === "tool")
+          expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+          expect(committed?.state.status).toBe("completed")
+          expect(cleaned?.state).toMatchObject({ status: "completed", output: "done", metadata: { complete: true } })
         }),
       { config: providerCfg },
     ),

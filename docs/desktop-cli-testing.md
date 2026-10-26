@@ -85,7 +85,7 @@ Use the same real Gemini 3.8 Flash account and isolated fixtures. Keep the origi
 
 Record this cycle in the [lifecycle report](testing/desktop-cli/2026-10-25-lifecycle-followup.md). A repeated pass alone does not resolve an intermittent failure.
 
-1. Reproduce competing tool-part updates with actual processor services. Require running metadata to survive and terminal settlement to reject late progress. Retain the failing pre-fix control.
+1. Reproduce competing tool-part updates with actual processor services. Require running metadata to survive and terminal settlement to reject late progress. Inject cancellation after the real durable completion event and require the completed result to survive processor cleanup. Retain the failing pre-fix controls.
 2. Replay native Plan/background-shell completion and shell/loop coordination with their existing deadlines. On failure, retain provider-call count, process/permission state and transcript instead of only a timeout label.
 3. Replay the 510-message legacy request in fresh processes and its original batch. Retain any non-200 response body; do not confuse a disposed shared fixture with an endpoint failure.
 4. For the macOS batch hang, capture the native stack and child process state, identify the blocking call, and verify the upstream runtime fix. Exercise the real PTY adapter in concurrent subprocesses bounded by an external watchdog on both old and proposed runtimes.
