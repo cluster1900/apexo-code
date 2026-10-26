@@ -43,28 +43,47 @@ Apexo supports **local OAuth / native CLI login** for **Google Antigravity (`agy
 - **Lifecycle Hooks (`/hooks`):** Inspect and govern repository and user hooks with explicit per-repository trust controls.
 - **Side Questions (`/btw`):** Ask a quick side question (even mid-prompt) in a modal without polluting or interrupting the active session turn.
 
-## Install (build from source)
-
-To build Apexo from source, install [Bun](https://bun.sh) 1.3.x (the repo pins `bun@1.3.14`) and git.
+## Install
 
 ```bash
-git clone https://github.com/cluster1900/apexo-grok.git apexo && cd apexo
+npm install -g apexo-code
+apexo --version
+```
+
+The npm package installs a prebuilt CLI for macOS, Linux (glibc or musl), or Windows
+on x64 and arm64. Desktop installers and standalone CLI archives are available from
+[GitHub Releases](https://github.com/cluster1900/apexo-code/releases).
+
+See the [detailed installation guide](docs/installation.md) for platform and CPU
+selection, npm-free installation, Windows PowerShell commands, checksums, PATH,
+Desktop installation, updates, and removal.
+
+### Build from source
+
+To build Apexo from source, install [Bun](https://bun.sh) 1.4.4 (the repo pins `bun@1.4.4`) and git.
+
+```bash
+git clone https://github.com/cluster1900/apexo-code.git apexo && cd apexo
 bun install
 
 # Build a single native binary for this machine (the web UI is embedded)
 bun run --cwd packages/apexo build --single
 
 # The binary lands in packages/apexo/dist/apexo-<os>-<arch>/bin/apexo
-install -D -m755 packages/apexo/dist/apexo-*/bin/apexo ~/.local/bin/apexo
+mkdir -p ~/.local/bin
+install -m755 packages/apexo/dist/apexo-*/bin/apexo ~/.local/bin/apexo
+install -m755 packages/apexo/dist/apexo-*/bin/apexo-workflow-script ~/.local/bin/apexo-workflow-script
+export PATH="$HOME/.local/bin:$PATH"
 apexo --version
 ```
 
-Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which builds every target and
-attaches the archives to a [GitHub Release](https://github.com/cluster1900/apexo-grok/releases).
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which builds and smoke-tests the CLI npm packages, packages Desktop for macOS, Linux, and Windows,
+and attaches the archives to a [GitHub Release](https://github.com/cluster1900/apexo-code/releases).
+See [Releasing Apexo](docs/releases.md) for publishing setup and the release checklist.
 Once a release exists, the install script can fetch it instead (`--version X.Y.Z` pins a release):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-grok/main/install | bash
+curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-code/main/install | bash
 ```
 
 To run from source without building:
@@ -128,7 +147,7 @@ Example `apexo.json`:
 
 ```jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
   "model": "google/gemini-2.5-pro",
   "theme": "grove",
 }
@@ -140,7 +159,7 @@ You can configure any self-hosted or third-party OpenAI-compatible endpoint (suc
 
 ```jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
   "model": "custom/MiniMax-M2.7",
   "provider": {
     "custom": {
@@ -189,7 +208,7 @@ Workspace packages use the `@apexo/*` scope; the CLI and server live in
 
 ## Feedback
 
-Report bugs and ideas at [github.com/cluster1900/apexo-grok/issues](https://github.com/cluster1900/apexo-grok/issues).
+Report bugs and ideas at [github.com/cluster1900/apexo-code/issues](https://github.com/cluster1900/apexo-code/issues).
 
 ## License
 

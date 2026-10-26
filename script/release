@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-BUMP_TYPE=${1:-patch}
-
-gh workflow run publish.yml -f bump="$BUMP_TYPE"
+version=${1:?Usage: script/release X.Y.Z}
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Expected X.Y.Z" >&2; exit 1; }
+[[ -z "$(git status --porcelain)" ]] || { echo "Commit local changes before releasing" >&2; exit 1; }
+git fetch origin main --tags
+commit=$(git rev-parse origin/main)
+checks=$(gh api "repos/{owner}/{repo}/commits/$commit/check-runs" --paginate --jq '.check_runs[] | select(.app.slug == "github-actions") | [.name, .conclusion] | @tsv')
+grep -qx $'unit (linux)\tsuccess' <<< "$checks"
+grep -qx $'typecheck\tsuccess' <<< "$checks"
+git tag -a "v$version" "$commit" -m "Apexo $version"
+git push origin "refs/tags/v$version"

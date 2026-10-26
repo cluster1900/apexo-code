@@ -15,13 +15,13 @@ Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g., 1.0.180)
+    -v, --version <version> Install a specific version (e.g., 1.0.0)
     -b, --binary <path>     Install from a local binary instead of downloading
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
-    curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-grok/main/install | bash
-    curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-grok/main/install | bash -s -- --version 1.0.180
+    curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-code/main/install | bash
+    curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-code/main/install | bash -s -- --version 1.0.0
     ./install --binary /path/to/apexo
 EOF
 }
@@ -101,7 +101,7 @@ else
 
     combo="$os-$arch"
     case "$combo" in
-      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
+      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64|windows-arm64)
         ;;
       *)
         echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}"
@@ -181,8 +181,8 @@ else
     fi
 
     if [ -z "$requested_version" ]; then
-        url="https://github.com/cluster1900/apexo-grok/releases/latest/download/$filename"
-        specific_version=$(curl -s https://api.github.com/repos/cluster1900/apexo-grok/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+        url="https://github.com/cluster1900/apexo-code/releases/latest/download/$filename"
+        specific_version=$(curl -s https://api.github.com/repos/cluster1900/apexo-code/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 
         if [[ $? -ne 0 || -z "$specific_version" ]]; then
             echo -e "${RED}Failed to fetch version information${NC}"
@@ -191,14 +191,14 @@ else
     else
         # Strip leading 'v' if present
         requested_version="${requested_version#v}"
-        url="https://github.com/cluster1900/apexo-grok/releases/download/v${requested_version}/$filename"
+        url="https://github.com/cluster1900/apexo-code/releases/download/v${requested_version}/$filename"
         specific_version=$requested_version
 
         # Verify the release exists before downloading
-        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/cluster1900/apexo-grok/releases/tag/v${requested_version}")
+        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/cluster1900/apexo-code/releases/tag/v${requested_version}")
         if [ "$http_status" = "404" ]; then
             echo -e "${RED}Error: Release v${requested_version} not found${NC}"
-            echo -e "${MUTED}Available releases: https://github.com/cluster1900/apexo-grok/releases${NC}"
+            echo -e "${MUTED}Available releases: https://github.com/cluster1900/apexo-code/releases${NC}"
             exit 1
         fi
     fi
@@ -340,8 +340,11 @@ download_and_install() {
         unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
     fi
 
-    mv "$tmp_dir/apexo" "$INSTALL_DIR"
-    chmod 755 "${INSTALL_DIR}/apexo"
+    local extension=""
+    if [ "$os" = "windows" ]; then extension=".exe"; fi
+    mv "$tmp_dir/apexo$extension" "$INSTALL_DIR"
+    mv "$tmp_dir/apexo-workflow-script$extension" "$INSTALL_DIR"
+    chmod 755 "${INSTALL_DIR}/apexo$extension" "${INSTALL_DIR}/apexo-workflow-script$extension"
     rm -rf "$tmp_dir"
 }
 
@@ -455,6 +458,6 @@ echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
 echo -e "apexo      ${MUTED}# Run command${NC}"
 echo -e ""
-echo -e "${MUTED}For more information visit ${NC}https://github.com/cluster1900/apexo-grok#readme"
+echo -e "${MUTED}For more information visit ${NC}https://github.com/cluster1900/apexo-code#readme"
 echo -e ""
 echo -e ""

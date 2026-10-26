@@ -43,28 +43,49 @@ Apexo 对 **Google Antigravity（`agy`）** 与 **xAI Grok** 提供**本地 OAut
 - **生命周期钩子（`/hooks`）：** 查看会话钩子快照，并提供仓库级显式信任授权管理。
 - **旁路提问（`/btw`）：** 在不打断当前主线任务、不污染主上下文的前提下，随时弹窗进行旁路问答。
 
-## 安装（从源码构建）
-
-构建前需要安装 [Bun](https://bun.sh) 1.3.x（仓库固定为 `bun@1.3.14`）和 git。
+## 安装
 
 ```bash
-git clone https://github.com/cluster1900/apexo-grok.git apexo && cd apexo
+npm install -g apexo-code
+apexo --version
+```
+
+CLI 独立压缩包和 Desktop 安装包均可在
+[GitHub Releases](https://github.com/cluster1900/apexo-code/releases) 下载，不要求使用 npm。
+
+- 使用 npm 需要 Node.js 22 或更新版本；不需要另装 Bun 或 Rust。固定版本可执行 `npm install -g apexo-code@1.0.0`。
+- 直接下载 CLI 时，Apple Silicon 选择 `darwin-arm64`，Intel Mac 选择 `darwin-x64`；普通 Linux 选择 `linux-x64` 或 `linux-arm64`，Alpine 选择带 `musl` 的版本；Windows 选择 `windows-x64` 或 `windows-arm64`。
+- x64 CPU 不支持 AVX2 时选择带 `baseline` 的版本。解压后将 `apexo` 和 `apexo-workflow-script` 放在同一目录（Windows 文件名带 `.exe`），并把该目录加入 PATH。
+- Desktop 提供 macOS Apple Silicon 的 DMG/ZIP、Linux x64 的 AppImage/DEB/RPM，以及 Windows x64 的 EXE 安装程序。
+- 首次打开可能需要通过系统的安全确认：当前 macOS 包使用临时签名且未公证，Windows 包没有发布者证书。请核对发布来源，并使用同一 Release 的 `SHA256SUMS` 验证下载文件。
+
+完整步骤见[详细安装指南](docs/installation.md)，包括无需 npm 的安装命令、Windows PowerShell 操作、PATH 配置、校验、更新和卸载。
+
+### 从源码构建
+
+构建前需要安装 [Bun](https://bun.sh) 1.4.4（仓库固定为 `bun@1.4.4`）和 git。
+
+```bash
+git clone https://github.com/cluster1900/apexo-code.git apexo && cd apexo
 bun install
 
 # 为当前机器构建单个原生二进制（内嵌 Web UI）
 bun run --cwd packages/apexo build --single
 
 # 产物位于 packages/apexo/dist/apexo-<os>-<arch>/bin/apexo
-install -D -m755 packages/apexo/dist/apexo-*/bin/apexo ~/.local/bin/apexo
+mkdir -p ~/.local/bin
+install -m755 packages/apexo/dist/apexo-*/bin/apexo ~/.local/bin/apexo
+install -m755 packages/apexo/dist/apexo-*/bin/apexo-workflow-script ~/.local/bin/apexo-workflow-script
+export PATH="$HOME/.local/bin:$PATH"
 apexo --version
 ```
 
 推送 `vX.Y.Z` 标签会触发 `.github/workflows/release.yml`，构建所有平台并把压缩包附加到
-[GitHub Releases](https://github.com/cluster1900/apexo-grok/releases)。发布之后，也可以用安装脚本获取
+[GitHub Releases](https://github.com/cluster1900/apexo-code/releases)。发布之后，也可以用安装脚本获取
 （`--version X.Y.Z` 指定版本）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-grok/main/install | bash
+curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-code/main/install | bash
 ```
 
 不构建、直接从源码运行：
@@ -127,7 +148,7 @@ Apexo 读取 JSON/JSONC 配置文件：
 
 ```jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
   "model": "google/gemini-2.5-pro",
   "theme": "grove",
 }
@@ -139,7 +160,7 @@ Apexo 读取 JSON/JSONC 配置文件：
 
 ```jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/config.json",
+  "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json",
   "model": "custom/MiniMax-M2.7",
   "provider": {
     "custom": {
@@ -184,7 +205,7 @@ bun turbo typecheck --concurrency=2
 
 ## 反馈
 
-问题和建议请提交到 [github.com/cluster1900/apexo-grok/issues](https://github.com/cluster1900/apexo-grok/issues)。
+问题和建议请提交到 [github.com/cluster1900/apexo-code/issues](https://github.com/cluster1900/apexo-code/issues)。
 
 ## 许可证
 
