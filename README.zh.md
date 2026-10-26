@@ -3,6 +3,7 @@
 </p>
 <p align="center"><b>开源的通用编程智能体（General-Purpose Coding Agent）</b>，同时支持终端（TUI）、浏览器（Web）与桌面端（Desktop）。</p>
 <p align="center">
+  <a href="https://cluster1900.github.io/apexo-code/">项目主页 (Website)</a> |
   <a href="README.md">English</a> |
   <a href="README.zh.md">简体中文</a>
 </p>
@@ -13,7 +14,7 @@
 
 Apexo 是一个**开源的通用编程智能体**，基于统一的本地智能体运行时，同时提供终端界面（TUI）、Web 界面和 Electron 桌面应用。
 
-Apexo 并非绑定单一模型厂商的简单外壳，而是拥有深度演进的自研智能体架构——包括持久化 V2 会话引擎、自主目标执行（`/goal`）、多会话工作流（`/workflow`）、后台任务与子智能体编排（`/tasks`）、跨会话持久记忆（`/memory`）、原生命令沙盒（`/sandbox`）、生命周期钩子（`/hooks`）以及旁路快速提问（`/btw`）——并对各大主流模型生态提供一等公民级的原生支持：
+Apexo 并非绑定单一模型厂商的简单外壳，而是拥有深度演进的自研智能体架构——包括持久化会话引擎、自主目标执行（`/goal`）、多会话工作流（`/workflow`）、后台任务与子智能体编排（`/tasks`）、跨会话持久记忆（`/memory`）、原生命令沙盒（`/sandbox`）、生命周期钩子（`/hooks`）以及旁路快速提问（`/btw`）——并对各大主流模型生态提供一等公民级的原生支持：
 
 - **Google Gemini 与 Antigravity 深度支持：** 支持直接复用本机 Antigravity CLI（`agy`）的 Google 登录态（无需重复授权），也支持通过 `GOOGLE_GENERATIVE_AI_API_KEY` 直接接入 Gemini 系列模型；完整支持思考摘要（Reasoning Summary）、多模态附件与长上下文编程。详见 [Antigravity 接入说明](docs/antigravity.md)。
 - **xAI Grok 与 Grok Build 工作流体验：** 支持使用 xAI 账号（SuperGrok 或 X Premium）通过 OAuth 设备码流程免密登录，或使用 `XAI_API_KEY`；原生支持 `grok-4.7`、`grok-4.6`、`grok-4.20`、`grok-build-0.1` 等模型与完整工具链。
