@@ -66,8 +66,8 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
   Windows Desktop installer also passed. See
   [run 40264955859](https://github.com/cluster1900/apexo-code/actions/runs/40264955859).
   Linux/macOS Desktop corrections are recorded below.
-- Registry publication is pending. Registry authentication has been verified;
-  successful local installation is not a claim that the package is published.
+- Registry account authentication was verified before first publication. Local
+  tarball installation and actual registry publication are separate checks.
 
 ## BUG-20261025-RELEASE-LINUX: Missing Linux package maintainer
 
@@ -123,8 +123,10 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
 - **Fix:** Spawn `npm publish` with all three standard streams inherited and
   propagate a failed child exit. CI OIDC publication remains noninteractive.
 - **Verification:** The shell diagnostic reported `true undefined`; the inherited
-  spawn diagnostic reports `true true`. The real first-publication challenge is
-  still pending and is not claimed as verified by this diagnostic alone.
+  spawn diagnostic reports `true true`. The actual publication command also
+  reached npm's web/2FA challenge and accepted terminal input to open the browser.
+  This verifies the interactive boundary; the account holder completes the
+  browser security/passkey step and registry publication is checked separately.
 
 ## BUG-20261026-RELEASE-LAYOUT: Pattern download adds an unexpected directory
 
@@ -148,4 +150,23 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
   The existing `v1.0.0` tag and its source commit remain unchanged.
 - **Verification:** The original publisher failed before creating a Release.
   Shell syntax and actionlint validation pass for the correction. The real
-  recovery upload and the added preparation check are pending.
+  recovery upload passed in
+  [run 40272132287](https://github.com/cluster1900/apexo-code/actions/runs/40272132287).
+  The published GitHub Release contains all 33 uploaded assets. The Linux
+  preparation regression also passed in job 121407218832 of
+  [run 40271527106](https://github.com/cluster1900/apexo-code/actions/runs/40271527106).
+
+## Public download verification
+
+- [v1.0.0](https://github.com/cluster1900/apexo-code/releases/tag/v1.0.0) is public
+  and non-draft, with twelve CLI archives, thirteen npm tarballs, six Desktop
+  installer files, the npm manifest, and SHA256SUMS. The two GitHub-generated
+  source archives appear separately in the web interface.
+- Downloading the public macOS arm64 CLI archive and SHA256SUMS, verifying its
+  SHA256 with `Bun.CryptoHasher`, extracting it with `unzip -q`, and running
+  `apexo --version` passed with output `1.0.0`. The adjacent first-party workflow
+  interpreter is present.
+- All thirteen public npm tarballs were downloaded and verified against the
+  original pack manifest's SHA512 integrity before first registry publication.
+- The recovered upload retained tag `v1.0.0` at commit
+  `367d8f1dda7c166c6147fae102c0bdfd0d026a1b`.
