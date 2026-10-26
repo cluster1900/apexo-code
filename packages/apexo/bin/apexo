@@ -71,7 +71,8 @@ let arch = archMap[os.arch()]
 if (!arch) {
   arch = os.arch()
 }
-const base = "apexo-" + platform + "-" + arch
+const packageName = JSON.parse(fs.readFileSync(path.resolve(scriptDir, "..", "package.json"), "utf8")).name
+const base = packageName + "-" + platform + "-" + arch
 const binary = platform === "windows" ? "apexo.exe" : "apexo"
 
 function supportsAvx2() {

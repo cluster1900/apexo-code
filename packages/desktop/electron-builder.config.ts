@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
 const signScript = path.join(rootDir, "script", "sign-windows.ps1")
+const unsigned = process.env.APEXO_UNSIGNED === "1"
 // The Electron 42 packaging update briefly installed Linux launchers/icons under
 // "apexo-desktop". Keep that hidden desktop entry around so existing GNOME/KDE
 // pins still resolve after the canonical app id changes back to com.apexolab.desktop.
@@ -67,24 +68,20 @@ const getBase = (appId: string): Configuration => ({
           },
         ]
       : []),
-    {
-      from: "native/",
-      to: "native/",
-      filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
-    },
   ],
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
-    hardenedRuntime: true,
+    hardenedRuntime: !unsigned,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
     entitlementsInherit: "resources/entitlements.plist",
-    notarize: true,
+    notarize: !unsigned,
+    ...(unsigned ? { identity: "-" } : {}),
     target: ["dmg", "zip"],
   },
   dmg: {
-    sign: true,
+    sign: !unsigned,
   },
   protocols: {
     name: "Apexo",
@@ -92,9 +89,7 @@ const getBase = (appId: string): Configuration => ({
   },
   win: {
     icon: `resources/icons/icon.ico`,
-    signtoolOptions: {
-      sign: signWindows,
-    },
+    ...(unsigned ? {} : { signtoolOptions: { sign: signWindows } }),
     target: ["nsis"],
     verifyUpdateCodeSignature: false,
   },
@@ -107,6 +102,7 @@ const getBase = (appId: string): Configuration => ({
   linux: {
     icon: `resources/icons`,
     category: "Development",
+    maintainer: "Apexo <17867268+cluster1900@users.noreply.github.com>",
     executableName: appId,
     desktop: {
       entry: {
