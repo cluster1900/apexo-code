@@ -2,7 +2,7 @@
 
 This directory stores actionable constraints distilled from bugs that have recurred **3 to 5 times** across independent runs. **Before changing code, read this index first (do not read `docs/testing/` before coding)**, and open a specific rule file only when your change touches its scope. Only inspect or update `docs/testing/` when running tests or recording a bug fix. See [AGENTS.md](../../AGENTS.md#bug-records-and-recurring-constraints) for the full workflow.
 
-**Active constraints: 27.** Count only verified independent occurrences; never invent historical counts or merge timeouts with unconfirmed root causes.
+**Active constraints: 28.** Count only verified independent occurrences; never invent historical counts or merge timeouts with unconfirmed root causes.
 
 Each constraint uses a stable `RULE-` ID, states a one-line `MUST / NEVER` summary in the table below, and documents its scope, required behavior, verification steps, and source bug record (with at least 3 occurrences). The corresponding bug record in `docs/testing/` must link back to the rule.
 
@@ -33,9 +33,9 @@ Each constraint uses a stable `RULE-` ID, states a one-line `MUST / NEVER` summa
 | RULE-20261015-020 | [Native fixture query composition](native-fixture-query-composition.md) | Acceptance callers of helpers that append Location query parameters | **MUST** compose queries with the actual helper contract or URL/searchParams; **NEVER** append a second question mark to an already queried endpoint | [BUG-20261015-112](../testing/test-fixtures/native-media-query-delimiter.md) |
 | RULE-20261015-021 | [Omit absent encoded optional keys](encoded-optional-key-omission.md) | Adapters constructing optional encoded Schema input | **MUST** omit absent encoded keys; **NEVER** substitute explicit `undefined` without a schema contract allowing it | [BUG-20261014-170](../testing/runtime/plugin-embedded-skill-optional-description.md) |
 | RULE-20261015-022 | [Runner domain error contract](runner-domain-error-contract.md) | New typed domain failures in SessionRunner | **MUST** add each real domain failure to the runner contract and verify consumers; **NEVER** erase it with casts or broad cause conversion | [BUG-20261015-133](../testing/types/process-runner-error-contract.md) |
-
 | RULE-20261015-023 | [Pinned Effect.try options](effect-try-options.md) | Synchronous exception conversion on Effect v4 | **MUST** use explicit `{ try, catch }`; **NEVER** use the obsolete callback-only overload | [BUG-20261014-006](../testing/types/goal-changes-effect-try.md) |
 | RULE-20261023-001 | [Non-empty positive PID validation when polling shell PID files](pid-file-polling.md) | Process/monitor fixtures polling `echo $$ > pid` | **MUST** verify `Number.isInteger(pid) && pid > 0` before returning a polled PID; **NEVER** pass `Number("")` (`0`) to `process.kill(pid, 0)` | [BUG-20261017-001](../testing/test-stability/linux-ci-socket-stream-memory.md) |
+| RULE-20261025-001 | [Nonblocking macOS PTY reaping](macos-pty-runtime.md) | Bun runtime pins, CI and PTY adapter | **MUST** retain a runtime with the macOS nonblocking reap fix and verify the concurrent PTY adapter regression; **NEVER** rely on an in-process timer to recover a native blocking wait | [BUG-20261025-013](../testing/test-stability/2026-10-25-acceptance-gates.md#bug-20261025-013--local-batch-reaches-its-watchdog-without-a-test-failure-report) |
 
 Keep this index and the active count in sync whenever adding or consolidating rules. If the active count exceeds 300, consolidate similar constraints by behavior and scope until at most 300 active rules remain. Preserve all effective requirements, exceptions, source links, and an old-ID-to-new-ID mapping below; merged IDs do not count toward the active total.
 

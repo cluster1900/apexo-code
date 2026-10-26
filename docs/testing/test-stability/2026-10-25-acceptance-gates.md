@@ -14,13 +14,15 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 
 ## BUG-20261025-009 — Running-task metadata readiness timed out once
 
-- Status: unresolved root cause; not claimed fixed. GitHub: [#156](https://github.com/cluster1900/apexo-code/issues/156).
+- Status: a matching metadata-loss race is fixed and directly verified; full gates are tracked on the follow-up PR. GitHub: [#156](https://github.com/cluster1900/apexo-code/issues/156).
 - Scope: `test/session/prompt.test.ts`, `running task tool preserves metadata after tool-call transition`.
 - Observed: batch 10 timed out waiting for running task metadata; case duration 7506.40 ms.
 - Expected: the running task retains its child Session ID, title and model metadata across the tool-call transition.
 - Reproduction attempt: run `GITHUB_ACTIONS=false bun turbo test --concurrency=2` from the root alongside the required HttpApi gate. This produced the failure once. The focused command `bun test test/session/prompt.test.ts --test-name-pattern 'running task tool preserves metadata'` passed unchanged in 4254.53 ms with three assertions. Reproduction is intermittent, not deterministic.
-- Root cause: unknown. Timing or shared test load is a hypothesis; no captured terminal state establishes it.
-- Fix: none. No timeout was increased and no assertion was removed. Preserve the failed result even if a later complete gate passes.
+- Follow-up reproduction: `bun test test/session/processor-effect.test.ts --test-name-pattern 'concurrent tool transitions'` runs two real `Handle.updateToolCall` operations against the same pending tool. A low Effect yield budget creates the competing read/write interleaving without mocking a service or the clock. Before the fix it fails in 3832.18 ms: the input transition survives, but title, child Session ID and model metadata are missing. The original timeout did not capture the stored part, so this establishes a concrete matching defect rather than proving the exact historical schedule.
+- Root cause: progress callbacks and provider tool-call transitions independently read and replace the same durable part. Reading the pending state before a concurrent progress write lets the later transition overwrite the running metadata.
+- Fix: serialize tool creation, progress updates, completion, failure and abort cleanup per processor. Keep command execution concurrent. Terminal settlement removes the tracked call inside the same boundary, so late progress cannot revive a completed part.
+- Verification: the controlled case passes five repetitions before adding terminal-race coverage; the final case passes five repetitions with ten assertions in 2.30 seconds on Bun 1.4.4. The final case checks both retained running metadata and completed output after concurrent late progress. All 18 processor cases passed before that additional terminal assertion. No original deadline or assertion was relaxed.
 
 ## BUG-20261025-010 — Native Plan shell completion timed out once
 
@@ -30,7 +32,8 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 - Expected: after the background shell finishes and Plan approval is accepted, the parent consumes its completion without a new user input.
 - Reproduction attempt: the same full-gate command above produced the failure once. A focused rerun passed in 612.02 ms; `bun test test/e2e/v2-plan-shell-completion.e2e.test.ts --rerun-each 10` then passed all ten runs with 160 assertions. The exact interleaving remains unconfirmed.
 - Root cause: unknown. A passing rerun is not proof of a fix.
-- Fix: none. Preserve the failure and the successful controls separately.
+- Follow-up: 30 repeated controls passed with 480 assertions in 17.28 seconds, followed by 100 passing controls with 1600 assertions on Bun 1.3.14. Completion publication, Plan admission and coordinator wake paths were inspected without establishing a lost wake.
+- Fix: none claimed. A timeout now records provider-call count, pending questions, authoritative process detail and the transcript. Preserve this issue as open until that evidence identifies the failed boundary; successful controls are not a fix.
 
 ## BUG-20261025-011 — Large legacy message limit returned HTTP 400 once
 
@@ -41,6 +44,7 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 - Reproduction attempt: run the root full unit gate. It failed once; a focused first run passed. Replaying the exact 29-file batch in a fresh process passed 185 tests and 767 assertions in 48.23 seconds.
 - Root cause: unknown. Added a diagnostic that prints the error body before the unchanged status assertion. No endpoint behavior, limit or assertion was relaxed.
 - An attempted in-process `--rerun-each 5` control passed first, then produced four `ManagedRuntime disposed` fixture-reuse failures. Those are not HTTP 400 recurrences and are not counted as endpoint evidence.
+- Follow-up: 30 focused controls in fresh Bun processes passed. Three more original 29-file batch replays passed in 52.39, 54.80 and 54.37 seconds. Query decoding accepts the large limit and these replays still do not explain the original 400; the response-body diagnostic remains in place. Keep the issue open.
 - In this second full gate, the OAuth, task metadata and native Plan batches all passed. That is a successful control, not proof that #156 or #157 is fixed.
 
 ## BUG-20261025-012 — Joined-resume fixture conflates automatic admission and completion
@@ -59,13 +63,20 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 
 ## BUG-20261025-013 — Local batch reaches its watchdog without a test failure report
 
-- Status: unresolved; GitHub [#160](https://github.com/cluster1900/apexo-code/issues/160).
+- Status: runtime deadlock identified; project runtime upgraded to the verified upstream fix. GitHub [#160](https://github.com/cluster1900/apexo-code/issues/160).
 - Scope: final-head macOS full gate at `6108a2b`, batch 10/17, 29 files.
 - Observed: 16 batches passed; batch 10 was killed by the existing 600-second watchdog with exit 137. A process sample showed its main thread waiting in `__wait4_nocancel`; unsymbolized Bun frames do not identify the caller or child. The failure-only log did not identify the active test.
 - Reproduction: root `GITHUB_ACTIONS=false bun turbo test --concurrency=2`; select the batch alone from Apexo with `APEXO_TEST_SHARD=10/17 bun run script/run-tests.ts`.
 - Expected: each test and fixture terminates within its bounded deadline, allowing the batch to report results.
 - Verification attempt: unchanged exact batch with per-test output passed 283 tests, one existing skip and 1407 assertions in 85.03 seconds. No hang recurred, so no fix or common cause with #156 is claimed.
-- Recurrence: the full local gate at `3b55b85` passed 16/17 batches, including Memory batch 5 in 67.37 seconds, but batch 10 again reached the watchdog (600.05 seconds, exit 137). Overall: 5/6 tasks in 13m28.506s. A separate replay of all 29 batch files stalled in the same `__wait4_nocancel` state with one exiting bash child and was manually stopped after capturing its process sample. That interrupted replay is not a pass. The exact blocking call and root cause remain unknown; no timeout or product behavior was changed for this symptom.
+- Recurrence: the full local gate at `3b55b85` passed 16/17 batches, including Memory batch 5 in 67.37 seconds, but batch 10 again reached the watchdog (600.05 seconds, exit 137). Overall: 5/6 tasks in 13m28.506s. A separate replay of all 29 batch files stalled in the same `__wait4_nocancel` state with one exiting bash child and was manually stopped after capturing its process sample. That interrupted replay is not a pass. At that checkpoint the exact blocking call and root cause were unknown; no timeout or product behavior was changed.
+
+- Follow-up baseline: seven isolated exact-batch controls passed (one instrumented, one ordinary and five serial repeats), but a new complete gate reproduced the hang in batch 10. The worker was manually stopped after a native sample and child/FD inventory; this interrupted gate is a failure, not a pass.
+- Root cause evidence: all four independent macOS samples share Bun 1.3.14 offset `0x13d2a64`. Bun's symbol service resolves it to `Process.onWaitPid` in `src/runtime/api/bun/process.zig:353`, through `spawnMaybeSync`. The source retries an `ESRCH` watch failure with blocking `wait4(pid, 0)` on the event loop. The reproduced worker retained an exiting bash Session leader and open PTY masters. This matches [Bun #42171](https://github.com/oven-sh/bun/issues/42171) and [#45300](https://github.com/oven-sh/bun/issues/45300): terminal exit waits for output drainage by that same blocked thread.
+- Fix: pin the project and all CI platforms to Bun 1.4.4. [Upstream commit bfa1209](https://github.com/oven-sh/bun/commit/bfa1209e35663056248406661f1b90851e5c72fa) moves the fallback reap to a separate thread; GitHub's compare confirms it is an ancestor of the stable 1.4.4 release. The user's global runtime is unchanged.
+- Regression: run `bun test ./test/server/pty-process.test.ts --test-name-pattern 'rapid PTY exits survive'` from Apexo. Four independent test workers each run ten repetitions of the actual adapter's 30-exit/output/late-subscription case. A separate-process 20-second watchdog bounds a blocked runtime. Bun 1.3.14 fails with exit 137 at 20017.34 ms after a worker stalls on its second repetition. Bun 1.4.4 passes in 13421.97 ms under concurrent suite load. Combined processor/PTY validation passes 21 tests and 185 assertions; the workers additionally perform 3600 assertions across 1200 PTY exits. Separate 3000-spawn controls pass on both versions and are not mislabeled negative proof.
+- Recurring constraint: [RULE-20261025-001](../../rules/macos-pty-runtime.md), justified by the three historical native samples and the independently reproduced complete-gate sample. The additional focused negative control is supporting evidence, not a duplicate count of the historical runs.
+- Upgrade compatibility: Bun 1.4.4 now reports rejected WebSocket upgrades as `Unexpected server response: 401`, matching the `ws` error format. The previous test required Bun 1.3.14's `Expected 101 status code` wording. Update the fixture's exact assertion to preserve verification of the actual rejected status; connection behavior is unchanged. The WebSocket and native MCP files pass together: 43 tests, 242 assertions, 36.82 seconds.
 
 ## BUG-20261025-014 — Nested PR Agent retries exhaust the job deadline
 
@@ -84,6 +95,26 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 - Observed: the full unit gate overlapping HttpApi at `fefd250` failed this case after 10308.84 ms against its 10000 ms limit. The remaining 16 batches passed. This was a named test timeout, not the watchdog hang in #160.
 - Expected: a loop requested during shell execution waits, starts after the shell exits, and completes within the test deadline.
 - Reproduction attempt: run the root full unit gate alongside the Apexo HttpApi gate. An unchanged focused control passed in 2192.96 ms with five assertions. A subsequent complete unit run without the concurrent HttpApi workload passed all 6 tasks, 17 batches and 501 files in 9m10.629s.
-- Root cause: unknown; load is a hypothesis. No production behavior, test deadline or assertion was changed, and successful controls are not a claimed fix.
+- Root cause: unknown; load is a hypothesis. Ten focused repetitions passed unchanged in the paired metadata/shell control (20 total cases, 80 assertions, 62.94 seconds). The shell path and runner handoff were inspected; neither a lost handoff nor an inherited shell-startup delay was proven.
+- Follow-up diagnostic: a scoped seven-second timer captures provider-call count and transcript state before the unchanged ten-second outer deadline. It is cancelled with the test and does not signal readiness or relax any assertion. Keep this issue open until a failing run identifies the boundary.
 
-See [the regression report](../desktop-cli/2026-10-25-regression.md) and PR #155 for final full-gate and CI outcomes. None of these observations is promoted to a recurring constraint.
+## BUG-20261025-016 — Clean installs reject Photon patch context on Bun 1.4.4
+
+- Scope: the Photon dependency patch and PR #164's first Linux CI run at `5101034`.
+- Observed: all jobs using the setup action failed before their test/typecheck commands with `hunk #10 does not apply to photon_rs.js (expected at line 4509)`. Nix evaluation passed. Existing locally installed dependencies did not exercise patch application, so the earlier local passing gates could not catch this installation failure.
+- Expected: a clean install applies every committed dependency patch and reaches validation without changing the intended Photon runtime code.
+- Reproduction: in an empty package, depend on `@silvia-odwyer/photon-node@0.3.4`, copy the committed patch into `patchedDependencies`, and run Bun 1.4.4 `bun install --ignore-scripts` with an empty install cache. The original patch reproduces the same hunk-10 failure on macOS as Linux CI.
+- Root cause: three context lines in the last patch hunk contain one extra space compared with the published package. Bun 1.4.4 rejects that mismatched context; the actual requested code changes remain valid.
+- Fix: correct only those three context lines to match the original file. No added/deleted runtime lines or dependency version change.
+- Verification: the same empty-cache isolated install passes after correction. The installed `photon_rs.js` is byte-identical to the dependency used by the passing full local gates (SHA-256 `cced3827dfedd6a5d18cabe1d2a80a9af11b66b1a4f16bd79b38d8994a17c07e`). A real Photon image creates a 1×1 PNG successfully. Full clean-install and updated CI outcomes are recorded on PR #164 and the lifecycle report.
+
+## BUG-20261025-017 — Cancellation after terminal commit lets cleanup overwrite completion
+
+- Status: reproduced and fixed during PR #164 review; all five fresh local gates and final-source Gemini Desktop/CLI acceptance pass. Exact-head CI and merge outcomes are recorded on the PR.
+- Affected scope: legacy processor terminal state persistence and local tool settlement, related to the tool-state work in #156 but distinct from its stale-write root cause.
+- Expected behavior: once a tool result is durably completed, cancellation and processor cleanup preserve that completed result and metadata.
+- Reproduction: run `bun test test/session/processor-effect.test.ts --test-name-pattern "interrupted tool completion"` from `packages/apexo`. The fixture starts a real provider/tool stream, registers a durable-event listener, completes the tool, requests interruption from that listener after the completed part commits, then interrupts the processor and inspects the stored part after cleanup.
+- Review follow-up: PR #164 identified a second terminal transition window. Interrupting the real publisher from a durable `PartUpdated` listener after the completed part commits, but before `settleToolCall`, leaves the call tracked; subsequent processor cleanup overwrites `completed` with `error: Tool execution aborted`. The new `interrupted tool completion survives processor cleanup` case reproduces this on `02a373f` in 3712.92 ms: the committed-state assertion passes, but the post-cleanup completed-state assertion fails. This is a controlled boundary injection, not evidence that the original historical timeout used this schedule.
+- Terminal fix: after acquiring the semaphore, complete/fail publication and local settlement run in an uninterruptible region; waiting for the semaphore remains interruptible. Real tool execution remains interruptible and concurrent. The listener still requests interruption, and the regression checks the interrupted fiber exit, the committed result and its survival through cleanup. All 19 processor tests pass with 85 assertions in 16.97 seconds; the new case takes 69.08 ms.
+
+See [the original regression report](../desktop-cli/2026-10-25-regression.md) and PR #155 for the seven-issue cycle, and [the lifecycle follow-up](../desktop-cli/2026-10-25-lifecycle-followup.md) for this five-issue investigation and its final gates. Only the independently recurring macOS PTY deadlock is promoted to a constraint; the other observations are not.

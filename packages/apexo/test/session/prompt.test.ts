@@ -3059,6 +3059,19 @@ it.instance(
       })
       yield* llm.text("after-shell")
 
+      // Capture evidence before the existing outer deadline; this is not a readiness signal.
+      yield* Effect.sleep("7 seconds").pipe(
+        Effect.andThen(
+          Effect.gen(function* () {
+            console.error("Shell-loop handoff approaching deadline", {
+              calls: yield* llm.calls,
+              messages: yield* MessageV2.filterCompactedEffect(chat.id),
+            })
+          }),
+        ),
+        Effect.forkChild,
+      )
+
       const sh = yield* prompt
         .shell({ sessionID: chat.id, agent: "build", command: "sleep 0.2" })
         .pipe(Effect.forkChild)

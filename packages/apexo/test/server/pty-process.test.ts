@@ -28,3 +28,41 @@ posix(
   },
   10000,
 )
+
+posix(
+  "rapid PTY exits survive concurrent test workers",
+  async () => {
+    // A synchronous runtime wait can block the child's test timeout too.
+    // Keep the watchdog in a separate process and exercise the actual adapter.
+    const workers = Array.from({ length: 4 }, () =>
+      Bun.spawn(
+        [
+          process.execPath,
+          "test",
+          import.meta.path,
+          "--test-name-pattern",
+          "retains rapid PTY exits",
+          "--rerun-each",
+          "10",
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 20000, killSignal: "SIGKILL" },
+      ),
+    )
+    const results = await Promise.all(
+      workers.map(async (worker) => {
+        const [code, stdout, stderr] = await Promise.all([
+          worker.exited,
+          new Response(worker.stdout).text(),
+          new Response(worker.stderr).text(),
+        ])
+        return { code, stdout, stderr }
+      }),
+    )
+    for (const result of results) {
+      expect(result.code, result.stdout + result.stderr).toBe(0)
+      expect(result.stderr).toContain("10 pass")
+      expect(result.stderr).toContain("900 expect() calls")
+    }
+  },
+  30000,
+)

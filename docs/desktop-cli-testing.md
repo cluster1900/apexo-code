@@ -80,3 +80,14 @@ Use the same real Gemini 3.8 Flash account and isolated fixtures. Keep the origi
 5. Interrupt a TUI shell task with an empty queue, start another task, enqueue while it is active, and verify automatic delivery after the task finishes.
 6. Exercise Goal planning, review and completion with sufficient budget. Verify an evaluator rejection starts a new user turn before provider continuation; repeat with a one-step worker and require the final-step reminder to preserve a user-ending request. Run one-step CLI controls in both protocols: require a model response and no HTTP 400; retain the native `turn_limit` terminal outcome. Separately retain the real-provider comparison for the formerly rejected assistant-ending request.
 7. Run all five CI gate commands plus app unit tests, production Desktop/app builds and the session/Context production benchmark. Use comparable machine load for before/after timing. Open the fix PR and wait for every required check to pass on its head commit.
+
+## Lifecycle follow-up for issues #156, #157, #158, #160 and #162
+
+Record this cycle in the [lifecycle report](testing/desktop-cli/2026-10-25-lifecycle-followup.md). A repeated pass alone does not resolve an intermittent failure.
+
+1. Reproduce competing tool-part updates with actual processor services. Require running metadata to survive and terminal settlement to reject late progress. Inject cancellation after the real durable completion event and require the completed result to survive processor cleanup. Retain the failing pre-fix controls.
+2. Replay native Plan/background-shell completion and shell/loop coordination with their existing deadlines. On failure, retain provider-call count, process/permission state and transcript instead of only a timeout label.
+3. Replay the 510-message legacy request in fresh processes and its original batch. Retain any non-200 response body; do not confuse a disposed shared fixture with an endpoint failure.
+4. For the macOS batch hang, capture the native stack and child process state, identify the blocking call, and verify the upstream runtime fix. Exercise the real PTY adapter in concurrent subprocesses bounded by an external watchdog on both old and proposed runtimes.
+5. Rebuild Desktop and repeat a delegated file task through CLI and Desktop using native Antigravity / Gemini 3.8 Flash / Low. Require an independent parent command, exact file bytes, preserved child/model metadata, and a visible completed Desktop state.
+6. Run generation checks, typechecking, the complete unit gate and HttpApi gates without overlapping generated-source writers and readers. Open a PR to `main`; wait for all PR checks before the user-authorized merge. Close only issues with a demonstrated fix and passing regression, and leave unresolved observations open with the new evidence.

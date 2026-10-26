@@ -2,7 +2,7 @@ import { LayerNode } from "@apexo/core/effect/layer-node"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@apexo/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Schedule } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Schedule, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -113,6 +113,8 @@ const layer = Layer.effect(
         currentText: undefined,
         reasoningMap: {},
       }
+      // Progress callbacks and provider events update the same durable tool parts.
+      const toolLock = yield* Semaphore.make(1)
       let aborted = false
 
       const parse = (e: unknown) =>
@@ -156,54 +158,61 @@ const layer = Layer.effect(
           sessionID: part.sessionID,
         }
         return part
-      })
+      }, toolLock.withPermit)
 
-      const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
-        toolCallID: string,
-        output: {
-          title: string
-          metadata: Record<string, any>
-          output: string
-          attachments?: SessionV1.FilePart[]
+      // Once a terminal part is committed, cancellation must not skip local settlement.
+      const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(
+        function* (
+          toolCallID: string,
+          output: {
+            title: string
+            metadata: Record<string, any>
+            output: string
+            attachments?: SessionV1.FilePart[]
+          },
+        ) {
+          const match = yield* readToolCall(toolCallID)
+          if (!match || match.part.state.status !== "running") return
+          yield* session.updatePart({
+            ...match.part,
+            state: {
+              status: "completed",
+              input: match.part.state.input,
+              output: output.output,
+              metadata: output.metadata,
+              title: output.title,
+              time: { start: match.part.state.time.start, end: Date.now() },
+              attachments: output.attachments,
+            },
+          })
+          yield* settleToolCall(toolCallID)
         },
-      ) {
-        const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return
-        yield* session.updatePart({
-          ...match.part,
-          state: {
-            status: "completed",
-            input: match.part.state.input,
-            output: output.output,
-            metadata: output.metadata,
-            title: output.title,
-            time: { start: match.part.state.time.start, end: Date.now() },
-            attachments: output.attachments,
-          },
-        })
-        yield* settleToolCall(toolCallID)
-      })
+        (effect) => toolLock.withPermit(Effect.uninterruptible(effect)),
+      )
 
-      const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
-        const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return false
-        yield* session.updatePart({
-          ...match.part,
-          state: {
-            status: "error",
-            input: match.part.state.input,
-            error: errorMessage(error),
-            // Keep metadata streamed while running so failures retain progress detail (e.g. execute's child calls).
-            metadata: match.part.state.metadata,
-            time: { start: match.part.state.time.start, end: Date.now() },
-          },
-        })
-        if (error instanceof PermissionV1.RejectedError || error instanceof Question.RejectedError) {
-          ctx.blocked = ctx.shouldBreak
-        }
-        yield* settleToolCall(toolCallID)
-        return true
-      })
+      const failToolCall = Effect.fn("SessionProcessor.failToolCall")(
+        function* (toolCallID: string, error: unknown) {
+          const match = yield* readToolCall(toolCallID)
+          if (!match || match.part.state.status !== "running") return false
+          yield* session.updatePart({
+            ...match.part,
+            state: {
+              status: "error",
+              input: match.part.state.input,
+              error: errorMessage(error),
+              // Keep metadata streamed while running so failures retain progress detail (e.g. execute's child calls).
+              metadata: match.part.state.metadata,
+              time: { start: match.part.state.time.start, end: Date.now() },
+            },
+          })
+          if (error instanceof PermissionV1.RejectedError || error instanceof Question.RejectedError) {
+            ctx.blocked = ctx.shouldBreak
+          }
+          yield* settleToolCall(toolCallID)
+          return true
+        },
+        (effect) => toolLock.withPermit(Effect.uninterruptible(effect)),
+      )
 
       const finishReasoning = Effect.fn("SessionProcessor.finishReasoning")(function* (reasoningID: string) {
         if (!(reasoningID in ctx.reasoningMap)) return
@@ -325,7 +334,7 @@ const layer = Layer.effect(
           sessionID: part.sessionID,
         }
         return { call: ctx.toolcalls[input.id], part }
-      })
+      }, toolLock.withPermit)
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
 
@@ -757,23 +766,26 @@ const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
-        for (const toolCallID of Object.keys(ctx.toolcalls)) {
-          const match = yield* readToolCall(toolCallID)
-          if (!match) continue
-          const part = match.part
-          const end = Date.now()
-          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
-          yield* session.updatePart({
-            ...part,
-            state: {
-              ...part.state,
-              status: "error",
-              error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
-              time: { start: "time" in part.state ? part.state.time.start : end, end },
-            },
-          })
-        }
+        yield* Effect.forEach(Object.keys(ctx.toolcalls), (toolCallID) =>
+          Effect.gen(function* () {
+            const match = yield* readToolCall(toolCallID)
+            if (!match) return
+            const part = match.part
+            const end = Date.now()
+            const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+            yield* session.updatePart({
+              ...part,
+              state: {
+                ...part.state,
+                status: "error",
+                error: "Tool execution aborted",
+                metadata: { ...metadata, interrupted: true },
+                time: { start: "time" in part.state ? part.state.time.start : end, end },
+              },
+            })
+            yield* settleToolCall(toolCallID)
+          }).pipe(toolLock.withPermit),
+        )
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)

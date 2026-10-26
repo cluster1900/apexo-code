@@ -155,7 +155,7 @@ const table = sqliteTable("session", {
 - Avoid mocks as much as possible, you shouldn't be using globalThis.\* at all unless it's the only option.
 - Test actual implementation, do not duplicate logic into tests
 - Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/apexo`.
-- On the pinned Bun 1.3.14, a POST body that the handler never reads, combined with an async reply, makes `node:http` `server.close()` hang. The test then stalls for about 20s and fails with `All fibers interrupted`. Send POST requests to endpoints that have no payload without a body, as the real clients do. See `docs/known-issues.md`.
+- On Bun 1.3.14, a POST body that the handler never reads, combined with an async reply, makes `node:http` `server.close()` hang. The test then stalls for about 20s and fails with `All fibers interrupted`. Send POST requests to endpoints that have no payload without a body, as the real clients do. See `docs/known-issues.md`.
 
 ## Type Checking
 
