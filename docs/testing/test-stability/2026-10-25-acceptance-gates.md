@@ -26,26 +26,28 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 
 ## BUG-20261025-010 — Native Plan shell completion timed out once
 
-- Status: unresolved root cause; not claimed fixed. GitHub: [#157](https://github.com/cluster1900/apexo-code/issues/157).
+- Status: unable to reproduce on the current baseline; root cause unknown, no fix claimed. GitHub: [#157](https://github.com/cluster1900/apexo-code/issues/157).
 - Scope: `test/e2e/v2-plan-shell-completion.e2e.test.ts`, `background Shell completion waits for native Plan approval without a new user input`.
 - Observed: batch 11 timed out waiting for `PLAN_SHELL_DELIVERED`; case duration 21597.06 ms.
 - Expected: after the background shell finishes and Plan approval is accepted, the parent consumes its completion without a new user input.
 - Reproduction attempt: the same full-gate command above produced the failure once. A focused rerun passed in 612.02 ms; `bun test test/e2e/v2-plan-shell-completion.e2e.test.ts --rerun-each 10` then passed all ten runs with 160 assertions. The exact interleaving remains unconfirmed.
 - Root cause: unknown. A passing rerun is not proof of a fix.
 - Follow-up: 30 repeated controls passed with 480 assertions in 17.28 seconds, followed by 100 passing controls with 1600 assertions on Bun 1.3.14. Completion publication, Plan admission and coordinator wake paths were inspected without establishing a lost wake.
-- Fix: none claimed. A timeout now records provider-call count, pending questions, authoritative process detail and the transcript. Preserve this issue as open until that evidence identifies the failed boundary; successful controls are not a fix.
+- Fix: none claimed. A timeout now records provider-call count, pending questions, authoritative process detail and the transcript. The earlier investigation kept the issue open pending that evidence; successful controls are not a fix. The later user-authorized unable-to-reproduce disposition is recorded below.
+- Current-baseline follow-up: twenty fresh-process controls and two original-batch replays under concurrent HttpApi load all pass on Bun 1.4.4. The root cause remains unknown. See the [remaining-issue report](../desktop-cli/2026-10-25-remaining-issues.md) for exact workload, final acceptance and the user-authorized unable-to-reproduce disposition; no code fix is claimed.
 
 ## BUG-20261025-011 — Large legacy message limit returned HTTP 400 once
 
-- Status: unresolved root cause; not claimed fixed. GitHub: [#158](https://github.com/cluster1900/apexo-code/issues/158).
+- Status: unable to reproduce on the current baseline; root cause unknown, no fix claimed. GitHub: [#158](https://github.com/cluster1900/apexo-code/issues/158).
 - Scope: `test/server/session-messages.test.ts`, `does not truncate large legacy limit requests`.
 - Observed: a subsequent unit-only full gate failed in batch 16 after 8m25.211s. The fixture created 520 messages, then `GET /session/<sessionID>/message?limit=510` returned 400 instead of 200; case duration was 1265.91 ms. The original assertion did not retain the response body.
 - Expected: HTTP 200 and exactly 510 messages.
 - Reproduction attempt: run the root full unit gate. It failed once; a focused first run passed. Replaying the exact 29-file batch in a fresh process passed 185 tests and 767 assertions in 48.23 seconds.
 - Root cause: unknown. Added a diagnostic that prints the error body before the unchanged status assertion. No endpoint behavior, limit or assertion was relaxed.
 - An attempted in-process `--rerun-each 5` control passed first, then produced four `ManagedRuntime disposed` fixture-reuse failures. Those are not HTTP 400 recurrences and are not counted as endpoint evidence.
-- Follow-up: 30 focused controls in fresh Bun processes passed. Three more original 29-file batch replays passed in 52.39, 54.80 and 54.37 seconds. Query decoding accepts the large limit and these replays still do not explain the original 400; the response-body diagnostic remains in place. Keep the issue open.
+- Follow-up: 30 focused controls in fresh Bun processes passed. Three more original 29-file batch replays passed in 52.39, 54.80 and 54.37 seconds. Query decoding accepts the large limit and these replays still do not explain the original 400; the response-body diagnostic remains in place. The earlier investigation kept the issue open; see the later disposition below.
 - In this second full gate, the OAuth, task metadata and native Plan batches all passed. That is a successful control, not proof that #156 or #157 is fixed.
+- Current-baseline follow-up: twenty fresh-process controls and two original-batch replays under concurrent HttpApi load all pass on Bun 1.4.4. The root cause remains unknown. See the [remaining-issue report](../desktop-cli/2026-10-25-remaining-issues.md) for exact workload, final acceptance and the user-authorized unable-to-reproduce disposition; no code fix is claimed.
 
 ## BUG-20261025-012 — Joined-resume fixture conflates automatic admission and completion
 
@@ -90,13 +92,14 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 
 ## BUG-20261025-015 — Shell-loop coordination exceeds its local test deadline
 
-- Status: unresolved; GitHub [#162](https://github.com/cluster1900/apexo-code/issues/162).
+- Status: unable to reproduce on the current baseline; root cause unknown, no fix claimed. GitHub [#162](https://github.com/cluster1900/apexo-code/issues/162).
 - Scope: `test/session/prompt.test.ts`, `loop waits while shell runs and starts after shell exits`.
 - Observed: the full unit gate overlapping HttpApi at `fefd250` failed this case after 10308.84 ms against its 10000 ms limit. The remaining 16 batches passed. This was a named test timeout, not the watchdog hang in #160.
 - Expected: a loop requested during shell execution waits, starts after the shell exits, and completes within the test deadline.
 - Reproduction attempt: run the root full unit gate alongside the Apexo HttpApi gate. An unchanged focused control passed in 2192.96 ms with five assertions. A subsequent complete unit run without the concurrent HttpApi workload passed all 6 tasks, 17 batches and 501 files in 9m10.629s.
 - Root cause: unknown; load is a hypothesis. Ten focused repetitions passed unchanged in the paired metadata/shell control (20 total cases, 80 assertions, 62.94 seconds). The shell path and runner handoff were inspected; neither a lost handoff nor an inherited shell-startup delay was proven.
-- Follow-up diagnostic: a scoped seven-second timer captures provider-call count and transcript state before the unchanged ten-second outer deadline. It is cancelled with the test and does not signal readiness or relax any assertion. Keep this issue open until a failing run identifies the boundary.
+- Follow-up diagnostic: a scoped seven-second timer captures provider-call count and transcript state before the unchanged ten-second outer deadline. It is cancelled with the test and does not signal readiness or relax any assertion. The earlier investigation kept this issue open pending a failing boundary snapshot; see the later disposition below.
+- Current-baseline follow-up: twenty fresh-process controls and two original-batch replays under concurrent HttpApi load all pass on Bun 1.4.4. The root cause remains unknown. See the [remaining-issue report](../desktop-cli/2026-10-25-remaining-issues.md) for exact workload, final acceptance and the user-authorized unable-to-reproduce disposition; no code fix is claimed.
 
 ## BUG-20261025-016 — Clean installs reject Photon patch context on Bun 1.4.4
 
