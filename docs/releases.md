@@ -88,3 +88,23 @@ run the publishing script locally. Do not delete or move a published version tag
 
 The tag workflow independently checks ancestry against `main` and successful
 GitHub Actions `unit (linux)` and `typecheck` checks before any release build.
+
+## Recover an upload after a successful build
+
+If a tagged run passed the CLI build, all six CLI installation checks, and all
+three Desktop jobs, but failed during GitHub upload, run **recover release** from
+Actions using the `main` branch. Supply the existing tag and original release
+run ID. For the first release these are `v1.0.0` and `40268896523`.
+
+With an authenticated GitHub CLI, the equivalent is:
+
+```bash
+gh workflow run recover-release.yml --ref main -f tag=v1.0.0 -f run_id=40268896523
+```
+
+Recovery requires the tag to belong to main, its required CI checks to pass,
+and the original tag workflow's ten CLI/Desktop build and installation jobs to
+succeed. It publishes those exact retained artifacts with the current upload
+helper. It does not rebuild binaries or change the existing tag. Artifacts are
+retained for fourteen days. After GitHub publication, first-time npm publishers
+can download the attached npm manifest/tarballs and follow the npm setup above.

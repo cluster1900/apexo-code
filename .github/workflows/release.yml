@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/release.yml"
+      - ".github/workflows/recover-release.yml"
       - "packages/apexo/script/*release.ts"
       - "packages/apexo/script/smoke-release.mjs"
       - "packages/apexo/script/build.ts"
@@ -16,6 +17,7 @@ on:
       - "packages/desktop/scripts/**"
       - "packages/workflow-script/script/artifact.ts"
       - "script/release"
+      - "script/publish-artifacts"
   workflow_dispatch:
     inputs:
       version:
@@ -177,6 +179,17 @@ jobs:
       - name: Install packed npm CLI and verify version
         shell: bash
         run: node packages/apexo/script/smoke-release.mjs
+      - name: Verify release metadata and checksum preparation
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        shell: bash
+        env:
+          RELEASE_TAG: v${{ needs.version.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p artifacts
+          mv "$GITHUB_WORKSPACE/packages/apexo/dist" artifacts/cli
+          bash script/publish-artifacts --prepare-only
+          test -s artifacts/SHA256SUMS
 
   desktop:
     needs: [version, workflow-interpreter]
@@ -238,10 +251,12 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: cli-release
+          name: cli-release
           path: artifacts/cli
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -250,27 +265,7 @@ jobs:
           merge-multiple: true
       - name: Create release and upload verified artifacts
         shell: bash
-        run: |
-          mv artifacts/cli/npm/manifest.json artifacts/cli/npm-manifest.json
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            cat > release-notes.md <<EOF
-          Install the CLI with \`npm install -g apexo-code@${GITHUB_REF_NAME#v}\`, or download a standalone CLI archive below. Keep the CLI and its workflow interpreter together.
-
-          Desktop installers are available for macOS Apple Silicon, Linux x64, and Windows x64. The current macOS build uses an ad-hoc signature without notarization; the Windows build has no publisher certificate.
-
-          [Detailed installation guide](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/installation.md) · [Release automation guide](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/releases.md)
-
-          Verify downloads using the attached \`SHA256SUMS\`.
-          EOF
-            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md --generate-notes
-          fi
-          find artifacts -type f ! -name manifest.json ! -name SHA256SUMS -print0 | sort -z |
-            while IFS= read -r -d '' file; do
-              checksum=$(sha256sum "$file")
-              printf '%s  %s\n' "${checksum%% *}" "$(basename "$file")"
-            done > artifacts/SHA256SUMS
-          find artifacts -type f ! -name manifest.json -print0 | xargs -0 gh release upload "$GITHUB_REF_NAME" --clobber
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+        run: bash script/publish-artifacts
 
   npm:
     needs: [version, release]
