@@ -84,7 +84,10 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
   Correct the user guide to the target-specific `x86_64`/`amd64` installer names.
 - **Verification:** The original failure is recorded in release run
   [40264955859](https://github.com/cluster1900/apexo-code/actions/runs/40264955859),
-  job 121386270206. Configuration typing passed; the corrected CI build is pending.
+  job 121386270206. Configuration typing passed. The corrected Linux job
+  121392368210 in [run 40267132456](https://github.com/cluster1900/apexo-code/actions/runs/40267132456)
+  passed and uploaded AppImage, DEB, and RPM installers. The generated filenames
+  match the installation guide.
 
 ## BUG-20261025-RELEASE-HEAP: macOS runner exhausts the renderer build heap
 
@@ -101,7 +104,9 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
 - **Fix:** Set `NODE_OPTIONS=--max-old-space-size=6144` for Desktop CI builds.
 - **Verification:** The original failure is recorded in release run
   [40264955859](https://github.com/cluster1900/apexo-code/actions/runs/40264955859),
-  job 121386270252. The corrected hosted build is pending.
+  job 121386270252. With the explicit heap budget, macOS job 121392368188
+  in [run 40267132456](https://github.com/cluster1900/apexo-code/actions/runs/40267132456)
+  completed the renderer build and uploaded the DMG and ZIP successfully.
 
 ## BUG-20261025-RELEASE-TTY: Preserve interactive npm authentication
 
