@@ -125,3 +125,27 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
 - **Verification:** The shell diagnostic reported `true undefined`; the inherited
   spawn diagnostic reports `true true`. The real first-publication challenge is
   still pending and is not claimed as verified by this diagnostic alone.
+
+## BUG-20261026-RELEASE-LAYOUT: Pattern download adds an unexpected directory
+
+- **Scope:** Final GitHub Release upload, after successful tagged builds.
+- **Observed:** Tag run 40268896523 passed all eight interpreter builds, all twelve
+  CLI compilations, all six native installation checks, and all three Desktop
+  packaging jobs. Its publisher then failed to find `artifacts/cli/npm/manifest.json`.
+- **Expected:** A single CLI artifact extracts directly into the publisher's CLI
+  directory, and verified assets are uploaded without rebuilding or moving tags.
+- **Reproduction:** Download the single `cli-release` artifact using `pattern`
+  without `merge-multiple: true`. download-artifact extracts it under an extra
+  `cli-release/` directory. This is the exact directory reported in job
+  121400678980's download log.
+- **Root cause:** The publisher used multi-artifact pattern selection for one
+  named artifact, while its filesystem paths assumed the single-name layout.
+- **Fix:** Select the CLI artifact with `name`. Share release preparation/upload
+  in `script/publish-artifacts`, and exercise its metadata/checksum preparation
+  against real downloaded CLI artifacts in Linux installation CI. Add a manual
+  recovery workflow that verifies the original tag, successful main CI, original
+  run identity, and all ten build/install jobs before reusing saved artifacts.
+  The existing `v1.0.0` tag and its source commit remain unchanged.
+- **Verification:** The original publisher failed before creating a Release.
+  Shell syntax and actionlint validation pass for the correction. The real
+  recovery upload and the added preparation check are pending.

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tag=${RELEASE_TAG:?Set RELEASE_TAG to a stable version tag}
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+jq -e --arg version "${tag#v}" '.version == $version and (.packages | length) == 13' artifacts/cli/npm/manifest.json > /dev/null
+package_name=$(jq -r '.packages[-1].name' artifacts/cli/npm/manifest.json)
+[[ "$package_name" =~ ^(@[a-z0-9-]+/)?[a-z0-9-]+$ ]]
+mv artifacts/cli/npm/manifest.json artifacts/cli/npm-manifest.json
+
+cat > release-notes.md <<EOF
+Install the CLI with \`npm install -g $package_name@${tag#v}\`, or download a standalone CLI archive below. Keep the CLI and its workflow interpreter together.
+
+Desktop installers are available for macOS Apple Silicon, Linux x64, and Windows x64. The current macOS build uses an ad-hoc signature without notarization; the Windows build has no publisher certificate.
+
+[Detailed installation guide](https://github.com/$GH_REPO/blob/$tag/docs/installation.md) · [Release automation guide](https://github.com/$GH_REPO/blob/main/docs/releases.md)
+
+Verify downloads using the attached \`SHA256SUMS\`.
+EOF
+if [[ -n "${RELEASE_RUN_ID:-}" ]]; then
+  printf '\nBuild and installation checks: https://github.com/%s/actions/runs/%s. These retained artifacts were published through the recovery workflow.\n' "$GH_REPO" "$RELEASE_RUN_ID" >> release-notes.md
+fi
+
+find artifacts -type f ! -name SHA256SUMS -print0 | sort -z |
+  while IFS= read -r -d '' file; do
+    checksum=$(sha256sum "$file")
+    printf '%s  %s\n' "${checksum%% *}" "$(basename "$file")"
+  done > artifacts/SHA256SUMS
+if [[ "${1:-}" == "--prepare-only" ]]; then
+  echo "Prepared $tag release metadata and checksums"
+  exit 0
+fi
+if ! gh release view "$tag" >/dev/null 2>&1; then
+  gh release create "$tag" --draft --verify-tag --title "$tag" --notes-file release-notes.md --generate-notes
+fi
+find artifacts -type f -print0 | xargs -0 gh release upload "$tag" --clobber
+gh release edit "$tag" --draft=false
