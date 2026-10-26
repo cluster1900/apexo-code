@@ -53,12 +53,34 @@ The script publishes platform packages first and the launcher last. An existing
 version is skipped only when its published integrity matches the prepared
 tarball; a conflicting version fails instead of being silently accepted.
 
+For new packages, npm may accept an upload while the registry still processes it.
+Wait for `1.0.0` to appear in `npm view <package>@1.0.0` for every package in the
+manifest, then check a fresh installation before announcing npm availability.
+Do not rebuild or change a version to work around this processing delay.
+
 For subsequent automatic publishing, configure an npm trusted publisher for
 **each of the thirteen packages**, using:
 
 - GitHub owner: `cluster1900`
 - Repository: `apexo-code`
 - Workflow filename: `release.yml`
+
+Use npm 11.15.0 or newer to configure this from a terminal. For example:
+
+```bash
+npm trust github apexo-code --repository cluster1900/apexo-code --file release.yml --allow-publish --yes
+npm trust list apexo-code --json
+```
+
+Repeat the configuration for every platform package named in the release's npm
+manifest. Allow `npm publish`; a configuration that only allows staging cannot
+run this repository's direct publication job. Keep the workflow filename exact.
+
+A new trusted publisher must complete its first successful CI publication within
+two days, or npm expires the configuration. Saving the configuration or publishing
+locally does not verify the CI publication path. If the next release happens after
+an unverified configuration expires, recreate it before pushing that release tag.
+After the first CI publication, inspect the npm job and the published provenance.
 
 The workflow grants `id-token: write` and uses Node.js 24 with a compatible npm
 CLI. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).

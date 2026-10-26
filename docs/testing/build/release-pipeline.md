@@ -170,3 +170,34 @@ APEXO_UNSIGNED=1 bun scripts/prepare.ts`, followed by `bun run build` and
   original pack manifest's SHA512 integrity before first registry publication.
 - The recovered upload retained tag `v1.0.0` at commit
   `367d8f1dda7c166c6147fae102c0bdfd0d026a1b`.
+
+## BUG-20261026-RELEASE-NPM-RATE: Partial first publication hits registry throttling
+
+- **Scope:** First npm publication of the thirteen verified `1.0.0` tarballs.
+- **Observed:** npm accepted ten platform packages after interactive web
+  authentication. The registry initially exposed processing placeholders; all ten
+  subsequently became publicly available at `1.0.0` with the original manifest's
+  SHA512 integrity and the `latest` tag. Publishing the eleventh package,
+  `apexo-code-windows-x64-baseline`, failed twice: the authenticated PUT returned
+  429, then its retry returned 401 and the CLI reported `EOTP`, despite the web
+  authentication page displaying success. This occurred with npm 11.12.1 and
+  11.21.1. A staged-upload recovery attempt also returned `E429`.
+- **Expected:** All twelve platform packages become available before the CLI
+  launcher is announced as installable from npm.
+- **Reproduction:** Publish the original first-release manifest in order, using
+  inherited terminal streams and completing the prompted browser authentication.
+  The remaining Windows x64 packages and launcher were not accepted in these
+  attempts.
+- **Root cause:** The registry explicitly rejected publication with a rate-limit
+  response. Its quota, reset time, and the reason the subsequent authenticated
+  retry returned 401 are unknown. A successful browser challenge does not prove
+  successful package publication; the client upgrade and staged-upload attempt
+  did not resolve the throttling.
+- **Recovery:** Retain the original tarballs and tag, stop immediate retries,
+  allow a cooldown, and resume only unpublished packages. Keep the public Release's
+  npm-pending notice until registry metadata and a fresh installation succeed.
+- **Verification:** Ten public versions and their integrity match the original
+  manifest. The remaining three packages and a fresh registry installation are
+  pending; no complete npm release or rate-limit fix is claimed.
+- **Occurrences:** One first-publication episode. Its direct retries and staged
+  attempt are not separate historical occurrences.
