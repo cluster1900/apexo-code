@@ -98,4 +98,14 @@ Scope: the Desktop/CLI fixes on `fix-acceptance-issues`, based on `a99a9b3812b5c
 - Root cause: unknown; load is a hypothesis. Ten focused repetitions passed unchanged in the paired metadata/shell control (20 total cases, 80 assertions, 62.94 seconds). The shell path and runner handoff were inspected; neither a lost handoff nor an inherited shell-startup delay was proven.
 - Follow-up diagnostic: a scoped seven-second timer captures provider-call count and transcript state before the unchanged ten-second outer deadline. It is cancelled with the test and does not signal readiness or relax any assertion. Keep this issue open until a failing run identifies the boundary.
 
+## BUG-20261025-016 — Clean installs reject Photon patch context on Bun 1.4.4
+
+- Scope: the Photon dependency patch and PR #164's first Linux CI run at `5101034`.
+- Observed: all jobs using the setup action failed before their test/typecheck commands with `hunk #10 does not apply to photon_rs.js (expected at line 4509)`. Nix evaluation passed. Existing locally installed dependencies did not exercise patch application, so the earlier local passing gates could not catch this installation failure.
+- Expected: a clean install applies every committed dependency patch and reaches validation without changing the intended Photon runtime code.
+- Reproduction: in an empty package, depend on `@silvia-odwyer/photon-node@0.3.4`, copy the committed patch into `patchedDependencies`, and run Bun 1.4.4 `bun install --ignore-scripts` with an empty install cache. The original patch reproduces the same hunk-10 failure on macOS as Linux CI.
+- Root cause: three context lines in the last patch hunk contain one extra space compared with the published package. Bun 1.4.4 rejects that mismatched context; the actual requested code changes remain valid.
+- Fix: correct only those three context lines to match the original file. No added/deleted runtime lines or dependency version change.
+- Verification: the same empty-cache isolated install passes after correction. The installed `photon_rs.js` is byte-identical to the dependency used by the passing full local gates (SHA-256 `cced3827dfedd6a5d18cabe1d2a80a9af11b66b1a4f16bd79b38d8994a17c07e`). A real Photon image creates a 1×1 PNG successfully. Full clean-install and updated CI outcomes are recorded on PR #164 and the lifecycle report.
+
 See [the original regression report](../desktop-cli/2026-10-25-regression.md) and PR #155 for the seven-issue cycle, and [the lifecycle follow-up](../desktop-cli/2026-10-25-lifecycle-followup.md) for this five-issue investigation and its final gates. Only the independently recurring macOS PTY deadlock is promoted to a constraint; the other observations are not.
