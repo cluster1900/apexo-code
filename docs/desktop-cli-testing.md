@@ -91,3 +91,13 @@ Record this cycle in the [lifecycle report](testing/desktop-cli/2026-10-25-lifec
 4. For the macOS batch hang, capture the native stack and child process state, identify the blocking call, and verify the upstream runtime fix. Exercise the real PTY adapter in concurrent subprocesses bounded by an external watchdog on both old and proposed runtimes.
 5. Rebuild Desktop and repeat a delegated file task through CLI and Desktop using native Antigravity / Gemini 3.8 Flash / Low. Require an independent parent command, exact file bytes, preserved child/model metadata, and a visible completed Desktop state.
 6. Run generation checks, typechecking, the complete unit gate and HttpApi gates without overlapping generated-source writers and readers. Open a PR to `main`; wait for all PR checks before the user-authorized merge. Close only issues with a demonstrated fix and passing regression, and leave unresolved observations open with the new evidence.
+
+## Remaining-issue reproduction follow-up
+
+Baseline: `bebb18ab5a76f01ad504e27a621b5c6b754fb848`, Bun 1.4.4, macOS arm64. Investigate #157, #158 and #162 with their existing assertions and deadlines. Record execution in the [remaining-issue report](testing/desktop-cli/2026-10-25-remaining-issues.md).
+
+1. Inspect the original failures and the Plan completion, legacy message pagination and shell-loop ownership paths. Keep unproven causes explicit.
+2. Run each named case twenty times in fresh Bun processes, retaining each exit status and diagnostic output. Do not use in-process reruns of the shared legacy HTTP fixture.
+3. Replay batches 10, 11 and 16 twice, with at most two batch workers while the complete HttpApi exerciser supplies the original concurrent workload. Run batches directly so no generated-source writer overlaps a reader.
+4. For a reproducible failure, identify its boundary, add a regression and fix the cause. If the reported failure cannot be reproduced, record the tested revision, workload and results without claiming a fix. The user authorizes closure as unable to reproduce after a clear issue reply.
+5. Run all five required gates sequentially and repeat native Antigravity / Gemini 3.8 Flash Low Desktop and CLI acceptance. Update the test records, open a PR and merge only after all CI checks pass; verify main after merge.
