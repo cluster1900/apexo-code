@@ -2,7 +2,7 @@ import { LayerNode } from "@apexo/core/effect/layer-node"
 import { PermissionV1 } from "@apexo/core/v1/permission"
 import { Image } from "@/image/image"
 import { SessionV1 } from "@apexo/core/v1/session"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Schedule } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Schedule, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
@@ -113,6 +113,8 @@ const layer = Layer.effect(
         currentText: undefined,
         reasoningMap: {},
       }
+      // Progress callbacks and provider events update the same durable tool parts.
+      const toolLock = yield* Semaphore.make(1)
       let aborted = false
 
       const parse = (e: unknown) =>
@@ -156,7 +158,7 @@ const layer = Layer.effect(
           sessionID: part.sessionID,
         }
         return part
-      })
+      }, toolLock.withPermit)
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
@@ -182,7 +184,7 @@ const layer = Layer.effect(
           },
         })
         yield* settleToolCall(toolCallID)
-      })
+      }, toolLock.withPermit)
 
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
@@ -203,7 +205,7 @@ const layer = Layer.effect(
         }
         yield* settleToolCall(toolCallID)
         return true
-      })
+      }, toolLock.withPermit)
 
       const finishReasoning = Effect.fn("SessionProcessor.finishReasoning")(function* (reasoningID: string) {
         if (!(reasoningID in ctx.reasoningMap)) return
@@ -325,7 +327,7 @@ const layer = Layer.effect(
           sessionID: part.sessionID,
         }
         return { call: ctx.toolcalls[input.id], part }
-      })
+      }, toolLock.withPermit)
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
 
@@ -757,23 +759,26 @@ const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
-        for (const toolCallID of Object.keys(ctx.toolcalls)) {
-          const match = yield* readToolCall(toolCallID)
-          if (!match) continue
-          const part = match.part
-          const end = Date.now()
-          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
-          yield* session.updatePart({
-            ...part,
-            state: {
-              ...part.state,
-              status: "error",
-              error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
-              time: { start: "time" in part.state ? part.state.time.start : end, end },
-            },
-          })
-        }
+        yield* Effect.forEach(Object.keys(ctx.toolcalls), (toolCallID) =>
+          Effect.gen(function* () {
+            const match = yield* readToolCall(toolCallID)
+            if (!match) return
+            const part = match.part
+            const end = Date.now()
+            const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+            yield* session.updatePart({
+              ...part,
+              state: {
+                ...part.state,
+                status: "error",
+                error: "Tool execution aborted",
+                metadata: { ...metadata, interrupted: true },
+                time: { start: "time" in part.state ? part.state.time.start : end, end },
+              },
+            })
+            yield* settleToolCall(toolCallID)
+          }).pipe(toolLock.withPermit),
+        )
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)

@@ -168,7 +168,18 @@ it.instance(
           answers: [["Approve"]],
         })).status,
       ).toBe(204)
-      const history = yield* finished(parent, "PLAN_SHELL_DELIVERED")
+      const history = yield* finished(parent, "PLAN_SHELL_DELIVERED").pipe(
+        Effect.tapError(() =>
+          Effect.gen(function* () {
+            console.error("Plan shell completion did not settle", {
+              calls: yield* llm.calls,
+              questions: yield* questions,
+              process: yield* detail(parent, tasks[0].id),
+              messages: (yield* readMessages(parent)).data,
+            })
+          }),
+        ),
+      )
       expect((yield* HttpClient.post(`/api/session/${parent}/wait`)).status).toBe(204)
       expect(yield* llm.calls).toBe(5)
       expect(yield* questions).toEqual([])

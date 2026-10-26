@@ -4,7 +4,7 @@
   "description": "Apexo: a UI harness for Grok (terminal + desktop coding agent)",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.14",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "bun run --cwd packages/apexo src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop dev",

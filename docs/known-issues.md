@@ -2,7 +2,7 @@
 
 ## Bun 1.3.14 `node:http` shutdown hang with an unread request body
 
-**Affects:** Bun 1.3.14, the version pinned in `packageManager`. It is fixed in Bun 1.4.2 and does not occur on Node.
+**Affects:** Bun 1.3.14 (previously pinned in `packageManager`). It is fixed in Bun 1.4.2 and does not occur on Node.
 
 ### Symptom
 
@@ -62,4 +62,4 @@ Only a third-party client, or a manual `curl -d`, that sends a body to such an e
 ### Guidance
 
 - In tests, send POST requests to endpoints that have no payload without a body, as the real clients do. For example, use `HttpClient.execute(HttpClientRequest.post(url))`, not `HttpClientRequest.bodyJson({})`.
-- Upgrading the pinned Bun to 1.4.x removes the issue.
+- The project now pins Bun 1.4.4, which includes this upstream fix.
