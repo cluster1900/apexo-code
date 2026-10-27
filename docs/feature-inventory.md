@@ -250,7 +250,7 @@ Notable Core services include database/migrations, config and providers, agents/
 | 6 | Runtime tests | `GITHUB_ACTIONS=false bun turbo test --concurrency=2` | PASS from Turbo cache: 6 test tasks completed; the repository's prior uncached gate is also recorded in `docs/testing/desktop-cli/2026-10-25.md` |
 | 7 | CLI flows | Source CLI help/status/API probes plus focused CLI/ACP suites | PASS: top-level and subcommand help, service status, health API, 51 CLI tests/198 assertions, 17 ACP tests/112 assertions; package build blocked by Bun `1.3.14` vs required `^1.4.4` |
 | 8 | TUI flows | Native transport/view/panels, slash arguments, queue, permission/question and footer routing suites | PASS: 43 tests/157 assertions; focused native TUI transport/view/panel tests pass |
-| 9 | Desktop/Web UI | App unit/browser/E2E plus Desktop build/typecheck and native smoke flows | PARTIAL: app unit 107/107, Vite build, and Desktop runtime-profile 3/3 pass; browser/E2E entrypoints fail before discovery (GitHub #170); Desktop build is blocked by Bun version guard |
-| 10 | Issue triage | Record every confirmed defect under `docs/testing/`, create GitHub issue with reproduction, observed/expected behavior and code location | IN PROGRESS: #170 filed |
+| 9 | Desktop/Web UI | App unit/browser/E2E plus Desktop build/typecheck and native smoke flows | PARTIAL: app unit/browser 107/107, E2E smoke 1/1, Vite build, and Desktop runtime-profile 3/3 pass; Desktop build is blocked by Bun version guard |
+| 10 | Issue triage | Record every confirmed defect under `docs/testing/`, create GitHub issue with reproduction, observed/expected behavior and code location | #170 fixed and verification posted; PR update pending |
 
 The HTTP effect run passed, but its resource profile is retained: the 346-scenario effect pass took about 409 seconds and reached roughly 3.69 GB RSS on this macOS/Bun environment. This is a test-resource observation, not a product failure.
