@@ -176,9 +176,10 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       expect(tool?.state.status).toBe("completed")
       if (!user) throw new Error("Expected user message")
 
-      // Poll for the turn diff — summarize() is fire-and-forget.
+      // Poll for the turn diff — summarize() is fire-and-forget and can settle
+      // after the prompt completes when other test batches share the runner.
       let diff: Array<{ file?: string }> = []
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 150; i++) {
         diff = yield* summary.diff({ sessionID: session.id, messageID: user.info.id })
         if (diff.length > 0) break
         yield* Effect.sleep("100 millis")
