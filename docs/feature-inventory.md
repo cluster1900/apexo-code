@@ -253,4 +253,4 @@ Notable Core services include database/migrations, config and providers, agents/
 | 9 | Desktop/Web UI | App unit/browser/E2E plus Desktop build/typecheck and native smoke flows | PARTIAL: app unit 107/107, Vite build, and Desktop runtime-profile 3/3 pass; browser/E2E entrypoints fail before discovery (GitHub #170); Desktop build is blocked by Bun version guard |
 | 10 | Issue triage | Record every confirmed defect under `docs/testing/`, create GitHub issue with reproduction, observed/expected behavior and code location | IN PROGRESS: #170 filed |
 
-The HTTP effect-run observation is tracked separately because it is a test-harness/runtime resource problem; a passing coverage/auth run does not prove effect execution behavior.
+The HTTP effect run passed, but its resource profile is retained: the 346-scenario effect pass took about 409 seconds and reached roughly 3.69 GB RSS on this macOS/Bun environment. This is a test-resource observation, not a product failure.
