@@ -19,7 +19,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "test:unit": "bun test --conditions=solid --only-failures --preload ./happydom.ts ./src",
-    "test:browser": "bun test --conditions=browser --preload ./happydom.ts ./test-browser",
+    "test:browser": "bun test --conditions=browser --preload ./happydom.ts ./src",
     "test:unit:watch": "bun test --conditions=solid --watch --preload ./happydom.ts ./src",
     "test:e2e": "playwright test",
     "test:e2e:local": "playwright test",
