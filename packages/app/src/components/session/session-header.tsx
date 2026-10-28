@@ -32,7 +32,7 @@ import { IconButtonV2 } from "@apexo/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@apexo/ui/v2/icon"
 import { KeybindV2 } from "@apexo/ui/v2/keybind-v2"
 import { TooltipV2 } from "@apexo/ui/v2/tooltip-v2"
-import { reviewTooltipKeybind } from "../command-tooltip-keybind"
+import { reviewTooltipKeybind, terminalTooltipKeybind } from "../command-tooltip-keybind"
 import { useTitlebarRightMount } from "../titlebar"
 
 const OPEN_APPS = [
@@ -238,6 +238,10 @@ export function SessionHeader() {
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
     statusVisible: status(),
     statusLabel: language.t("status.popover.trigger"),
+    terminalLabel: language.t("command.terminal.toggle"),
+    terminalKeybind: terminalTooltipKeybind(command),
+    terminalOpened: view().terminal.opened(),
+    onTerminalToggle: toggleTerminal,
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: reviewTooltipKeybind(command),
     reviewVisible: isDesktop(),
@@ -520,6 +524,10 @@ export function SessionHeader() {
 type SessionHeaderV2ActionsState = {
   statusVisible: boolean
   statusLabel: string
+  terminalLabel: string
+  terminalKeybind: string[]
+  terminalOpened: boolean
+  onTerminalToggle: () => void
   reviewLabel: string
   reviewKeybind: string[]
   reviewVisible: boolean
@@ -528,8 +536,6 @@ type SessionHeaderV2ActionsState = {
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
-  const language = useLanguage()
-
   return (
     <div class="flex items-center gap-2">
       <Show when={props.state.statusVisible}>
@@ -537,6 +543,31 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
           <StatusPopoverV2 />
         </Tooltip>
       </Show>
+      <TooltipV2
+        class="shrink-0"
+        placement="bottom"
+        value={
+          <>
+            {props.state.terminalLabel}
+            <Show when={props.state.terminalKeybind.length > 0}>
+              <KeybindV2 keys={props.state.terminalKeybind} variant="neutral" />
+            </Show>
+          </>
+        }
+      >
+        <IconButtonV2
+          type="button"
+          variant="ghost-muted"
+          size="large"
+          class="!w-9 shrink-0"
+          state={props.state.terminalOpened ? "pressed" : undefined}
+          onClick={props.state.onTerminalToggle}
+          aria-label={props.state.terminalLabel}
+          aria-expanded={props.state.terminalOpened}
+          aria-controls="terminal-panel"
+          icon={<IconV2 name="terminal" />}
+        />
+      </TooltipV2>
       <Show when={props.state.reviewVisible}>
         <TooltipV2
           class="shrink-0"
