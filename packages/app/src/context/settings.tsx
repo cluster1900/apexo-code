@@ -38,6 +38,7 @@ export interface Settings {
     agentVisibilityInitialized?: boolean
     newInterfaceNoticeDismissed?: boolean
     shouldDisplayTabsToast?: boolean
+    fileTreeDefaultHiddenReset?: boolean
   }
   appearance: {
     fontSize: number
@@ -93,9 +94,13 @@ export function hasExistingWebState(settings: Promise<string> | string | null, p
   return settings !== null || previousVersion !== undefined
 }
 
-export function initialAgentVisibility(initialized: boolean | undefined, existing: boolean, previousVersion?: string) {
+export function initialAgentVisibility(
+  initialized: boolean | undefined,
+  _existing: boolean,
+  _previousVersion?: string,
+) {
   if (initialized === true) return
-  return existing || previousVersion !== undefined
+  return true
 }
 
 export function shouldEnableNewLayout(previous: string | undefined, current: string | undefined) {
@@ -184,14 +189,14 @@ const defaultSettings: Settings = {
     autoSave: true,
     followup: "steer",
     showFileTree: false,
-    showNavigation: false,
-    showSearch: false,
-    showStatus: false,
+    showNavigation: true,
+    showSearch: true,
+    showStatus: true,
     showTerminal: false,
     showReasoningSummaries: false,
-    shellToolPartsExpanded: false,
-    editToolPartsExpanded: false,
-    showCustomAgents: false,
+    shellToolPartsExpanded: true,
+    editToolPartsExpanded: true,
+    showCustomAgents: true,
     mobileTitlebarPosition: "top",
   },
   appearance: {
@@ -339,6 +344,14 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       if (!ready() || !oldInterfaceRetired()) return
       if (store.general?.newLayoutDesigns === true) return
       setStore("general", "newLayoutDesigns", true)
+    })
+
+    createEffect(() => {
+      if (!ready() || store.general?.fileTreeDefaultHiddenReset) return
+      batch(() => {
+        setStore("general", "showFileTree", false)
+        setStore("general", "fileTreeDefaultHiddenReset", true)
+      })
     })
 
     createEffect(() => {

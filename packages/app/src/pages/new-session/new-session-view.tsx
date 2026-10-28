@@ -18,6 +18,7 @@ import {
   PromptProjectSelector,
   type PromptProjectController,
 } from "@/components/prompt-project-selector"
+import { OpenInAppV2 } from "@/components/session/open-in-app-v2"
 import { StatusPopoverV2 } from "@/components/status-popover"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -72,6 +73,9 @@ export function NewSessionView(props: {
                       onDone={props.input.restoreFocus}
                     />
                   </Show>
+                  <div class="ml-1 flex items-center">
+                    <OpenInAppV2 directory={() => props.project.selected()?.worktree ?? ""} />
+                  </div>
                 </div>
               </Show>
             </div>

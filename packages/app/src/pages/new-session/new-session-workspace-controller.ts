@@ -3,8 +3,6 @@ import { useSDK } from "@/context/sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 
-const workspaceBarEnabled = import.meta.env.VITE_APEXO_CHANNEL !== "prod"
-
 export function resolveNewSessionWorktree(input: {
   enabled: boolean
   selected?: string
@@ -36,7 +34,7 @@ export function createNewSessionWorkspaceController() {
   const sync = useSync()
   const serverSync = useServerSync()
   const [worktree, setWorktree] = createSignal<string>()
-  const visible = createMemo(() => workspaceBarEnabled && sync().project?.vcs === "git")
+  const visible = createMemo(() => sync().project?.vcs === "git")
   const value = createMemo(() =>
     resolveNewSessionWorktree({
       enabled: visible(),

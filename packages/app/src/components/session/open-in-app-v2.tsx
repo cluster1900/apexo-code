@@ -3,6 +3,7 @@ import { AppIcon } from "@apexo/ui/app-icon"
 import { Icon } from "@apexo/ui/icon"
 import { Spinner } from "@apexo/ui/spinner"
 import { Icon as IconV2 } from "@apexo/ui/v2/icon"
+import { IconButtonV2 } from "@apexo/ui/v2/icon-button-v2"
 import { MenuV2 } from "@apexo/ui/v2/menu-v2"
 import { SplitButtonV2, SplitButtonV2Action, SplitButtonV2MenuTrigger } from "@apexo/ui/v2/split-button-v2"
 import { TooltipV2 } from "@apexo/ui/v2/tooltip-v2"
@@ -14,8 +15,28 @@ export function OpenInAppV2(props: { directory: () => string }) {
   const state = useOpenInApp(props)
 
   return (
-    <Show when={props.directory() && state.canOpen()}>
-      <SplitButtonV2 class="session-review-v2-open-in-app" onPointerDown={(event) => event.stopPropagation()}>
+    <Show when={props.directory()}>
+      <Show
+        when={state.canOpen()}
+        fallback={
+          <TooltipV2 placement="bottom" value={language.t("session.header.open.copyPath")} class="flex items-center">
+            <IconButtonV2
+              type="button"
+              variant="ghost-muted"
+              size="normal"
+              data-action="open-in-app-copy-path"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                state.copyPath()
+              }}
+              aria-label={language.t("session.header.open.copyPath")}
+              icon={<Icon name="copy" size="small" />}
+            />
+          </TooltipV2>
+        }
+      >
+        <SplitButtonV2 class="session-review-v2-open-in-app" onPointerDown={(event) => event.stopPropagation()}>
         <TooltipV2
           placement="bottom"
           value={language.t("session.header.open.ariaLabel", { app: state.current().label })}
@@ -96,6 +117,7 @@ export function OpenInAppV2(props: { directory: () => string }) {
           </MenuV2.Portal>
         </MenuV2>
       </SplitButtonV2>
+      </Show>
     </Show>
   )
 }

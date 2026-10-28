@@ -66,7 +66,10 @@ export function createPromptProjectController(input: {
           (pathKey(project.worktree) === key || project.sandboxes?.some((sandbox) => pathKey(sandbox) === key)),
       )
   }
-  const selected = () => current() ?? input.controls().available[0]
+  const selected = () =>
+    current() ??
+    input.controls().available[0] ??
+    (input.controls().directory ? { worktree: input.controls().directory } : undefined)
   const projects = () => {
     const search = store.search.trim().toLowerCase()
     if (!search) return input.controls().available
@@ -126,7 +129,7 @@ export function createPromptProjectController(input: {
 
   return {
     selected,
-    empty: () => input.controls().available.length === 0,
+    empty: () => !selected(),
     projects,
     servers,
     projectKey,
