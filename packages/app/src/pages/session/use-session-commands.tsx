@@ -647,7 +647,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     viewCommand({
       id: "terminal.toggle",
       title: language.t("command.terminal.toggle"),
-      keybind: "ctrl+`",
+      keybind: "ctrl+`,mod+j",
       slash: "terminal",
       onSelect: () => {
         if (view().terminal.opened()) {
