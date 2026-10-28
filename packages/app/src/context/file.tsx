@@ -80,9 +80,30 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       scope,
       normalizeDir: path.normalizeDir,
       list: (dir) =>
-        sdk()
-          .client.file.list({ path: dir })
-          .then((x) => x.data ?? []),
+        serverSDK()
+          .api.file.list({
+            location: { directory: sdk().directory },
+            path: dir || undefined,
+          })
+          .then((x) =>
+            x.data.map((entry) => {
+              const item = entry as {
+                name?: string
+                path: string
+                absolute?: string
+                type: "file" | "directory"
+                ignored?: boolean
+              }
+              const normalized = path.normalize(item.path)
+              return {
+                name: item.name ?? getFilename(normalized),
+                path: normalized,
+                absolute: item.absolute ?? `${sdk().directory.replace(/\/+$/, "")}/${normalized}`,
+                type: item.type,
+                ignored: item.ignored ?? false,
+              }
+            }),
+          ),
       onError: (message) => {
         showToast({
           variant: "error",

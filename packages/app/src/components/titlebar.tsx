@@ -556,6 +556,53 @@ export function Titlebar(props: { debugTools?: { visible: boolean; toggle: () =>
                   />
                 </TooltipV2>
 
+                <Show when={nav()}>
+                  <div class="flex shrink-0 items-center gap-0.5">
+                    <TooltipV2
+                      placement="bottom"
+                      value={
+                        <>
+                          {language.t("common.goBack")}
+                          <KeybindV2 keys={command.keybindParts("common.goBack")} variant="neutral" />
+                        </>
+                      }
+                      class="shrink-0"
+                    >
+                      <IconButtonV2
+                        type="button"
+                        variant="ghost-muted"
+                        size="large"
+                        class="!w-7 shrink-0"
+                        icon={<Icon name="chevron-left" size="small" />}
+                        disabled={!canBack()}
+                        onClick={back}
+                        aria-label={language.t("common.goBack")}
+                      />
+                    </TooltipV2>
+                    <TooltipV2
+                      placement="bottom"
+                      value={
+                        <>
+                          {language.t("common.goForward")}
+                          <KeybindV2 keys={command.keybindParts("common.goForward")} variant="neutral" />
+                        </>
+                      }
+                      class="shrink-0"
+                    >
+                      <IconButtonV2
+                        type="button"
+                        variant="ghost-muted"
+                        size="large"
+                        class="!w-7 shrink-0"
+                        icon={<Icon name="chevron-right" size="small" />}
+                        disabled={!canForward()}
+                        onClick={forward}
+                        aria-label={language.t("common.goForward")}
+                      />
+                    </TooltipV2>
+                  </div>
+                </Show>
+
                 <TitlebarTabStrip
                   tabs={tabsStore}
                   currentTab={currentTab}

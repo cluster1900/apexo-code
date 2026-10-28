@@ -368,7 +368,7 @@ export const SettingsGeneralV2: Component<{
           </div>
         </SettingsRowV2>
 
-        <Show when={mobile() && import.meta.env.VITE_APEXO_CHANNEL !== "prod"}>
+        <Show when={mobile()}>
           <SettingsRowV2
             title={language.t("settings.general.row.mobileTitlebarBottom.title")}
             description={language.t("settings.general.row.mobileTitlebarBottom.description")}
@@ -398,6 +398,18 @@ export const SettingsGeneralV2: Component<{
             <Switch
               checked={settings.general.showFileTree()}
               onChange={(checked) => settings.general.setShowFileTree(checked)}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          title={language.t("settings.general.row.showNavigation.title")}
+          description={language.t("settings.general.row.showNavigation.description")}
+        >
+          <div data-action="settings-show-navigation">
+            <Switch
+              checked={settings.general.showNavigation()}
+              onChange={(checked) => settings.general.setShowNavigation(checked)}
             />
           </div>
         </SettingsRowV2>
