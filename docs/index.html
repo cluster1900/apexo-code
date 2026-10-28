@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apexo — Open-Source Coding Agent for Terminal, Web &amp; Desktop</title>
+  <meta
+    name="description"
+    content="Apexo is an open-source, 100% local general-purpose coding agent with a unified Terminal UI (TUI), Web UI, and Electron Desktop app."
+  />
+  <meta property="og:title" content="Apexo — Open-Source Coding Agent" />
+  <meta
+    property="og:description"
+    content="One local runtime, three interfaces (Terminal, Web, Desktop). Direct support for Google Gemini &amp; Antigravity, xAI Grok, OpenAI, Anthropic, and custom OpenAI-compatible models."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="assets/apexo-tui.png" />
+  <link
+    rel="icon"
+    type="image/svg+xml"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'%3E%3Crect width='32' height='32' rx='7' fill='%230f0e0d'/%3E%3Cg transform='translate(0 2.5)'%3E%3Cpath d='M12 15H20V18H12Z' fill='%232a2926'/%3E%3Cpath d='M9 6H23V9H9ZM20 9H23V12H20ZM9 12H23V15H9ZM9 15H12V18H9ZM20 15H23V18H20ZM9 18H23V21H9Z' fill='%236ad86c'/%3E%3C/g%3E%3C/svg%3E"
+  />
+  <style>
+    :root,
+    [data-theme="dark"] {
+      --bg-base: #0f0e0d;
+      --bg-subtle: #141412;
+      --surface-1: #171715;
+      --surface-2: #1d1d1a;
+      --surface-hover: #242420;
+      --border-base: #282724;
+      --border-subtle: #1e1e1b;
+      --ink: #eeeeeb;
+      --text-secondary: #a0a09a;
+      --text-muted: #72726c;
+      --primary: #6ad86c;
+      --primary-hover: #82e384;
+      --primary-soft: rgba(106, 216, 108, 0.1);
+      --primary-border: rgba(106, 216, 108, 0.28);
+      --accent: #55b5a6;
+      --accent-soft: rgba(85, 181, 166, 0.11);
+      --warning: #efb041;
+      --warning-soft: rgba(239, 176, 65, 0.12);
+      --error: #db655c;
+      --code-bg: #11110f;
+      --code-kw: #80c776;
+      --code-str: #d9c48a;
+      --code-comment: #6e6e68;
+      --code-prop: #8fc9b9;
+      --icon-base: #eeeeeb;
+      --icon-weak-base: #363531;
+      --icon-interactive-base: #6ad86c;
+      --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 24px 56px -16px rgba(0, 0, 0, 0.7);
+      --header-bg: rgba(15, 14, 13, 0.82);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f7f8f6;
+      --bg-subtle: #eff1ee;
+      --surface-1: #ffffff;
+      --surface-2: #f4f6f4;
+      --surface-hover: #eaedea;
+      --border-base: #dfe2dd;
+      --border-subtle: #e9ece8;
+      --ink: #151615;
+      --text-secondary: #555754;
+      --text-muted: #828580;
+      --primary: #2d7a53;
+      --primary-hover: #236342;
+      --primary-soft: rgba(45, 122, 83, 0.09);
+      --primary-border: rgba(45, 122, 83, 0.28);
+      --accent: #1f788c;
+      --accent-soft: rgba(31, 120, 140, 0.09);
+      --warning: #b36b00;
+      --warning-soft: rgba(179, 107, 0, 0.1);
+      --error: #c93b35;
+      --code-bg: #f2f4f1;
+      --code-kw: #256b48;
+      --code-str: #856414;
+      --code-comment: #858883;
+      --code-prop: #1c697a;
+      --icon-base: #151615;
+      --icon-weak-base: #d0d5d0;
+      --icon-interactive-base: #2d7a53;
+      --shadow-sm: 0 4px 14px rgba(20, 20, 20, 0.05);
+      --shadow-lg: 0 24px 52px -16px rgba(20, 20, 20, 0.1);
+      --header-bg: rgba(247, 248, 246, 0.85);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg-base);
+      color: var(--ink);
+      line-height: 1.65;
+      transition: background-color 0.2s ease, color 0.2s ease;
+      overflow-x: hidden;
+    }
+
+    code, pre, .mono {
+      font-family: "JetBrains Mono", "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 64px;
+      background: var(--header-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .navbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 100%;
+      gap: 16px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      height: 22px;
+      width: auto;
+      display: block;
+    }
+
+    .version-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--surface-2);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-base);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: color 0.15s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 34px;
+      padding: 0 11px;
+      border-radius: 8px;
+      border: 1px solid var(--border-base);
+      background: var(--surface-1);
+      color: var(--text-secondary);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .icon-btn:hover {
+      color: var(--ink);
+      background: var(--surface-hover);
+      border-color: var(--text-muted);
+    }
+
+    .icon-btn svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    /* Unified Star Split Button in Header */
+    .star-group {
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--primary-border);
+      background: var(--primary-soft);
+      overflow: hidden;
+    }
+
+    .star-main-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+      padding: 0 11px;
+      color: var(--primary);
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: background 0.15s ease;
+    }
+
+    .star-main-link:hover {
+      background: rgba(106, 216, 108, 0.16);
+    }
+
+    .star-count-pill {
+      font-size: 11.5px;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: var(--surface-1);
+      color: var(--ink);
+      border: 1px solid var(--border-base);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 72px 0 48px;
+      text-align: center;
+      background: radial-gradient(ellipse 70% 35% at 50% 0%, var(--primary-soft), transparent 70%);
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .hero-badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 8px var(--primary);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.1rem, 4.4vw, 3.35rem);
+      font-weight: 800;
+      line-height: 1.18;
+      letter-spacing: -0.03em;
+      max-width: 820px;
+      margin: 0 auto 18px;
+      text-wrap: balance;
+    }
+
+    .hero h1 .accent-text {
+      color: var(--primary);
+    }
+
+    .hero-desc {
+      font-size: clamp(1rem, 1.55vw, 1.14rem);
+      color: var(--text-secondary);
+      max-width: 690px;
+      margin: 0 auto 32px;
+      line-height: 1.7;
+      text-wrap: balance;
+    }
+
+    /* Hero Install + Actions Layout */
+    .hero-console {
+      max-width: 680px;
+      margin: 0 auto 22px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      text-align: left;
+    }
+
+    .console-tabs {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 10px 0;
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-base);
+      overflow-x: auto;
+    }
+
+    .console-tab {
+      padding: 7px 13px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .console-tab:hover {
+      color: var(--ink);
+    }
+
+    .console-tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .console-body {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--code-bg);
+    }
+
+    .console-cmd {
+      font-size: 13.5px;
+      color: var(--ink);
+      overflow-x: auto;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .console-cmd .dollar {
+      color: var(--primary);
+      margin-right: 8px;
+      user-select: none;
+    }
+
+    .copy-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 11px;
+      border-radius: 6px;
+      border: 1px solid var(--border-base);
+      background: var(--surface-1);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .copy-pill:hover {
+      color: var(--primary);
+      border-color: var(--primary-border);
+    }
+
+    .hero-cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 48px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 42px;
+      padding: 0 20px;
+      border-radius: 9px;
+      background: var(--primary);
+      color: #0f0e0d;
+      font-size: 14px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    [data-theme="light"] .btn-primary {
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      opacity: 0.94;
+    }
+
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 42px;
+      padding: 0 18px;
+      border-radius: 9px;
+      background: var(--surface-1);
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid var(--border-base);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-outline:hover {
+      background: var(--surface-hover);
+      border-color: var(--text-muted);
+    }
+
+    /* Product Preview Window in Hero */
+    .preview-frame {
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      text-align: left;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-base);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .traffic-lights {
+      display: flex;
+      gap: 7px;
+    }
+
+    .traffic-lights span {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .traffic-lights .r { background: #db655c; }
+    .traffic-lights .y { background: #efb041; }
+    .traffic-lights .g { background: #6ad86c; }
+
+    .preview-switcher {
+      display: inline-flex;
+      background: var(--surface-2);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border-base);
+      gap: 2px;
+    }
+
+    .preview-tab {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .preview-tab.active {
+      background: var(--surface-1);
+      color: var(--primary);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .preview-pane {
+      display: none;
+      padding: 20px;
+    }
+
+    .preview-pane.active {
+      display: block;
+    }
+
+    .preview-media {
+      border-radius: 9px;
+      overflow: hidden;
+      border: 1px solid var(--border-base);
+      background: #0b0b0a;
+    }
+
+    .preview-media img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .preview-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .preview-footer p {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+    }
+
+    /* Section Styling */
+    .section {
+      padding: 80px 0;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .section-head {
+      max-width: 640px;
+      margin-bottom: 40px;
+    }
+
+    .section-eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--primary);
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .section-head h2 {
+      font-size: clamp(1.6rem, 2.8vw, 2.15rem);
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-bottom: 10px;
+    }
+
+    .section-head p {
+      font-size: 15.5px;
+      color: var(--text-secondary);
+    }
+
+    /* Bento Grid for Capabilities */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .bento-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .bento-card:hover {
+      border-color: var(--primary-border);
+      transform: translateY(-2px);
+    }
+
+    .bento-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .slash-pill {
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 6px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      border: 1px solid var(--primary-border);
+    }
+
+    .bento-tag {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .bento-card h3 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .bento-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    /* Models & Providers Grid */
+    .models-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .model-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .model-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .model-card h3 {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .model-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .model-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 14px;
+    }
+
+    .model-meta {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      padding-top: 12px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* OS Download Cards (Replaces messy URL table) */
+    .os-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .os-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .os-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .os-title h3 {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .os-arch {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .dl-group-label {
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .dl-links {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dl-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 12px;
+      border-radius: 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-base);
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+
+    .dl-item:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .dl-item .ext {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* Code Panels */
+    .code-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .code-box {
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .code-box-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 16px;
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-base);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .code-box pre {
+      padding: 18px;
+      background: var(--code-bg);
+      overflow-x: auto;
+      font-size: 12.8px;
+      line-height: 1.7;
+    }
+
+    .c-comment { color: var(--code-comment); }
+    .c-kw { color: var(--code-kw); }
+    .c-str { color: var(--code-str); }
+    .c-prop { color: var(--code-prop); }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.68);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-card {
+      max-width: 480px;
+      width: 100%;
+      background: var(--surface-1);
+      border: 1px solid var(--border-base);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .modal-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .modal-top h3 {
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .modal-block {
+      padding: 14px;
+      border-radius: 10px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-base);
+      margin-bottom: 12px;
+    }
+
+    .modal-block h4 {
+      font-size: 13.5px;
+      margin-bottom: 6px;
+    }
+
+    .modal-block p {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+
+    /* Footer */
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-subtle);
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+    }
+
+    .footer-links a:hover {
+      color: var(--primary);
+    }
+
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 920px) {
+      .bento-grid,
+      .os-grid,
+      .models-grid,
+      .code-grid {
+        grid-template-columns: 1fr;
+      }
+      .nav-links {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sticky Header -->
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a href="#" class="brand" aria-label="Apexo">
+        <svg class="brand-logo" viewBox="0 0 144 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 24H18V30H6Z" fill="var(--icon-weak-base)" />
+          <path d="M0 6H24V12H0ZM18 12H24V18H18ZM0 18H24V24H0ZM0 24H6V30H0ZM18 24H24V30H18ZM0 30H24V36H0Z" fill="var(--icon-base)" />
+          <path d="M36 18H48V24H36ZM36 24H48V30H36Z" fill="var(--icon-weak-base)" />
+          <path d="M30 6H54V12H30ZM30 12H36V18H30ZM48 12H54V18H48ZM30 18H36V24H30ZM48 18H54V24H48ZM30 24H36V30H30ZM48 24H54V30H48ZM30 30H54V36H30ZM30 36H36V42H30Z" fill="var(--icon-base)" />
+          <path d="M66 24H84V30H66Z" fill="var(--icon-weak-base)" />
+          <path d="M60 6H84V12H60ZM60 12H66V18H60ZM78 12H84V18H78ZM60 18H84V24H60ZM60 24H66V30H60ZM60 30H84V36H60Z" fill="var(--icon-base)" />
+          <path d="M90 6H96V12H90ZM108 6H114V12H108ZM90 12H96V18H90ZM108 12H114V18H108ZM96 18H108V24H96ZM90 24H96V30H90ZM108 24H114V30H108ZM90 30H96V36H90ZM108 30H114V36H108Z" fill="var(--icon-base)" />
+          <path d="M126 18H138V24H126ZM126 24H138V30H126Z" fill="var(--icon-weak-base)" />
+          <path d="M120 6H144V12H120ZM120 12H126V18H120ZM138 12H144V18H138ZM120 18H126V24H120ZM138 18H144V24H138ZM120 24H126V30H120ZM138 24H144V30H138ZM120 30H144V36H120Z" fill="var(--icon-interactive-base)" />
+        </svg>
+        <span class="version-tag mono" id="release-version-pill">v1.0.0</span>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#preview" data-i18n="nav.preview">Interfaces</a></li>
+        <li><a href="#capabilities" data-i18n="nav.capabilities">Capabilities</a></li>
+        <li><a href="#models" data-i18n="nav.models">Models</a></li>
+        <li><a href="#downloads" data-i18n="nav.downloads">Downloads</a></li>
+        <li><a href="#quickstart" data-i18n="nav.quickstart">Quickstart</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button type="button" class="icon-btn" id="lang-toggle" title="Switch Language">
+          <span id="lang-label">中文</span>
+        </button>
+
+        <button type="button" class="icon-btn" id="theme-toggle" title="Switch Theme">
+          <span id="theme-icon">☀️</span>
+          <span id="theme-label" data-i18n="theme.light">Light</span>
+        </button>
+
+        <div class="star-group">
+          <a
+            href="https://github.com/cluster1900/apexo-code"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="star-main-link"
+          >
+            <span>★</span>
+            <span data-i18n="nav.star">Star</span>
+            <span class="star-count-pill mono" id="nav-star-count">1</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero + Product Showcase -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-badge">
+          <span class="hero-badge-dot"></span>
+          <span data-i18n="hero.badge">100% Local Runtime · Terminal, Web &amp; Desktop · Zero Middleman</span>
+        </div>
+
+        <h1 data-i18n-html="hero.title">
+          One Local Agent Runtime.<br />
+          <span class="accent-text">Built for Terminal, Web &amp; Desktop.</span>
+        </h1>
+
+        <p class="hero-desc" data-i18n="hero.desc">
+          Apexo is an open-source coding agent with a durable local session engine, autonomous goal loops, multi-session workflows, persistent memory, and OS command sandboxing — connecting directly to Gemini, Antigravity, Grok, Claude, OpenAI, and local models.
+        </p>
+
+        <!-- Clean Install Switcher -->
+        <div class="hero-console">
+          <div class="console-tabs" role="tablist">
+            <button type="button" class="console-tab active" data-cmd="npm install -g apexo-code &amp;&amp; apexo">
+              npm (Cross-Platform)
+            </button>
+            <button type="button" class="console-tab" data-cmd="curl -fsSL https://raw.githubusercontent.com/cluster1900/apexo-code/main/install | bash">
+              curl (macOS / Linux)
+            </button>
+            <button type="button" class="console-tab" data-cmd="git clone https://github.com/cluster1900/apexo-code.git apexo &amp;&amp; cd apexo &amp;&amp; bun install &amp;&amp; bun dev">
+              From Source (Bun)
+            </button>
+          </div>
+          <div class="console-body">
+            <div class="console-cmd mono">
+              <span class="dollar">$</span>
+              <span id="active-install-cmd">npm install -g apexo-code &amp;&amp; apexo</span>
+            </div>
+            <button type="button" class="copy-pill" id="copy-install-btn">
+              <span id="copy-install-text" data-i18n="common.copy">Copy</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Clean Action Buttons -->
+        <div class="hero-cta-row">
+          <a
+            href="https://github.com/cluster1900/apexo-code"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn-primary"
+          >
+            <span>★</span>
+            <span data-i18n="hero.starGithub">Star on GitHub</span>
+            <span class="mono" id="hero-star-count"></span>
+          </a>
+
+          <a href="#downloads" class="btn-outline">
+            <span data-i18n="hero.downloadCta">Download CLI &amp; Desktop</span>
+          </a>
+        </div>
+
+        <!-- Unified Product Window -->
+        <div class="preview-frame" id="preview">
+          <div class="preview-header">
+            <div class="traffic-lights">
+              <span class="r"></span>
+              <span class="y"></span>
+              <span class="g"></span>
+            </div>
+
+            <div class="preview-switcher">
+              <button type="button" class="preview-tab active" data-pane="pane-tui" data-i18n="preview.tabTui">
+                Terminal UI (TUI)
+              </button>
+              <button type="button" class="preview-tab" data-pane="pane-web" data-i18n="preview.tabWeb">
+                Web &amp; Desktop App
+              </button>
+              <button type="button" class="preview-tab" data-pane="pane-acp" data-i18n="preview.tabAcp">
+                Headless &amp; Editor ACP
+              </button>
+            </div>
+
+            <span class="mono" style="font-size: 12px; color: var(--text-muted);">Grove Theme</span>
+          </div>
+
+          <div class="preview-pane active" id="pane-tui">
+            <div class="preview-media">
+              <img src="assets/apexo-tui.png" alt="Apexo Terminal UI" loading="lazy" />
+            </div>
+            <div class="preview-footer">
+              <p data-i18n="preview.tuiCaption">
+                Keyboard-first Terminal UI with inline diff review, command palette (ctrl+p / cmd+k), and instant ! shell commands.
+              </p>
+              <code class="slash-pill mono">apexo</code>
+            </div>
+          </div>
+
+          <div class="preview-pane" id="pane-web">
+            <div class="preview-media">
+              <img src="assets/apexo-web.png" alt="Apexo Web and Desktop UI" loading="lazy" />
+            </div>
+            <div class="preview-footer">
+              <p data-i18n="preview.webCaption">
+                Graphical workspace in your browser or Electron Desktop app — sharing the same live session state as the terminal.
+              </p>
+              <code class="slash-pill mono">apexo web</code>
+            </div>
+          </div>
+
+          <div class="preview-pane" id="pane-acp">
+            <div class="code-box" style="border: none;">
+              <pre class="mono"><code id="acp-code-block"><span class="c-comment"># Start headless local server for Desktop, scripts, or remote clients</span>
+<span class="c-kw">apexo</span> serve
+
+<span class="c-comment"># Run as an Agent Client Protocol (ACP) server for editors like Zed</span>
+<span class="c-kw">apexo</span> acp
+
+<span class="c-comment"># Execute a non-interactive one-shot task in scripts or CI</span>
+<span class="c-kw">apexo</span> run <span class="c-str">"review uncommitted changes and run package tests"</span></code></pre>
+            </div>
+            <div class="preview-footer">
+              <p data-i18n="preview.acpCaption">
+                Connect Zed or any ACP-compatible editor, run non-interactive automation, or attach multiple clients to one local server.
+              </p>
+              <code class="slash-pill mono">apexo acp</code>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Core Capabilities Bento Grid -->
+    <section class="section" id="capabilities">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow" data-i18n="caps.eyebrow">Core Architecture</span>
+          <h2 data-i18n="caps.title">Engineered for Autonomous Software Engineering</h2>
+          <p data-i18n="caps.subtitle">
+            Built from the ground up with a durable local agent runtime rather than a thin wrapper around a single model vendor.
+          </p>
+        </div>
+
+        <div class="bento-grid">
+          <div class="bento-card">
+            <div>
+              <div class="bento-top">
+                <code class="slash-pill mono">/goal</code>
+                <span class="bento-tag mono" data-i18n="caps.goalTag">Closed-Loop</span>
+              </div>
+              <h3 data-i18n="caps.goalTitle">Autonomous Goals</h3>
+              <p data-i18n="caps.goalDesc">
+                Set an objective and verification criteria. Apexo plans, edits, and runs checks across iterations until the goal passes verification.
+              </p>
+            </div>
+          </div>
+
+          <div class="bento-card">
+            <div>
+              <div class="bento-top">
+                <code class="slash-pill mono">/workflow</code>
+                <span class="bento-tag mono" data-i18n="caps.wfTag">Multi-Session</span>
+              </div>
+              <h3 data-i18n="caps.wfTitle">Parallel Workflows</h3>
+              <p data-i18n="caps.wfDesc">
+                Run multi-stage engineering workflows in isolated child sessions with per-step model and effort routing while your main chat stays free.
+              </p>
+            </div>
+          </div>
+
+          <div class="bento-card">
+            <div>
+              <div class="bento-top">
+                <code class="slash-pill mono">/tasks · /loop</code>
+                <span class="bento-tag mono" data-i18n="caps.taskTag">Orchestration</span>
+              </div>
+              <h3 data-i18n="caps.taskTitle">Tasks &amp; Subagents</h3>
+              <p data-i18n="caps.taskDesc">
+                Coordinate background commands, recurring cron-like loops, and specialized subagents from a single real-time task manager.
+              </p>
+            </div>
+          </div>
+
+          <div class="bento-card">
+            <div>
+              <div class="bento-top">
+                <code class="slash-pill mono">/memory · /dream</code>
+                <span class="bento-tag mono" data-i18n="caps.memTag">Long-Term Context</span>
+              </div>
+              <h3 data-i18n="caps.memTitle">Persistent Memory</h3>
+              <p data-i18n="caps.memDesc">
+                Retain codebase conventions and user preferences across sessions. Inspect with /memory, record with /remember, and consolidate with /dream.
+              </p>
+            </div>
+          </div>
+
+          <div class="bento-card">
+            <div>
+              <div class="bento-top">
+                <code class="slash-pill mono">/sandbox</code>
+                <span class="bento-tag mono" data-i18n="caps.sbTag">OS Isolation</span>
+              </div>
+              <h3 data-i18n="caps.sbTitle">Native Command Sandbox</h3>
+              <p data-i18n="caps.sbDesc">
+                Enforce kernel-level sandboxing via macOS seatbelt and Linux bubblewrap to restrict file writes and network access per session.
+              </p>
+            </div>
+          </div>
+
+          <div class="bento-card">
+            <div>
+              <div class="bento-top">
+                <code class="slash-pill mono">/hooks · /btw</code>
+                <span class="bento-tag mono" data-i18n="caps.hkTag">Control &amp; Flow</span>
+              </div>
+              <h3 data-i18n="caps.hkTitle">Lifecycle Hooks &amp; Side Queries</h3>
+              <p data-i18n="caps.hkDesc">
+                Manage repository hooks with explicit trust controls (/hooks), or ask quick side questions mid-turn (/btw) without polluting context.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Model Ecosystem -->
+    <section class="section" id="models">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow" data-i18n="models.eyebrow">Direct Provider Access</span>
+          <h2 data-i18n="models.title">Native OAuth &amp; Universal Model Support</h2>
+          <p data-i18n="models.subtitle">
+            Credentials stay on your machine. Requests go straight to the model provider you configure — no hosted proxy, no telemetry relay.
+          </p>
+        </div>
+
+        <div class="models-grid">
+          <div class="model-card">
+            <div class="model-card-head">
+              <h3 data-i18n="models.m1Title">Google Gemini &amp; Antigravity</h3>
+              <span class="model-badge">Zero Re-Auth</span>
+            </div>
+            <p data-i18n="models.m1Desc">
+              Reuse your local Antigravity CLI (agy) Google session directly without re-authorizing, or connect via API key. Supports thinking summaries and multimodal inputs.
+            </p>
+            <div class="model-meta mono">
+              <span>agy login / GOOGLE_GENERATIVE_AI_API_KEY</span>
+              <span>gemini-2.5-pro</span>
+            </div>
+          </div>
+
+          <div class="model-card">
+            <div class="model-card-head">
+              <h3 data-i18n="models.m2Title">xAI Grok &amp; Grok Build</h3>
+              <span class="model-badge">Device OAuth</span>
+            </div>
+            <p data-i18n="models.m2Desc">
+              Sign in with SuperGrok or X Premium via device-code OAuth (apexo auth login), or use XAI_API_KEY. Full support for Grok 4 and Grok Build agent workflows.
+            </p>
+            <div class="model-meta mono">
+              <span>apexo auth login / XAI_API_KEY</span>
+              <span>grok-4.7 · grok-build-0.1</span>
+            </div>
+          </div>
+
+          <div class="model-card">
+            <div class="model-card-head">
+              <h3 data-i18n="models.m3Title">OpenAI &amp; Anthropic Claude</h3>
+              <span class="model-badge">Direct API</span>
+            </div>
+            <p data-i18n="models.m3Desc">
+              First-class streaming tool execution, extended thinking, and prompt caching for Claude Sonnet / Opus and OpenAI GPT / o-series reasoning models.
+            </p>
+            <div class="model-meta mono">
+              <span>ANTHROPIC_API_KEY · OPENAI_API_KEY</span>
+              <span>/connect</span>
+            </div>
+          </div>
+
+          <div class="model-card">
+            <div class="model-card-head">
+              <h3 data-i18n="models.m4Title">Custom &amp; OpenAI-Compatible</h3>
+              <span class="model-badge">Self-Hosted &amp; Cloud</span>
+            </div>
+            <p data-i18n="models.m4Desc">
+              Connect MiniMax, DeepSeek, Qwen, vLLM, Ollama, or LM Studio in apexo.jsonc with automatic &lt;think&gt; tag extraction and tool calling.
+            </p>
+            <div class="model-meta mono">
+              <span>@ai-sdk/openai-compatible</span>
+              <span>baseURL + apiKey</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Clean OS Downloads Cards -->
+    <section class="section" id="downloads">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow" data-i18n="dl.eyebrow">Releases &amp; Binaries</span>
+          <h2 data-i18n="dl.title">Download for macOS, Linux &amp; Windows</h2>
+          <p data-i18n="dl.subtitle">
+            Every release provides native Desktop installers and standalone CLI archives (no Node.js or Bun required).
+          </p>
+        </div>
+
+        <div class="os-grid">
+          <!-- macOS -->
+          <div class="os-card">
+            <div class="os-title">
+              <h3>macOS</h3>
+              <span class="os-arch mono">Apple Silicon &amp; Intel</span>
+            </div>
+            <div>
+              <div class="dl-group-label" data-i18n="dl.desktopLabel">Desktop App</div>
+              <div class="dl-links">
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-desktop-mac-arm64.dmg">
+                  <span data-i18n="dl.macDmg">macOS Desktop Installer (M-Series)</span>
+                  <span class="ext mono">.dmg</span>
+                </a>
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-desktop-mac-arm64.zip">
+                  <span data-i18n="dl.macZip">macOS Desktop Archive (M-Series)</span>
+                  <span class="ext mono">.zip</span>
+                </a>
+              </div>
+            </div>
+            <div>
+              <div class="dl-group-label" data-i18n="dl.cliLabel">Standalone CLI</div>
+              <div class="dl-links">
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-darwin-arm64.zip">
+                  <span>CLI — Apple Silicon (arm64)</span>
+                  <span class="ext mono">.zip</span>
+                </a>
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-darwin-x64.zip">
+                  <span>CLI — Intel Mac (x64)</span>
+                  <span class="ext mono">.zip</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Linux -->
+          <div class="os-card">
+            <div class="os-title">
+              <h3>Linux</h3>
+              <span class="os-arch mono">x64 &amp; arm64 · glibc / musl</span>
+            </div>
+            <div>
+              <div class="dl-group-label" data-i18n="dl.desktopLabel">Desktop App</div>
+              <div class="dl-links">
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-desktop-linux-x86_64.AppImage">
+                  <span>Linux AppImage (x86_64)</span>
+                  <span class="ext mono">.AppImage</span>
+                </a>
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-desktop-linux-amd64.deb">
+                  <span>Debian / Ubuntu Package</span>
+                  <span class="ext mono">.deb</span>
+                </a>
+              </div>
+            </div>
+            <div>
+              <div class="dl-group-label" data-i18n="dl.cliLabel">Standalone CLI</div>
+              <div class="dl-links">
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-linux-x64.tar.gz">
+                  <span>CLI — Linux x64 (glibc)</span>
+                  <span class="ext mono">.tar.gz</span>
+                </a>
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-linux-arm64.tar.gz">
+                  <span>CLI — Linux arm64 (glibc)</span>
+                  <span class="ext mono">.tar.gz</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Windows -->
+          <div class="os-card">
+            <div class="os-title">
+              <h3>Windows</h3>
+              <span class="os-arch mono">x64 &amp; arm64</span>
+            </div>
+            <div>
+              <div class="dl-group-label" data-i18n="dl.desktopLabel">Desktop App</div>
+              <div class="dl-links">
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-desktop-win-x64.exe">
+                  <span data-i18n="dl.winExe">Windows Desktop Installer (x64)</span>
+                  <span class="ext mono">.exe</span>
+                </a>
+              </div>
+            </div>
+            <div>
+              <div class="dl-group-label" data-i18n="dl.cliLabel">Standalone CLI</div>
+              <div class="dl-links">
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-windows-x64.zip">
+                  <span>CLI — Windows x64</span>
+                  <span class="ext mono">.zip</span>
+                </a>
+                <a class="dl-item" href="https://github.com/cluster1900/apexo-code/releases/latest/download/apexo-windows-arm64.zip">
+                  <span>CLI — Windows arm64</span>
+                  <span class="ext mono">.zip</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 24px; text-align: center;">
+          <a
+            href="https://github.com/cluster1900/apexo-code/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn-outline"
+          >
+            <span data-i18n="dl.allAssets">View All Release Assets, musl/baseline Builds &amp; SHA256SUMS ↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart & Configuration -->
+    <section class="section" id="quickstart">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow" data-i18n="qs.eyebrow">Quickstart &amp; Config</span>
+          <h2 data-i18n="qs.title">Up and Running in Seconds</h2>
+          <p data-i18n="qs.subtitle">
+            Use intuitive CLI subcommands and configure custom providers globally or per repository with JSON Schema validation.
+          </p>
+        </div>
+
+        <div class="code-grid">
+          <div class="code-box">
+            <div class="code-box-head">
+              <span data-i18n="qs.cliHead">Essential CLI Commands</span>
+              <span class="mono" style="color: var(--primary); font-size: 12px;">apexo --help</span>
+            </div>
+            <pre class="mono"><code id="cli-quickstart-code"><span class="c-comment"># Start interactive Terminal UI in current project</span>
+<span class="c-kw">apexo</span>
+
+<span class="c-comment"># Sign in to Antigravity, xAI Grok (OAuth), or set an API key</span>
+<span class="c-kw">apexo</span> auth login
+
+<span class="c-comment"># List all available models across providers</span>
+<span class="c-kw">apexo</span> models
+
+<span class="c-comment"># Launch local server and open Web UI</span>
+<span class="c-kw">apexo</span> web
+
+<span class="c-comment"># Interactive slash commands inside TUI / Desktop:</span>
+<span class="c-comment"># /connect  /models  /themes  /goal  /workflow  /tasks  /memory  /btw</span></code></pre>
+          </div>
+
+          <div class="code-box">
+            <div class="code-box-head">
+              <span data-i18n="qs.cfgHead">Configuration (~/.config/apexo/apexo.jsonc)</span>
+              <span class="mono" style="color: var(--accent); font-size: 12px;">schemas/config.json</span>
+            </div>
+            <pre class="mono"><code>{
+  <span class="c-prop">"$schema"</span>: <span class="c-str">"https://raw.githubusercontent.com/cluster1900/apexo-code/main/schemas/config.json"</span>,
+  <span class="c-prop">"model"</span>: <span class="c-str">"google/gemini-2.5-pro"</span>,
+  <span class="c-prop">"theme"</span>: <span class="c-str">"grove"</span>,
+  <span class="c-prop">"provider"</span>: {
+    <span class="c-prop">"custom"</span>: {
+      <span class="c-prop">"npm"</span>: <span class="c-str">"@ai-sdk/openai-compatible"</span>,
+      <span class="c-prop">"options"</span>: {
+        <span class="c-prop">"baseURL"</span>: <span class="c-str">"https://api.minimax.cn/v1"</span>,
+        <span class="c-prop">"apiKey"</span>: <span class="c-str">"{env:CUSTOM_API_KEY}"</span>
+      },
+      <span class="c-prop">"models"</span>: {
+        <span class="c-prop">"MiniMax-M2.7"</span>: { <span class="c-prop">"name"</span>: <span class="c-str">"MiniMax M2.7"</span> }
+      }
+    }
+  }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-copy" data-i18n="footer.copy">
+        Apexo — Open-Source Coding Agent · 100% Local Runtime · MIT License
+      </div>
+
+      <div class="footer-links">
+        <a href="https://github.com/cluster1900/apexo-code" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/cluster1900/apexo-code/releases" target="_blank" rel="noopener noreferrer" data-i18n="footer.releases">Releases</a>
+        <a href="https://github.com/cluster1900/apexo-code/blob/main/docs/installation.md" target="_blank" rel="noopener noreferrer" data-i18n="footer.install">Installation Guide</a>
+        <a href="https://github.com/cluster1900/apexo-code/blob/main/docs/antigravity.md" target="_blank" rel="noopener noreferrer" data-i18n="footer.agy">Antigravity Setup</a>
+        <a href="https://github.com/cluster1900/apexo-code/issues" target="_blank" rel="noopener noreferrer" data-i18n="footer.issues">Issues</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const REPO = "cluster1900/apexo-code";
+
+      const CODE_BLOCKS = {
+        en: {
+          acp: `<span class="c-comment"># Start headless local server for Desktop, scripts, or remote clients</span>
+<span class="c-kw">apexo</span> serve
+
+<span class="c-comment"># Run as an Agent Client Protocol (ACP) server for editors like Zed</span>
+<span class="c-kw">apexo</span> acp
+
+<span class="c-comment"># Execute a non-interactive one-shot task in scripts or CI</span>
+<span class="c-kw">apexo</span> run <span class="c-str">"review uncommitted changes and run package tests"</span>`,
+          cli: `<span class="c-comment"># Start interactive Terminal UI in current project</span>
+<span class="c-kw">apexo</span>
+
+<span class="c-comment"># Sign in to Antigravity, xAI Grok (OAuth), or set an API key</span>
+<span class="c-kw">apexo</span> auth login
+
+<span class="c-comment"># List all available models across providers</span>
+<span class="c-kw">apexo</span> models
+
+<span class="c-comment"># Launch local server and open Web UI</span>
+<span class="c-kw">apexo</span> web
+
+<span class="c-comment"># Interactive slash commands inside TUI / Desktop:</span>
+<span class="c-comment"># /connect  /models  /themes  /goal  /workflow  /tasks  /memory  /btw</span>`
+        },
+        zh: {
+          acp: `<span class="c-comment"># 启动本地无界面服务，供桌面端、脚本或远程客户端接入</span>
+<span class="c-kw">apexo</span> serve
+
+<span class="c-comment"># 以 ACP 协议启动智能体服务，直连 Zed 等代码编辑器</span>
+<span class="c-kw">apexo</span> acp
+
+<span class="c-comment"># 在脚本或 CI 中执行单次非交互任务</span>
+<span class="c-kw">apexo</span> run <span class="c-str">"检查当前未提交的改动并运行单元测试"</span>`,
+          cli: `<span class="c-comment"># 在当前项目目录启动终端交互界面 (TUI)</span>
+<span class="c-kw">apexo</span>
+
+<span class="c-comment"># 登录 Google Antigravity、xAI Grok (OAuth) 或配置 API Key</span>
+<span class="c-kw">apexo</span> auth login
+
+<span class="c-comment"># 查看已注册的全部可用模型</span>
+<span class="c-kw">apexo</span> models
+
+<span class="c-comment"># 启动本地服务并在浏览器打开 Web 工作台</span>
+<span class="c-kw">apexo</span> web
+
+<span class="c-comment"># 终端与桌面端内置斜杠指令：</span>
+<span class="c-comment"># /connect  /models  /themes  /goal  /workflow  /tasks  /memory  /btw</span>`
+        }
+      };
+
+      const I18N = {
+        en: {
+          "page.title": "Apexo — Open-Source Coding Agent for Terminal, Web & Desktop",
+          "nav.preview": "Interfaces",
+          "nav.capabilities": "Capabilities",
+          "nav.models": "Models",
+          "nav.downloads": "Downloads",
+          "nav.quickstart": "Quickstart",
+          "nav.star": "Star",
+          "theme.light": "Light",
+          "theme.dark": "Dark",
+          "common.copy": "Copy",
+          "common.copied": "Copied!",
+          "hero.badge": "100% Local Runtime · Terminal, Web & Desktop · Zero Middleman",
+          "hero.title": "One Local Agent Runtime.<br /><span class=\"accent-text\">Built for Terminal, Web &amp; Desktop.</span>",
+          "hero.desc": "Apexo is an open-source coding agent with a durable local session engine, autonomous goal loops, multi-session workflows, persistent memory, and OS command sandboxing — connecting directly to Gemini, Antigravity, Grok, Claude, OpenAI, and local models.",
+          "hero.starGithub": "Star on GitHub",
+          "hero.downloadCta": "Download CLI & Desktop",
+          "preview.tabTui": "Terminal UI (TUI)",
+          "preview.tabWeb": "Web & Desktop App",
+          "preview.tabAcp": "Headless & Editor ACP",
+          "preview.tuiCaption": "Keyboard-first Terminal UI with inline diff review, command palette (ctrl+p / cmd+k), and instant ! shell commands.",
+          "preview.webCaption": "Graphical workspace in your browser or Electron Desktop app — sharing the same live session state as the terminal.",
+          "preview.acpCaption": "Connect Zed or any ACP-compatible editor, run non-interactive automation, or attach multiple clients to one local server.",
+          "caps.eyebrow": "Core Architecture",
+          "caps.title": "Engineered for Autonomous Software Engineering",
+          "caps.subtitle": "Built from the ground up with a durable local agent runtime rather than a thin wrapper around a single model vendor.",
+          "caps.goalTag": "Closed-Loop",
+          "caps.goalTitle": "Autonomous Goals",
+          "caps.goalDesc": "Set an objective and verification criteria. Apexo plans, edits, and runs checks across iterations until the goal passes verification.",
+          "caps.wfTag": "Multi-Session",
+          "caps.wfTitle": "Parallel Workflows",
+          "caps.wfDesc": "Run multi-stage engineering workflows in isolated child sessions with per-step model and effort routing while your main chat stays free.",
+          "caps.taskTag": "Orchestration",
+          "caps.taskTitle": "Tasks & Subagents",
+          "caps.taskDesc": "Coordinate background commands, recurring cron-like loops, and specialized subagents from a single real-time task manager.",
+          "caps.memTag": "Long-Term Context",
+          "caps.memTitle": "Persistent Memory",
+          "caps.memDesc": "Retain codebase conventions and user preferences across sessions. Inspect with /memory, record with /remember, and consolidate with /dream.",
+          "caps.sbTag": "OS Isolation",
+          "caps.sbTitle": "Native Command Sandbox",
+          "caps.sbDesc": "Enforce kernel-level sandboxing via macOS seatbelt and Linux bubblewrap to restrict file writes and network access per session.",
+          "caps.hkTag": "Control & Flow",
+          "caps.hkTitle": "Lifecycle Hooks & Side Queries",
+          "caps.hkDesc": "Manage repository hooks with explicit trust controls (/hooks), or ask quick side questions mid-turn (/btw) without polluting context.",
+          "models.eyebrow": "Direct Provider Access",
+          "models.title": "Native OAuth & Universal Model Support",
+          "models.subtitle": "Credentials stay on your machine. Requests go straight to the model provider you configure — no hosted proxy, no telemetry relay.",
+          "models.m1Title": "Google Gemini & Antigravity",
+          "models.m1Desc": "Reuse your local Antigravity CLI (agy) Google session directly without re-authorizing, or connect via API key. Supports thinking summaries and multimodal inputs.",
+          "models.m2Title": "xAI Grok & Grok Build",
+          "models.m2Desc": "Sign in with SuperGrok or X Premium via device-code OAuth (apexo auth login), or use XAI_API_KEY. Full support for Grok 4 and Grok Build agent workflows.",
+          "models.m3Title": "OpenAI & Anthropic Claude",
+          "models.m3Desc": "First-class streaming tool execution, extended thinking, and prompt caching for Claude Sonnet / Opus and OpenAI GPT / o-series reasoning models.",
+          "models.m4Title": "Custom & OpenAI-Compatible",
+          "models.m4Desc": "Connect MiniMax, DeepSeek, Qwen, vLLM, Ollama, or LM Studio in apexo.jsonc with automatic <think> tag extraction and tool calling.",
+          "dl.eyebrow": "Releases & Binaries",
+          "dl.title": "Download for macOS, Linux & Windows",
+          "dl.subtitle": "Every release provides native Desktop installers and standalone CLI archives (no Node.js or Bun required).",
+          "dl.desktopLabel": "Desktop App",
+          "dl.cliLabel": "Standalone CLI",
+          "dl.macDmg": "macOS Desktop Installer (M-Series)",
+          "dl.macZip": "macOS Desktop Archive (M-Series)",
+          "dl.winExe": "Windows Desktop Installer (x64)",
+          "dl.allAssets": "View All Release Assets, musl/baseline Builds & SHA256SUMS ↗",
+          "qs.eyebrow": "Quickstart & Config",
+          "qs.title": "Up and Running in Seconds",
+          "qs.subtitle": "Use intuitive CLI subcommands and configure custom providers globally or per repository with JSON Schema validation.",
+          "qs.cliHead": "Essential CLI Commands",
+          "qs.cfgHead": "Configuration (~/.config/apexo/apexo.jsonc)",
+          "footer.copy": "Apexo — Open-Source Coding Agent · 100% Local Runtime · MIT License",
+          "footer.releases": "Releases",
+          "footer.install": "Installation Guide",
+          "footer.agy": "Antigravity Setup",
+          "footer.issues": "Issues"
+        },
+        zh: {
+          "page.title": "Apexo — 跨终端、Web 与桌面的开源编程智能体",
+          "nav.preview": "界面预览",
+          "nav.capabilities": "核心特性",
+          "nav.models": "模型生态",
+          "nav.downloads": "下载安装",
+          "nav.quickstart": "快速上手",
+          "nav.star": "Star",
+          "theme.light": "浅色",
+          "theme.dark": "深色",
+          "common.copy": "复制",
+          "common.copied": "已复制",
+          "hero.badge": "100% 本地运行时 · 终端 / Web / 桌面三端合一 · 零中间商中转",
+          "hero.title": "一套本地引擎，贯通终端、Web 与桌面<br /><span class=\"accent-text\">纯粹、自主的开源编程智能体</span>",
+          "hero.desc": "基于持久化本地智能体运行时，原生内置自主目标闭环、多会话并行工作流、长期项目记忆与系统级沙盒。无需托管网关，本机直连 Gemini、Antigravity、Grok、Claude、OpenAI 及各类开源模型。",
+          "hero.starGithub": "在 GitHub 点亮 Star",
+          "hero.downloadCta": "下载 CLI 与桌面端",
+          "preview.tabTui": "终端界面 (TUI)",
+          "preview.tabWeb": "Web 与桌面客户端",
+          "preview.tabAcp": "无头服务与编辑器接入",
+          "preview.tuiCaption": "全键盘高效驱动，支持内联代码 Diff 审阅、命令面板（ctrl+p / cmd+k）及 ! 原生命令直跑。",
+          "preview.webCaption": "在浏览器或 Electron 桌面端获得完整图形工作台，与终端实时共享会话状态与历史记录。",
+          "preview.acpCaption": "通过 ACP 协议无缝接入 Zed 等编辑器，或在 CI 脚本中执行单次自动化任务。",
+          "caps.eyebrow": "核心架构",
+          "caps.title": "专为复杂软件工程打造的自主能力",
+          "caps.subtitle": "告别简单的模型 API 套壳，基于持久化本地会话引擎提供完整的工程化指令体系。",
+          "caps.goalTag": "自动闭环",
+          "caps.goalTitle": "自主目标执行",
+          "caps.goalDesc": "只需设定目标与验收标准，Apexo 会自主拆解规划、修改代码并运行验证，循环迭代直至任务达标。",
+          "caps.wfTag": "多会话并行",
+          "caps.wfTitle": "多阶段工作流",
+          "caps.wfDesc": "在独立子会话中并行推进多步骤工程流水线，支持按步骤分配模型与思考强度，主对话始终流畅响应。",
+          "caps.taskTag": "任务调度",
+          "caps.taskTitle": "后台任务与子智能体",
+          "caps.taskDesc": "统一调度后台常驻命令、定时循环任务（/loop）与专职子智能体，运行状态一目了然。",
+          "caps.memTag": "长期上下文",
+          "caps.memTitle": "跨会话持久记忆",
+          "caps.memDesc": "持续沉淀代码库规范与开发偏好，支持随时审阅（/memory）、主动记录（/remember）与自动归纳（/dream）。",
+          "caps.sbTag": "系统级隔离",
+          "caps.sbTitle": "原生命令沙盒",
+          "caps.sbDesc": "基于 macOS seatbelt 与 Linux bubblewrap 原生隔离机制，严格管控命令的文件写入与网络访问边界。",
+          "caps.hkTag": "管控与交互",
+          "caps.hkTitle": "生命周期钩子与旁路提问",
+          "caps.hkDesc": "提供仓库级显式信任授权的钩子管理（/hooks）；任务执行中可随时弹窗旁路提问（/btw），不打断主线、不污染上下文。",
+          "models.eyebrow": "模型生态直连",
+          "models.title": "原生 OAuth 免密登录与全模型兼容",
+          "models.subtitle": "所有凭据均保存在本机，请求直达你所配置的服务商——无托管网关、无强制账号体系、无遥测中转。",
+          "models.m1Title": "Google Gemini 与 Antigravity",
+          "models.m1Desc": "直接复用本机 Antigravity CLI (agy) 的 Google 登录态，无需重复授权；也支持 API Key 接入，完整支持思考摘要与多模态输入。",
+          "models.m2Title": "xAI Grok 与 Grok Build",
+          "models.m2Desc": "支持 SuperGrok 或 X Premium 账号通过设备码 OAuth 免密登录（apexo auth login），或配置 XAI_API_KEY，原生畅享 Grok 4 系列模型。",
+          "models.m3Title": "OpenAI 与 Anthropic Claude",
+          "models.m3Desc": "原生支持 Claude Sonnet / Opus 与 OpenAI GPT / o 系列推理模型的流式工具调用、深度思考与上下文缓存。",
+          "models.m4Title": "自定义与 OpenAI 兼容服务",
+          "models.m4Desc": "在 apexo.jsonc 中轻松接入 MiniMax、DeepSeek、Qwen 或本地 vLLM、Ollama、LM Studio，自动提取 <think> 推理过程。",
+          "dl.eyebrow": "跨平台发行版",
+          "dl.title": "支持 macOS、Linux 与 Windows",
+          "dl.subtitle": "提供开箱即用的桌面端安装包与独立 CLI 可执行压缩包（无需额外部署 Node.js 或 Bun 环境）。",
+          "dl.desktopLabel": "桌面客户端 (Desktop)",
+          "dl.cliLabel": "独立命令行 (CLI)",
+          "dl.macDmg": "macOS 桌面安装包 (Apple Silicon)",
+          "dl.macZip": "macOS 桌面压缩包 (Apple Silicon)",
+          "dl.winExe": "Windows 桌面安装程序 (x64)",
+          "dl.allAssets": "前往 GitHub Releases 查看全部安装包、musl/baseline 版本与 SHA256 校验值 ↗",
+          "qs.eyebrow": "快速上手与配置",
+          "qs.title": "几秒钟即可开启高效编码",
+          "qs.subtitle": "简洁直观的 CLI 命令体系，配合支持 JSON Schema 智能补全的全局与项目级配置文件。",
+          "qs.cliHead": "常用 CLI 命令速览",
+          "qs.cfgHead": "配置文件示例 (~/.config/apexo/apexo.jsonc)",
+          "footer.copy": "Apexo — 开源通用编程智能体 · 100% 本地运行时 · MIT 开源许可",
+          "footer.releases": "版本发布",
+          "footer.install": "安装指南",
+          "footer.agy": "Antigravity 指南",
+          "footer.issues": "问题反馈"
+        }
+      };
+
+      // Default to English ('en')
+      let currentLang = localStorage.getItem("apexo_pages_lang") || "en";
+      if (currentLang !== "en" && currentLang !== "zh") currentLang = "en";
+
+      let currentTheme = localStorage.getItem("apexo_pages_theme") || "dark";
+      if (currentTheme !== "dark" && currentTheme !== "light") currentTheme = "dark";
+
+      function applyLanguage(lang) {
+        currentLang = lang;
+        localStorage.setItem("apexo_pages_lang", lang);
+        document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+
+        const dict = I18N[lang];
+        document.title = dict["page.title"];
+
+        document.querySelectorAll("[data-i18n]").forEach(function (el) {
+          const key = el.getAttribute("data-i18n");
+          if (dict[key]) el.textContent = dict[key];
+        });
+
+        document.querySelectorAll("[data-i18n-html]").forEach(function (el) {
+          const key = el.getAttribute("data-i18n-html");
+          if (dict[key]) el.innerHTML = dict[key];
+        });
+
+        const acpCode = document.getElementById("acp-code-block");
+        const cliCode = document.getElementById("cli-quickstart-code");
+        if (acpCode) acpCode.innerHTML = CODE_BLOCKS[lang].acp;
+        if (cliCode) cliCode.innerHTML = CODE_BLOCKS[lang].cli;
+
+        const langLabel = document.getElementById("lang-label");
+        if (langLabel) langLabel.textContent = lang === "en" ? "中文" : "EN";
+
+        updateThemeButtonLabel();
+      }
+
+      function updateThemeButtonLabel() {
+        const themeIcon = document.getElementById("theme-icon");
+        const themeLabel = document.getElementById("theme-label");
+        const dict = I18N[currentLang];
+        if (currentTheme === "dark") {
+          if (themeIcon) themeIcon.textContent = "☀️";
+          if (themeLabel) themeLabel.textContent = dict["theme.light"];
+        } else {
+          if (themeIcon) themeIcon.textContent = "🌙";
+          if (themeLabel) themeLabel.textContent = dict["theme.dark"];
+        }
+      }
+
+      function applyTheme(theme) {
+        currentTheme = theme;
+        localStorage.setItem("apexo_pages_theme", theme);
+        document.documentElement.setAttribute("data-theme", theme);
+        updateThemeButtonLabel();
+      }
+
+      document.getElementById("lang-toggle").addEventListener("click", function () {
+        applyLanguage(currentLang === "en" ? "zh" : "en");
+      });
+
+      document.getElementById("theme-toggle").addEventListener("click", function () {
+        applyTheme(currentTheme === "dark" ? "light" : "dark");
+      });
+
+      // Install Tabs
+      const consoleTabs = document.querySelectorAll(".console-tab");
+      const activeInstallCmd = document.getElementById("active-install-cmd");
+      consoleTabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          consoleTabs.forEach(function (t) { t.classList.remove("active"); });
+          tab.classList.add("active");
+          activeInstallCmd.textContent = tab.getAttribute("data-cmd");
+        });
+      });
+
+      // Copy Install Command
+      document.getElementById("copy-install-btn").addEventListener("click", function () {
+        navigator.clipboard.writeText(activeInstallCmd.textContent).then(function () {
+          const textEl = document.getElementById("copy-install-text");
+          textEl.textContent = I18N[currentLang]["common.copied"];
+          setTimeout(function () {
+            textEl.textContent = I18N[currentLang]["common.copy"];
+          }, 1600);
+        });
+      });
+
+      // Product Preview Switcher
+      const previewTabs = document.querySelectorAll(".preview-tab");
+      const previewPanes = document.querySelectorAll(".preview-pane");
+      previewTabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          const target = tab.getAttribute("data-pane");
+          previewTabs.forEach(function (t) { t.classList.remove("active"); });
+          previewPanes.forEach(function (p) { p.classList.remove("active"); });
+          tab.classList.add("active");
+          const pane = document.getElementById(target);
+          if (pane) pane.classList.add("active");
+        });
+      });
+
+      function fetchRepoStats() {
+        fetch("https://api.github.com/repos/" + REPO)
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (!data || typeof data.stargazers_count !== "number") return;
+            const count = data.stargazers_count;
+            const navBadge = document.getElementById("nav-star-count");
+            const heroCount = document.getElementById("hero-star-count");
+            if (navBadge) navBadge.textContent = String(count);
+            if (heroCount) heroCount.textContent = "· " + count;
+          })
+          .catch(function () {});
+
+        fetch("https://api.github.com/repos/" + REPO + "/releases/latest")
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (rel) {
+            if (!rel || !rel.tag_name) return;
+            const pill = document.getElementById("release-version-pill");
+            if (pill) pill.textContent = rel.tag_name;
+          })
+          .catch(function () {});
+      }
+
+      applyTheme(currentTheme);
+      applyLanguage(currentLang);
+      fetchRepoStats();
+    })();
+  </script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 </p>
 <p align="center"><b>An open-source, general-purpose coding agent</b> for the terminal, the browser, and the desktop.</p>
 <p align="center">
+  <a href="https://cluster1900.github.io/apexo-code/">Website</a> |
   <a href="README.md">English</a> |
   <a href="README.zh.md">简体中文</a>
 </p>
@@ -13,7 +14,7 @@
 
 Apexo is a **general-purpose coding agent** with a unified terminal UI (TUI), web UI, and Electron desktop app powered by a single local agent runtime.
 
-Rather than being tied to a single model vendor or acting as a thin wrapper, Apexo provides its own deeply engineered agent architecture — including a durable V2 session runtime, autonomous goals (`/goal`), multi-session workflows (`/workflow`), background task & subagent orchestration (`/tasks`), persistent project memory (`/memory`), native command sandboxing (`/sandbox`), lifecycle hooks (`/hooks`), and side-channel queries (`/btw`) — while offering first-class support across major model ecosystems:
+Rather than being tied to a single model vendor or acting as a thin wrapper, Apexo provides its own deeply engineered agent architecture — including a durable session runtime, autonomous goals (`/goal`), multi-session workflows (`/workflow`), background task & subagent orchestration (`/tasks`), persistent project memory (`/memory`), native command sandboxing (`/sandbox`), lifecycle hooks (`/hooks`), and side-channel queries (`/btw`) — while offering first-class support across major model ecosystems:
 
 - **Google Gemini & Antigravity first-class support.** Reuse your local Antigravity CLI (`agy`) Google login directly without re-authorizing, or connect via `GOOGLE_GENERATIVE_AI_API_KEY`. Full support for Gemini models, thinking/reasoning summaries, multimodal attachments, and large-context coding workflows. See the [Antigravity setup guide](docs/antigravity.md).
 - **xAI Grok & Grok Build workflows.** Sign in with your xAI account (SuperGrok or X Premium) using xAI's OAuth device-code flow, or use `XAI_API_KEY`. All current Grok models (`grok-4.7`, `grok-4.6`, `grok-4.20`, `grok-build-0.1`) and Grok Build-style agent capabilities work natively.
