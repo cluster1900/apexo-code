@@ -254,25 +254,6 @@
       border: 1px solid var(--border-base);
     }
 
-    .star-quick-trigger {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      padding: 0 8px;
-      border: none;
-      border-left: 1px solid var(--primary-border);
-      background: transparent;
-      color: var(--primary);
-      cursor: pointer;
-      font-size: 12px;
-      transition: background 0.15s ease;
-    }
-
-    .star-quick-trigger:hover {
-      background: rgba(106, 216, 108, 0.22);
-    }
-
     /* Hero Section */
     .hero {
       padding: 72px 0 48px;
@@ -467,27 +448,6 @@
     .btn-outline:hover {
       background: var(--surface-hover);
       border-color: var(--text-muted);
-    }
-
-    .btn-star-api {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      height: 42px;
-      padding: 0 16px;
-      border-radius: 9px;
-      background: var(--warning-soft);
-      color: var(--warning);
-      border: 1px solid rgba(239, 176, 65, 0.3);
-      font-size: 13.5px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-
-    .btn-star-api:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.08);
     }
 
     /* Product Preview Window in Hero */
@@ -912,22 +872,6 @@
       margin-bottom: 10px;
     }
 
-    .pat-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .pat-input {
-      flex: 1;
-      height: 36px;
-      padding: 0 11px;
-      border-radius: 7px;
-      border: 1px solid var(--border-base);
-      background: var(--surface-1);
-      color: var(--ink);
-      font-size: 12.5px;
-    }
-
     /* Footer */
     footer {
       padding: 48px 0;
@@ -1022,14 +966,6 @@
             <span data-i18n="nav.star">Star</span>
             <span class="star-count-pill mono" id="nav-star-count">1</span>
           </a>
-          <button
-            type="button"
-            class="star-quick-trigger"
-            id="nav-quick-star-btn"
-            title="Direct In-Page Star / 页内直接点亮 Star"
-          >
-            ⚡
-          </button>
         </div>
       </div>
     </div>
@@ -1089,11 +1025,6 @@
             <span data-i18n="hero.starGithub">Star on GitHub</span>
             <span class="mono" id="hero-star-count"></span>
           </a>
-
-          <button type="button" class="btn-star-api" id="hero-direct-star-btn">
-            <span>⚡</span>
-            <span data-i18n="hero.instantStar">Instant Star Here</span>
-          </button>
 
           <a href="#downloads" class="btn-outline">
             <span data-i18n="hero.downloadCta">Download CLI &amp; Desktop</span>
@@ -1519,64 +1450,6 @@
     </section>
   </main>
 
-  <!-- In-Page Direct Star Modal -->
-  <div class="modal-backdrop" id="star-modal" role="dialog" aria-modal="true" aria-labelledby="star-modal-title">
-    <div class="modal-card">
-      <div class="modal-top">
-        <h3 id="star-modal-title">
-          <span style="color: var(--warning);">★</span>
-          <span data-i18n="modal.title">Star Apexo on GitHub</span>
-        </h3>
-        <button type="button" class="modal-close" id="close-star-modal-btn" aria-label="Close">✕</button>
-      </div>
-
-      <div class="modal-block">
-        <h4 data-i18n="modal.opt1Title">1. Star in Your Browser (1-Click)</h4>
-        <p data-i18n="modal.opt1Desc">
-          Open the repository in your logged-in GitHub tab and click Star at the top right:
-        </p>
-        <a
-          href="https://github.com/cluster1900/apexo-code"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn-primary"
-          style="width: 100%; justify-content: center; height: 38px; font-size: 13.5px;"
-        >
-          <span>★</span>
-          <span data-i18n="modal.openGithub">Open github.com/cluster1900/apexo-code ↗</span>
-        </a>
-      </div>
-
-      <div class="modal-block">
-        <h4 data-i18n="modal.opt2Title">2. Instant Star right on this page (GitHub API)</h4>
-        <p data-i18n="modal.opt2Desc">
-          Enter a GitHub Token (public_repo scope) to star directly from this page (sent straight to api.github.com, never stored):
-        </p>
-        <div class="pat-row">
-          <input
-            type="password"
-            id="github-pat-input"
-            class="pat-input mono"
-            placeholder="ghp_... / github_pat_..."
-            autocomplete="off"
-          />
-          <button type="button" class="btn-primary" id="api-star-submit-btn" style="height: 36px; padding: 0 14px; font-size: 13px;">
-            <span data-i18n="modal.starBtn">★ Star</span>
-          </button>
-        </div>
-        <div id="api-star-status" style="margin-top: 8px; font-size: 12.5px; font-weight: 600;"></div>
-      </div>
-
-      <div class="modal-block" style="margin-bottom: 0;">
-        <h4 data-i18n="modal.opt3Title">3. Star from Terminal (GitHub CLI)</h4>
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px;">
-          <code class="mono" style="font-size: 12px; color: var(--primary);">gh api -X PUT /user/starred/cluster1900/apexo-code</code>
-          <button type="button" class="copy-pill" id="copy-gh-star-cmd" data-i18n="common.copy">Copy</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Footer -->
   <footer>
     <div class="container footer-inner">
@@ -1666,7 +1539,6 @@
           "hero.title": "One Local Agent Runtime.<br /><span class=\"accent-text\">Built for Terminal, Web &amp; Desktop.</span>",
           "hero.desc": "Apexo is an open-source coding agent with a durable local session engine, autonomous goal loops, multi-session workflows, persistent memory, and OS command sandboxing — connecting directly to Gemini, Antigravity, Grok, Claude, OpenAI, and local models.",
           "hero.starGithub": "Star on GitHub",
-          "hero.instantStar": "Instant Star Here",
           "hero.downloadCta": "Download CLI & Desktop",
           "preview.tabTui": "Terminal UI (TUI)",
           "preview.tabWeb": "Web & Desktop App",
@@ -1720,14 +1592,6 @@
           "qs.subtitle": "Use intuitive CLI subcommands and configure custom providers globally or per repository with JSON Schema validation.",
           "qs.cliHead": "Essential CLI Commands",
           "qs.cfgHead": "Configuration (~/.config/apexo/apexo.jsonc)",
-          "modal.title": "Star Apexo on GitHub",
-          "modal.opt1Title": "1. Star in Your Browser (1-Click)",
-          "modal.opt1Desc": "Open the repository in your logged-in GitHub tab and click Star at the top right:",
-          "modal.openGithub": "Open github.com/cluster1900/apexo-code ↗",
-          "modal.opt2Title": "2. Instant Star right on this page (GitHub API)",
-          "modal.opt2Desc": "Enter a GitHub Token (public_repo scope) to star directly from this page (sent straight to api.github.com, never stored):",
-          "modal.starBtn": "★ Star",
-          "modal.opt3Title": "3. Star from Terminal (GitHub CLI)",
           "footer.copy": "Apexo — Open-Source Coding Agent · 100% Local Runtime · MIT License",
           "footer.releases": "Releases",
           "footer.install": "Installation Guide",
@@ -1750,7 +1614,6 @@
           "hero.title": "一套本地引擎，贯通终端、Web 与桌面<br /><span class=\"accent-text\">纯粹、自主的开源编程智能体</span>",
           "hero.desc": "基于持久化本地智能体运行时，原生内置自主目标闭环、多会话并行工作流、长期项目记忆与系统级沙盒。无需托管网关，本机直连 Gemini、Antigravity、Grok、Claude、OpenAI 及各类开源模型。",
           "hero.starGithub": "在 GitHub 点亮 Star",
-          "hero.instantStar": "页内一键点 Star",
           "hero.downloadCta": "下载 CLI 与桌面端",
           "preview.tabTui": "终端界面 (TUI)",
           "preview.tabWeb": "Web 与桌面客户端",
@@ -1804,14 +1667,6 @@
           "qs.subtitle": "简洁直观的 CLI 命令体系，配合支持 JSON Schema 智能补全的全局与项目级配置文件。",
           "qs.cliHead": "常用 CLI 命令速览",
           "qs.cfgHead": "配置文件示例 (~/.config/apexo/apexo.jsonc)",
-          "modal.title": "为 Apexo 点亮 GitHub Star",
-          "modal.opt1Title": "1. 在浏览器中一键点亮（推荐）",
-          "modal.opt1Desc": "在你已登录的 GitHub 页面中打开仓库，点击右上角 Star 即可：",
-          "modal.openGithub": "打开 github.com/cluster1900/apexo-code ↗",
-          "modal.opt2Title": "2. 在当前页面直接点亮（通过 GitHub API）",
-          "modal.opt2Desc": "输入含 public_repo 权限的 GitHub Token，浏览器将直接向 api.github.com 发起请求（绝不存储）：",
-          "modal.starBtn": "★ 立即点亮",
-          "modal.opt3Title": "3. 使用终端 GitHub CLI 一键点亮",
           "footer.copy": "Apexo — 开源通用编程智能体 · 100% 本地运行时 · MIT 开源许可",
           "footer.releases": "版本发布",
           "footer.install": "安装指南",
@@ -1918,76 +1773,6 @@
           const pane = document.getElementById(target);
           if (pane) pane.classList.add("active");
         });
-      });
-
-      // Star Modal
-      const starModal = document.getElementById("star-modal");
-      function openStarModal() { starModal.classList.add("open"); }
-      function closeStarModal() { starModal.classList.remove("open"); }
-
-      document.getElementById("nav-quick-star-btn").addEventListener("click", openStarModal);
-      document.getElementById("hero-direct-star-btn").addEventListener("click", openStarModal);
-      document.getElementById("close-star-modal-btn").addEventListener("click", closeStarModal);
-      starModal.addEventListener("click", function (e) {
-        if (e.target === starModal) closeStarModal();
-      });
-
-      document.getElementById("copy-gh-star-cmd").addEventListener("click", function (e) {
-        const btn = e.currentTarget;
-        navigator.clipboard.writeText("gh api -X PUT /user/starred/cluster1900/apexo-code").then(function () {
-          btn.textContent = I18N[currentLang]["common.copied"];
-          setTimeout(function () {
-            btn.textContent = I18N[currentLang]["common.copy"];
-          }, 1600);
-        });
-      });
-
-      document.getElementById("api-star-submit-btn").addEventListener("click", function () {
-        const tokenInput = document.getElementById("github-pat-input");
-        const statusEl = document.getElementById("api-star-status");
-        const token = tokenInput.value.trim();
-
-        if (!token) {
-          statusEl.style.color = "var(--warning)";
-          statusEl.textContent = currentLang === "zh"
-            ? "请先输入 GitHub Token，或点击上方按钮直接在浏览器中点亮 Star。"
-            : "Please enter a GitHub Token, or use Option 1 above to star in your browser.";
-          return;
-        }
-
-        statusEl.style.color = "var(--text-secondary)";
-        statusEl.textContent = currentLang === "zh" ? "正在请求 GitHub API..." : "Starring via GitHub API...";
-
-        fetch("https://api.github.com/user/starred/" + REPO, {
-          method: "PUT",
-          headers: {
-            "Accept": "application/vnd.github+json",
-            "Authorization": "Bearer " + token,
-            "X-GitHub-Api-Version": "2022-11-28",
-            "Content-Length": "0"
-          }
-        })
-          .then(function (res) {
-            if (res.status === 204 || res.status === 304) {
-              statusEl.style.color = "var(--primary)";
-              statusEl.textContent = currentLang === "zh"
-                ? "🎉 点亮成功！感谢支持 Apexo！"
-                : "🎉 Starred cluster1900/apexo-code! Thank you!";
-              tokenInput.value = "";
-              fetchRepoStats();
-            } else {
-              statusEl.style.color = "var(--error)";
-              statusEl.textContent = currentLang === "zh"
-                ? "请求未成功（HTTP " + res.status + "），请确认 Token 具备 public_repo 权限。"
-                : "Request failed (HTTP " + res.status + "). Check that your token has public_repo scope.";
-            }
-          })
-          .catch(function () {
-            statusEl.style.color = "var(--error)";
-            statusEl.textContent = currentLang === "zh"
-              ? "网络请求失败，请点击上方按钮直接在 GitHub 页面点亮。"
-              : "Network error. Please use Option 1 above to star on GitHub.";
-          });
       });
 
       function fetchRepoStats() {

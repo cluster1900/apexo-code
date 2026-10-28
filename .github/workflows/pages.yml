@@ -9,8 +9,6 @@ on:
       - "docs/.nojekyll"
       - "docs/assets/**"
       - ".github/workflows/pages.yml"
-  workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
