@@ -12,7 +12,7 @@ describe("public event manifest", () => {
     expect(Definitions).toBe(EventManifest.Definitions)
     expect(Latest).toBe(EventManifest.Latest)
     expect(Durable).toBe(EventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(93)
+    expect(EventManifest.Latest.size).toBe(101)
     expect(EventManifest.Latest.get("session.next.prompt.withdrawn")).toBe(SessionEvent.PromptWithdrawn)
     expect(EventManifest.ServerDefinitions).toContain(SessionEvent.PromptWithdrawn)
     expect(EventManifest.Latest.get("session.next.input.execution.settled")).toBe(SessionEvent.InputExecutionSettled)
