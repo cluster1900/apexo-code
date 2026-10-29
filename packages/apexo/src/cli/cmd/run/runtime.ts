@@ -20,6 +20,7 @@ import { goalActions } from "@apexo/tui/component/session-goal"
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
 import { createApexoClient } from "@apexo/sdk/v2/client"
+import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
 import { Flag } from "@apexo/core/flag/flag"
 import { MessageID } from "@/session/schema"
 import { createRunDemo } from "./demo"
@@ -33,7 +34,7 @@ import {
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
 import { cycleVariant, formatModelLabel, resolveSavedVariant, resolveVariant, saveVariant } from "./variant.shared"
-import type { LocalReplayAnchor, LocalReplayRow, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
+import type { LocalReplayAnchor, LocalReplayRow, RunBrowserActions, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
 
 /** @internal Exported for testing */
 export { pickVariant, resolveVariant } from "./variant.shared"
@@ -245,6 +246,97 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     return state.session
   }
 
+  const browser = {
+    sessionID: undefined as string | undefined,
+    browserSessionID: undefined as string | undefined,
+    pageID: undefined as string | undefined,
+    snapshotHash: undefined as string | undefined,
+  }
+  const runBrowserCommand = async (args: string) => {
+    await ensureSession()
+    const sessionID = state.sessionID
+    if (!sessionID) throw new Error("Session is unavailable")
+    if (browser.sessionID !== sessionID) {
+      browser.sessionID = sessionID
+      browser.browserSessionID = undefined
+      browser.pageID = undefined
+      browser.snapshotHash = undefined
+    }
+
+    const command = parseBrowserCommand(args)
+    if (command.action === "help") return command.message ?? "Usage: /browser <action>"
+    if (command.action === "open") {
+      const result = (
+        await ctx.sdk.v2.browser.open(
+          { sessionID, url: command.url, cdpUrl: command.cdpUrl },
+          { throwOnError: true },
+        )
+      ).data
+      browser.browserSessionID = result.id
+      browser.pageID = result.page?.id
+      browser.snapshotHash = result.page?.snapshotHash
+      return `browser opened ${result.page?.url ?? command.url} (${result.id})`
+    }
+
+    if (!browser.browserSessionID) throw new Error("No browser session. Run /browser open <url> first")
+    if (command.action === "close") {
+      await ctx.sdk.v2.browser.close({ sessionID, browserSessionID: browser.browserSessionID }, { throwOnError: true })
+      const closed = browser.browserSessionID
+      browser.browserSessionID = undefined
+      browser.pageID = undefined
+      browser.snapshotHash = undefined
+      return `browser closed ${closed}`
+    }
+    if (command.action === "events") {
+      const result = (
+        await ctx.sdk.v2.browser.events(
+          {
+            sessionID,
+            browserSessionID: browser.browserSessionID,
+            after: command.after === undefined ? undefined : String(command.after),
+            limit: command.limit === undefined ? undefined : String(command.limit),
+          },
+          { throwOnError: true },
+        )
+      ).data
+      return result.events.length === 0
+        ? "browser events: none"
+        : `browser events:\n${result.events.map((event) => `${event.type} ${event.durable?.seq ?? ""}`.trim()).join("\n")}`
+    }
+
+    const result = (
+      await ctx.sdk.v2.browser.action(
+        {
+          sessionID,
+          browserSessionID: browser.browserSessionID,
+          action: command.action,
+          pageID: browser.pageID,
+          selector: command.action === "click" || command.action === "type" ? command.selector : undefined,
+          text: command.action === "type" ? command.text : undefined,
+          key: command.action === "press" ? command.key : undefined,
+          x: command.action === "scroll" ? command.x : undefined,
+          y: command.action === "scroll" ? command.y : undefined,
+          expectedSnapshotHash: browser.snapshotHash,
+          fullPage: command.action === "screenshot" ? command.fullPage : undefined,
+          destructive: ["click", "type", "press", "scroll"].includes(command.action),
+        },
+        { throwOnError: true },
+      )
+    ).data
+    browser.pageID = result.page?.id ?? browser.pageID
+    browser.snapshotHash = result.page?.snapshotHash ?? browser.snapshotHash
+    if (result.artifact) return `browser ${command.action}: ${result.artifact.relativePath}`
+    return `browser ${command.action}: ${result.output || result.page?.url || "ok"}`
+  }
+  let browserQueue: Promise<unknown> = Promise.resolve()
+  const browserActions: RunBrowserActions = {
+    run: (args) => {
+      const next = browserQueue.then(() => runBrowserCommand(args))
+      browserQueue = next.catch(() => undefined)
+      return next
+    },
+  }
+
   const tasks = taskActions(
     ctx.sdk,
     () => state.sessionID,
@@ -436,6 +528,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     ),
     pluginsActions: pluginsActions(ctx.sdk, ctx.directory),
     mcpActions: mcpActions(ctx.sdk, ctx.directory, () => state.sessionID),
+    browserActions,
     workflowActions: workflowActions(
       ctx.sdk,
       async () => {

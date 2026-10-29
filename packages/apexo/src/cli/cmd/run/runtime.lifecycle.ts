@@ -25,6 +25,7 @@ import type {
   QuestionReject,
   QuestionReply,
   RunAgent,
+  RunBrowserActions,
   RunInput,
   RunPrompt,
   RunResource,
@@ -84,6 +85,7 @@ export type LifecycleInput = {
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
   feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
   memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
+  browserActions?: RunBrowserActions
   onSubagentSelect?: (sessionID: string | undefined) => void
 }
 
@@ -269,6 +271,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       pluginsActions: input.pluginsActions,
       mcpActions: input.mcpActions,
       memoryActions: input.memoryActions,
+      browserActions: input.browserActions,
       workflowActions: input.workflowActions,
       sideQuestionActions: input.sideQuestionActions,
       feedbackActions: input.feedbackActions,

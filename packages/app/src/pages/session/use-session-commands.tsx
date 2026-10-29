@@ -1,5 +1,6 @@
 import { useNavigate } from "@solidjs/router"
 import { nextSessionMode, parseCopyArgs, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
+import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { previewSelectedLines } from "@apexo/session-ui/pierre/selection-bridge"
@@ -71,6 +72,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const sessionOwnership = createSessionOwnership(sessionKey)
   const sessionArchive = useSessionArchive()
   const grok = useGrokCommands(() => params.id)
+  const browser = {
+    sessionID: undefined as string | undefined,
+    browserSessionID: undefined as string | undefined,
+    pageID: undefined as string | undefined,
+    snapshotHash: undefined as string | undefined,
+  }
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = sessionOwnership.capture()
     const value = await load()
@@ -494,7 +501,113 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
+  const runBrowserCommand = async (args: string) => {
+    const sessionID = params.id
+    if (!sessionID) {
+      showToast({ variant: "error", title: "Browser", description: "Open a session before using /browser" })
+      return
+    }
+    if (browser.sessionID !== sessionID) {
+      browser.sessionID = sessionID
+      browser.browserSessionID = undefined
+      browser.pageID = undefined
+      browser.snapshotHash = undefined
+    }
+
+    try {
+      const parsed = parseBrowserCommand(args)
+      if (parsed.action === "help") {
+        showToast({ title: "Browser", description: parsed.message ?? "Usage: /browser <action>" })
+        return
+      }
+      if (parsed.action === "open") {
+        const result = (
+          await sdk().client.v2.browser.open(
+            { sessionID, url: parsed.url, cdpUrl: parsed.cdpUrl },
+            { throwOnError: true },
+          )
+        ).data
+        browser.browserSessionID = result.id
+        browser.pageID = result.page?.id
+        browser.snapshotHash = result.page?.snapshotHash
+        showToast({ variant: "success", title: "Browser", description: `Opened ${result.page?.url ?? parsed.url}` })
+        return
+      }
+      if (!browser.browserSessionID) throw new Error("No browser session. Run /browser open <url> first")
+      if (parsed.action === "close") {
+        await sdk().client.v2.browser.close({ sessionID, browserSessionID: browser.browserSessionID }, { throwOnError: true })
+        browser.browserSessionID = undefined
+        browser.pageID = undefined
+        browser.snapshotHash = undefined
+        showToast({ variant: "success", title: "Browser", description: "Closed browser session" })
+        return
+      }
+      if (parsed.action === "events") {
+        const result = (
+          await sdk().client.v2.browser.events(
+            {
+              sessionID,
+              browserSessionID: browser.browserSessionID,
+              after: parsed.after === undefined ? undefined : String(parsed.after),
+              limit: parsed.limit === undefined ? undefined : String(parsed.limit),
+            },
+            { throwOnError: true },
+          )
+        ).data
+        const description = result.events.length === 0
+          ? "No browser events"
+          : result.events.map((event) => `${event.type} ${event.durable?.seq ?? ""}`.trim()).join("\n")
+        showToast({ title: "Browser events", description })
+        return
+      }
+
+      const result = (
+        await sdk().client.v2.browser.action(
+          {
+            sessionID,
+            browserSessionID: browser.browserSessionID,
+            action: parsed.action,
+            pageID: browser.pageID,
+            selector: parsed.action === "click" || parsed.action === "type" ? parsed.selector : undefined,
+            text: parsed.action === "type" ? parsed.text : undefined,
+            key: parsed.action === "press" ? parsed.key : undefined,
+            x: parsed.action === "scroll" ? parsed.x : undefined,
+            y: parsed.action === "scroll" ? parsed.y : undefined,
+            expectedSnapshotHash: browser.snapshotHash,
+            fullPage: parsed.action === "screenshot" ? parsed.fullPage : undefined,
+            destructive: ["click", "type", "press", "scroll"].includes(parsed.action),
+          },
+          { throwOnError: true },
+        )
+      ).data
+      browser.pageID = result.page?.id ?? browser.pageID
+      browser.snapshotHash = result.page?.snapshotHash ?? browser.snapshotHash
+      showToast({
+        variant: "success",
+        title: `Browser ${parsed.action}`,
+        description: result.artifact?.relativePath ?? (result.output || result.page?.url || "Done"),
+      })
+    } catch (error) {
+      showToast({ variant: "error", title: "Browser", description: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  let browserQueue: Promise<unknown> = Promise.resolve()
+  const runBrowser = (args: string) => {
+    const next = browserQueue.then(() => runBrowserCommand(args))
+    browserQueue = next.catch(() => undefined)
+    return next
+  }
+
   const sessionCmds = () => [
+    sessionCommand({
+      id: "session.browser",
+      title: "Control browser through Chrome CDP",
+      description: "Open and control a real Chrome session with /browser",
+      slash: "browser",
+      disabled: !params.id,
+      onSlash: (args) => void runBrowser(args),
+      onSelect: () => void runBrowser(""),
+    }),
     sessionCommand({
       id: "session.new",
       title: language.t("command.session.new"),

@@ -233,6 +233,10 @@ export type FooterPromptRoute =
   | { type: "model" }
   | { type: "variant" }
 
+export type RunBrowserActions = {
+  run: (args: string) => Promise<string>
+}
+
 export type FooterSubagentTab = {
   sessionID: string
   partID: string

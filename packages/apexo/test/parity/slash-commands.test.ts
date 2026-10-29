@@ -46,6 +46,8 @@ async function surfaces() {
     /slash:\s*("[a-z0-9-]+")/g,
     /slashAliases:\s*\[([^\]]*)\]/g,
   ])
+  // Browser is injected by the CLI runtime only when its Browser API actions are available.
+  cli.add("browser")
   // Server commands (grok-build profile) are listed by the server and offered on both surfaces.
   const server = await Bun.file(path.join(packages, "apexo/src/command/index.ts")).text()
   const block = server.slice(server.indexOf('runtimeProfile === "grok-build"'))

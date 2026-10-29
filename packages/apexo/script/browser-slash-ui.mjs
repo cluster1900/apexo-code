@@ -1,0 +1,231 @@
+import assert from "node:assert/strict"
+import http from "node:http"
+import { createRequire } from "node:module"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { Terminal } from "@xterm/headless"
+import { startShellFixture, deadline, poll } from "./grok-shell-fixture.mjs"
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
+const { chromium } = createRequire(join(repo, "packages/app/package.json"))("@playwright/test")
+const kind = process.argv[2] ?? "cli"
+assert.ok(kind === "cli" || kind === "desktop")
+const runtime = await startShellFixture(kind, kind === "cli" ? { server: "v2" } : {})
+const cliApi = async (method, endpoint, body) => {
+  const path = `${endpoint}${endpoint.includes("?") ? "&" : "?"}directory=${encodeURIComponent(runtime.directory)}`
+  const args = ["bun", join(repo, "packages/cli/src/index.ts"), "api", method, path]
+  if (body !== undefined) args.push("--data", JSON.stringify(body))
+  const process = Bun.spawn(args, {
+    cwd: join(repo, "packages/cli"),
+    env: runtime.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([process.stdout.text(), process.stderr.text(), process.exited])
+  assert.equal(exitCode, 0, stderr)
+  return stdout.trim() ? JSON.parse(stdout) : undefined
+}
+const pageServer = http.createServer((request, response) => {
+  if (request.url !== "/") {
+    response.writeHead(404)
+    response.end()
+    return
+  }
+  response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
+  response.end(
+    `<!doctype html><title>Slash browser fixture</title><label>Name <input id="name"></label><button id="go" onclick="document.querySelector('#out').textContent='clicked:'+document.querySelector('#name').value">Go</button><div id="out">Idle</div>`,
+  )
+})
+await new Promise((resolve) => pageServer.listen(0, "127.0.0.1", resolve))
+const pageURL = `http://127.0.0.1:${pageServer.address().port}/`
+const cdpReservation = http.createServer()
+await new Promise((resolve) => cdpReservation.listen(0, "127.0.0.1", resolve))
+const cdpPort = cdpReservation.address().port
+await new Promise((resolve) => cdpReservation.close(resolve))
+const browser = await chromium.launch({
+  headless: true,
+  executablePath: process.env.CHROMIUM_PATH ?? chromium.executablePath(),
+  args: [`--remote-debugging-port=${cdpPort}`],
+})
+const fixture = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+await fixture.goto(pageURL)
+
+const result = { kind, sessionID: "", browserSessionID: "", events: 0, artifact: "" }
+let appBrowser
+let cli
+let terminal
+let terminalText = ""
+try {
+  const sessionResponse =
+    kind === "cli"
+      ? await cliApi("POST", "/api/session", {
+          model: { providerID: "xai", id: "grok-4.7" },
+          location: { directory: runtime.directory },
+        })
+      : await runtime.api("/session", {
+          title: "Desktop browser slash command",
+        })
+  const session = kind === "cli" ? sessionResponse.data : sessionResponse
+  assert.ok(session?.id)
+  result.sessionID = session.id
+
+  if (kind === "cli") {
+    const passwordProcess = Bun.spawn(["bun", join(repo, "packages/cli/src/index.ts"), "service", "password"], {
+      cwd: join(repo, "packages/cli"),
+      env: runtime.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const password = (await passwordProcess.stdout.text()).trim()
+    assert.equal(await passwordProcess.exited, 0)
+    terminal = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
+    const screen = () =>
+      Array.from({ length: terminal.rows }, (_, row) =>
+        terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true),
+      ).join("\n")
+    const decoder = new TextDecoder()
+    cli = Bun.spawn(
+      [
+        process.execPath,
+        resolve("src/index.ts"),
+        "attach",
+        runtime.url,
+        "--password",
+        password,
+        "--mini",
+        "--dir",
+        runtime.directory,
+        "--session",
+        session.id,
+        "--no-replay",
+      ],
+      {
+        env: { ...runtime.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+        terminal: {
+          cols: 120,
+          rows: 40,
+          data(pty, bytes) {
+            const text = decoder.decode(bytes, { stream: true })
+            terminalText += text
+            terminal.write(text)
+            if (text.includes("\x1b[6n")) pty.write("\x1b[1;1R")
+          },
+        },
+      },
+    )
+    await poll(() => screen().includes("Ask anything") || screen().includes("SHELL"), "CLI slash composer", 30_000).catch((error) => {
+      console.error(terminalText)
+      throw error
+    })
+    const command = (text) => {
+      cli.terminal.write(text)
+      cli.terminal.write("\r")
+    }
+    const browserList = () => cliApi("GET", `/api/session/${session.id}/browser`)
+    command(`/browser open ${pageURL} --cdp-url http://127.0.0.1:${cdpPort}`)
+    const opened = await poll(async () => (await browserList()).find((item) => item.status === "connected"), "CLI browser open", 30_000)
+    result.browserSessionID = opened.id
+    command('/browser type "#name" "Apexo"')
+    await poll(async () => (await fixture.locator("#name").inputValue()) === "Apexo", "CLI browser type")
+    command('/browser click "#go"')
+    await poll(async () => (await fixture.locator("#out").textContent()) === "clicked:Apexo", "CLI browser click")
+    command("/browser screenshot full")
+    const screenshot = await poll(async () => {
+      const events = await cliApi("GET", `/api/session/${session.id}/browser/${opened.id}/events`)
+      return events.events.find((event) => event.type === "browser.artifact_created")
+    }, "CLI browser screenshot")
+    result.artifact = screenshot.data.artifact.relativePath
+    const events = await cliApi("GET", `/api/session/${session.id}/browser/${opened.id}/events`)
+    result.events = events.events.length
+    assert.ok(result.events >= 8)
+    command("/browser close")
+    await poll(async () => {
+      try {
+        return !(await browserList()).some((item) => item.id === opened.id)
+      } catch {
+        return true
+      }
+    }, "CLI browser close")
+    assert.match(terminalText, /browser opened/i)
+    console.log(JSON.stringify(result))
+  } else {
+    const frontend = http.createServer(async (request, response) => {
+      const url = new URL(request.url, "http://localhost")
+      if (url.pathname.startsWith("/assets/") || request.headers.accept?.includes("text/html")) {
+        const file = Bun.file(join(repo, "packages/app/dist", url.pathname.startsWith("/assets/") ? url.pathname : "index.html"))
+        if (!(await file.exists())) {
+          response.writeHead(404)
+          response.end()
+          return
+        }
+        void file.arrayBuffer().then((data) => {
+          response.writeHead(200, { "content-type": file.type })
+          response.end(Buffer.from(data))
+        })
+        return
+      }
+      const target = new URL(runtime.url)
+      const upstream = http.request(
+        { hostname: target.hostname, port: target.port, path: request.url, method: request.method, headers: { ...request.headers, host: target.host }, agent: false },
+        (reply) => {
+          response.writeHead(reply.statusCode, reply.headers)
+          reply.pipe(response)
+        },
+      )
+      upstream.on("error", () => response.end())
+      request.pipe(upstream)
+    })
+    await new Promise((resolve) => frontend.listen(0, "127.0.0.1", resolve))
+    try {
+      appBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH ?? chromium.executablePath() })
+      const page = await appBrowser.newPage({ viewport: { width: 1440, height: 1000 } })
+      await page.goto(`http://127.0.0.1:${frontend.address().port}/${Buffer.from(runtime.directory).toString("base64url")}/session/${session.id}`)
+      const editor = page.locator('[contenteditable="true"]').first()
+      await editor.waitFor({ state: "visible" })
+      const command = async (text) => {
+        await editor.fill(text)
+        await page.locator('[data-action="prompt-submit"]').click()
+      }
+      const browserList = () => runtime.api(`/api/session/${session.id}/browser`)
+      await command(`/browser open ${pageURL} --cdp-url http://127.0.0.1:${cdpPort}`)
+      const opened = await poll(async () => (await browserList()).find((item) => item.status === "connected"), "Desktop browser open", 30_000)
+      result.browserSessionID = opened.id
+      await command('/browser type "#name" "Apexo"')
+      await poll(async () => (await fixture.locator("#name").inputValue()) === "Apexo", "Desktop browser type")
+      await command('/browser click "#go"')
+      await poll(async () => (await fixture.locator("#out").textContent()) === "clicked:Apexo", "Desktop browser click")
+      await command("/browser screenshot full")
+      const screenshot = await poll(async () => {
+        const events = await runtime.api(`/api/session/${session.id}/browser/${opened.id}/events`)
+        return events.events.find((event) => event.type === "browser.artifact_created")
+      }, "Desktop browser screenshot")
+      result.artifact = screenshot.data.artifact.relativePath
+      const events = await runtime.api(`/api/session/${session.id}/browser/${opened.id}/events`)
+      result.events = events.events.length
+      assert.ok(result.events >= 8)
+      await command("/browser close")
+      await poll(async () => {
+        try {
+          return !(await browserList()).some((item) => item.id === opened.id)
+        } catch {
+          return true
+        }
+      }, "Desktop browser close")
+      console.log(JSON.stringify(result))
+    } finally {
+      await appBrowser?.close()
+      frontend.closeAllConnections()
+      await new Promise((resolve) => frontend.close(resolve))
+    }
+  }
+} finally {
+  await appBrowser?.close()
+  cli?.terminal?.close()
+  cli?.kill("SIGTERM")
+  if (cli) await deadline(cli.exited, 10_000, "CLI slash cleanup").catch(() => cli.kill("SIGKILL"))
+  terminal?.dispose()
+  await browser.close()
+  await runtime.close()
+  pageServer.closeAllConnections()
+  await new Promise((resolve) => pageServer.close(resolve))
+}

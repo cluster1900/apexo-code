@@ -58,6 +58,7 @@ import type {
   QuestionReject,
   QuestionReply,
   RunAgent,
+  RunBrowserActions,
   RunCommand,
   RunDiffStyle,
   RunInput,
@@ -125,6 +126,7 @@ type RunFooterViewProps = {
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
   feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
   memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
+  browserActions?: RunBrowserActions
   onEditorOpen: (input: { value: string }) => Promise<string | undefined>
   onInputClear: () => void
   onExitRequest?: () => boolean
@@ -529,6 +531,17 @@ export function RunFooterView(props: RunFooterViewProps) {
             source: "command" as const,
           }))
         : []),
+      ...(props.browserActions
+        ? [
+            {
+              name: "browser",
+              description: "Control a real Chrome browser through CDP",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
       { name: "tasks", description: "Manage session tasks", template: "", hints: [], source: "command" as const },
     ],
     tuiConfig: props.tuiConfig,
@@ -539,6 +552,18 @@ export function RunFooterView(props: RunFooterViewProps) {
     theme,
     history: props.history,
     onSubmit: (input) => {
+      if (
+        props.browserActions &&
+        input.mode !== "shell" &&
+        (input.command?.name === "browser" || /^\/browser(?:\s|$)/u.test(input.text.trim()))
+      ) {
+        const args = input.command?.arguments ?? input.text.trim().replace(/^\/browser\s*/u, "")
+        void props.browserActions
+          .run(args)
+          .then((message) => props.onStatus(message))
+          .catch((error: unknown) => props.onStatus(`browser: ${error instanceof Error ? error.message : String(error)}`))
+        return true
+      }
       if (
         props.workflowActions &&
         input.mode !== "shell" &&

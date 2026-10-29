@@ -52,6 +52,7 @@ import type {
   QuestionReject,
   QuestionReply,
   RunAgent,
+  RunBrowserActions,
   RunCommand,
   RunDiffStyle,
   RunInput,
@@ -107,6 +108,7 @@ type RunFooterOptions = {
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
   feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
   memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
+  browserActions?: RunBrowserActions
   onEditorOpen: (input: { value: string }) => Promise<string | undefined>
   onExit?: () => void
   onSubagentSelect?: (sessionID: string | undefined) => void
@@ -352,6 +354,7 @@ export class RunFooter implements FooterApi {
               pluginsActions: options.pluginsActions,
               mcpActions: options.mcpActions,
               memoryActions: options.memoryActions,
+              browserActions: options.browserActions,
               workflowActions: options.workflowActions,
               sideQuestionActions: options.sideQuestionActions,
               feedbackActions: options.feedbackActions,

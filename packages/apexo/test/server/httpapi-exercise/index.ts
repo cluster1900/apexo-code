@@ -2086,7 +2086,7 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({
       path: `/api/session/${ctx.state.id}/browser`,
       headers: { ...ctx.headers(), "content-type": "application/json" },
-      body: { url: "http://127.0.0.1:1/" },
+      body: { url: "http://127.0.0.1:1/", cdpUrl: "http://127.0.0.1:1" },
     }))
     .status(503),
   http.protected

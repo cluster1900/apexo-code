@@ -26,6 +26,7 @@
     ,"./v2/goal-command": "./src/v2/goal-command.ts"
     ,"./v2/grok-commands": "./src/v2/grok-commands.ts"
     ,"./v2/agent-dashboard": "./src/v2/agent-dashboard.ts"
+    ,"./v2/browser-command": "./src/v2/browser-command.ts"
   },
   "files": [
     "dist"
