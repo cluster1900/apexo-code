@@ -298,20 +298,28 @@ export const TaskTool = Tool.define(
         }
       }
 
-      const info = yield* background.start({
-        id: nextSession.id,
-        type: id,
-        title: params.description,
-        metadata,
-        onPromote: Effect.all([
-          ctx.metadata({
-            title: params.description,
-            metadata: { ...metadata, background: true, jobId: nextSession.id },
-          }),
-          notify(nextSession.id),
-        ]),
-        run: runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id))),
-      })
+      const taskRun = runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id)))
+      const previous = yield* background.get(nextSession.id)
+      const resumed =
+        previous?.status === "running" && previous.metadata?.blockedReason === "process_restart"
+          ? yield* background.resume({ id: nextSession.id, run: taskRun })
+          : undefined
+      const info =
+        resumed ??
+        (yield* background.start({
+          id: nextSession.id,
+          type: id,
+          title: params.description,
+          metadata,
+          onPromote: Effect.all([
+            ctx.metadata({
+              title: params.description,
+              metadata: { ...metadata, background: true, jobId: nextSession.id },
+            }),
+            notify(nextSession.id),
+          ]),
+          run: taskRun,
+        }))
 
       function backgroundResult() {
         return {
@@ -355,6 +363,8 @@ export const TaskTool = Tool.define(
             if (result?.metadata?.background === true) return backgroundResult()
             if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
             if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
+            if (result?.status === "running")
+              return yield* Effect.fail(new Error("Task is blocked after process restart"))
             return {
               title: params.description,
               metadata,

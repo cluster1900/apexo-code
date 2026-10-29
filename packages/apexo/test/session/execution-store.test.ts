@@ -53,8 +53,21 @@ describe("session execution ownership", () => {
 
       const replacement = yield* store.claim(sessionID)
       expect(replacement.generation).toBe(first.generation + 2)
+      expect(yield* store.interruptStale(sessionID)).toBe(false)
       yield* store.finish(replacement, "completed")
       expect(yield* store.recoverable).toEqual([])
+
+      const crashed = yield* store.claim(sessionID)
+      yield* database.db
+        .update(SessionExecutionTable)
+        .set({ owner_id: "prior-owner", generation: crashed.generation })
+        .run()
+      expect(yield* store.recoverable).toEqual([sessionID])
+      expect(yield* store.interruptStale(sessionID)).toBe(true)
+      expect(yield* store.recoverable).toEqual([])
+      const settled = yield* database.db.select().from(SessionExecutionTable).get()
+      expect(settled?.status).toBe("interrupted")
+      expect(settled?.ended_at).not.toBeNull()
     }),
   )
 })

@@ -1,7 +1,7 @@
 export * as SessionExecutionStore from "./execution-store"
 
 import { randomUUID } from "node:crypto"
-import { and, eq } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -24,6 +24,7 @@ export interface Interface {
   readonly claim: (sessionID: SessionSchema.ID) => Effect.Effect<Lease, Failure>
   readonly assert: (lease: Lease) => Effect.Effect<void, Failure>
   readonly finish: (lease: Lease, status: "completed" | "failed" | "interrupted", error?: string) => Effect.Effect<void>
+  readonly interruptStale: (sessionID: SessionSchema.ID) => Effect.Effect<boolean, Failure>
   readonly recoverable: Effect.Effect<ReadonlyArray<SessionSchema.ID>, Failure>
 }
 
@@ -39,7 +40,6 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const database = yield* Database.Service
     const ownerID = randomUUID()
-    const { db } = database
     const storage = <A, E>(effect: Effect.Effect<A, E>) =>
       effect.pipe(
         Effect.mapError(
@@ -50,10 +50,12 @@ const layer = Layer.effect(
         ),
       )
     const read = (sessionID: SessionSchema.ID) =>
-      storage(db.select().from(SessionExecutionTable).where(eq(SessionExecutionTable.session_id, sessionID)).get())
+      storage(
+        database.db.select().from(SessionExecutionTable).where(eq(SessionExecutionTable.session_id, sessionID)).get(),
+      )
     const claim: Interface["claim"] = (sessionID) =>
       storage(
-        db.transaction(
+        database.db.transaction(
           () =>
             Effect.gen(function* () {
               const now = Date.now()
@@ -76,12 +78,10 @@ const layer = Layer.effect(
                 ended_at: null,
                 error: null,
               }
-              if (previous)
-                yield* db
-                  .update(SessionExecutionTable)
-                  .set(values)
-                  .where(eq(SessionExecutionTable.session_id, sessionID))
-              else yield* db.insert(SessionExecutionTable).values(values)
+              yield* database.db
+                .insert(SessionExecutionTable)
+                .values(values)
+                .onConflictDoUpdate({ target: SessionExecutionTable.session_id, set: values })
               return lease
             }),
           { behavior: "immediate" },
@@ -90,7 +90,7 @@ const layer = Layer.effect(
     const assert: Interface["assert"] = (lease) =>
       storage(
         Effect.gen(function* () {
-          yield* db
+          const current = yield* database.db
             .update(SessionExecutionTable)
             .set({ heartbeat_at: Date.now() })
             .where(
@@ -102,25 +102,14 @@ const layer = Layer.effect(
                 eq(SessionExecutionTable.status, "running"),
               ),
             )
-          const current = yield* db
-            .select({ sessionID: SessionExecutionTable.session_id })
-            .from(SessionExecutionTable)
-            .where(
-              and(
-                eq(SessionExecutionTable.session_id, lease.sessionID),
-                eq(SessionExecutionTable.owner_id, lease.ownerID),
-                eq(SessionExecutionTable.generation, lease.generation),
-                eq(SessionExecutionTable.attempt_id, lease.attemptID),
-                eq(SessionExecutionTable.status, "running"),
-              ),
-            )
+            .returning({ sessionID: SessionExecutionTable.session_id })
             .get()
           if (!current)
             return yield* new Failure({ code: "stale", message: "Session execution owner is no longer current" })
         }),
       )
     const finish: Interface["finish"] = (lease, status, error) =>
-      db
+      database.db
         .update(SessionExecutionTable)
         .set({ status, ended_at: Date.now(), error: error ?? null, heartbeat_at: Date.now() })
         .where(
@@ -134,14 +123,33 @@ const layer = Layer.effect(
         )
         .run()
         .pipe(Effect.orDie, Effect.asVoid)
+    const interruptStale: Interface["interruptStale"] = (sessionID) =>
+      storage(
+        Effect.gen(function* () {
+          const now = Date.now()
+          const updated = yield* database.db
+            .update(SessionExecutionTable)
+            .set({ status: "interrupted", ended_at: now, heartbeat_at: now })
+            .where(
+              and(
+                eq(SessionExecutionTable.session_id, sessionID),
+                ne(SessionExecutionTable.owner_id, ownerID),
+                eq(SessionExecutionTable.status, "running"),
+              ),
+            )
+            .returning({ sessionID: SessionExecutionTable.session_id })
+            .get()
+          return Boolean(updated)
+        }),
+      )
     const recoverable: Interface["recoverable"] = storage(
-      db
+      database.db
         .select({ sessionID: SessionExecutionTable.session_id })
         .from(SessionExecutionTable)
         .where(eq(SessionExecutionTable.status, "running"))
         .all(),
     ).pipe(Effect.map((rows) => rows.map((row) => row.sessionID)))
-    return Service.of({ claim, assert, finish, recoverable })
+    return Service.of({ claim, assert, finish, interruptStale, recoverable })
   }),
 )
 

@@ -619,7 +619,15 @@ function waitTasks(background: BackgroundJob.Interface, maxWaitMs: number): Tool
         if (input.mode === "wait_any" && timeout > 0) {
           const jobs = yield* Effect.all(input.task_ids.map((id) => background.get(id)))
           const pending = [
-            ...new Set(jobs.flatMap((job) => (job?.status === "running" && owns(job, ctx.sessionID) ? [job.id] : []))),
+            ...new Set(
+              jobs.flatMap((job) =>
+                job?.status === "running" &&
+                job.metadata?.blockedReason !== "process_restart" &&
+                owns(job, ctx.sessionID)
+                  ? [job.id]
+                  : [],
+              ),
+            ),
           ]
           if (pending.length) yield* Effect.raceAll(pending.map((id) => background.wait({ id, timeout })))
         }

@@ -71,7 +71,16 @@ const layer = Layer.effect(
           const sessionID = claim.sessionID
           const session = yield* store.get(sessionID)
           if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
-          const lease = yield* executionStore.claim(sessionID)
+          let lease: SessionExecutionStore.Lease | undefined
+          const assertOwner = Effect.uninterruptible(
+            Effect.gen(function* () {
+              if (!lease) {
+                lease = yield* executionStore.claim(sessionID)
+                return
+              }
+              yield* executionStore.assert(lease)
+            }),
+          )
           return yield* SessionRunner.Service.use((runner) =>
             runner.run({
               sessionID,
@@ -80,13 +89,15 @@ const layer = Layer.effect(
               children: children(claim),
             }),
           ).pipe(
-            Effect.provideService(SessionExecutionStore.Current, executionStore.assert(lease)),
+            Effect.provideService(SessionExecutionStore.Current, assertOwner),
             Effect.onExit((exit) =>
-              executionStore.finish(
-                lease,
-                exit._tag === "Success" ? "completed" : Cause.hasInterrupts(exit.cause) ? "interrupted" : "failed",
-                exit._tag === "Failure" ? String(Cause.squash(exit.cause)) : undefined,
-              ),
+              lease
+                ? executionStore.finish(
+                    lease,
+                    exit._tag === "Success" ? "completed" : Cause.hasInterrupts(exit.cause) ? "interrupted" : "failed",
+                    exit._tag === "Failure" ? String(Cause.squash(exit.cause)) : undefined,
+                  )
+                : Effect.void,
             ),
             Effect.provideService(SessionMemoryObserver.Current, memoryObserver(claim, epoch)),
             Effect.provideService(SessionChildPlacementAccess.Current, placementAccess(claim)),
@@ -163,8 +174,21 @@ const layer = Layer.effect(
       Effect.flatMap((sessions) =>
         Effect.forEach(sessions, (sessionID) =>
           Effect.gen(function* () {
-            if (yield* managed.managed(sessionID)) return
-            yield* lifecycle.capture(sessionID).pipe(Effect.flatMap(coordinator.wake))
+            if (yield* managed.managed(sessionID)) {
+              yield* executionStore.interruptStale(sessionID)
+              return
+            }
+            const claim = yield* publicClaim(sessionID)
+            yield* lifecycle.owned(
+              claim,
+              Effect.gen(function* () {
+                if (!(yield* memory.pendingInput(claim))) {
+                  yield* executionStore.interruptStale(sessionID)
+                  return
+                }
+                yield* prepare(sessionID).pipe(Effect.flatMap(coordinator.wake))
+              }),
+            )
           }).pipe(Effect.catch(() => Effect.void)),
         ),
       ),
