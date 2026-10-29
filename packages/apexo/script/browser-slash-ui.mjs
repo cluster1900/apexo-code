@@ -50,7 +50,7 @@ const browser = await chromium.launch({
 const fixture = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 await fixture.goto(pageURL)
 
-const result = { kind, sessionID: "", browserSessionID: "", events: 0, artifact: "" }
+const result = { kind, sessionID: "", browserSessionID: "", events: 0, artifact: "", autocomplete: false }
 let appBrowser
 let cli
 let terminal
@@ -122,6 +122,13 @@ try {
       cli.terminal.write("\r")
     }
     const browserList = () => cliApi("GET", `/api/session/${session.id}/browser`)
+    cli.terminal.write("/br")
+    await poll(
+      () => screen().split("\n").some((line) => /\/browser\b/u.test(line)),
+      "CLI /browser autocomplete",
+    )
+    result.autocomplete = true
+    cli.terminal.write("\x15")
     command(`/browser open ${pageURL} --cdp-url http://127.0.0.1:${cdpPort}`)
     const opened = await poll(async () => (await browserList()).find((item) => item.status === "connected"), "CLI browser open", 30_000)
     result.browserSessionID = opened.id
@@ -187,6 +194,16 @@ try {
         await page.locator('[data-action="prompt-submit"]').click()
       }
       const browserList = () => runtime.api(`/api/session/${session.id}/browser`)
+      await editor.fill("/br")
+      await poll(
+        async () => {
+          const body = await page.locator("body").innerText()
+          return body.includes("/browser") && body.includes("Open and control a real Chrome session with /browser")
+        },
+        "Desktop /browser autocomplete",
+      )
+      result.autocomplete = true
+      await editor.fill("")
       await command(`/browser open ${pageURL} --cdp-url http://127.0.0.1:${cdpPort}`)
       const opened = await poll(async () => (await browserList()).find((item) => item.status === "connected"), "Desktop browser open", 30_000)
       result.browserSessionID = opened.id
