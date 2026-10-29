@@ -28,7 +28,22 @@ await new Promise((resolve) => cdpReservation.close(resolve))
 
 const runtime = await startShellFixture(kind, {
   config: { permission: { "*": "allow" } },
+  ...(kind === "cli" ? { server: "v2" } : {}),
 })
+const cliApi = async (method, endpoint, body) => {
+  const path = `${endpoint}${endpoint.includes("?") ? "&" : "?"}directory=${encodeURIComponent(runtime.directory)}`
+  const args = ["bun", join(repo, "packages/cli/src/index.ts"), "api", method, path]
+  if (body !== undefined) args.push("--data", JSON.stringify(body))
+  const process = Bun.spawn(args, {
+    cwd: join(repo, "packages/cli"),
+    env: runtime.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([process.stdout.text(), process.stderr.text(), process.exited])
+  assert.equal(exitCode, 0, stderr)
+  return stdout.trim() ? JSON.parse(stdout) : undefined
+}
 let browser
 try {
   browser = await chromium.launch({
@@ -39,51 +54,52 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(pageURL)
 
-  const session = (await runtime.api("/api/session", {
+  const request =
+    kind === "cli"
+      ? (endpoint, body, method = body === undefined ? "GET" : "POST") => cliApi(method, endpoint, body)
+      : runtime.api
+  const session = (await request("/api/session", {
     model: { providerID: "xai", id: "grok-4.7" },
     location: { directory: runtime.directory },
   })).data
   assert.ok(session?.id, "v2 session created")
 
   if (kind === "cli") {
-    const cli = Bun.spawn(
-      ["bun", join(repo, "packages/cli/src/index.ts"), "api", "GET", `/api/session?directory=${encodeURIComponent(runtime.directory)}`],
-      { cwd: join(repo, "packages/cli"), env: runtime.env, stdout: "pipe", stderr: "pipe" },
-    )
-    const [stdout, stderr, exitCode] = await Promise.all([cli.stdout.text(), cli.stderr.text(), cli.exited])
-    assert.equal(exitCode, 0, stderr)
-    assert.ok(Array.isArray(JSON.parse(stdout).data), stdout)
+    const sessions = await cliApi("GET", "/api/session")
+    assert.ok(Array.isArray(sessions.data), sessions)
   }
 
-  const opened = await runtime.api(`/api/session/${session.id}/browser`, {
+  const opened = await request(`/api/session/${session.id}/browser`, {
     url: pageURL,
     cdpUrl: `http://127.0.0.1:${cdpPort}`,
   })
   assert.equal(opened.status, "connected")
   assert.equal(opened.page.url, pageURL)
 
-  const observed = await runtime.api(`/api/session/${session.id}/browser/${opened.id}/action`, {
+  const observed = await request(`/api/session/${session.id}/browser/${opened.id}/action`, {
     action: "observe",
     pageID: opened.page.id,
     expectedSnapshotHash: opened.page.snapshotHash,
   })
   assert.match(observed.output, /Browser fixture/)
 
-  await runtime.api(`/api/session/${session.id}/browser/${opened.id}/action`, {
+  await request(`/api/session/${session.id}/browser/${opened.id}/action`, {
     action: "type",
     pageID: observed.page.id,
     expectedSnapshotHash: observed.page.snapshotHash,
     selector: "#name",
     text: "Apexo",
   })
-  const clicked = await runtime.api(`/api/session/${session.id}/browser/${opened.id}/action`, {
+  assert.equal(await page.locator("#name").inputValue(), "Apexo")
+  const clicked = await request(`/api/session/${session.id}/browser/${opened.id}/action`, {
     action: "click",
     pageID: observed.page.id,
     selector: "#go",
   })
   assert.match(clicked.output, /clicked:Apexo/)
+  assert.equal(await page.locator("#out").textContent(), "clicked:Apexo")
 
-  const screenshot = await runtime.api(`/api/session/${session.id}/browser/${opened.id}/action`, {
+  const screenshot = await request(`/api/session/${session.id}/browser/${opened.id}/action`, {
     action: "screenshot",
     pageID: clicked.page.id,
     expectedSnapshotHash: clicked.page.snapshotHash,
@@ -92,11 +108,11 @@ try {
   assert.equal(screenshot.artifact.mime, "image/png")
   assert.ok(screenshot.artifactData?.length > 100)
 
-  const replay = await runtime.api(`/api/session/${session.id}/browser/${opened.id}/events`)
+  const replay = await request(`/api/session/${session.id}/browser/${opened.id}/events`)
   assert.ok(replay.events.length >= 6)
   assert.ok(replay.cursor.head >= replay.events.at(-1).durable.seq)
 
-  await runtime.api(`/api/session/${session.id}/browser/${opened.id}/close`, undefined, "POST")
+  await request(`/api/session/${session.id}/browser/${opened.id}/close`, undefined, "POST")
   console.log(JSON.stringify({ sessionID: session.id, browserSessionID: opened.id, events: replay.events.length, artifact: screenshot.artifact.relativePath }))
 } finally {
   await browser?.close()

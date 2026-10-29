@@ -258,22 +258,27 @@ export async function startShellFixture(kind, options = {}) {
           (await readFile(join(repo, "packages/desktop/node_modules/electron/path.txt"), "utf8")).trim(),
         )
       : "bun"
+  const serverEntrypoint = options.server === "v2" ? join(repo, "packages/cli/src/index.ts") : join(repo, "packages/apexo/src/index.ts")
+  const serverArgs =
+    options.server === "v2"
+      ? [serverEntrypoint, "serve", "--register", "--hostname", "127.0.0.1", "--port", String(port)]
+      : [
+          ...(options.bunArgs ?? []),
+          serverEntrypoint,
+          "serve",
+          "--hostname",
+          "127.0.0.1",
+          "--port",
+          String(port),
+          ...(options.args ?? []),
+        ]
   const logs = []
   const launch = () => {
     const child = spawn(
       executable,
       kind === "desktop"
         ? [script, "--desktop-worker"]
-        : [
-            ...(options.bunArgs ?? []),
-            join(repo, "packages/apexo/src/index.ts"),
-            "serve",
-            "--hostname",
-            "127.0.0.1",
-            "--port",
-            String(port),
-            ...(options.args ?? []),
-          ],
+        : serverArgs,
       {
         cwd: join(repo, "packages/apexo"),
         env: {
