@@ -6,6 +6,7 @@ import { SchedulerTools } from "./scheduler"
 import { MonitorTool } from "./monitor"
 import { ProcessTool } from "./process"
 import { BashTool } from "./bash"
+import { BrowserTool } from "./browser"
 import { ApplyPatchTool } from "./apply-patch"
 import { EditTool } from "./edit"
 import { FeedbackTool } from "./feedback"
@@ -44,6 +45,7 @@ export const node = makeLocationNode({
   deps: [
     ApplyPatchTool.node,
     BashTool.node,
+    BrowserTool.node,
     ProcessTool.node,
     MonitorTool.node,
     SchedulerTools.node,

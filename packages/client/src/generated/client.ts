@@ -211,6 +211,16 @@ import type {
   ServerSideQuestionCancelOutput,
   MessagesListInput,
   MessagesListOutput,
+  ServerBrowserListInput,
+  ServerBrowserListOutput,
+  ServerBrowserOpenInput,
+  ServerBrowserOpenOutput,
+  ServerBrowserActionInput,
+  ServerBrowserActionOutput,
+  ServerBrowserCloseInput,
+  ServerBrowserCloseOutput,
+  ServerBrowserEventsInput,
+  ServerBrowserEventsOutput,
   ModelsListInput,
   ModelsListOutput,
   ProvidersListInput,
@@ -1739,6 +1749,78 @@ export function make(options: ClientOptions) {
             query: { limit: input["limit"], order: input["order"], cursor: input["cursor"] },
             successStatus: 200,
             declaredStatuses: [400, 404, 500, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.browser": {
+      list: (input: ServerBrowserListInput, requestOptions?: RequestOptions) =>
+        request<ServerBrowserListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/browser`,
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      open: (input: ServerBrowserOpenInput, requestOptions?: RequestOptions) =>
+        request<ServerBrowserOpenOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/browser`,
+            body: { url: input["url"], cdpUrl: input["cdpUrl"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      action: (input: ServerBrowserActionInput, requestOptions?: RequestOptions) =>
+        request<ServerBrowserActionOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/browser/${encodeURIComponent(input.browserSessionID)}/action`,
+            body: {
+              action: input["action"],
+              pageID: input["pageID"],
+              url: input["url"],
+              selector: input["selector"],
+              text: input["text"],
+              key: input["key"],
+              x: input["x"],
+              y: input["y"],
+              expectedSnapshotHash: input["expectedSnapshotHash"],
+              fullPage: input["fullPage"],
+              destructive: input["destructive"],
+            },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      close: (input: ServerBrowserCloseInput, requestOptions?: RequestOptions) =>
+        request<ServerBrowserCloseOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/browser/${encodeURIComponent(input.browserSessionID)}/close`,
+            successStatus: 204,
+            declaredStatuses: [404, 409, 400, 503, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      events: (input: ServerBrowserEventsInput, requestOptions?: RequestOptions) =>
+        request<ServerBrowserEventsOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/browser/${encodeURIComponent(input.browserSessionID)}/events`,
+            query: { after: input["after"], limit: input["limit"] },
+            successStatus: 200,
+            declaredStatuses: [404, 409, 400, 503, 401],
             empty: false,
           },
           requestOptions,

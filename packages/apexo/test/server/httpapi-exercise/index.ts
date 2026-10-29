@@ -2076,6 +2076,54 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: "/api/session/ses_httpapi_sandbox_missing/sandbox", headers: ctx.headers() }))
     .status(404),
   http.protected
+    .get("/api/session/{sessionID}/browser", "v2.browser.list.empty")
+    .seeded((ctx) => ctx.session({ title: "Browser session owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/browser`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/browser", "v2.browser.open.unavailable")
+    .seeded((ctx) => ctx.session({ title: "Browser open owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/browser`,
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { url: "http://127.0.0.1:1/" },
+    }))
+    .status(503),
+  http.protected
+    .post("/api/session/{sessionID}/browser", "v2.browser.open.invalidUrl")
+    .seeded((ctx) => ctx.session({ title: "Browser invalid URL owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/browser`,
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { url: "not-a-url" },
+    }))
+    .status(400),
+  http.protected
+    .post("/api/session/{sessionID}/browser/{browserSessionID}/action", "v2.browser.action.missing")
+    .seeded((ctx) => ctx.session({ title: "Browser action owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/browser/brw_httpapi_missing/action`,
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { action: "observe" },
+    }))
+    .status(409),
+  http.protected
+    .post("/api/session/{sessionID}/browser/{browserSessionID}/close", "v2.browser.close.missing")
+    .seeded((ctx) => ctx.session({ title: "Browser close owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/browser/brw_httpapi_missing/close`,
+      headers: ctx.headers(),
+    }))
+    .status(409),
+  http.protected
+    .get("/api/session/{sessionID}/browser/{browserSessionID}/events", "v2.browser.events.missing")
+    .seeded((ctx) => ctx.session({ title: "Browser events owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/browser/brw_httpapi_missing/events`,
+      headers: ctx.headers(),
+    }))
+    .status(409),
+  http.protected
     .post("/api/session", "v2.session.create.invalidSandbox")
     .at((ctx) => ({ path: "/api/session", headers: ctx.headers(), body: { commandSandbox: "unsupported" } }))
     .status(400, undefined, "none"),

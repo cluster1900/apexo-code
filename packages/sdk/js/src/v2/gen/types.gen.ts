@@ -98,6 +98,14 @@ export type Event =
   | EventWorktreeFailed
   | EventServerConnected
   | EventGlobalDisposed
+  | EventBrowserSessionStarted
+  | EventBrowserPageChanged
+  | EventBrowserActionStarted
+  | EventBrowserActionCompleted
+  | EventBrowserArtifactCreated
+  | EventBrowserApprovalRequired
+  | EventBrowserDisconnected
+  | EventBrowserClosed
   | EventServerInstanceDisposed
 
 export type QuestionReplied = {
@@ -1697,6 +1705,111 @@ export type GlobalEvent = {
           [key: string]: unknown
         }
       }
+    | {
+        id: string
+        type: "browser.session_started"
+        properties: {
+          browserSessionID: string
+          sessionID: string
+          info: {
+            id: string
+            sessionID: string
+            status: "connecting" | "connected" | "disconnected" | "closed"
+            cdpUrl?: string
+            page?: {
+              id: string
+              url: string
+              title: string
+              snapshotHash: string
+            }
+            createdAt: number
+            lastActionAt?: number
+            disconnectedReason?: string
+          }
+        }
+      }
+    | {
+        id: string
+        type: "browser.page_changed"
+        properties: {
+          browserSessionID: string
+          page: {
+            id: string
+            url: string
+            title: string
+            snapshotHash: string
+          }
+        }
+      }
+    | {
+        id: string
+        type: "browser.action_started"
+        properties: {
+          browserSessionID: string
+          actionID: string
+          action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+          pageID?: string
+        }
+      }
+    | {
+        id: string
+        type: "browser.action_completed"
+        properties: {
+          browserSessionID: string
+          actionID: string
+          action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+          status: "completed" | "failed"
+          output?: string
+          error?: string
+          page?: {
+            id: string
+            url: string
+            title: string
+            snapshotHash: string
+          }
+          artifactID?: string
+        }
+      }
+    | {
+        id: string
+        type: "browser.artifact_created"
+        properties: {
+          browserSessionID: string
+          artifact: {
+            id: string
+            mime: string
+            relativePath: string
+            byteLength: number
+            sensitive: boolean
+          }
+        }
+      }
+    | {
+        id: string
+        type: "browser.approval_required"
+        properties: {
+          browserSessionID: string
+          actionID: string
+          permission: string
+          resource: string
+          reason: string
+        }
+      }
+    | {
+        id: string
+        type: "browser.disconnected"
+        properties: {
+          browserSessionID: string
+          reason: string
+        }
+      }
+    | {
+        id: string
+        type: "browser.closed"
+        properties: {
+          browserSessionID: string
+        }
+      }
     | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
@@ -1738,6 +1851,14 @@ export type GlobalEvent = {
     | SyncEventSessionNextRevertStaged
     | SyncEventSessionNextRevertCleared
     | SyncEventSessionNextRevertCommitted
+    | SyncEventBrowserSessionStarted
+    | SyncEventBrowserPageChanged
+    | SyncEventBrowserActionStarted
+    | SyncEventBrowserActionCompleted
+    | SyncEventBrowserArtifactCreated
+    | SyncEventBrowserApprovalRequired
+    | SyncEventBrowserDisconnected
+    | SyncEventBrowserClosed
 }
 
 /**
@@ -3393,6 +3514,14 @@ export type V2Event =
   | WorktreeFailed
   | ServerConnected
   | GlobalDisposed
+  | BrowserSessionStarted
+  | BrowserPageChanged
+  | BrowserActionStarted
+  | BrowserActionCompleted
+  | BrowserArtifactCreated
+  | BrowserApprovalRequired
+  | BrowserDisconnected
+  | BrowserClosed
 
 export type V2EventStream = string
 
@@ -4602,6 +4731,167 @@ export type SyncEventSessionNextRevertCommitted = {
       timestamp: number
       sessionID: string
       messageID: string
+    }
+  }
+}
+
+export type SyncEventBrowserSessionStarted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.session_started.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      sessionID: string
+      info: {
+        id: string
+        sessionID: string
+        status: "connecting" | "connected" | "disconnected" | "closed"
+        cdpUrl?: string
+        page?: {
+          id: string
+          url: string
+          title: string
+          snapshotHash: string
+        }
+        createdAt: number
+        lastActionAt?: number
+        disconnectedReason?: string
+      }
+    }
+  }
+}
+
+export type SyncEventBrowserPageChanged = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.page_changed.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      page: {
+        id: string
+        url: string
+        title: string
+        snapshotHash: string
+      }
+    }
+  }
+}
+
+export type SyncEventBrowserActionStarted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.action_started.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      actionID: string
+      action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+      pageID?: string
+    }
+  }
+}
+
+export type SyncEventBrowserActionCompleted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.action_completed.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      actionID: string
+      action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+      status: "completed" | "failed"
+      output?: string
+      error?: string
+      page?: {
+        id: string
+        url: string
+        title: string
+        snapshotHash: string
+      }
+      artifactID?: string
+    }
+  }
+}
+
+export type SyncEventBrowserArtifactCreated = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.artifact_created.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      artifact: {
+        id: string
+        mime: string
+        relativePath: string
+        byteLength: number
+        sensitive: boolean
+      }
+    }
+  }
+}
+
+export type SyncEventBrowserApprovalRequired = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.approval_required.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      actionID: string
+      permission: string
+      resource: string
+      reason: string
+    }
+  }
+}
+
+export type SyncEventBrowserDisconnected = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.disconnected.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
+      reason: string
+    }
+  }
+}
+
+export type SyncEventBrowserClosed = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "browser.closed.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      browserSessionID: string
     }
   }
 }
@@ -6507,6 +6797,191 @@ export type WorkflowStart = {
   args?: unknown
   agentBudget?: number
   concurrency?: number
+}
+
+export type BrowserSessionStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.session_started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    sessionID: string
+    info: {
+      id: string
+      sessionID: string
+      status: "connecting" | "connected" | "disconnected" | "closed"
+      cdpUrl?: string
+      page?: {
+        id: string
+        url: string
+        title: string
+        snapshotHash: string
+      }
+      createdAt: number
+      lastActionAt?: number
+      disconnectedReason?: string
+    }
+  }
+}
+
+export type BrowserPageChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.page_changed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    page: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+  }
+}
+
+export type BrowserActionStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.action_started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    pageID?: string
+  }
+}
+
+export type BrowserActionCompleted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.action_completed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    status: "completed" | "failed"
+    output?: string
+    error?: string
+    page?: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+    artifactID?: string
+  }
+}
+
+export type BrowserArtifactCreated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.artifact_created"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    artifact: {
+      id: string
+      mime: string
+      relativePath: string
+      byteLength: number
+      sensitive: boolean
+    }
+  }
+}
+
+export type BrowserApprovalRequired = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.approval_required"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    actionID: string
+    permission: string
+    resource: string
+    reason: string
+  }
+}
+
+export type BrowserDisconnected = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.disconnected"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+    reason: string
+  }
+}
+
+export type BrowserClosed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "browser.closed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    browserSessionID: string
+  }
 }
 
 export type ModelApi =
@@ -8884,6 +9359,119 @@ export type EventGlobalDisposed = {
   type: "global.disposed"
   properties: {
     [key: string]: unknown
+  }
+}
+
+export type EventBrowserSessionStarted = {
+  id: string
+  type: "browser.session_started"
+  properties: {
+    browserSessionID: string
+    sessionID: string
+    info: {
+      id: string
+      sessionID: string
+      status: "connecting" | "connected" | "disconnected" | "closed"
+      cdpUrl?: string
+      page?: {
+        id: string
+        url: string
+        title: string
+        snapshotHash: string
+      }
+      createdAt: number
+      lastActionAt?: number
+      disconnectedReason?: string
+    }
+  }
+}
+
+export type EventBrowserPageChanged = {
+  id: string
+  type: "browser.page_changed"
+  properties: {
+    browserSessionID: string
+    page: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+  }
+}
+
+export type EventBrowserActionStarted = {
+  id: string
+  type: "browser.action_started"
+  properties: {
+    browserSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    pageID?: string
+  }
+}
+
+export type EventBrowserActionCompleted = {
+  id: string
+  type: "browser.action_completed"
+  properties: {
+    browserSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    status: "completed" | "failed"
+    output?: string
+    error?: string
+    page?: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+    artifactID?: string
+  }
+}
+
+export type EventBrowserArtifactCreated = {
+  id: string
+  type: "browser.artifact_created"
+  properties: {
+    browserSessionID: string
+    artifact: {
+      id: string
+      mime: string
+      relativePath: string
+      byteLength: number
+      sensitive: boolean
+    }
+  }
+}
+
+export type EventBrowserApprovalRequired = {
+  id: string
+  type: "browser.approval_required"
+  properties: {
+    browserSessionID: string
+    actionID: string
+    permission: string
+    resource: string
+    reason: string
+  }
+}
+
+export type EventBrowserDisconnected = {
+  id: string
+  type: "browser.disconnected"
+  properties: {
+    browserSessionID: string
+    reason: string
+  }
+}
+
+export type EventBrowserClosed = {
+  id: string
+  type: "browser.closed"
+  properties: {
+    browserSessionID: string
   }
 }
 
@@ -19464,6 +20052,305 @@ export type V2SessionMessagesResponses = {
 }
 
 export type V2SessionMessagesResponse = V2SessionMessagesResponses[keyof V2SessionMessagesResponses]
+
+export type V2BrowserListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/browser"
+}
+
+export type V2BrowserListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2BrowserListError = V2BrowserListErrors[keyof V2BrowserListErrors]
+
+export type V2BrowserListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    sessionID: string
+    status: "connecting" | "connected" | "disconnected" | "closed"
+    cdpUrl?: string
+    page?: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+    createdAt: number
+    lastActionAt?: number
+    disconnectedReason?: string
+  }>
+}
+
+export type V2BrowserListResponse = V2BrowserListResponses[keyof V2BrowserListResponses]
+
+export type V2BrowserOpenData = {
+  body: {
+    url: string
+    cdpUrl?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/browser"
+}
+
+export type V2BrowserOpenErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2BrowserOpenError = V2BrowserOpenErrors[keyof V2BrowserOpenErrors]
+
+export type V2BrowserOpenResponses = {
+  /**
+   * Success
+   */
+  200: {
+    id: string
+    sessionID: string
+    status: "connecting" | "connected" | "disconnected" | "closed"
+    cdpUrl?: string
+    page?: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+    createdAt: number
+    lastActionAt?: number
+    disconnectedReason?: string
+  }
+}
+
+export type V2BrowserOpenResponse = V2BrowserOpenResponses[keyof V2BrowserOpenResponses]
+
+export type V2BrowserActionData = {
+  body: {
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    pageID?: string
+    url?: string
+    selector?: string
+    text?: string
+    key?: string
+    x?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    y?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    expectedSnapshotHash?: string
+    fullPage?: boolean
+    destructive?: boolean
+  }
+  path: {
+    sessionID: string
+    browserSessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/browser/{browserSessionID}/action"
+}
+
+export type V2BrowserActionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2BrowserActionError = V2BrowserActionErrors[keyof V2BrowserActionErrors]
+
+export type V2BrowserActionResponses = {
+  /**
+   * Success
+   */
+  200: {
+    browserSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    output: string
+    page?: {
+      id: string
+      url: string
+      title: string
+      snapshotHash: string
+    }
+    artifact?: {
+      id: string
+      mime: string
+      relativePath: string
+      byteLength: number
+      sensitive: boolean
+    }
+    artifactData?: string
+  }
+}
+
+export type V2BrowserActionResponse = V2BrowserActionResponses[keyof V2BrowserActionResponses]
+
+export type V2BrowserCloseData = {
+  body?: never
+  path: {
+    sessionID: string
+    browserSessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/browser/{browserSessionID}/close"
+}
+
+export type V2BrowserCloseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2BrowserCloseError = V2BrowserCloseErrors[keyof V2BrowserCloseErrors]
+
+export type V2BrowserCloseResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2BrowserCloseResponse = V2BrowserCloseResponses[keyof V2BrowserCloseResponses]
+
+export type V2BrowserEventsData = {
+  body?: never
+  path: {
+    sessionID: string
+    browserSessionID: string
+  }
+  query?: {
+    after?: string
+    limit?: string
+  }
+  url: "/api/session/{sessionID}/browser/{browserSessionID}/events"
+}
+
+export type V2BrowserEventsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2BrowserEventsError = V2BrowserEventsErrors[keyof V2BrowserEventsErrors]
+
+export type V2BrowserEventsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    events: Array<
+      | BrowserSessionStarted
+      | BrowserPageChanged
+      | BrowserActionStarted
+      | BrowserActionCompleted
+      | BrowserArtifactCreated
+      | BrowserApprovalRequired
+      | BrowserDisconnected
+      | BrowserClosed
+    >
+    cursor: {
+      earliest: number
+      head: number
+      next?: string
+    }
+  }
+}
+
+export type V2BrowserEventsResponse = V2BrowserEventsResponses[keyof V2BrowserEventsResponses]
 
 export type V2ModelListData = {
   body?: never

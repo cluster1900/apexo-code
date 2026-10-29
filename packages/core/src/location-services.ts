@@ -1,4 +1,5 @@
 import { CommandSandbox } from "./command-sandbox"
+import { Browser } from "./browser"
 import { Context, Effect, Layer, LayerMap } from "effect"
 import { AgentV2 } from "./agent"
 import { AISDK } from "./aisdk"
@@ -56,6 +57,7 @@ export { LocationServiceMap } from "./location-service-map"
 export const locationServices = LayerNode.group([
   Location.node,
   CommandSandbox.node,
+  Browser.node,
   Policy.node,
   Config.node,
   AgentV2.node,

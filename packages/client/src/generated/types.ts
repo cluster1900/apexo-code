@@ -6441,6 +6441,344 @@ export type MessagesListOutput = {
   readonly cursor: { readonly previous?: string | null; readonly next?: string | null }
 }
 
+export type ServerBrowserListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type ServerBrowserListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly sessionID: string
+  readonly status: "connecting" | "connected" | "disconnected" | "closed"
+  readonly cdpUrl?: string
+  readonly page?: { readonly id: string; readonly url: string; readonly title: string; readonly snapshotHash: string }
+  readonly createdAt: number
+  readonly lastActionAt?: number
+  readonly disconnectedReason?: string
+}>
+
+export type ServerBrowserOpenInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly url: { readonly url: string; readonly cdpUrl?: string | undefined }["url"]
+  readonly cdpUrl?: { readonly url: string; readonly cdpUrl?: string | undefined }["cdpUrl"]
+}
+
+export type ServerBrowserOpenOutput = {
+  readonly id: string
+  readonly sessionID: string
+  readonly status: "connecting" | "connected" | "disconnected" | "closed"
+  readonly cdpUrl?: string
+  readonly page?: { readonly id: string; readonly url: string; readonly title: string; readonly snapshotHash: string }
+  readonly createdAt: number
+  readonly lastActionAt?: number
+  readonly disconnectedReason?: string
+}
+
+export type ServerBrowserActionInput = {
+  readonly sessionID: { readonly sessionID: string; readonly browserSessionID: string }["sessionID"]
+  readonly browserSessionID: { readonly sessionID: string; readonly browserSessionID: string }["browserSessionID"]
+  readonly action: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["action"]
+  readonly pageID?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["pageID"]
+  readonly url?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["url"]
+  readonly selector?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["selector"]
+  readonly text?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["text"]
+  readonly key?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["key"]
+  readonly x?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["x"]
+  readonly y?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["y"]
+  readonly expectedSnapshotHash?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["expectedSnapshotHash"]
+  readonly fullPage?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["fullPage"]
+  readonly destructive?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly pageID?: string | undefined
+    readonly url?: string | undefined
+    readonly selector?: string | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly fullPage?: boolean | undefined
+    readonly destructive?: boolean | undefined
+  }["destructive"]
+}
+
+export type ServerBrowserActionOutput = {
+  readonly browserSessionID: string
+  readonly actionID: string
+  readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+  readonly output: string
+  readonly page?: { readonly id: string; readonly url: string; readonly title: string; readonly snapshotHash: string }
+  readonly artifact?: {
+    readonly id: string
+    readonly mime: string
+    readonly relativePath: string
+    readonly byteLength: number
+    readonly sensitive: boolean
+  }
+  readonly artifactData?: string
+}
+
+export type ServerBrowserCloseInput = {
+  readonly sessionID: { readonly sessionID: string; readonly browserSessionID: string }["sessionID"]
+  readonly browserSessionID: { readonly sessionID: string; readonly browserSessionID: string }["browserSessionID"]
+}
+
+export type ServerBrowserCloseOutput = void
+
+export type ServerBrowserEventsInput = {
+  readonly sessionID: { readonly sessionID: string; readonly browserSessionID: string }["sessionID"]
+  readonly browserSessionID: { readonly sessionID: string; readonly browserSessionID: string }["browserSessionID"]
+  readonly after?: { readonly after?: number | undefined; readonly limit?: number | undefined }["after"]
+  readonly limit?: { readonly after?: number | undefined; readonly limit?: number | undefined }["limit"]
+}
+
+export type ServerBrowserEventsOutput = {
+  readonly events: ReadonlyArray<
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.session_started"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly browserSessionID: string
+          readonly sessionID: string
+          readonly info: {
+            readonly id: string
+            readonly sessionID: string
+            readonly status: "connecting" | "connected" | "disconnected" | "closed"
+            readonly cdpUrl?: string
+            readonly page?: {
+              readonly id: string
+              readonly url: string
+              readonly title: string
+              readonly snapshotHash: string
+            }
+            readonly createdAt: number
+            readonly lastActionAt?: number
+            readonly disconnectedReason?: string
+          }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.page_changed"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly browserSessionID: string
+          readonly page: {
+            readonly id: string
+            readonly url: string
+            readonly title: string
+            readonly snapshotHash: string
+          }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.action_started"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly browserSessionID: string
+          readonly actionID: string
+          readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+          readonly pageID?: string
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.action_completed"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly browserSessionID: string
+          readonly actionID: string
+          readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+          readonly status: "completed" | "failed"
+          readonly output?: string
+          readonly error?: string
+          readonly page?: {
+            readonly id: string
+            readonly url: string
+            readonly title: string
+            readonly snapshotHash: string
+          }
+          readonly artifactID?: string
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.artifact_created"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly browserSessionID: string
+          readonly artifact: {
+            readonly id: string
+            readonly mime: string
+            readonly relativePath: string
+            readonly byteLength: number
+            readonly sensitive: boolean
+          }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.approval_required"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly browserSessionID: string
+          readonly actionID: string
+          readonly permission: string
+          readonly resource: string
+          readonly reason: string
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.disconnected"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: { readonly browserSessionID: string; readonly reason: string }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "browser.closed"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: { readonly browserSessionID: string }
+      }
+  >
+  readonly cursor: { readonly earliest: number; readonly head: number; readonly next?: string }
+}
+
 export type ModelsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

@@ -30,6 +30,7 @@ import { TuiEvent } from "./tui-event"
 import { VcsEvent } from "./vcs-event"
 import { WorkspaceEvent } from "./workspace-event"
 import { WorktreeEvent } from "./worktree-event"
+import { Browser } from "./browser"
 
 const sessionV1DurableDefinitions = SessionV1.Event.Definitions.filter((definition) => definition.durable !== undefined)
 const sessionV1LiveDefinitions = SessionV1.Event.Definitions.filter((definition) => definition.durable === undefined)
@@ -61,6 +62,7 @@ export const ServerDefinitions = Event.inventory(
   // Native project managers consume the same canonical status invalidation events.
   ...McpEvent.CurrentDefinitions,
   LspEvent.Updated,
+  ...Browser.Event.Definitions,
 )
 
 export const Definitions = Event.inventory(
@@ -83,6 +85,7 @@ export const Definitions = Event.inventory(
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,
+  ...Browser.Event.Definitions,
 )
 export const Latest = Event.latest(Definitions)
 export { Durable }

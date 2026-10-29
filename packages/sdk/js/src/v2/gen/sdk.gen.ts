@@ -377,6 +377,16 @@ import type {
   TuiSubmitPromptResponses,
   V2AgentListErrors,
   V2AgentListResponses,
+  V2BrowserActionErrors,
+  V2BrowserActionResponses,
+  V2BrowserCloseErrors,
+  V2BrowserCloseResponses,
+  V2BrowserEventsErrors,
+  V2BrowserEventsResponses,
+  V2BrowserListErrors,
+  V2BrowserListResponses,
+  V2BrowserOpenErrors,
+  V2BrowserOpenResponses,
   V2CommandListErrors,
   V2CommandListResponses,
   V2CredentialRemoveErrors,
@@ -10005,6 +10015,160 @@ export class SideQuestion2 extends HeyApiClient {
   }
 }
 
+export class Browser extends HeyApiClient {
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2BrowserListResponses, V2BrowserListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/browser",
+      ...options,
+      ...params,
+    })
+  }
+
+  public open<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      url?: string
+      cdpUrl?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "url" },
+            { in: "body", key: "cdpUrl" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2BrowserOpenResponses, V2BrowserOpenErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/browser",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public action<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      browserSessionID: string
+      action?: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+      pageID?: string
+      url?: string
+      selector?: string
+      text?: string
+      key?: string
+      x?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      y?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      expectedSnapshotHash?: string
+      fullPage?: boolean
+      destructive?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "browserSessionID" },
+            { in: "body", key: "action" },
+            { in: "body", key: "pageID" },
+            { in: "body", key: "url" },
+            { in: "body", key: "selector" },
+            { in: "body", key: "text" },
+            { in: "body", key: "key" },
+            { in: "body", key: "x" },
+            { in: "body", key: "y" },
+            { in: "body", key: "expectedSnapshotHash" },
+            { in: "body", key: "fullPage" },
+            { in: "body", key: "destructive" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2BrowserActionResponses, V2BrowserActionErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/browser/{browserSessionID}/action",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public close<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      browserSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "browserSessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2BrowserCloseResponses, V2BrowserCloseErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/browser/{browserSessionID}/close",
+      ...options,
+      ...params,
+    })
+  }
+
+  public events<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      browserSessionID: string
+      after?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "browserSessionID" },
+            { in: "query", key: "after" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2BrowserEventsResponses, V2BrowserEventsErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/browser/{browserSessionID}/events",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Model extends HeyApiClient {
   /**
    * List models
@@ -11274,6 +11438,11 @@ export class V2 extends HeyApiClient {
   private _sideQuestion?: SideQuestion2
   get sideQuestion(): SideQuestion2 {
     return (this._sideQuestion ??= new SideQuestion2({ client: this.client }))
+  }
+
+  private _browser?: Browser
+  get browser(): Browser {
+    return (this._browser ??= new Browser({ client: this.client }))
   }
 
   private _model?: Model
