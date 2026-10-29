@@ -55,6 +55,7 @@ const url = `http://127.0.0.1:${server.address().port}/`
 console.log(JSON.stringify({ kind, output: runtime.output }))
 const results = []
 const errors = []
+let activeSessionID
 let browser
 try {
   browser = await chromium.launch({
@@ -174,6 +175,7 @@ try {
       ["stop", "message"],
     ]) {
       const session = await runtime.api("/session", { title: `Shell UI ${action}` })
+      activeSessionID = session.id
       await open(session.id)
       await runtime.api(`/session/${session.id}/prompt_async`, {
         model: { providerID: "xai", modelID: "grok-4.7" },
@@ -227,6 +229,12 @@ try {
         .innerText()
         .catch(() => ""),
     )
+    if (activeSessionID) {
+      await Bun.write(
+        join(runtime.output, "ui-failure-history.json"),
+        JSON.stringify(await runtime.api(`/session/${activeSessionID}/message`).catch(() => undefined), null, 2),
+      )
+    }
   }
   console.error(`Shell UI evidence: ${runtime.output}`)
   throw error

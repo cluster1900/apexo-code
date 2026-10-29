@@ -253,11 +253,18 @@ export function createServerSession(
 
   const indexLegacyMessage = (message: Message) => {
     const current = data.session_message[message.sessionID] ?? []
-    if (current.some((item) => item.id === message.id)) return
+    const next = legacyMessageSource([{ info: message, parts: data.part[message.id] ?? [] }])[0]
+    if (!next) return
+    const index = current.findIndex((item) => item.id === message.id)
+    if (index >= 0) {
+      if (current[index] === next) return
+      setData("session_message", message.sessionID, index, reconcile(next))
+      return
+    }
     setData(
       "session_message",
       message.sessionID,
-      reconcile([...current, ...legacyMessageSource([{ info: message, parts: [] }])]),
+      reconcile([...current, next]),
     )
   }
 
@@ -1175,6 +1182,8 @@ export function createServerSession(
         const parts = data.part[part.messageID]
         if (!parts) {
           setData("part", part.messageID, [part])
+          const message = data.message[part.sessionID]?.find((item) => item.id === part.messageID)
+          if (message) indexLegacyMessage(message)
           return
         }
         const result = Binary.search(parts, part.id, (item) => item.id)
@@ -1185,6 +1194,8 @@ export function createServerSession(
             next.splice(result.index, 0, part)
             return next
           })
+        const message = data.message[part.sessionID]?.find((item) => item.id === part.messageID)
+        if (message) indexLegacyMessage(message)
         return
       }
       case "message.part.removed": {

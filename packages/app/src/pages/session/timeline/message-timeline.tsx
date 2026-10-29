@@ -275,7 +275,10 @@ export function MessageTimeline(props: {
     const id = sessionID()
     if (!id) return []
     const visible = new Set(props.userMessages.map((message) => message.id))
-    const boundary = sessionMessages().find((message) => message.role === "user" && !visible.has(message.id))?.id
+    const boundary = sessionMessages().find((message) => {
+      if (message.role !== "user" || visible.has(message.id)) return false
+      return !(sync().data.part[message.id] ?? []).some((part) => part.type === "text" && part.synthetic === true)
+    })?.id
     const messages = sync().data.session_message[id] ?? []
     if (!boundary) return messages
     const index = messages.findIndex((message) => message.id === boundary)
