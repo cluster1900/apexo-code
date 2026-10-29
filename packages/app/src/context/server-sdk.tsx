@@ -56,6 +56,32 @@ export function adaptServerEvent(event: ApexoEvent): ServerEvent {
   return { id: event.id, type: event.type, properties: event.data, current: event } as ServerEvent
 }
 
+function adaptLegacySyncEvent(payload: unknown): ServerEvent | undefined {
+  if (!payload || typeof payload !== "object") return
+  const value = payload as Record<string, unknown>
+  if (value.type !== "sync" || !value.syncEvent || typeof value.syncEvent !== "object") return
+  const syncEvent = value.syncEvent as Record<string, unknown>
+  if (
+    typeof syncEvent.id !== "string" ||
+    typeof syncEvent.type !== "string" ||
+    typeof syncEvent.aggregateID !== "string" ||
+    typeof syncEvent.seq !== "number" ||
+    typeof syncEvent.data !== "object" ||
+    syncEvent.data === null
+  )
+    return
+  const version = Number(syncEvent.type.split(".").at(-1))
+  if (!Number.isInteger(version)) return
+  const type = syncEvent.type.replace(/\.\d+$/, "")
+  const current = {
+    id: syncEvent.id,
+    type,
+    durable: { aggregateID: syncEvent.aggregateID, seq: syncEvent.seq, version },
+    data: syncEvent.data,
+  } as ApexoEvent
+  return { id: syncEvent.id, type, properties: syncEvent.data, current } as ServerEvent
+}
+
 const coalescedKey = (event: QueuedServerEvent) => {
   if (event.payload.type === "lsp.updated") return `lsp.updated:${event.directory}`
   if (event.payload.type === "message.part.updated") {
@@ -281,9 +307,10 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           for await (const event of events) {
             streamErrorLogged = false
             const legacy = "payload" in event
-            if (legacy && event.payload.type === "sync") continue
             const directory = legacy ? (event.directory ?? "global") : (event.location?.directory ?? "global")
-            const payload = legacy ? (event.payload as Event) : adaptServerEvent(event)
+            const payload = legacy
+              ? adaptLegacySyncEvent(event.payload) ?? (event.payload as unknown as ServerEvent)
+              : adaptServerEvent(event)
             if (enqueueServerEvent(queue, { directory, payload })) schedule()
 
             if (Date.now() - yielded < STREAM_YIELD_MS) continue

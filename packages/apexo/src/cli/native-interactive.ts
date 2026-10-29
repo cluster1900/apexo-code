@@ -53,7 +53,8 @@ export async function runNativeInteractive(input: {
       }))
     const { runInteractiveMode } = await import("./cmd/run/runtime")
     const located = nativeSessionTransport(input.sdk, next.location.directory, owner.signal)
-    const startupNotice = existing
+    const active = existing ? await located.active() : undefined
+    const startupNotice = existing && !active?.[next.id]
       ? await located
           .restore(next.id)
           .then(restorationNotice)

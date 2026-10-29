@@ -234,7 +234,15 @@ export async function startShellFixture(kind, options = {}) {
         xai: {
           npm: "@ai-sdk/xai",
           models: {
-            "grok-4.7": { name: "Restart parity", tool_call: true, limit: { context: 100000, output: 10000 } },
+            // models.dev may already contain this model with the real XAI endpoint. Keep the
+            // fixture authoritative at the model boundary so both legacy and native loaders
+            // route every provider turn to the owned local server.
+            "grok-4.7": {
+              name: "Restart parity",
+              tool_call: true,
+              limit: { context: 100000, output: 10000 },
+              provider: { npm: "@ai-sdk/openai-compatible", api: baseURL },
+            },
             ...options.models,
           },
           options: { apiKey: "local-parity-key", baseURL },

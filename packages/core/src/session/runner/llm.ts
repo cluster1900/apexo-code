@@ -60,6 +60,7 @@ import { SessionHistoryCopy } from "../history-copy"
 import { SessionInput } from "../input"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
+import { SessionExecutionStore } from "../execution-store"
 import { SessionRunner, type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
@@ -299,6 +300,7 @@ const layer = Layer.effect(
       step: number,
       recoverOverflow?: typeof compaction.compactAfterOverflow,
     ) {
+      yield* SessionExecutionStore.Current
       const session = yield* getSession(sessionID)
       const role = goalRoles.get(sessionID)
       const summaryRole = summaryRoles.get(sessionID)
@@ -511,6 +513,7 @@ const layer = Layer.effect(
           })
           if (!summaryRole && (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request })))
             return yield* Effect.die(continueAfterCompaction(currentStep))
+          yield* SessionExecutionStore.Current
           const startSnapshot = yield* snapshots.capture()
           const publisher = createLLMEventPublisher(events, {
             sessionID: session.id,
@@ -811,6 +814,7 @@ const layer = Layer.effect(
             workflow ||
             (yield* plans.blocked(input.sessionID))
           ) {
+            yield* SessionExecutionStore.Current
             for (const target of pendingHeadless)
               yield* inputExecutions.settle({
                 ...target,
@@ -840,6 +844,7 @@ const layer = Layer.effect(
         if (input.force && !ownedRole) {
           const workflow = yield* workflows.pending(input.sessionID)
           if (workflow) {
+            yield* SessionExecutionStore.Current
             yield* workflows.execute(input.sessionID, workflow.id)
             const pending = yield* SessionInput.hasPending(db, input.sessionID, "steer")
             if (!pending && !(yield* SessionInput.hasPending(db, input.sessionID, "queue"))) return
@@ -851,6 +856,7 @@ const layer = Layer.effect(
         const hasPlanDecision = !ownedRole && (yield* planReceipts.ready(input.sessionID))
         if (!input.force && !hasSteer && !hasQueue && !hasCompletion && !hasPlanDecision) return
         if (!ownedRole && !(yield* plans.reconcile(input.sessionID))) return
+        yield* SessionExecutionStore.Current
         yield* failInterruptedTools(input.sessionID)
         const currentGoal = ownedRole ? undefined : yield* goals.get(input.sessionID)
         if (currentGoal?.status === "active" && currentGoal.phase !== "idle") {
@@ -1035,7 +1041,7 @@ const layer = Layer.effect(
         const observers = new Map(yield* SessionInputExecutionOwner.Observers)
         return yield* drain(input).pipe(
           Effect.onExit((exit) =>
-            (exit._tag === "Failure"
+            (exit._tag === "Failure" && !(Cause.squash(exit.cause) instanceof SessionExecutionStore.Failure)
               ? settleInput(
                   input.sessionID,
                   Cause.hasInterrupts(exit.cause) ? "interrupted" : "failed",
@@ -1060,10 +1066,12 @@ const layer = Layer.effect(
                 : inherited,
           ),
           Effect.provideService(SessionRunner.CurrentChildren, input.children),
-          Effect.ensuring(
-            goalCleanup
-              .terminal(input.sessionID)
-              .pipe(Effect.catchCause((cause) => Effect.logWarning("Native Goal cleanup will retry", cause))),
+          Effect.onExit((exit) =>
+            exit._tag === "Failure" && Cause.squash(exit.cause) instanceof SessionExecutionStore.Failure
+              ? Effect.void
+              : goalCleanup
+                  .terminal(input.sessionID)
+                  .pipe(Effect.catchCause((cause) => Effect.logWarning("Native Goal cleanup will retry", cause))),
           ),
         )
       })

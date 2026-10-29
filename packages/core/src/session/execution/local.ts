@@ -18,6 +18,7 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
 import { LocationRuntimeGuard } from "../../location-runtime-guard"
+import { SessionExecutionStore } from "../execution-store"
 
 /** Current-process routing for implicit-local Locations. Future remote placement belongs here. */
 const layer = Layer.effect(
@@ -34,6 +35,7 @@ const layer = Layer.effect(
     const snapshots = yield* SessionHookSnapshot.Service
     const locations = yield* LocationServiceMap.Service
     const guard = yield* LocationRuntimeGuard.Service
+    const executionStore = yield* SessionExecutionStore.Service
     const memoryObserver = (claim: SessionLifecycle.Claim, epoch: SessionMemoryOperation.AutomaticEpoch) => ({
       sessionID: claim.sessionID,
       capture: (stopped?: import("../message").SessionMessage.ID, launch = true) =>
@@ -69,6 +71,16 @@ const layer = Layer.effect(
           const sessionID = claim.sessionID
           const session = yield* store.get(sessionID)
           if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
+          let lease: SessionExecutionStore.Lease | undefined
+          const assertOwner = Effect.uninterruptible(
+            Effect.gen(function* () {
+              if (!lease) {
+                lease = yield* executionStore.claim(sessionID)
+                return
+              }
+              yield* executionStore.assert(lease)
+            }),
+          )
           return yield* SessionRunner.Service.use((runner) =>
             runner.run({
               sessionID,
@@ -77,6 +89,16 @@ const layer = Layer.effect(
               children: children(claim),
             }),
           ).pipe(
+            Effect.provideService(SessionExecutionStore.Current, assertOwner),
+            Effect.onExit((exit) =>
+              lease
+                ? executionStore.finish(
+                    lease,
+                    exit._tag === "Success" ? "completed" : Cause.hasInterrupts(exit.cause) ? "interrupted" : "failed",
+                    exit._tag === "Failure" ? String(Cause.squash(exit.cause)) : undefined,
+                  )
+                : Effect.void,
+            ),
             Effect.provideService(SessionMemoryObserver.Current, memoryObserver(claim, epoch)),
             Effect.provideService(SessionChildPlacementAccess.Current, placementAccess(claim)),
             Effect.provide(locations.get(session.location)),
@@ -148,6 +170,31 @@ const layer = Layer.effect(
       notify: (parentID) =>
         parentID === claim.sessionID ? lifecycle.owned(claim, coordinator.wake(claim)) : Effect.void,
     })
+    yield* executionStore.recoverable.pipe(
+      Effect.flatMap((sessions) =>
+        Effect.forEach(sessions, (sessionID) =>
+          Effect.gen(function* () {
+            if (yield* managed.managed(sessionID)) {
+              yield* executionStore.interruptStale(sessionID)
+              return
+            }
+            const claim = yield* publicClaim(sessionID)
+            yield* lifecycle.owned(
+              claim,
+              Effect.gen(function* () {
+                if (!(yield* memory.pendingInput(claim))) {
+                  yield* executionStore.interruptStale(sessionID)
+                  return
+                }
+                yield* prepare(sessionID).pipe(Effect.flatMap(coordinator.wake))
+              }),
+            )
+          }).pipe(Effect.catch(() => Effect.void)),
+        ),
+      ),
+      Effect.catch(() => Effect.void),
+      Effect.forkScoped,
+    )
     const control: SessionExecution.Interface["control"] = (sessionID, action) =>
       prepare(sessionID).pipe(
         Effect.flatMap((claim) =>
@@ -272,6 +319,7 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     SessionHookSnapshot.node,
     LocationRuntimeGuard.node,
+    SessionExecutionStore.node,
   ],
 })
 

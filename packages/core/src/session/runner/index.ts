@@ -33,6 +33,7 @@ export type RunError =
   | ContextSnapshotDecodeError
   | SystemContext.InitializationBlocked
   | ToolOutputStore.Error
+  | import("../execution-store").SessionExecutionStore.Failure
 
 export type CompactError = RunError | SessionCompaction.Failure
 

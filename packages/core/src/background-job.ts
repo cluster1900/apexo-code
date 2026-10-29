@@ -2,9 +2,13 @@ import { SessionLifecycle } from "./session/lifecycle"
 import { SessionSchema } from "./session/schema"
 export * as BackgroundJob from "./background-job"
 
+import { randomUUID } from "node:crypto"
+import { and, asc, eq } from "drizzle-orm"
 import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Scope, Schema, SynchronizedRef } from "effect"
 import { Identifier } from "./id/id"
 import { makeGlobalNode } from "./effect/app-node"
+import { Database } from "./database/database"
+import { BackgroundJobTable } from "./background-job.sql"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
 
@@ -32,6 +36,7 @@ type Active = {
   promoted: Deferred.Deferred<Info>
   onPromote?: Effect.Effect<void>
   onCancel?: Effect.Effect<void>
+  onSettled?: (info: Info) => Effect.Effect<void>
 }
 
 type State = {
@@ -43,6 +48,7 @@ type FinishResult = {
   info?: Info
   done?: Deferred.Deferred<Info>
   scope?: Scope.Closeable
+  onSettled?: (info: Info) => Effect.Effect<void>
 }
 
 type PromoteResult = {
@@ -71,6 +77,7 @@ export type StartInput = {
   metadata?: Record<string, unknown>
   onPromote?: Effect.Effect<void>
   onCancel?: Effect.Effect<void>
+  onSettled?: (info: Info) => Effect.Effect<void>
   run: Effect.Effect<string, unknown>
 }
 
@@ -91,6 +98,11 @@ export type WaitResult = {
   timedOut: boolean
 }
 
+export type ResumeInput = {
+  id: string
+  run: Effect.Effect<string, unknown>
+}
+
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
@@ -101,6 +113,8 @@ export interface Interface {
   readonly waitForPromotion: (id: string) => Effect.Effect<Info>
   readonly promote: (id: string) => Effect.Effect<Info | undefined>
   readonly cancel: (id: string) => Effect.Effect<Info | undefined>
+  /** Reclaims a persisted running job after an owner restart and starts its continuation. */
+  readonly resume: (input: ResumeInput) => Effect.Effect<Info | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@apexo/BackgroundJob") {}
@@ -168,8 +182,12 @@ export const make = Effect.gen(function* () {
           ...(Exit.isFailure(exit) ? { error: errorText(Cause.squash(exit.cause)) } : {}),
         },
       }
-      return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
+      return [
+        { info: snapshot(next), done: job.done, scope: job.scope, onSettled: job.onSettled },
+        new Map(jobs).set(id, next),
+      ]
     })
+    if (result.info && result.onSettled) yield* result.onSettled(result.info).pipe(Effect.ignore)
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) {
       yield* Scope.close(result.scope, Exit.void).pipe(Effect.forkIn(state.scope, { startImmediately: true }))
@@ -241,6 +259,7 @@ export const make = Effect.gen(function* () {
               promoted,
               onPromote: input.onPromote,
               onCancel: input.onCancel,
+              onSettled: input.onSettled,
             }
             return [{ info: snapshot(job), scope, token }, new Map(jobs).set(id, job)] as readonly [
               StartResult,
@@ -382,106 +401,458 @@ export const make = Effect.gen(function* () {
           completed_at,
         },
       }
-      return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
+      return [
+        { info: snapshot(next), done: job.done, scope: job.scope, onSettled: job.onSettled },
+        new Map(jobs).set(id, next),
+      ]
     })
+    if (result.info && result.onSettled) yield* result.onSettled(result.info).pipe(Effect.ignore)
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) yield* Scope.close(result.scope, Exit.void)
     return result.info
   }, Effect.uninterruptible)
 
-  return Service.of({ list, get, start, report, extend, wait, waitForPromotion, promote, cancel })
+  const resume: Interface["resume"] = (input) =>
+    Effect.gen(function* () {
+      const existing = yield* get(input.id)
+      return yield* start({
+        id: input.id,
+        type: existing?.type ?? "resume",
+        ...(existing?.title === undefined ? {} : { title: existing.title }),
+        ...(existing?.metadata === undefined ? {} : { metadata: existing.metadata }),
+        run: input.run,
+      })
+    })
+
+  return Service.of({ list, get, start, report, extend, wait, waitForPromotion, promote, cancel, resume })
+})
+
+type DurableRow = typeof BackgroundJobTable.$inferSelect
+
+function durableInfo(row: DurableRow, ownerID: string): Info {
+  const metadata = row.metadata ? { ...row.metadata } : undefined
+  const stale = row.status === "running" && row.owner_id !== ownerID
+  return {
+    id: row.id,
+    type: row.type,
+    ...(row.title === null ? {} : { title: row.title }),
+    status: row.status as Status,
+    started_at: row.started_at,
+    ...(row.completed_at === null ? {} : { completed_at: row.completed_at }),
+    ...(row.output === null ? {} : { output: row.output }),
+    ...(row.error === null ? {} : { error: row.error }),
+    ...(metadata || stale
+      ? {
+          metadata: {
+            ...metadata,
+            ...(stale ? { blockedReason: "process_restart" } : {}),
+          },
+        }
+      : {}),
+  }
+}
+
+/**
+ * Adds durable observation and database-backed owner fencing to the process-local
+ * engine. A persisted running job is intentionally not resumed implicitly after
+ * restart; callers must invoke resume with an explicit continuation effect.
+ */
+export const makeDurable = Effect.gen(function* () {
+  const database = yield* Database.Service
+  const memory = yield* make
+  const ownerID = randomUUID()
+  const generations = new Map<string, number>()
+
+  const read = (id: string) =>
+    database.db.select().from(BackgroundJobTable).where(eq(BackgroundJobTable.id, id)).get().pipe(Effect.orDie)
+
+  const isCurrentOwner = (row: DurableRow | undefined, id: string): row is DurableRow =>
+    row !== undefined && row.owner_id === ownerID && row.owner_generation === generations.get(id)
+
+  const persistFinished = (id: string, generation: number, info: Info) =>
+    database.db
+      .update(BackgroundJobTable)
+      .set({
+        status: info.status,
+        completed_at: info.completed_at ?? null,
+        output: info.output ?? null,
+        error: info.error ?? null,
+        metadata: info.metadata ?? null,
+        time_updated: Date.now(),
+      })
+      .where(
+        and(
+          eq(BackgroundJobTable.id, id),
+          eq(BackgroundJobTable.owner_id, ownerID),
+          eq(BackgroundJobTable.owner_generation, generation),
+          eq(BackgroundJobTable.status, "running"),
+        ),
+      )
+      .run()
+      .pipe(Effect.orDie, Effect.asVoid)
+
+  const reserve = Effect.fn("BackgroundJob.reserve")(function* (input: StartInput) {
+    const id = input.id ?? Identifier.ascending("job")
+    const startedAt = yield* Clock.currentTimeMillis
+    return yield* database.db
+      .transaction(
+        () =>
+          Effect.gen(function* () {
+            const previous = yield* read(id)
+            if (previous?.status === "running" && previous.owner_id !== ownerID)
+              return { blocked: true as const, info: durableInfo(previous, ownerID) }
+            if (previous?.status === "running" && isCurrentOwner(previous, id)) {
+              const active = yield* memory.get(id)
+              if (active) return { blocked: true as const, info: active }
+            }
+            const generation = (previous?.owner_generation ?? 0) + 1
+            const values = {
+              id,
+              type: input.type,
+              title: input.title ?? null,
+              status: "running",
+              started_at: startedAt,
+              completed_at: null,
+              output: null,
+              error: null,
+              metadata: input.metadata ?? null,
+              owner_id: ownerID,
+              owner_generation: generation,
+              time_updated: startedAt,
+            }
+            yield* database.db
+              .insert(BackgroundJobTable)
+              .values(values)
+              .onConflictDoUpdate({ target: BackgroundJobTable.id, set: values })
+              .run()
+              .pipe(Effect.orDie)
+            return { blocked: false as const, generation, id, startedAt }
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+  })
+
+  const list: Interface["list"] = Effect.fn("BackgroundJob.durable.list")(function* () {
+    const rows = yield* database.db
+      .select()
+      .from(BackgroundJobTable)
+      .orderBy(asc(BackgroundJobTable.started_at))
+      .all()
+      .pipe(Effect.orDie)
+    const active = new Map((yield* memory.list()).map((job) => [job.id, job]))
+    return rows.map((row) => {
+      const current = active.get(row.id)
+      if (current && isCurrentOwner(row, row.id)) return current
+      return durableInfo(row, ownerID)
+    })
+  })
+
+  const get: Interface["get"] = Effect.fn("BackgroundJob.durable.get")(function* (id) {
+    const row = yield* read(id)
+    const current = yield* memory.get(id)
+    if (current && (!row || isCurrentOwner(row, id))) return current
+    return row ? durableInfo(row, ownerID) : current
+  })
+
+  const start: Interface["start"] = Effect.fn("BackgroundJob.durable.start")(function* (input) {
+    const reserved = yield* reserve(input)
+    if (reserved.blocked) return reserved.info
+    generations.set(reserved.id, reserved.generation)
+    const settled = (info: Info) =>
+      Effect.all(
+        [
+          persistFinished(reserved.id, reserved.generation, info),
+          input.onSettled ? input.onSettled(info) : Effect.void,
+        ],
+        { discard: true },
+      )
+    return yield* memory.start({
+      ...input,
+      id: reserved.id,
+      onSettled: settled,
+    })
+  })
+
+  const report: Interface["report"] = (input) =>
+    Effect.gen(function* () {
+      const current = yield* read(input.id)
+      if (!isCurrentOwner(current, input.id) || current.status !== "running") return
+      yield* memory.report(input)
+      const metadata = { ...(current.metadata ?? {}), ...(input.metadata ?? {}) }
+      yield* database.db
+        .update(BackgroundJobTable)
+        .set({
+          ...(input.output === undefined ? {} : { output: input.output.slice(-64 * 1024) }),
+          metadata,
+          time_updated: Date.now(),
+        })
+        .where(
+          and(
+            eq(BackgroundJobTable.id, input.id),
+            eq(BackgroundJobTable.owner_id, ownerID),
+            eq(BackgroundJobTable.owner_generation, current.owner_generation),
+            eq(BackgroundJobTable.status, "running"),
+          ),
+        )
+        .run()
+        .pipe(Effect.orDie)
+    })
+
+  const extend: Interface["extend"] = (input) =>
+    Effect.gen(function* () {
+      const current = yield* read(input.id)
+      if (!isCurrentOwner(current, input.id) || current.status !== "running") return false
+      return yield* memory.extend(input)
+    })
+
+  const wait: Interface["wait"] = (input) =>
+    Effect.gen(function* () {
+      const current = yield* memory.get(input.id)
+      if (current) return yield* memory.wait(input)
+      const row = yield* read(input.id)
+      if (!row) return { timedOut: false }
+      const info = durableInfo(row, ownerID)
+      if (info.status !== "running") return { info, timedOut: false }
+      return { info, timedOut: true }
+    })
+
+  const waitForPromotion: Interface["waitForPromotion"] = (id) =>
+    Effect.gen(function* () {
+      const current = yield* memory.get(id)
+      if (current) return yield* memory.waitForPromotion(id)
+      const row = yield* read(id)
+      if (row?.status === "running" && row.metadata?.background === true) return durableInfo(row, ownerID)
+      return yield* Effect.never
+    })
+
+  const promote: Interface["promote"] = (id) =>
+    Effect.gen(function* () {
+      const current = yield* read(id)
+      if (!isCurrentOwner(current, id) || current.status !== "running") return undefined
+      const result = yield* memory.promote(id)
+      if (!result) return result
+      yield* database.db
+        .update(BackgroundJobTable)
+        .set({
+          metadata: { ...(current.metadata ?? {}), background: true },
+          time_updated: Date.now(),
+        })
+        .where(
+          and(
+            eq(BackgroundJobTable.id, id),
+            eq(BackgroundJobTable.owner_id, ownerID),
+            eq(BackgroundJobTable.owner_generation, current.owner_generation),
+            eq(BackgroundJobTable.status, "running"),
+          ),
+        )
+        .run()
+        .pipe(Effect.orDie)
+      return result
+    })
+
+  const cancel: Interface["cancel"] = Effect.fn("BackgroundJob.durable.cancel")(function* (id) {
+    const row = yield* read(id)
+    const current = yield* memory.get(id)
+    if (current && (!row || isCurrentOwner(row, id))) return yield* memory.cancel(id)
+    if (!row) return undefined
+    if (row.status !== "running") return durableInfo(row, ownerID)
+    if (row.owner_id !== ownerID) return durableInfo(row, ownerID)
+    const completedAt = yield* Clock.currentTimeMillis
+    const generation = row.owner_generation + 1
+    yield* database.db
+      .update(BackgroundJobTable)
+      .set({
+        status: "cancelled",
+        completed_at: completedAt,
+        owner_id: ownerID,
+        owner_generation: generation,
+        time_updated: completedAt,
+      })
+      .where(
+        and(
+          eq(BackgroundJobTable.id, id),
+          eq(BackgroundJobTable.owner_id, ownerID),
+          eq(BackgroundJobTable.owner_generation, row.owner_generation),
+          eq(BackgroundJobTable.status, "running"),
+        ),
+      )
+      .run()
+      .pipe(Effect.orDie)
+    return yield* get(id)
+  })
+
+  const resume: Interface["resume"] = Effect.fn("BackgroundJob.durable.resume")(function* (input) {
+    const row = yield* read(input.id)
+    if (!row || row.status !== "running") return undefined
+    const generation = row.owner_generation + 1
+    const metadata = { ...(row.metadata ?? {}) }
+    delete metadata.blockedReason
+    const updated = yield* database.db
+      .update(BackgroundJobTable)
+      .set({ owner_id: ownerID, owner_generation: generation, metadata, time_updated: Date.now() })
+      .where(
+        and(
+          eq(BackgroundJobTable.id, input.id),
+          eq(BackgroundJobTable.owner_generation, row.owner_generation),
+          eq(BackgroundJobTable.status, "running"),
+        ),
+      )
+      .returning({ id: BackgroundJobTable.id })
+      .get()
+      .pipe(Effect.orDie)
+    if (!updated) return undefined
+    generations.set(row.id, generation)
+    return yield* memory.start({
+      id: row.id,
+      type: row.type,
+      ...(row.title === null ? {} : { title: row.title }),
+      metadata,
+      onSettled: (info) => persistFinished(row.id, generation, info),
+      run: input.run,
+    })
+  })
+
+  return Service.of({ list, get, start, report, extend, wait, waitForPromotion, promote, cancel, resume })
 })
 
 /** Application registries bind concrete jobs to Session incarnations. The standalone engine remains generic. */
-export const makeOwned = Effect.gen(function* () {
-  const lifecycle = yield* SessionLifecycle.Service
-  const jobs = yield* make
-  const owners = new Map<string, { claims: SessionLifecycle.Claim[]; releases: (() => void)[] }>()
-  yield* Effect.addFinalizer(() =>
-    Effect.sync(() => {
-      for (const owner of owners.values()) for (const release of owner.releases) release()
-      owners.clear()
-    }),
-  )
-  const owned = <A, E, R>(claims: SessionLifecycle.Claim[], effect: Effect.Effect<A, E, R>) =>
-    claims.reduce((effect, claim) => lifecycle.owned(claim, effect), effect)
-  const admitted = <A, E, R>(claims: SessionLifecycle.Claim[], effect: Effect.Effect<A, E, R>) =>
-    owned(
-      claims,
-      claims.reduce<Effect.Effect<A, E | SessionLifecycle.Closed, R>>(
-        (effect, claim) => lifecycle.use(claim.sessionID, effect),
-        effect,
-      ),
-    ).pipe(Effect.orDie)
-  const work = (claims: SessionLifecycle.Claim[], effect: Effect.Effect<string, unknown>) =>
-    Effect.interruptible(
+const makeOwnedFor = <R>(create: Effect.Effect<Interface, never, R>) =>
+  Effect.gen(function* () {
+    const lifecycle = yield* SessionLifecycle.Service
+    const jobs = yield* create
+    const owners = new Map<string, { claims: SessionLifecycle.Claim[]; releases: (() => void)[] }>()
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const owner of owners.values()) for (const release of owner.releases) release()
+        owners.clear()
+      }),
+    )
+    const owned = <A, E, R>(claims: SessionLifecycle.Claim[], effect: Effect.Effect<A, E, R>) =>
+      claims.reduce((effect, claim) => lifecycle.owned(claim, effect), effect)
+    const admitted = <A, E, R>(claims: SessionLifecycle.Claim[], effect: Effect.Effect<A, E, R>) =>
       owned(
         claims,
-        Effect.suspend(() => (claims.every(lifecycle.available) ? effect : Effect.interrupt)),
-      ),
-    )
-  return Service.of({
-    ...jobs,
-    cancel: (id) =>
-      Effect.gen(function* () {
-        const owner = owners.get(id)
-        if (owner) {
-          for (const claim of owner.claims) if ((yield* lifecycle.find(claim.sessionID)) !== claim) return undefined
-          if (owners.get(id) !== owner) return undefined
-        }
-        return yield* jobs.cancel(id)
-      }),
-    start: (input) =>
-      Effect.uninterruptible(
+        claims.reduce<Effect.Effect<A, E | SessionLifecycle.Closed, R>>(
+          (effect, claim) => lifecycle.use(claim.sessionID, effect),
+          effect,
+        ),
+      ).pipe(Effect.orDie)
+    const work = (claims: SessionLifecycle.Claim[], effect: Effect.Effect<string, unknown>) =>
+      Effect.interruptible(
+        owned(
+          claims,
+          Effect.suspend(() => (claims.every(lifecycle.available) ? effect : Effect.interrupt)),
+        ),
+      )
+    return Service.of({
+      ...jobs,
+      cancel: (id) =>
         Effect.gen(function* () {
-          const previous = input.id ? yield* jobs.get(input.id) : undefined
-          if (previous?.status === "running") return previous
-          const ids = [
-            ...new Set(
-              [input.metadata?.ownerSessionId, input.metadata?.parentSessionId, input.metadata?.sessionId].filter(
-                Schema.is(SessionSchema.ID),
-              ),
-            ),
-          ]
-          const claims = yield* Effect.forEach(ids, lifecycle.capture).pipe(Effect.orDie)
-          return yield* admitted(
-            claims,
-            Effect.gen(function* () {
-              const result = yield* jobs.start({
-                ...input,
-                run: work(claims, input.run),
-                ...(input.onPromote ? { onPromote: owned(claims, input.onPromote) } : {}),
-                ...(input.onCancel ? { onCancel: owned(claims, input.onCancel) } : {}),
-              })
-              const owner = { claims, releases: [] as (() => void)[] }
-              for (const release of owners.get(result.id)?.releases ?? []) release()
-              owners.set(result.id, owner)
-              for (const claim of claims)
-                owner.releases.push(
-                  yield* lifecycle
-                    .register(
-                      claim,
-                      owner,
-                      Effect.suspend(() =>
-                        owners.get(result.id) === owner ? jobs.cancel(result.id).pipe(Effect.asVoid) : Effect.void,
-                      ),
-                    )
-                    .pipe(Effect.orDie),
-                )
-              return result
-            }),
-          )
+          const owner = owners.get(id)
+          if (owner) {
+            for (const claim of owner.claims) if ((yield* lifecycle.find(claim.sessionID)) !== claim) return undefined
+            if (owners.get(id) !== owner) return undefined
+          }
+          return yield* jobs.cancel(id)
         }),
-      ),
-    extend: (input) =>
-      Effect.suspend(() => {
-        const owner = owners.get(input.id)
-        return owner
-          ? admitted(owner.claims, jobs.extend({ ...input, run: work(owner.claims, input.run) }))
-          : jobs.extend(input)
-      }),
+      start: (input) =>
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            const previous = input.id ? yield* jobs.get(input.id) : undefined
+            if (previous?.status === "running") return previous
+            const ids = [
+              ...new Set(
+                [input.metadata?.ownerSessionId, input.metadata?.parentSessionId, input.metadata?.sessionId].filter(
+                  Schema.is(SessionSchema.ID),
+                ),
+              ),
+            ]
+            const claims = yield* Effect.forEach(ids, lifecycle.capture).pipe(Effect.orDie)
+            return yield* admitted(
+              claims,
+              Effect.gen(function* () {
+                const result = yield* jobs.start({
+                  ...input,
+                  run: work(claims, input.run),
+                  ...(input.onPromote ? { onPromote: owned(claims, input.onPromote) } : {}),
+                  ...(input.onCancel ? { onCancel: owned(claims, input.onCancel) } : {}),
+                })
+                const owner = { claims, releases: [] as (() => void)[] }
+                for (const release of owners.get(result.id)?.releases ?? []) release()
+                owners.set(result.id, owner)
+                for (const claim of claims)
+                  owner.releases.push(
+                    yield* lifecycle
+                      .register(
+                        claim,
+                        owner,
+                        Effect.suspend(() =>
+                          owners.get(result.id) === owner ? jobs.cancel(result.id).pipe(Effect.asVoid) : Effect.void,
+                        ),
+                      )
+                      .pipe(Effect.orDie),
+                  )
+                return result
+              }),
+            )
+          }),
+        ),
+      extend: (input) =>
+        Effect.suspend(() => {
+          const owner = owners.get(input.id)
+          return owner
+            ? admitted(owner.claims, jobs.extend({ ...input, run: work(owner.claims, input.run) }))
+            : jobs.extend(input)
+        }),
+      resume: (input) =>
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            const existing = yield* jobs.get(input.id)
+            if (!existing || existing.status !== "running") return undefined
+            const ids = [
+              ...new Set(
+                [
+                  existing.metadata?.ownerSessionId,
+                  existing.metadata?.parentSessionId,
+                  existing.metadata?.sessionId,
+                ].filter(Schema.is(SessionSchema.ID)),
+              ),
+            ]
+            const claims = yield* Effect.forEach(ids, lifecycle.capture).pipe(Effect.orDie)
+            return yield* admitted(
+              claims,
+              Effect.gen(function* () {
+                const result = yield* jobs.resume({
+                  ...input,
+                  run: work(claims, input.run),
+                })
+                if (!result) return undefined
+                const owner = { claims, releases: [] as (() => void)[] }
+                for (const release of owners.get(result.id)?.releases ?? []) release()
+                owners.set(result.id, owner)
+                for (const claim of claims)
+                  owner.releases.push(
+                    yield* lifecycle
+                      .register(
+                        claim,
+                        owner,
+                        Effect.suspend(() =>
+                          owners.get(result.id) === owner ? jobs.cancel(result.id).pipe(Effect.asVoid) : Effect.void,
+                        ),
+                      )
+                      .pipe(Effect.orDie),
+                  )
+                return result
+              }),
+            )
+          }),
+        ),
+    })
   })
-})
-const layer = Layer.effect(Service, makeOwned)
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [SessionLifecycle.node] })
+export const makeOwned = makeOwnedFor(make)
+export const makeOwnedDurable = makeOwnedFor(makeDurable)
+const layer = Layer.effect(Service, makeOwnedDurable)
+
+export const node = makeGlobalNode({ service: Service, layer, deps: [SessionLifecycle.node, Database.node] })

@@ -101,12 +101,12 @@ Ambient project discovery canonicalizes and contains traversal within the projec
 Current Context Epoch follow-ups:
 
 - Add configured, remote, and nested instruction sources with explicit precedence and removal semantics.
-- Add durable post-crash continuation recovery for promoted or provider-dispatched work.
+- Add provider-dispatch ambiguity recovery for promoted or provider-dispatched work; startup discovery now re-wakes ordinary Sessions with an unfinished execution receipt.
 - Add explicit manual compaction on top of automatic request-budget compaction.
 - Add operational metrics for observation latency, unavailable sources, contention, baseline size, and chronological-update growth.
 - Consider watcher-backed per-file caching only if measurements show direct safe-boundary observation is too expensive.
 - Expose plugin-defined Context Sources only after plugin reload and scoped cleanup semantics are designed.
-- Add clustered Session execution ownership and stale-runtime fencing.
+- Add clustered Session execution ownership. Local execution receipts already fence stale runtime generations.
 
 ## Automatic Compaction
 
@@ -162,7 +162,7 @@ Execution has two entry points:
 - `run` is an explicit resume. It joins any active execution or starts a forced drain while idle. A forced drain bypasses the no-eligible-input guard, but preparation may still fail before a provider attempt.
 - `wake` reports newly recorded durable inbox work. Repeated wakes coalesce. A wake calls the provider only when it can promote eligible input.
 
-Post-crash continuation recovery is intentionally deferred. A wake does not infer that ambiguous provider work is safe to retry after an input has already been promoted. Explicit `run` may deliberately continue from durable projected history. A future recovery slice should model provider-dispatch ambiguity, required continuation, queued-input promotion, retry policy, and visible recovery status together. It must not assume an enclosing durable execution identity that the Session model does not otherwise need.
+Post-crash continuation recovery is split into two layers. `session_execution` persists a local execution receipt, owner generation, heartbeat, and terminal status; startup discovery re-wakes ordinary Sessions whose receipt remained `running`, and every provider turn asserts the current generation before dispatch. A wake still does not infer that ambiguous provider work is safe to retry after an input has already been promoted. Explicit `run` may deliberately continue from durable projected history. A future recovery slice must model provider-dispatch ambiguity, required continuation, queued-input promotion, retry policy, and visible recovery status together.
 
 A process-global `SessionRunCoordinator` serializes execution for each local Session while allowing different Sessions to run concurrently. Resumes join active execution, overlapping wakes coalesce into one follow-up, and interruption stops current process-local execution without deleting durable inbox work. The runner enters the Session's current Location when execution starts and fences each new provider turn against that Location.
 

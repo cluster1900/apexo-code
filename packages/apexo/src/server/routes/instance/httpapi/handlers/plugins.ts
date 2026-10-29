@@ -29,7 +29,9 @@ export const pluginsHandlers = HttpApiBuilder.group(InstanceHttpApi, "plugins", 
         Effect.gen(function* () {
           if (
             [...(yield* status.list()).values()].some((value) => value.type !== "idle") ||
-            (yield* background.list()).some((job) => job.status === "running")
+            (yield* background.list()).some(
+              (job) => job.status === "running" && job.metadata?.blockedReason !== "process_restart",
+            )
           )
             return yield* new ConflictError({ message: "Wait for running sessions before reloading plugins" })
           yield* markInstanceForDisposal(yield* InstanceState.context)

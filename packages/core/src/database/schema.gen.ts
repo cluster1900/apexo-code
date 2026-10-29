@@ -5,6 +5,22 @@ export default {
   up(tx) {
     return Effect.gen(function* () {
       yield* tx.run(`
+        CREATE TABLE \`background_job\` (
+          \`id\` text PRIMARY KEY,
+          \`type\` text NOT NULL,
+          \`title\` text,
+          \`status\` text NOT NULL,
+          \`started_at\` integer NOT NULL,
+          \`completed_at\` integer,
+          \`output\` text,
+          \`error\` text,
+          \`metadata\` text,
+          \`owner_id\` text NOT NULL,
+          \`owner_generation\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`workspace\` (
           \`id\` text PRIMARY KEY,
           \`type\` text NOT NULL,
@@ -31,6 +47,20 @@ export default {
           \`policy\` text NOT NULL,
           \`time_created\` integer NOT NULL,
           CONSTRAINT \`fk_session_command_sandbox_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`session_execution\` (
+          \`session_id\` text PRIMARY KEY,
+          \`owner_id\` text NOT NULL,
+          \`generation\` integer NOT NULL,
+          \`status\` text NOT NULL,
+          \`attempt_id\` text NOT NULL,
+          \`started_at\` integer NOT NULL,
+          \`heartbeat_at\` integer NOT NULL,
+          \`ended_at\` integer,
+          \`error\` text,
+          CONSTRAINT \`fk_session_execution_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
       yield* tx.run(`
@@ -468,6 +498,10 @@ export default {
           CONSTRAINT \`fk_session_workflow_run_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(`CREATE INDEX \`background_job_status_idx\` ON \`background_job\` (\`status\`,\`time_updated\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`session_execution_status_idx\` ON \`session_execution\` (\`status\`,\`heartbeat_at\`);`,
+      )
       yield* tx.run(
         `CREATE INDEX \`session_hook_stop_pending_idx\` ON \`session_hook_stop\` (\`session_id\`,\`state\`);`,
       )
