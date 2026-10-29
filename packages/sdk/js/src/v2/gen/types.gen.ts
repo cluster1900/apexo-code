@@ -6984,6 +6984,149 @@ export type BrowserClosed = {
   }
 }
 
+export type ComputerSessionStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer.session_started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    computerSessionID: string
+    sessionID: string
+    info: {
+      id: string
+      sessionID: string
+      status: "ready" | "permission_required" | "unavailable" | "closed"
+      backend: string
+      createdAt: number
+      lastActionAt?: number
+      snapshot?: {
+        hash: string
+        activeApp?: string
+        window?: string
+        text?: string
+      }
+      unavailableReason?: string
+    }
+  }
+}
+
+export type ComputerActionStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer.action_started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    computerSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+  }
+}
+
+export type ComputerActionCompleted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer.action_completed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    computerSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    status: "completed" | "failed"
+    output?: string
+    error?: string
+    snapshot?: {
+      hash: string
+      activeApp?: string
+      window?: string
+      text?: string
+    }
+    artifactID?: string
+  }
+}
+
+export type ComputerArtifactCreated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer.artifact_created"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    computerSessionID: string
+    artifact: {
+      id: string
+      mime: string
+      relativePath: string
+      byteLength: number
+      sensitive: boolean
+    }
+  }
+}
+
+export type ComputerApprovalRequired = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer.approval_required"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    computerSessionID: string
+    actionID: string
+    permission: string
+    resource: string
+    reason: string
+  }
+}
+
+export type ComputerClosed = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer.closed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    computerSessionID: string
+  }
+}
+
 export type ModelApi =
   | {
       id: string
@@ -20351,6 +20494,299 @@ export type V2BrowserEventsResponses = {
 }
 
 export type V2BrowserEventsResponse = V2BrowserEventsResponses[keyof V2BrowserEventsResponses]
+
+export type V2ComputerListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/computer"
+}
+
+export type V2ComputerListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ComputerListError = V2ComputerListErrors[keyof V2ComputerListErrors]
+
+export type V2ComputerListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    sessionID: string
+    status: "ready" | "permission_required" | "unavailable" | "closed"
+    backend: string
+    createdAt: number
+    lastActionAt?: number
+    snapshot?: {
+      hash: string
+      activeApp?: string
+      window?: string
+      text?: string
+    }
+    unavailableReason?: string
+  }>
+}
+
+export type V2ComputerListResponse = V2ComputerListResponses[keyof V2ComputerListResponses]
+
+export type V2ComputerOpenData = {
+  body: {
+    backend?: "auto" | "native" | "fixture"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/computer"
+}
+
+export type V2ComputerOpenErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ComputerOpenError = V2ComputerOpenErrors[keyof V2ComputerOpenErrors]
+
+export type V2ComputerOpenResponses = {
+  /**
+   * Success
+   */
+  200: {
+    id: string
+    sessionID: string
+    status: "ready" | "permission_required" | "unavailable" | "closed"
+    backend: string
+    createdAt: number
+    lastActionAt?: number
+    snapshot?: {
+      hash: string
+      activeApp?: string
+      window?: string
+      text?: string
+    }
+    unavailableReason?: string
+  }
+}
+
+export type V2ComputerOpenResponse = V2ComputerOpenResponses[keyof V2ComputerOpenResponses]
+
+export type V2ComputerActionData = {
+  body: {
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    x?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    y?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    text?: string
+    key?: string
+    target?: string
+    expectedSnapshotHash?: string
+    destructive?: boolean
+  }
+  path: {
+    sessionID: string
+    computerSessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/computer/{computerSessionID}/action"
+}
+
+export type V2ComputerActionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ComputerActionError = V2ComputerActionErrors[keyof V2ComputerActionErrors]
+
+export type V2ComputerActionResponses = {
+  /**
+   * Success
+   */
+  200: {
+    computerSessionID: string
+    actionID: string
+    action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    output: string
+    snapshot?: {
+      hash: string
+      activeApp?: string
+      window?: string
+      text?: string
+    }
+    artifact?: {
+      id: string
+      mime: string
+      relativePath: string
+      byteLength: number
+      sensitive: boolean
+    }
+    artifactData?: string
+  }
+}
+
+export type V2ComputerActionResponse = V2ComputerActionResponses[keyof V2ComputerActionResponses]
+
+export type V2ComputerCloseData = {
+  body?: never
+  path: {
+    sessionID: string
+    computerSessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/computer/{computerSessionID}/close"
+}
+
+export type V2ComputerCloseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ComputerCloseError = V2ComputerCloseErrors[keyof V2ComputerCloseErrors]
+
+export type V2ComputerCloseResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2ComputerCloseResponse = V2ComputerCloseResponses[keyof V2ComputerCloseResponses]
+
+export type V2ComputerEventsData = {
+  body?: never
+  path: {
+    sessionID: string
+    computerSessionID: string
+  }
+  query?: {
+    after?: string
+    limit?: string
+  }
+  url: "/api/session/{sessionID}/computer/{computerSessionID}/events"
+}
+
+export type V2ComputerEventsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ComputerEventsError = V2ComputerEventsErrors[keyof V2ComputerEventsErrors]
+
+export type V2ComputerEventsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    events: Array<
+      | ComputerSessionStarted
+      | ComputerActionStarted
+      | ComputerActionCompleted
+      | ComputerArtifactCreated
+      | ComputerApprovalRequired
+      | ComputerClosed
+    >
+    cursor: {
+      earliest: number
+      head: number
+      next?: string
+    }
+  }
+}
+
+export type V2ComputerEventsResponse = V2ComputerEventsResponses[keyof V2ComputerEventsResponses]
 
 export type V2ModelListData = {
   body?: never

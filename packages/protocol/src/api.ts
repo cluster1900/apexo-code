@@ -37,6 +37,7 @@ import { CredentialGroup } from "./groups/credential"
 import { ProjectCopyGroup } from "./groups/project-copy"
 import { makeProjectGroup } from "./groups/project"
 import { BrowserGroup } from "./groups/browser"
+import { ComputerGroup } from "./groups/computer"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
 const makeApiFromGroup = <
@@ -72,6 +73,7 @@ const makeApiFromGroup = <
     .add(SideQuestionGroup.middleware(sessionLocationMiddleware))
     .add(MessageGroup.middleware(sessionLocationMiddleware))
     .add(BrowserGroup.middleware(sessionLocationMiddleware))
+    .add(ComputerGroup.middleware(sessionLocationMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))
     .add(IntegrationGroup.middleware(locationMiddleware))

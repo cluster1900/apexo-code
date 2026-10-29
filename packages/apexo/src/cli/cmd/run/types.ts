@@ -237,6 +237,10 @@ export type RunBrowserActions = {
   run: (args: string) => Promise<string>
 }
 
+export type RunComputerActions = {
+  run: (args: string) => Promise<string>
+}
+
 export type FooterSubagentTab = {
   sessionID: string
   partID: string

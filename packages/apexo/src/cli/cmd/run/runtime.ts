@@ -21,6 +21,7 @@ import { goalActions } from "@apexo/tui/component/session-goal"
 //   4. runs the prompt queue until the footer closes.
 import { createApexoClient } from "@apexo/sdk/v2/client"
 import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { Flag } from "@apexo/core/flag/flag"
 import { MessageID } from "@/session/schema"
 import { createRunDemo } from "./demo"
@@ -34,7 +35,7 @@ import {
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
 import { cycleVariant, formatModelLabel, resolveSavedVariant, resolveVariant, saveVariant } from "./variant.shared"
-import type { LocalReplayAnchor, LocalReplayRow, RunBrowserActions, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
+import type { LocalReplayAnchor, LocalReplayRow, RunBrowserActions, RunComputerActions, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
 
 /** @internal Exported for testing */
 export { pickVariant, resolveVariant } from "./variant.shared"
@@ -336,6 +337,61 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       return next
     },
   }
+  const computer = {
+    sessionID: undefined as string | undefined,
+    computerSessionID: undefined as string | undefined,
+    snapshotHash: undefined as string | undefined,
+  }
+  const runComputerCommand = async (args: string) => {
+    const sessionID = state.sessionID
+    if (!sessionID) throw new Error("Open a session before using /computer")
+    if (computer.sessionID !== sessionID) {
+      computer.sessionID = sessionID
+      computer.computerSessionID = undefined
+      computer.snapshotHash = undefined
+    }
+    const command = parseComputerCommand(args)
+    if (command.action === "help") return command.message ?? "Usage: /computer <action>"
+    if (command.action === "open") {
+      const result = (await ctx.sdk.v2.computer.open({ sessionID, backend: "auto" }, { throwOnError: true })).data
+      computer.computerSessionID = result.id
+      computer.snapshotHash = result.snapshot?.hash
+      return `computer opened (${result.id})${result.unavailableReason ? `: ${result.unavailableReason}` : ""}`
+    }
+    if (!computer.computerSessionID) throw new Error("No computer session. Run /computer open first")
+    if (command.action === "close") {
+      await ctx.sdk.v2.computer.close({ sessionID, computerSessionID: computer.computerSessionID }, { throwOnError: true })
+      const closed = computer.computerSessionID
+      computer.computerSessionID = undefined
+      computer.snapshotHash = undefined
+      return `computer closed ${closed}`
+    }
+    if (command.action === "events") {
+      const result = (await ctx.sdk.v2.computer.events({ sessionID, computerSessionID: computer.computerSessionID, after: command.after === undefined ? undefined : String(command.after), limit: command.limit === undefined ? undefined : String(command.limit) }, { throwOnError: true })).data
+      return result.events.length === 0 ? "computer events: none" : `computer events:\n${result.events.map((event) => `${event.type} ${event.durable?.seq ?? ""}`.trim()).join("\n")}`
+    }
+    const result = (await ctx.sdk.v2.computer.action({
+      sessionID,
+      computerSessionID: computer.computerSessionID,
+      action: command.action,
+      x: command.action === "click" ? command.x : undefined,
+      y: command.action === "click" || command.action === "scroll" ? command.y : undefined,
+      text: command.action === "type" ? command.text : undefined,
+      key: command.action === "press" ? command.key : undefined,
+      expectedSnapshotHash: computer.snapshotHash,
+      destructive: ["click", "type", "press", "scroll", "close"].includes(command.action),
+    }, { throwOnError: true })).data
+    computer.snapshotHash = result.snapshot?.hash ?? computer.snapshotHash
+    return result.artifact ? `computer ${command.action}: ${result.artifact.relativePath}` : `computer ${command.action}: ${result.output || "ok"}`
+  }
+  let computerQueue: Promise<unknown> = Promise.resolve()
+  const computerActions: RunComputerActions = {
+    run: (args) => {
+      const next = computerQueue.then(() => runComputerCommand(args))
+      computerQueue = next.catch(() => undefined)
+      return next
+    },
+  }
 
   const tasks = taskActions(
     ctx.sdk,
@@ -529,6 +585,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     pluginsActions: pluginsActions(ctx.sdk, ctx.directory),
     mcpActions: mcpActions(ctx.sdk, ctx.directory, () => state.sessionID),
     browserActions,
+    computerActions,
     workflowActions: workflowActions(
       ctx.sdk,
       async () => {

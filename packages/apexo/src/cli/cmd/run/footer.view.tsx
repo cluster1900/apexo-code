@@ -59,6 +59,7 @@ import type {
   QuestionReply,
   RunAgent,
   RunBrowserActions,
+  RunComputerActions,
   RunCommand,
   RunDiffStyle,
   RunInput,
@@ -127,6 +128,7 @@ type RunFooterViewProps = {
   feedbackActions?: import("@apexo/tui/component/feedback-browser").FeedbackActions
   memoryActions?: import("@apexo/tui/component/memory-browser").MemoryBrowserActions
   browserActions?: RunBrowserActions
+  computerActions?: RunComputerActions
   onEditorOpen: (input: { value: string }) => Promise<string | undefined>
   onInputClear: () => void
   onExitRequest?: () => boolean
@@ -542,6 +544,9 @@ export function RunFooterView(props: RunFooterViewProps) {
             },
           ]
         : []),
+      ...(props.computerActions
+        ? [{ name: "computer", description: "Control the desktop with Computer Use", template: "", hints: [], source: "command" as const }]
+        : []),
       { name: "tasks", description: "Manage session tasks", template: "", hints: [], source: "command" as const },
     ],
     tuiConfig: props.tuiConfig,
@@ -562,6 +567,18 @@ export function RunFooterView(props: RunFooterViewProps) {
           .run(args)
           .then((message) => props.onStatus(message))
           .catch((error: unknown) => props.onStatus(`browser: ${error instanceof Error ? error.message : String(error)}`))
+        return true
+      }
+      if (
+        props.computerActions &&
+        input.mode !== "shell" &&
+        (input.command?.name === "computer" || /^\/computer(?:\s|$)/u.test(input.text.trim()))
+      ) {
+        const args = input.command?.arguments ?? input.text.trim().replace(/^\/computer\s*/u, "")
+        void props.computerActions
+          .run(args)
+          .then((message) => props.onStatus(message))
+          .catch((error: unknown) => props.onStatus(`computer: ${error instanceof Error ? error.message : String(error)}`))
         return true
       }
       if (

@@ -2124,6 +2124,52 @@ const scenarios: Scenario[] = [
     }))
     .status(409),
   http.protected
+    .get("/api/session/{sessionID}/computer", "v2.computer.list.empty")
+    .seeded((ctx) => ctx.session({ title: "Computer session owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/computer`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/computer", "v2.computer.open")
+    .seeded((ctx) => ctx.session({ title: "Computer open owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/computer`,
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { backend: "auto" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(typeof body.id === "string" && typeof body.sessionID === "string", "computer open returns an owned session")
+      check(
+        typeof body.status === "string" && ["ready", "permission_required", "unavailable"].includes(body.status),
+        "computer open returns a typed status",
+      )
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/computer/{computerSessionID}/action", "v2.computer.action.missing")
+    .seeded((ctx) => ctx.session({ title: "Computer action owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/computer/cmp_httpapi_missing/action`,
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { action: "observe" },
+    }))
+    .status(409),
+  http.protected
+    .post("/api/session/{sessionID}/computer/{computerSessionID}/close", "v2.computer.close.missing")
+    .seeded((ctx) => ctx.session({ title: "Computer close owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/computer/cmp_httpapi_missing/close`,
+      headers: ctx.headers(),
+    }))
+    .status(409),
+  http.protected
+    .get("/api/session/{sessionID}/computer/{computerSessionID}/events", "v2.computer.events.missing")
+    .seeded((ctx) => ctx.session({ title: "Computer events owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/computer/cmp_httpapi_missing/events`,
+      headers: ctx.headers(),
+    }))
+    .status(409),
+  http.protected
     .post("/api/session", "v2.session.create.invalidSandbox")
     .at((ctx) => ({ path: "/api/session", headers: ctx.headers(), body: { commandSandbox: "unsupported" } }))
     .status(400, undefined, "none"),

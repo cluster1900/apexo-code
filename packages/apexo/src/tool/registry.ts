@@ -68,10 +68,19 @@ import { McpCatalog } from "@/mcp/catalog"
 import { Scheduler } from "@apexo/core/scheduler"
 import { SchedulerStore } from "@apexo/core/scheduler-store"
 import { GrokBuildTools } from "./grok-build"
+import { ComputerTool } from "./computer"
+import { Computer } from "@apexo/core/computer"
+import { LocationServiceMap, locationServiceMapLayer } from "@apexo/core/location-services"
 
 export function webSearchEnabled(flags = { exa: false, parallel: false }) {
   return flags.exa || flags.parallel
 }
+
+const locationServiceMapNode = LayerNode.make({
+  service: LocationServiceMap.Service,
+  layer: locationServiceMapLayer,
+  deps: [],
+})
 
 type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
@@ -138,6 +147,7 @@ const layer = Layer.effect(
     const edit = yield* EditTool
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
+    const computer = yield* ComputerTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
@@ -254,6 +264,7 @@ const layer = Layer.effect(
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
+          computer: Tool.init(computer),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           planEnter: Tool.init(planEnter),
@@ -279,6 +290,7 @@ const layer = Layer.effect(
             tool.search,
             tool.skill,
             tool.patch,
+            tool.computer,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && (flags.client === "cli" || flags.runtimeProfile === "grok-build")
@@ -609,6 +621,7 @@ export const node = LayerNode.make({
     MemoryIndex.node,
     SessionMemoryMode.node,
     SessionMemoryBackend.node,
+    locationServiceMapNode,
   ],
 })
 

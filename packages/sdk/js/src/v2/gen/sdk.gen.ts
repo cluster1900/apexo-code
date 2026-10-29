@@ -389,6 +389,16 @@ import type {
   V2BrowserOpenResponses,
   V2CommandListErrors,
   V2CommandListResponses,
+  V2ComputerActionErrors,
+  V2ComputerActionResponses,
+  V2ComputerCloseErrors,
+  V2ComputerCloseResponses,
+  V2ComputerEventsErrors,
+  V2ComputerEventsResponses,
+  V2ComputerListErrors,
+  V2ComputerListResponses,
+  V2ComputerOpenErrors,
+  V2ComputerOpenResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -10169,6 +10179,152 @@ export class Browser extends HeyApiClient {
   }
 }
 
+export class Computer extends HeyApiClient {
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2ComputerListResponses, V2ComputerListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/computer",
+      ...options,
+      ...params,
+    })
+  }
+
+  public open<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      backend?: "auto" | "native" | "fixture"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "backend" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ComputerOpenResponses, V2ComputerOpenErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/computer",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public action<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      computerSessionID: string
+      action?: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+      x?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      y?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      text?: string
+      key?: string
+      target?: string
+      expectedSnapshotHash?: string
+      destructive?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "computerSessionID" },
+            { in: "body", key: "action" },
+            { in: "body", key: "x" },
+            { in: "body", key: "y" },
+            { in: "body", key: "text" },
+            { in: "body", key: "key" },
+            { in: "body", key: "target" },
+            { in: "body", key: "expectedSnapshotHash" },
+            { in: "body", key: "destructive" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ComputerActionResponses, V2ComputerActionErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/computer/{computerSessionID}/action",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public close<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      computerSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "computerSessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ComputerCloseResponses, V2ComputerCloseErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/computer/{computerSessionID}/close",
+      ...options,
+      ...params,
+    })
+  }
+
+  public events<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      computerSessionID: string
+      after?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "computerSessionID" },
+            { in: "query", key: "after" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2ComputerEventsResponses, V2ComputerEventsErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/computer/{computerSessionID}/events",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Model extends HeyApiClient {
   /**
    * List models
@@ -11443,6 +11599,11 @@ export class V2 extends HeyApiClient {
   private _browser?: Browser
   get browser(): Browser {
     return (this._browser ??= new Browser({ client: this.client }))
+  }
+
+  private _computer?: Computer
+  get computer(): Computer {
+    return (this._computer ??= new Computer({ client: this.client }))
   }
 
   private _model?: Model

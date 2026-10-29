@@ -6779,6 +6779,270 @@ export type ServerBrowserEventsOutput = {
   readonly cursor: { readonly earliest: number; readonly head: number; readonly next?: string }
 }
 
+export type ServerComputerListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type ServerComputerListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly sessionID: string
+  readonly status: "ready" | "permission_required" | "unavailable" | "closed"
+  readonly backend: string
+  readonly createdAt: number
+  readonly lastActionAt?: number
+  readonly snapshot?: {
+    readonly hash: string
+    readonly activeApp?: string
+    readonly window?: string
+    readonly text?: string
+  }
+  readonly unavailableReason?: string
+}>
+
+export type ServerComputerOpenInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly backend?: { readonly backend?: "auto" | "native" | "fixture" | undefined }["backend"]
+}
+
+export type ServerComputerOpenOutput = {
+  readonly id: string
+  readonly sessionID: string
+  readonly status: "ready" | "permission_required" | "unavailable" | "closed"
+  readonly backend: string
+  readonly createdAt: number
+  readonly lastActionAt?: number
+  readonly snapshot?: {
+    readonly hash: string
+    readonly activeApp?: string
+    readonly window?: string
+    readonly text?: string
+  }
+  readonly unavailableReason?: string
+}
+
+export type ServerComputerActionInput = {
+  readonly sessionID: { readonly sessionID: string; readonly computerSessionID: string }["sessionID"]
+  readonly computerSessionID: { readonly sessionID: string; readonly computerSessionID: string }["computerSessionID"]
+  readonly action: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["action"]
+  readonly x?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["x"]
+  readonly y?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["y"]
+  readonly text?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["text"]
+  readonly key?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["key"]
+  readonly target?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["target"]
+  readonly expectedSnapshotHash?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["expectedSnapshotHash"]
+  readonly destructive?: {
+    readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+    readonly x?: number | undefined
+    readonly y?: number | undefined
+    readonly text?: string | undefined
+    readonly key?: string | undefined
+    readonly target?: string | undefined
+    readonly expectedSnapshotHash?: string | undefined
+    readonly destructive?: boolean | undefined
+  }["destructive"]
+}
+
+export type ServerComputerActionOutput = {
+  readonly computerSessionID: string
+  readonly actionID: string
+  readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+  readonly output: string
+  readonly snapshot?: {
+    readonly hash: string
+    readonly activeApp?: string
+    readonly window?: string
+    readonly text?: string
+  }
+  readonly artifact?: {
+    readonly id: string
+    readonly mime: string
+    readonly relativePath: string
+    readonly byteLength: number
+    readonly sensitive: boolean
+  }
+  readonly artifactData?: string
+}
+
+export type ServerComputerCloseInput = {
+  readonly sessionID: { readonly sessionID: string; readonly computerSessionID: string }["sessionID"]
+  readonly computerSessionID: { readonly sessionID: string; readonly computerSessionID: string }["computerSessionID"]
+}
+
+export type ServerComputerCloseOutput = void
+
+export type ServerComputerEventsInput = {
+  readonly sessionID: { readonly sessionID: string; readonly computerSessionID: string }["sessionID"]
+  readonly computerSessionID: { readonly sessionID: string; readonly computerSessionID: string }["computerSessionID"]
+  readonly after?: { readonly after?: number | undefined; readonly limit?: number | undefined }["after"]
+  readonly limit?: { readonly after?: number | undefined; readonly limit?: number | undefined }["limit"]
+}
+
+export type ServerComputerEventsOutput = {
+  readonly events: ReadonlyArray<
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "computer.session_started"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly computerSessionID: string
+          readonly sessionID: string
+          readonly info: {
+            readonly id: string
+            readonly sessionID: string
+            readonly status: "ready" | "permission_required" | "unavailable" | "closed"
+            readonly backend: string
+            readonly createdAt: number
+            readonly lastActionAt?: number
+            readonly snapshot?: {
+              readonly hash: string
+              readonly activeApp?: string
+              readonly window?: string
+              readonly text?: string
+            }
+            readonly unavailableReason?: string
+          }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "computer.action_started"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly computerSessionID: string
+          readonly actionID: string
+          readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "computer.action_completed"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly computerSessionID: string
+          readonly actionID: string
+          readonly action: "open" | "observe" | "click" | "type" | "press" | "scroll" | "screenshot" | "close"
+          readonly status: "completed" | "failed"
+          readonly output?: string
+          readonly error?: string
+          readonly snapshot?: {
+            readonly hash: string
+            readonly activeApp?: string
+            readonly window?: string
+            readonly text?: string
+          }
+          readonly artifactID?: string
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "computer.artifact_created"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly computerSessionID: string
+          readonly artifact: {
+            readonly id: string
+            readonly mime: string
+            readonly relativePath: string
+            readonly byteLength: number
+            readonly sensitive: boolean
+          }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "computer.approval_required"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly computerSessionID: string
+          readonly actionID: string
+          readonly permission: string
+          readonly resource: string
+          readonly reason: string
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "computer.closed"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: { readonly computerSessionID: string }
+      }
+  >
+  readonly cursor: { readonly earliest: number; readonly head: number; readonly next?: string }
+}
+
 export type ModelsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

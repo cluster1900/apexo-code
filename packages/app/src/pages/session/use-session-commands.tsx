@@ -1,6 +1,7 @@
 import { useNavigate } from "@solidjs/router"
 import { nextSessionMode, parseCopyArgs, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@apexo/ui/context/dialog"
 import { previewSelectedLines } from "@apexo/session-ui/pierre/selection-bridge"
@@ -76,6 +77,11 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     sessionID: undefined as string | undefined,
     browserSessionID: undefined as string | undefined,
     pageID: undefined as string | undefined,
+    snapshotHash: undefined as string | undefined,
+  }
+  const computer = {
+    sessionID: undefined as string | undefined,
+    computerSessionID: undefined as string | undefined,
     snapshotHash: undefined as string | undefined,
   }
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
@@ -597,6 +603,66 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     browserQueue = next.catch(() => undefined)
     return next
   }
+  const runComputerCommand = async (args: string) => {
+    const sessionID = params.id
+    if (!sessionID) {
+      showToast({ variant: "error", title: "Computer", description: "Open a session before using /computer" })
+      return
+    }
+    if (computer.sessionID !== sessionID) {
+      computer.sessionID = sessionID
+      computer.computerSessionID = undefined
+      computer.snapshotHash = undefined
+    }
+    try {
+      const parsed = parseComputerCommand(args)
+      if (parsed.action === "help") {
+        showToast({ title: "Computer", description: parsed.message ?? "Usage: /computer <action>" })
+        return
+      }
+      if (parsed.action === "open") {
+        const result = (await sdk().client.v2.computer.open({ sessionID, backend: "auto" }, { throwOnError: true })).data
+        computer.computerSessionID = result.id
+        computer.snapshotHash = result.snapshot?.hash
+        showToast({ variant: result.status === "ready" ? "success" : "error", title: "Computer", description: result.unavailableReason ?? `Opened ${result.id}` })
+        return
+      }
+      if (!computer.computerSessionID) throw new Error("No computer session. Run /computer open first")
+      if (parsed.action === "close") {
+        await sdk().client.v2.computer.close({ sessionID, computerSessionID: computer.computerSessionID }, { throwOnError: true })
+        computer.computerSessionID = undefined
+        computer.snapshotHash = undefined
+        showToast({ variant: "success", title: "Computer", description: "Closed computer session" })
+        return
+      }
+      if (parsed.action === "events") {
+        const result = (await sdk().client.v2.computer.events({ sessionID, computerSessionID: computer.computerSessionID, after: parsed.after === undefined ? undefined : String(parsed.after), limit: parsed.limit === undefined ? undefined : String(parsed.limit) }, { throwOnError: true })).data
+        showToast({ title: "Computer events", description: result.events.length ? result.events.map((event) => `${event.type} ${event.durable?.seq ?? ""}`.trim()).join("\n") : "No computer events" })
+        return
+      }
+      const result = (await sdk().client.v2.computer.action({
+        sessionID,
+        computerSessionID: computer.computerSessionID,
+        action: parsed.action,
+        x: parsed.action === "click" ? parsed.x : undefined,
+        y: parsed.action === "click" || parsed.action === "scroll" ? parsed.y : undefined,
+        text: parsed.action === "type" ? parsed.text : undefined,
+        key: parsed.action === "press" ? parsed.key : undefined,
+        expectedSnapshotHash: computer.snapshotHash,
+        destructive: ["click", "type", "press", "scroll", "close"].includes(parsed.action),
+      }, { throwOnError: true })).data
+      computer.snapshotHash = result.snapshot?.hash ?? computer.snapshotHash
+      showToast({ variant: "success", title: `Computer ${parsed.action}`, description: result.artifact?.relativePath ?? result.output })
+    } catch (error) {
+      showToast({ variant: "error", title: "Computer", description: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  let computerQueue: Promise<unknown> = Promise.resolve()
+  const runComputer = (args: string) => {
+    const next = computerQueue.then(() => runComputerCommand(args))
+    computerQueue = next.catch(() => undefined)
+    return next
+  }
 
   const sessionCmds = () => [
     sessionCommand({
@@ -607,6 +673,15 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       disabled: !params.id,
       onSlash: (args) => void runBrowser(args),
       onSelect: () => void runBrowser(""),
+    }),
+    sessionCommand({
+      id: "session.computer",
+      title: "Control the desktop with Computer Use",
+      description: "Observe and control desktop applications with /computer",
+      slash: "computer",
+      disabled: !params.id,
+      onSlash: (args) => void runComputer(args),
+      onSelect: () => void runComputer(""),
     }),
     sessionCommand({
       id: "session.new",

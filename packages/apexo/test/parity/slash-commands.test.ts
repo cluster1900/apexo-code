@@ -48,6 +48,8 @@ async function surfaces() {
   ])
   // Browser is injected by the CLI runtime only when its Browser API actions are available.
   cli.add("browser")
+  // Computer is injected by the CLI runtime only when its Computer API actions are available.
+  cli.add("computer")
   // Server commands (grok-build profile) are listed by the server and offered on both surfaces.
   const server = await Bun.file(path.join(packages, "apexo/src/command/index.ts")).text()
   const block = server.slice(server.indexOf('runtimeProfile === "grok-build"'))

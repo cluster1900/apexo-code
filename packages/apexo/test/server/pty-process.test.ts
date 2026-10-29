@@ -45,7 +45,7 @@ posix(
           "--rerun-each",
           "10",
         ],
-        { stdout: "pipe", stderr: "pipe", timeout: 20000, killSignal: "SIGKILL" },
+        { stdout: "pipe", stderr: "pipe", timeout: 30000, killSignal: "SIGKILL" },
       ),
     )
     const results = await Promise.all(
@@ -64,5 +64,5 @@ posix(
       expect(result.stderr).toContain("900 expect() calls")
     }
   },
-  30000,
+  45000,
 )

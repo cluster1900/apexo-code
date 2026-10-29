@@ -238,6 +238,7 @@ describe("tool.registry", () => {
         "send_subagent_message",
         "web_fetch",
         "todo_write",
+        "computer",
         "lsp",
         "enter_plan_mode",
         "exit_plan_mode",
