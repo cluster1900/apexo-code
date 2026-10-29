@@ -60,6 +60,7 @@ import { SessionHistoryCopy } from "../history-copy"
 import { SessionInput } from "../input"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
+import { SessionExecutionStore } from "../execution-store"
 import { SessionRunner, type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
@@ -299,6 +300,7 @@ const layer = Layer.effect(
       step: number,
       recoverOverflow?: typeof compaction.compactAfterOverflow,
     ) {
+      yield* SessionExecutionStore.Current
       const session = yield* getSession(sessionID)
       const role = goalRoles.get(sessionID)
       const summaryRole = summaryRoles.get(sessionID)

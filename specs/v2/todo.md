@@ -46,18 +46,20 @@ Next reviewed slices:
 - remove the public in-memory `@apexo/llm` tool loop after replacing its
   remaining one-turn native-adapter use with a narrow typed dispatcher
 - batch streamed deltas and add covering context indexes
-- expose replayable Session event cursors over HTTP and the generated SDK where remote consumers need them
-- integrate the new BackgroundJob service with V2 tool execution: support background
+- expose replayable Session event cursors over HTTP and the generated SDK where remote consumers need them (implemented; keep adding consumer coverage as clients adopt it)
+- integrate the durable BackgroundJob service with V2 tool execution: support background
   bash jobs and background agent dispatch with durable status observation,
   completion delivery, and explicit cancellation / continuation semantics
-- add durable/clustered interruption, retries, and stale-owner fencing only as
-  their slices become concrete
+- add clustered interruption and retries; local durable execution receipts and
+  stale-owner fencing are implemented, while distributed placement remains deferred
 
 ### Deferred durable continuation recovery
 
 Do not infer that ambiguous provider work is safe to retry from an advisory wake.
-The first inbox-driven runner intentionally omits outer provider-attempt markers
-until they have a concrete consumer and a complete recovery policy.
+The inbox-driven runner now records a durable Session execution receipt with an
+owner generation and fenced provider-turn assertion. It still intentionally omits
+provider-dispatch markers until they have a concrete consumer and a complete
+recovery policy.
 
 Design post-crash continuation recovery as one explicit slice. It should model:
 
@@ -67,8 +69,8 @@ Design post-crash continuation recovery as one explicit slice. It should model:
 - required post-tool continuation across process loss
 - explicit `retry` and `abandon` decisions for unknown outcomes
 - bounded automatic retry only where provider and tool idempotency make it safe
-- retry budget, backoff, visible recovery status, startup discovery, and future
-  clustered ownership fencing
+- retry budget, backoff, visible recovery status, and future clustered ownership
+  fencing
 
 Do not introduce an enclosing durable execution identity solely to group these
 facts; a process-local Session drain has no durable transcript boundary.

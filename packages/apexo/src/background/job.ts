@@ -1,6 +1,7 @@
 import { SessionLifecycle } from "@apexo/core/session/lifecycle"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { BackgroundJob as CoreBackgroundJob } from "@apexo/core/background-job"
+import { Database } from "@apexo/core/database/database"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect, Layer } from "effect"
 import type { SessionID } from "@/session/schema"
@@ -11,6 +12,7 @@ export {
   type ExtendInput,
   type Info,
   type Interface,
+  type ResumeInput,
   type StartInput,
   type Status,
   type WaitInput,
@@ -22,8 +24,12 @@ const layer = Layer.effect(
   CoreBackgroundJob.Service,
   Effect.gen(function* () {
     const lifecycle = yield* SessionLifecycle.Service
+    const database = yield* Database.Service
     const state = yield* InstanceState.make(() =>
-      CoreBackgroundJob.makeOwned.pipe(Effect.provideService(SessionLifecycle.Service, lifecycle)),
+      CoreBackgroundJob.makeOwnedDurable.pipe(
+        Effect.provideService(SessionLifecycle.Service, lifecycle),
+        Effect.provideService(Database.Service, database),
+      ),
     )
     return CoreBackgroundJob.Service.of({
       list: () => InstanceState.useEffect(state, (jobs) => jobs.list()),
@@ -35,11 +41,16 @@ const layer = Layer.effect(
       waitForPromotion: (id) => InstanceState.useEffect(state, (jobs) => jobs.waitForPromotion(id)),
       promote: (id) => InstanceState.useEffect(state, (jobs) => jobs.promote(id)),
       cancel: (id) => InstanceState.useEffect(state, (jobs) => jobs.cancel(id)),
+      resume: (input) => InstanceState.useEffect(state, (jobs) => jobs.resume(input)),
     })
   }),
 )
 
-export const node = LayerNode.make({ service: CoreBackgroundJob.Service, layer, deps: [SessionLifecycle.node] })
+export const node = LayerNode.make({
+  service: CoreBackgroundJob.Service,
+  layer,
+  deps: [SessionLifecycle.node, Database.node],
+})
 
 export function owns(job: CoreBackgroundJob.Info, sessionID: string) {
   return job.metadata?.ownerSessionId === sessionID || job.metadata?.parentSessionId === sessionID
