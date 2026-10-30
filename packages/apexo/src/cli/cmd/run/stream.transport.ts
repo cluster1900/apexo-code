@@ -33,6 +33,7 @@ import {
   bootstrapSubagentCalls,
   bootstrapSubagentData,
   createSubagentData,
+  registerSubagent,
   listSubagentPermissions,
   listSubagentQuestions,
   listSubagentTabs,
@@ -106,6 +107,7 @@ export type SessionTurnInput = {
 
 export type SessionTransport = {
   runPromptTurn(input: SessionTurnInput): Promise<void>
+  registerSubagent?(input: { sessionID: string; title: string }): void
   selectSubagent(sessionID: string | undefined): void
   replayOnResize(input: SessionResizeReplayInput): Promise<boolean>
   close(): Promise<void>
@@ -130,6 +132,7 @@ type State = {
 
 type TransportService = {
   readonly runPromptTurn: (input: SessionTurnInput) => Effect.Effect<void, unknown>
+  readonly registerSubagent: (input: { sessionID: string; title: string }) => Effect.Effect<void>
   readonly selectSubagent: (sessionID: string | undefined) => Effect.Effect<void>
   readonly replayOnResize: (input: SessionResizeReplayInput) => Effect.Effect<boolean>
   readonly close: () => Effect.Effect<void>
@@ -1426,6 +1429,17 @@ function createLayer(input: StreamInput) {
           return
         })
 
+        const register = Effect.fn("RunStreamTransport.registerSubagent")((registration: { sessionID: string; title: string }) =>
+          Effect.sync(() => {
+            if (closed) return
+            const prev = listSubagentTabs(state.subagent)
+            if (!registerSubagent(state.subagent, registration)) return
+            const next = currentSubagentState()
+            traceTabs(input.trace, prev, next.tabs)
+            syncFooter([], undefined, next)
+          }),
+        )
+
         const selectSubagent = Effect.fn("RunStreamTransport.selectSubagent")((sessionID: string | undefined) =>
           Effect.sync(() => {
             if (closed) {
@@ -1448,6 +1462,7 @@ function createLayer(input: StreamInput) {
 
         return Service.of({
           runPromptTurn,
+          registerSubagent: register,
           selectSubagent,
           replayOnResize,
           close,
@@ -1476,6 +1491,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
 
   return {
     runPromptTurn: (next) => runtime.runPromise((svc) => svc.runPromptTurn(next)),
+    registerSubagent: (next) => runtime.runSync((svc) => svc.registerSubagent(next)),
     selectSubagent: (sessionID) => runtime.runSync((svc) => svc.selectSubagent(sessionID)),
     replayOnResize: (next) => runtime.runPromise((svc) => svc.replayOnResize(next)),
     close: () => runtime.runPromise((svc) => svc.close()),

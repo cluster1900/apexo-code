@@ -209,6 +209,7 @@ const unsupportedBuiltins = new Set(["invalid", "glob", "apply_patch", "execute"
 
 /** Canonical Grok Build names advertised to model-facing clients. */
 export const canonicalToolNames = [
+  "browser",
   "run_terminal_cmd",
   "get_task_output",
   "kill_task",

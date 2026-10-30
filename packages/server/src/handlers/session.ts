@@ -87,6 +87,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             data: yield* session
               .create({
                 id: ctx.payload.id,
+                parentID: ctx.payload.parentID,
                 agent: ctx.payload.agent,
                 model: ctx.payload.model,
                 commandSandbox: ctx.payload.commandSandbox,

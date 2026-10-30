@@ -235,6 +235,7 @@ export type FooterPromptRoute =
 
 export type RunBrowserActions = {
   run: (args: string) => Promise<string>
+  runTask: (task: string) => Promise<string>
 }
 
 export type RunComputerActions = {

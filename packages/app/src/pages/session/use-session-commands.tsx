@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { base64Encode } from "@apexo/core/util/encode"
 import { nextSessionMode, parseCopyArgs, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
 import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
 import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
@@ -84,6 +85,33 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     computerSessionID: undefined as string | undefined,
     snapshotHash: undefined as string | undefined,
   }
+  let hydratedAutomationSessionID: string | undefined
+  createEffect(() => {
+    const sessionID = params.id
+    if (!sessionID || hydratedAutomationSessionID === sessionID) return
+    hydratedAutomationSessionID = sessionID
+    void Promise.all([
+      sdk().client.v2.browser.list({ sessionID }, { throwOnError: true }).then((response) => response.data),
+      sdk().client.v2.computer.list({ sessionID }, { throwOnError: true }).then((response) => response.data),
+    ])
+      .then(([browsers, computers]) => {
+        if (params.id !== sessionID) return
+        const browserSession = browsers.find((item) => item.status === "connected")
+        if (browserSession) {
+          browser.sessionID = sessionID
+          browser.browserSessionID = browserSession.id
+          browser.pageID = browserSession.page?.id
+          browser.snapshotHash = browserSession.page?.snapshotHash
+        }
+        const computerSession = computers.find((item) => item.status === "ready")
+        if (computerSession) {
+          computer.sessionID = sessionID
+          computer.computerSessionID = computerSession.id
+          computer.snapshotHash = computerSession.snapshot?.hash
+        }
+      })
+      .catch(() => undefined)
+  })
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = sessionOwnership.capture()
     const value = await load()
@@ -507,12 +535,37 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
-  const runBrowserCommand = async (args: string) => {
-    const sessionID = params.id
-    if (!sessionID) {
-      showToast({ variant: "error", title: "Browser", description: "Open a session before using /browser" })
-      return
+  const ensureAutomationSession = async (tool: "browser" | "computer") => {
+    if (params.id) return params.id
+    const model = local.model.current()
+    const agent = local.agent.current()
+    if (!model || !agent) {
+      showToast({
+        variant: "error",
+        title: tool === "browser" ? "Browser" : "Computer",
+        description: `Select a model and agent before using /${tool}`,
+      })
+      return undefined
     }
+    const created = (
+      await sdk().client.v2.session.create(
+        {
+          agent: agent.name,
+          model: { id: model.id, providerID: model.provider.id, variant: local.model.variant.current() },
+          location: { directory: sdk().directory },
+        },
+        { throwOnError: true },
+      )
+    ).data.data
+    navigate(`/${base64Encode(sdk().directory)}/session/${created.id}`)
+    return created.id
+  }
+
+  const ensureBrowserSession = () => ensureAutomationSession("browser")
+
+  const runBrowserCommand = async (args: string) => {
+    const sessionID = await ensureBrowserSession()
+    if (!sessionID) return
     if (browser.sessionID !== sessionID) {
       browser.sessionID = sessionID
       browser.browserSessionID = undefined
@@ -526,6 +579,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         showToast({ title: "Browser", description: parsed.message ?? "Usage: /browser <action>" })
         return
       }
+      showToast({ title: "Browser", description: `Running ${parsed.action}…`, variant: "loading" })
       if (parsed.action === "open") {
         const result = (
           await sdk().client.v2.browser.open(
@@ -603,12 +657,26 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     browserQueue = next.catch(() => undefined)
     return next
   }
+  const runBrowserTask = async (task: string) => {
+    const parentID = await ensureBrowserSession()
+    if (!parentID) return
+    showToast({ variant: "loading", title: "Browser", description: "Starting the Browser agent…" })
+    const child = (
+      await sdk().client.v2.session.create(
+        { parentID, agent: "browser", location: { directory: sdk().directory } },
+        { throwOnError: true },
+      )
+    ).data.data
+    navigate(`/${base64Encode(sdk().directory)}/session/${child.id}`)
+    await sdk().client.v2.session.prompt(
+      { sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" },
+      { throwOnError: true },
+    )
+    showToast({ variant: "success", title: "Browser", description: `Started browser subagent ${child.id}` })
+  }
   const runComputerCommand = async (args: string) => {
-    const sessionID = params.id
-    if (!sessionID) {
-      showToast({ variant: "error", title: "Computer", description: "Open a session before using /computer" })
-      return
-    }
+    const sessionID = await ensureAutomationSession("computer")
+    if (!sessionID) return
     if (computer.sessionID !== sessionID) {
       computer.sessionID = sessionID
       computer.computerSessionID = undefined
@@ -620,6 +688,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         showToast({ title: "Computer", description: parsed.message ?? "Usage: /computer <action>" })
         return
       }
+      showToast({ title: "Computer", description: `Running ${parsed.action}…`, variant: "loading" })
       if (parsed.action === "open") {
         const result = (await sdk().client.v2.computer.open({ sessionID, backend: "auto" }, { throwOnError: true })).data
         computer.computerSessionID = result.id
@@ -670,8 +739,16 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: "Control browser through Chrome CDP",
       description: "Open and control a real Chrome session with /browser",
       slash: "browser",
-      disabled: !params.id,
-      onSlash: (args) => void runBrowser(args),
+      onSlash: (args) =>
+        void (parseBrowserCommand(args).action === "help" && args.trim() !== ""
+          ? runBrowserTask(args).catch((error: unknown) =>
+              showToast({
+                variant: "error",
+                title: "Browser",
+                description: error instanceof Error ? error.message : String(error),
+              }),
+            )
+          : runBrowser(args)),
       onSelect: () => void runBrowser(""),
     }),
     sessionCommand({
@@ -679,7 +756,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: "Control the desktop with Computer Use",
       description: "Observe and control desktop applications with /computer",
       slash: "computer",
-      disabled: !params.id,
       onSlash: (args) => void runComputer(args),
       onSelect: () => void runComputer(""),
     }),

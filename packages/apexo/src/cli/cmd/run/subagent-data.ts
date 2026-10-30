@@ -657,6 +657,27 @@ export function createSubagentData(): SubagentData {
   }
 }
 
+export function registerSubagent(data: SubagentData, input: { sessionID: string; title: string }) {
+  const current = data.tabs.get(input.sessionID)
+  const next: FooterSubagentTab = {
+    sessionID: input.sessionID,
+    partID: `manual:${input.sessionID}`,
+    callID: `manual:${input.sessionID}`,
+    label: "Browser",
+    description: input.title,
+    status: current?.status ?? "running",
+    title: input.title,
+    lastUpdatedAt: Date.now(),
+  }
+  if (sameSubagentTab(current, next)) {
+    ensureDetail(data, input.sessionID)
+    return false
+  }
+  data.tabs.set(input.sessionID, next)
+  ensureDetail(data, input.sessionID)
+  return true
+}
+
 function snapshotDetail(detail: DetailState) {
   return {
     sessionID: detail.sessionID,

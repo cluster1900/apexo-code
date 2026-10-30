@@ -38,6 +38,7 @@ describe("grok-build tool profile", () => {
     expect(GrokBuildTools.isProfileTool("exit_plan_mode")).toBe(true)
     expect(GrokBuildTools.isProfileTool("run_terminal_command")).toBe(true)
     expect(GrokBuildTools.isProfileTool("task")).toBe(true)
+    expect(GrokBuildTools.isProfileTool("browser")).toBe(true)
   })
 
   test("exposes Grok Build names and preserves non-profile tools", () => {

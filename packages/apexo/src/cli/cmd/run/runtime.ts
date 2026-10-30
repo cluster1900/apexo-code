@@ -336,6 +336,32 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       browserQueue = next.catch(() => undefined)
       return next
     },
+    runTask: async (task) => {
+      await ensureSession()
+      const parentID = state.sessionID
+      if (!parentID) throw new Error("Session is unavailable")
+      const title = `Browser: ${task.trim().slice(0, 96)}`
+      if (ctx.native) {
+        const child = await ctx.native.create({ parentID, agent: "browser" })
+        if (state.stream) await (await state.stream).handle.registerSubagent?.({ sessionID: child.id, title })
+        await ctx.native.admit({ sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" })
+        return `browser subagent started ${child.id}: ${title}`
+      }
+      const child = (
+        await ctx.sdk.session.create({ parentID, title, directory: ctx.directory }, { throwOnError: true })
+      ).data
+      if (state.stream) await (await state.stream).handle.registerSubagent?.({ sessionID: child.id, title })
+      await ctx.sdk.session.promptAsync(
+        {
+          sessionID: child.id,
+          agent: "browser",
+          parts: [{ type: "text", text: task.trim() }],
+          directory: ctx.directory,
+        },
+        { throwOnError: true },
+      )
+      return `browser subagent started ${child.id}: ${title}`
+    },
   }
   const computer = {
     sessionID: undefined as string | undefined,

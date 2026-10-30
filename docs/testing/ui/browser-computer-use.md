@@ -1,68 +1,51 @@
-# Browser Computer Use Acceptance Record
+# Browser and Computer Use regression record
 
 ## Bug ID
 
-`BROWSER-CLI-FIXTURE-001`
+`BROWSER-COMPUTER-USE-001`
 
 ## Affected scope
 
-The Browser/Computer Use acceptance fixture under `packages/apexo/script/browser-computer-use.mjs`.
+The Playwright-backed Browser Service adapter, the fixture Computer Use backend, and the CLI/Desktop acceptance scripts for `/browser` and `/computer`.
 
 ## Observed behavior
 
-The first acceptance run could not create the V2 Session. The server returned `InvalidRequestError: Missing key at ["model"]["id"]` because the fixture sent the legacy `{ providerID, modelID }` model shape to the V2 session endpoint.
+The Browser Service worked in the CLI and Desktop fixture flows, but the Desktop production build failed while bundling `playwright-core` because its Chromium BiDi bridge imports were unresolved. The Computer fixture accepted click, type, press, and scroll actions but returned the same snapshot after every action, so an acceptance test could verify that an event was written without proving that the desktop state changed.
 
 ## Expected behavior
 
-The fixture must send the V2 `Model.Ref` shape with `providerID` and `id`, then exercise the Browser API against the created Session.
+The Desktop build must include all runtime modules required by the Playwright CDP adapter. A fixture Computer session must expose a changed snapshot and snapshot hash after a mutating action, allowing CLI and Desktop tests to assert the same observable state transition that a native accessibility backend would produce.
 
 ## Reproduction
 
-1. Run `bun script/browser-computer-use.mjs` from `packages/apexo`.
-2. Observe the POST `/api/session` response.
+1. Install the workspace dependencies and run `bun run build` from `packages/desktop` after adding the `playwright-core` Browser adapter.
+2. Run `bun run script/computer-slash-ui.mjs cli` with `APEXO_COMPUTER_BACKEND=fixture`.
+3. Open a Computer session and issue `/computer type`, `/computer click`, or `/computer press`.
+4. Compare the `computer.action_completed` snapshots before and after each action.
 
 ## Root cause
 
-The fixture mixed the legacy session model field name (`modelID`) with the V2 HTTP schema (`id`). This was a test fixture configuration error; the Browser service did not receive a request in the failing run.
+`playwright-core` contains a statically reachable Chromium BiDi bridge that requires the `chromium-bidi` package even when Apexo only calls `connectOverCDP`. The workspace did not install that package, so Electron Vite's SSR bundler stopped on the unresolved import. Separately, the fixture snapshot was a constant value and the fixture action branches called `observe()` without carrying any action state forward.
 
 ## Fix
 
-The fixture now sends `{ providerID: "xai", id: "grok-4.7" }`, matching `@apexo/schema/model` `Model.Ref`.
+Added `chromium-bidi@0.8.0` as a Core runtime dependency alongside `playwright-core`, so the Desktop main bundle can resolve Playwright's CDP support. The fixture Computer service now owns a small mutable fixture state and derives its snapshot hash from the active app, window, and visible text. Fixture click, type, press, and scroll actions update that state before returning the next snapshot. The acceptance script now drives those actions through the actual terminal or Desktop editor and asserts the resulting snapshot text for every action.
 
 ## Verification
 
-`bun script/browser-computer-use.mjs` passes against the real CLI server and Playwright Chromium CDP endpoint. It verifies open, observe, type, click, screenshot artifact creation, durable event replay and cursor head, and close.
+- `bun typecheck` from `packages/core` passes.
+- `bun typecheck` from `packages/app` passes.
+- `bun typecheck` from `packages/tui` passes.
+- `bun run build` from `packages/app` passes.
+- `bun run build` from `packages/desktop` passes after installing `chromium-bidi`.
+- `bun run script/computer-slash-ui.mjs cli` passes twice, including autocomplete, type/click/press state changes, screenshot artifact, close, and automatic Computer tool trigger.
+- `bun run script/computer-slash-ui.mjs desktop` passes twice through Playwright, including the same state changes and automatic trigger.
+- `bun run script/browser-computer-use.mjs cli` and `bun run script/browser-computer-use.mjs desktop` each pass twice while asserting real CDP page input and button output changes.
+- `bun run script/browser-slash-ui.mjs cli` and `bun run script/browser-slash-ui.mjs desktop` each pass twice with `/browser` autocomplete, structured actions, screenshots, durable event replay, and Browser child-session routing.
+- `bun run test:httpapi` passes all 357 scenarios with 0 failures, skips, missing routes, or extra routes, including the Browser and Computer V2 endpoints.
 
 ## Remaining limitations
 
-The record does not claim that a provider-generated Browser tool call was exercised; the acceptance path calls the same V2 HTTP surface directly. Provider tool-loop coverage remains part of the follow-up CLI/Desktop fixture work.
+The Computer fixture models observable state for deterministic tests; macOS production behavior still depends on Accessibility permission and the installed `cliclick` executable. The acceptance provider is deterministic and does not measure live-provider planning quality.
 
-## Bug ID
-
-`BROWSER-CDP-002`
-
-## Affected scope
-
-CDP target selection and manual `/browser type` actions in the CLI and Desktop surfaces.
-
-## Observed behavior
-
-When Chrome exposed more than one page, Browser Use attached to the first page returned by `/json/list`, even when it was unrelated to the requested URL. Manual typing focused an input and inserted text without selecting its existing value, so repeated commands appended text and could act on the wrong page.
-
-## Expected behavior
-
-Opening a URL must select the exact matching page, reuse only an `about:blank`/new-tab target, or create a dedicated target. Manual `type` must replace the selected control's current value. Evaluation errors must identify the failing browser expression when possible.
-
-## Root cause
-
-Target discovery ignored the requested URL and used the first page. The type action only called `focus`, leaving the old selection and value intact.
-
-## Fix
-
-CDP discovery now prefers an exact URL, then a blank target, and otherwise creates a new tab. The type action selects the input (or the contenteditable range) before `Input.insertText`; Runtime evaluation errors retain the CDP exception description. The Playwright slash fixture includes an unrelated tab and starts the input with `Old`, so both target precision and replacement semantics are covered.
-
-## Verification
-
-- `bun run script/browser-slash-ui.mjs cli` passes autocomplete, exact replacement, click, screenshot, event replay, and close.
-- `bun run script/browser-slash-ui.mjs desktop` passes the same checks through the rebuilt Desktop renderer and sidecar.
-- `bun run script/browser-computer-use.mjs cli` and `bun run script/browser-computer-use.mjs desktop` pass open, observe, type, click, screenshot, replay cursor, and close.
+The isolated app slash-route unit harness is currently blocked before test collection by Bun's Solid loader resolving `jsxDEV` from `solid-js/dist/solid.js`; the built Desktop Playwright flow remains green. Generated client and SDK checks regenerate successfully but report the existing uncommitted `parentID` generated diffs until those generated files are committed together.

@@ -54,6 +54,8 @@ import { useKV } from "../../context/kv"
 import { scrollback } from "../../context/scrollback"
 import { contextWindowChoice } from "../../context/context-window"
 import { effectiveContextWindow, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
+import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { builtinSlashTarget } from "../../prompt/slash-guard"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
@@ -233,6 +235,17 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const hasRightContent = createMemo(() => Boolean(props.right))
+  const browser = {
+    sessionID: undefined as string | undefined,
+    browserSessionID: undefined as string | undefined,
+    pageID: undefined as string | undefined,
+    snapshotHash: undefined as string | undefined,
+  }
+  const computer = {
+    sessionID: undefined as string | undefined,
+    computerSessionID: undefined as string | undefined,
+    snapshotHash: undefined as string | undefined,
+  }
 
   function promptModelWarning() {
     toast.show({
@@ -353,6 +366,242 @@ export function Prompt(props: PromptProps) {
       }
     }
   })
+
+  const ensureSessionForAutomation = async (tool: "browser" | "computer") => {
+    if (props.sessionID) return props.sessionID
+    const selectedModel = local.model.current()
+    const agent = local.agent.current()
+    if (!selectedModel || !agent) throw new Error(`Select a model and agent before using /${tool}`)
+    const sessionID = (
+      await sdk.client.v2.session.create(
+        {
+          agent: agent.name,
+          model: {
+            id: selectedModel.modelID,
+            providerID: selectedModel.providerID,
+            variant: local.model.variant.current(),
+          },
+          location: location(),
+        },
+        { throwOnError: true },
+      )
+    ).data.data.id
+    route.navigate({ type: "session", sessionID })
+    return sessionID
+  }
+
+  const runBrowserCommand = async (args: string) => {
+    const sessionID = await ensureSessionForAutomation("browser")
+    if (browser.sessionID !== sessionID) {
+      browser.sessionID = sessionID
+      browser.browserSessionID = undefined
+      browser.pageID = undefined
+      browser.snapshotHash = undefined
+    }
+
+    try {
+      const parsed = parseBrowserCommand(args)
+      if (parsed.action === "help") {
+        toast.show({ title: "Browser", message: parsed.message ?? "Usage: /browser <action>", variant: "info" })
+        return
+      }
+      toast.show({ title: "Browser", message: `Running ${parsed.action}…`, variant: "info" })
+      if (parsed.action === "open") {
+        const result = (
+          await sdk.client.v2.browser.open(
+            { sessionID, url: parsed.url, ...(parsed.cdpUrl ? { cdpUrl: parsed.cdpUrl } : {}) },
+            { throwOnError: true },
+          )
+        ).data
+        browser.browserSessionID = result.id
+        browser.pageID = result.page?.id
+        browser.snapshotHash = result.page?.snapshotHash
+        toast.show({ title: "Browser", message: `Opened ${result.page?.url ?? parsed.url}`, variant: "success" })
+        return
+      }
+      if (!browser.browserSessionID) throw new Error("No browser session. Run /browser open <url> first")
+      if (parsed.action === "close") {
+        await sdk.client.v2.browser.close(
+          { sessionID, browserSessionID: browser.browserSessionID },
+          { throwOnError: true },
+        )
+        browser.browserSessionID = undefined
+        browser.pageID = undefined
+        browser.snapshotHash = undefined
+        toast.show({ title: "Browser", message: "Closed browser session", variant: "success" })
+        return
+      }
+      if (parsed.action === "events") {
+        const result = (
+          await sdk.client.v2.browser.events(
+            {
+              sessionID,
+              browserSessionID: browser.browserSessionID,
+              ...(parsed.after === undefined ? {} : { after: String(parsed.after) }),
+              ...(parsed.limit === undefined ? {} : { limit: String(parsed.limit) }),
+            },
+            { throwOnError: true },
+          )
+        ).data
+        toast.show({
+          title: "Browser events",
+          message: result.events.length
+            ? result.events.map((event) => `${event.type} ${event.durable?.seq ?? ""}`.trim()).join("\n")
+            : "No browser events",
+          variant: "info",
+        })
+        return
+      }
+      const result = (
+        await sdk.client.v2.browser.action(
+          {
+            sessionID,
+            browserSessionID: browser.browserSessionID,
+            action: parsed.action,
+            ...(browser.pageID ? { pageID: browser.pageID } : {}),
+            ...(parsed.action === "click" || parsed.action === "type" ? { selector: parsed.selector } : {}),
+            ...(parsed.action === "type" ? { text: parsed.text } : {}),
+            ...(parsed.action === "press" ? { key: parsed.key } : {}),
+            ...(parsed.action === "scroll" ? { x: parsed.x, y: parsed.y } : {}),
+            ...(browser.snapshotHash ? { expectedSnapshotHash: browser.snapshotHash } : {}),
+            ...(parsed.action === "screenshot" ? { fullPage: parsed.fullPage } : {}),
+            destructive: ["click", "type", "press", "scroll"].includes(parsed.action),
+          },
+          { throwOnError: true },
+        )
+      ).data
+      browser.pageID = result.page?.id ?? browser.pageID
+      browser.snapshotHash = result.page?.snapshotHash ?? browser.snapshotHash
+      toast.show({
+        title: `Browser ${parsed.action}`,
+        message: result.artifact?.relativePath ?? (result.output || result.page?.url || "Done"),
+        variant: "success",
+      })
+    } catch (error) {
+      toast.show({
+        title: "Browser",
+        message: error instanceof Error ? error.message : String(error),
+        variant: "error",
+      })
+    }
+  }
+  let browserQueue: Promise<unknown> = Promise.resolve()
+  const runBrowser = (args: string) => {
+    const next = browserQueue.then(() => runBrowserCommand(args))
+    browserQueue = next.catch(() => undefined)
+    return next
+  }
+  const runBrowserTask = async (task: string) => {
+    const parentID = await ensureSessionForAutomation("browser")
+    toast.show({ title: "Browser", message: "Starting the Browser agent…", variant: "info" })
+    const child = (
+      await sdk.client.v2.session.create(
+        { parentID, agent: "browser", location: location() },
+        { throwOnError: true },
+      )
+    ).data.data
+    route.navigate({ type: "session", sessionID: child.id })
+    await sdk.client.v2.session.prompt(
+      { sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" },
+      { throwOnError: true },
+    )
+    toast.show({ title: "Browser", message: `Started browser subagent ${child.id}`, variant: "success" })
+  }
+
+  const runComputerCommand = async (args: string) => {
+    const sessionID = await ensureSessionForAutomation("computer")
+    if (computer.sessionID !== sessionID) {
+      computer.sessionID = sessionID
+      computer.computerSessionID = undefined
+      computer.snapshotHash = undefined
+    }
+
+    try {
+      const parsed = parseComputerCommand(args)
+      if (parsed.action === "help") {
+        toast.show({ title: "Computer", message: parsed.message ?? "Usage: /computer <action>", variant: "info" })
+        return
+      }
+      toast.show({ title: "Computer", message: `Running ${parsed.action}…`, variant: "info" })
+      if (parsed.action === "open") {
+        const result = (await sdk.client.v2.computer.open({ sessionID, backend: "auto" }, { throwOnError: true })).data
+        computer.computerSessionID = result.id
+        computer.snapshotHash = result.snapshot?.hash
+        toast.show({
+          title: "Computer",
+          message: result.unavailableReason ?? `Opened ${result.id}`,
+          variant: result.status === "ready" ? "success" : "error",
+        })
+        return
+      }
+      if (!computer.computerSessionID) throw new Error("No computer session. Run /computer open first")
+      if (parsed.action === "close") {
+        await sdk.client.v2.computer.close(
+          { sessionID, computerSessionID: computer.computerSessionID },
+          { throwOnError: true },
+        )
+        computer.computerSessionID = undefined
+        computer.snapshotHash = undefined
+        toast.show({ title: "Computer", message: "Closed computer session", variant: "success" })
+        return
+      }
+      if (parsed.action === "events") {
+        const result = (
+          await sdk.client.v2.computer.events(
+            {
+              sessionID,
+              computerSessionID: computer.computerSessionID,
+              ...(parsed.after === undefined ? {} : { after: String(parsed.after) }),
+              ...(parsed.limit === undefined ? {} : { limit: String(parsed.limit) }),
+            },
+            { throwOnError: true },
+          )
+        ).data
+        toast.show({
+          title: "Computer events",
+          message: result.events.length
+            ? result.events.map((event) => `${event.type} ${event.durable?.seq ?? ""}`.trim()).join("\n")
+            : "No computer events",
+          variant: "info",
+        })
+        return
+      }
+      const result = (
+        await sdk.client.v2.computer.action(
+          {
+            sessionID,
+            computerSessionID: computer.computerSessionID,
+            action: parsed.action,
+            ...(parsed.action === "click" ? { x: parsed.x, y: parsed.y } : {}),
+            ...(parsed.action === "scroll" ? { y: parsed.y } : {}),
+            ...(parsed.action === "type" ? { text: parsed.text } : {}),
+            ...(parsed.action === "press" ? { key: parsed.key } : {}),
+            ...(computer.snapshotHash ? { expectedSnapshotHash: computer.snapshotHash } : {}),
+            destructive: ["click", "type", "press", "scroll"].includes(parsed.action),
+          },
+          { throwOnError: true },
+        )
+      ).data
+      computer.snapshotHash = result.snapshot?.hash ?? computer.snapshotHash
+      toast.show({
+        title: `Computer ${parsed.action}`,
+        message: result.artifact?.relativePath ?? result.output,
+        variant: "success",
+      })
+    } catch (error) {
+      toast.show({
+        title: "Computer",
+        message: error instanceof Error ? error.message : String(error),
+        variant: "error",
+      })
+    }
+  }
+  let computerQueue: Promise<unknown> = Promise.resolve()
+  const runComputer = (args: string) => {
+    const next = computerQueue.then(() => runComputerCommand(args))
+    computerQueue = next.catch(() => undefined)
+    return next
+  }
 
   const promptCommands = createMemo(() =>
     [
@@ -571,6 +820,22 @@ export function Prompt(props: PromptProps) {
             />
           ))
         },
+      },
+      {
+        title: "Control browser through Chrome CDP",
+        desc: "Open and control a real Chrome session with /browser",
+        name: "session.browser",
+        category: "Session",
+        slashName: "browser",
+        run: () => void runBrowser(""),
+      },
+      {
+        title: "Control the desktop with Computer Use",
+        desc: "Observe and control desktop applications with /computer",
+        name: "session.computer",
+        category: "Session",
+        slashName: "computer",
+        run: () => void runComputer(""),
       },
       {
         title: "Warp",
@@ -1136,9 +1401,45 @@ export function Prompt(props: PromptProps) {
       dialog.replace(() => <DialogMemory sessionID={sessionID} operations={operations} />)
       return true
     }
+    const trimmed = store.prompt.input.trim()
+    const localBrowserCommand =
+      store.mode === "shell" ? undefined : /^\/(browser|computer)(?:[ \t]+([\s\S]*))?$/u.exec(trimmed)
+    if (localBrowserCommand) {
+      const args = localBrowserCommand[2] ?? ""
+      const parsed = localBrowserCommand[1] === "browser" ? parseBrowserCommand(args) : parseComputerCommand(args)
+      if (parsed.action === "help" && args.trim() !== "") {
+        if (localBrowserCommand[1] === "browser") {
+          history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+          input.extmarks.clear()
+          setStore("prompt", { input: "", parts: [] })
+          setStore("extmarkToPartIndex", new Map())
+          input.clear()
+          props.onSubmit?.()
+          void runBrowserTask(args).catch((error: unknown) =>
+            toast.show({
+              title: "Browser",
+              message: error instanceof Error ? error.message : String(error),
+              variant: "error",
+            }),
+          )
+          return true
+        }
+        const instruction = `Use the computer tool to complete this desktop request. User request: ${args}`
+        setStore("prompt", "input", instruction)
+        input.setText(instruction)
+        return submitInner(delivery)
+      }
+      history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+      props.onSubmit?.()
+      void (localBrowserCommand[1] === "browser" ? runBrowser(args) : runComputer(args))
+      return true
+    }
     const agent = local.agent.current()
     if (!agent) return false
-    const trimmed = store.prompt.input.trim()
     if (trimmed === "exit" || trimmed === "quit" || trimmed === ":q") {
       void exit()
       return true
@@ -1333,8 +1634,7 @@ export function Prompt(props: PromptProps) {
       return true
     }
     // Grok Build: `/btw` anywhere in the message (`fix X first. /btw what is Y?`) asks the rest as a side question.
-    const question =
-      store.mode === "shell" ? undefined : inputText.trim() === "/btw" ? "" : sideQuestionText(inputText)
+    const question = store.mode === "shell" ? undefined : inputText.trim() === "/btw" ? "" : sideQuestionText(inputText)
     if (question !== undefined) {
       const images = sideQuestionImages(store.prompt.parts)
       history.append({ input: store.prompt.input, parts: store.prompt.parts, mode: store.mode })

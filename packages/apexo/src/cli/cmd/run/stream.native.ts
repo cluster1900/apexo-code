@@ -232,6 +232,7 @@ export async function createNativeSessionTransport(
         state.running = false
       }
     },
+    registerSubagent() {},
     // Native Task output is available through the Tasks manager and direct
     // child attachment; compatibility stream-derived subagent tabs are absent.
     selectSubagent() {},

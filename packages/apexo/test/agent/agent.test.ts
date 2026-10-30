@@ -55,6 +55,19 @@ it.instance("returns default native agents when no config", () =>
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
+    expect(names).toContain("browser")
+  }),
+)
+
+it.instance("browser agent only permits browser execution", () =>
+  Effect.gen(function* () {
+    const browser = yield* load((svc) => svc.get("browser"))
+    expect(browser.hidden).toBe(true)
+    expect(browser.mode).toBe("subagent")
+    expect(browser.options.toolset).toBe("browser")
+    expect(evalPerm(browser, "browser")).toBe("allow")
+    expect(evalPerm(browser, "shell")).toBe("deny")
+    expect(evalPerm(browser, "computer")).toBe("deny")
   }),
 )
 

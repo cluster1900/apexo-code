@@ -18,7 +18,8 @@ export class ComputerError extends Schema.TaggedErrorClass<ComputerError>()("Com
   message: Schema.String,
 }) {}
 
-type State = { info: ComputerSchema.Info; driver: "native" | "fixture" }
+type FixtureState = { activeApp: string; window: string; text: string }
+type State = { info: ComputerSchema.Info; driver: "native" | "fixture"; fixture: FixtureState }
 type ActionOutput = {
   readonly output: string
   readonly snapshot?: ComputerSchema.Snapshot
@@ -54,12 +55,12 @@ const snapshotHash = (value: string) => {
   return (hash >>> 0).toString(16)
 }
 
-const fixture = () =>
+const fixture = (state: FixtureState) =>
   ComputerSchema.Snapshot.make({
-    hash: snapshotHash("Fixture App|Fixture Window|Close button"),
-    activeApp: "Fixture App",
-    window: "Fixture Window",
-    text: "Close button",
+    hash: snapshotHash(`${state.activeApp}|${state.window}|${state.text}`),
+    activeApp: state.activeApp,
+    window: state.window,
+    text: state.text,
   })
 
 const nativeScript = `tell application "System Events"
@@ -94,11 +95,11 @@ const layer = Layer.effect(
         }),
       )
 
-    const observe = Effect.fn("Computer.observe")(function* (useFixture = fixtureMode) {
+    const observe = Effect.fn("Computer.observe")(function* (useFixture = fixtureMode, fixtureState?: FixtureState) {
       const available = process.platform === "darwin" || useFixture
       if (!available)
         return yield* new ComputerError({ code: "unsupported_platform", message: "Computer Use currently supports macOS only." })
-      if (useFixture) return fixture()
+      if (useFixture) return fixture(fixtureState ?? { activeApp: "Fixture App", window: "Fixture Window", text: "Close button" })
       const result = yield* run("/usr/bin/osascript", ["-e", nativeScript])
       const [activeApp, window] = outputText(result).split("|", 2)
       const text = `${activeApp ?? ""} ${window ?? ""}`.trim().slice(0, MAX_TEXT)
@@ -163,10 +164,14 @@ const layer = Layer.effect(
         createdAt: Date.now(),
         ...(available ? {} : { unavailableReason: "Computer Use currently supports macOS only." }),
       })
-      const state = { info, driver: useFixture ? "fixture" : "native" } satisfies State
+      const state = {
+        info,
+        driver: useFixture ? "fixture" : "native",
+        fixture: { activeApp: "Fixture App", window: "Fixture Window", text: "Close button" },
+      } satisfies State
       sessions.set(computerSessionID, state)
       if (available) {
-        const snapshot = yield* observe(useFixture).pipe(
+        const snapshot = yield* observe(useFixture, state.fixture).pipe(
           Effect.catchTag("Computer.Error", (error) => {
             update(state, { status: error.code === "permission_required" ? "permission_required" : "unavailable", unavailableReason: error.message })
             return Effect.succeed(undefined)
@@ -196,11 +201,11 @@ const layer = Layer.effect(
         if (input.expectedSnapshotHash && state.info.snapshot?.hash !== input.expectedSnapshotHash)
           return yield* new ComputerError({ code: "stale_target", message: "The desktop changed; observe it again before acting." })
         if (input.action === "observe") {
-          const snapshot = yield* observe(useFixture)
+          const snapshot = yield* observe(useFixture, state.fixture)
           return { output: JSON.stringify(snapshot), snapshot }
         }
         if (input.action === "screenshot") {
-          const snapshot = yield* observe(useFixture)
+          const snapshot = yield* observe(useFixture, state.fixture)
           const artifact = yield* capture(input.computerSessionID, useFixture)
           yield* publish(events, ComputerSchema.Event.ArtifactCreated, { computerSessionID: input.computerSessionID, artifact: artifact.artifact })
           return { output: `Screenshot saved as ${artifact.artifact.relativePath}`, snapshot, ...artifact }
@@ -208,22 +213,26 @@ const layer = Layer.effect(
         if (input.action === "click") {
           if (input.x === undefined || input.y === undefined) return yield* new ComputerError({ code: "invalid_action", message: "computer.click requires x and y" })
           if (!useFixture) yield* runCliclick([`c:${input.x},${input.y}`])
-          return { output: `Clicked ${input.x},${input.y}`, snapshot: yield* observe(useFixture) }
+          if (useFixture) state.fixture.text = `Clicked ${input.x},${input.y}`
+          return { output: `Clicked ${input.x},${input.y}`, snapshot: yield* observe(useFixture, state.fixture) }
         }
         if (input.action === "type") {
           if (input.text === undefined) return yield* new ComputerError({ code: "invalid_action", message: "computer.type requires text" })
           if (!useFixture) yield* runCliclick([`t:${input.text}`])
-          return { output: "Typed text", snapshot: yield* observe(useFixture) }
+          if (useFixture) state.fixture.text = `Typed ${input.text}`
+          return { output: "Typed text", snapshot: yield* observe(useFixture, state.fixture) }
         }
         if (input.action === "press") {
           if (!input.key) return yield* new ComputerError({ code: "invalid_action", message: "computer.press requires key" })
           if (!useFixture) yield* runCliclick([`kp:${input.key}`])
-          return { output: `Pressed ${input.key}`, snapshot: yield* observe(useFixture) }
+          if (useFixture) state.fixture.text = `Pressed ${input.key}`
+          return { output: `Pressed ${input.key}`, snapshot: yield* observe(useFixture, state.fixture) }
         }
         if (input.action === "scroll") {
           if (input.y === undefined) return yield* new ComputerError({ code: "invalid_action", message: "computer.scroll requires y" })
           if (!useFixture) yield* runCliclick([`kp:${input.y > 0 ? "page-down" : "page-up"}`])
-          return { output: `Scrolled ${input.y}`, snapshot: yield* observe(useFixture) }
+          if (useFixture) state.fixture.text = `Scrolled ${input.y}`
+          return { output: `Scrolled ${input.y}`, snapshot: yield* observe(useFixture, state.fixture) }
         }
         return yield* new ComputerError({ code: "invalid_action", message: `Unsupported computer action: ${input.action}` })
       }).pipe(

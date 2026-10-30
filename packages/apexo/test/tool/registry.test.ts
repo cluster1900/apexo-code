@@ -180,6 +180,39 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes the Browser Service as a model tool", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("test"),
+        modelID: ModelV2.ID.make("test"),
+        agent: yield* agents.defaultInfo(),
+      })
+      const browser = tools.find((tool) => tool.id === "browser")
+
+      expect(browser).toBeDefined()
+      expect(browser?.description).toContain("Chrome DevTools Protocol")
+    }),
+  )
+
+  it.instance("restricts the Browser Subagent to the browser tool", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const browser = yield* agents.get("browser")
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("test"),
+        modelID: ModelV2.ID.make("test"),
+        agent: browser,
+      })
+
+      expect(browser.hidden).toBe(true)
+      expect(browser.options.toolset).toBe("browser")
+      expect(tools.map((tool) => tool.id)).toEqual(["browser"])
+    }),
+  )
+
   withGrokBuildProfile.instance("exposes Grok Build core tool names to every client", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
@@ -208,6 +241,7 @@ describe("tool.registry", () => {
           "todo_write",
           "update_goal",
           "web_fetch",
+          "browser",
         ]),
       )
       expect(tools.map((tool) => tool.id)).not.toContain("shell")
@@ -239,6 +273,7 @@ describe("tool.registry", () => {
         "web_fetch",
         "todo_write",
         "computer",
+        "browser",
         "lsp",
         "enter_plan_mode",
         "exit_plan_mode",

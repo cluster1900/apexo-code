@@ -69,6 +69,7 @@ import { Scheduler } from "@apexo/core/scheduler"
 import { SchedulerStore } from "@apexo/core/scheduler-store"
 import { GrokBuildTools } from "./grok-build"
 import { ComputerTool } from "./computer"
+import { BrowserTool } from "./browser"
 import { Computer } from "@apexo/core/computer"
 import { LocationServiceMap, locationServiceMapLayer } from "@apexo/core/location-services"
 
@@ -148,6 +149,7 @@ const layer = Layer.effect(
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const computer = yield* ComputerTool
+    const browser = yield* BrowserTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
@@ -265,6 +267,7 @@ const layer = Layer.effect(
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           computer: Tool.init(computer),
+          browser: Tool.init(browser),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           planEnter: Tool.init(planEnter),
@@ -291,6 +294,7 @@ const layer = Layer.effect(
             tool.skill,
             tool.patch,
             tool.computer,
+            tool.browser,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && (flags.client === "cli" || flags.runtimeProfile === "grok-build")
@@ -314,7 +318,7 @@ const layer = Layer.effect(
     })
 
     const describeTask = Effect.fn("ToolRegistry.describeTask")(function* (agent: Agent.Info) {
-      const items = (yield* agents.list()).filter((item) => item.mode !== "primary")
+      const items = (yield* agents.list()).filter((item) => item.mode !== "primary" && item.hidden !== true)
       const filtered = items.filter(
         (item) => Permission.evaluate("task", item.name, agent.permission).action !== "deny",
       )
@@ -341,6 +345,7 @@ const layer = Layer.effect(
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const filtered = (yield* all()).filter((tool) => {
+        if (input.agent.options.toolset === "browser") return tool.id === "browser"
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled({ exa: flags.enableExa, parallel: flags.enableParallel })
         }

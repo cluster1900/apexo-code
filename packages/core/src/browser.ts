@@ -1,5 +1,6 @@
 export * as Browser from "./browser"
 
+import { chromium, type Page } from "playwright-core"
 import { Browser as BrowserSchema } from "@apexo/schema/browser"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Location } from "./location"
@@ -26,19 +27,11 @@ export class BrowserError extends Schema.TaggedErrorClass<BrowserError>()("Brows
   message: Schema.String,
 }) {}
 
-type Pending = {
-  readonly resolve: (value: unknown) => void
-  readonly reject: (error: unknown) => void
-  readonly timer: ReturnType<typeof setTimeout>
-}
-
 type Connection = {
-  readonly socket: WebSocket
-  readonly targetID: string
+  readonly browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
+  readonly page: Page
   readonly pageID: BrowserSchema.PageID
-  readonly pending: Map<number, Pending>
   readonly console: string[]
-  nextID: number
   connected: boolean
 }
 
@@ -100,226 +93,6 @@ const safeCdpUrl = (value: string) => {
   }
 }
 
-const browserBase = (value: string) => {
-  const parsed = new URL(value)
-  if (parsed.protocol === "ws:" || parsed.protocol === "wss:") return undefined
-  return `${parsed.protocol}//${parsed.host}`
-}
-
-const cdpRequest = (connection: Connection, method: string, params?: Record<string, unknown>) =>
-  Effect.tryPromise({
-    try: () =>
-      new Promise<unknown>((resolve, reject) => {
-        if (!connection.connected) {
-          reject(new BrowserError({ code: "browser_disconnected", message: "Browser CDP connection is closed" }))
-          return
-        }
-        const id = connection.nextID++
-        const timer = setTimeout(() => {
-          connection.pending.delete(id)
-          reject(new BrowserError({ code: "cdp_error", message: `CDP request timed out: ${method}` }))
-        }, ACTION_TIMEOUT_MS)
-        connection.pending.set(id, { resolve, reject, timer })
-        try {
-          connection.socket.send(JSON.stringify({ id, method, ...(params ? { params } : {}) }))
-        } catch (cause) {
-          clearTimeout(timer)
-          connection.pending.delete(id)
-          reject(asError(cause))
-        }
-      }),
-    catch: asError,
-  })
-    .pipe(
-      Effect.mapError((cause) =>
-        cause instanceof BrowserError
-          ? cause
-          : new BrowserError({ code: "cdp_error", message: `CDP request failed: ${cause.message}` }),
-      ),
-    )
-
-const responseResult = (method: string, value: unknown) => {
-  if (!value || typeof value !== "object") throw new BrowserError({ code: "cdp_error", message: `Invalid CDP response: ${method}` })
-  if ("error" in value) {
-    const detail = value.error
-    throw new BrowserError({ code: "cdp_error", message: `CDP ${method} failed: ${JSON.stringify(detail)}` })
-  }
-  return "result" in value ? value.result : value
-}
-
-const evaluate = (connection: Connection, expression: string) =>
-  cdpRequest(connection, "Runtime.evaluate", {
-    expression,
-    awaitPromise: true,
-    returnByValue: true,
-    userGesture: true,
-  }).pipe(
-    Effect.map((value) => responseResult("Runtime.evaluate", value)),
-    Effect.flatMap((value) => {
-      if (!value || typeof value !== "object" || !("result" in value))
-        return Effect.fail(new BrowserError({ code: "cdp_error", message: "Runtime.evaluate returned no value" }))
-      const result = value.result
-      if (!result || typeof result !== "object")
-        return Effect.fail(new BrowserError({ code: "cdp_error", message: "Runtime.evaluate returned an invalid value" }))
-      if ("exceptionDetails" in value) {
-        const detail = value.exceptionDetails
-        const description =
-          detail && typeof detail === "object" && "exception" in detail && detail.exception && typeof detail.exception === "object" && "description" in detail.exception
-            ? detail.exception.description
-            : detail && typeof detail === "object" && "text" in detail
-              ? detail.text
-              : undefined
-        return Effect.fail(
-          new BrowserError({
-            code: "cdp_error",
-            message: typeof description === "string" ? `Browser page evaluation failed: ${description}` : "Browser page evaluation failed",
-          }),
-        )
-      }
-      return Effect.succeed("value" in result ? result.value : undefined)
-    }),
-  )
-
-const pageState = (connection: Connection, pageID: BrowserSchema.PageID) =>
-  evaluate(
-    connection,
-    `(() => {
-      const text = document.body?.innerText ?? "";
-      const source = document.documentElement?.outerHTML ?? "";
-      let hash = 2166136261;
-      for (let i = 0; i < source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619);
-      return { url: location.href, title: document.title, text: text.slice(0, ${MAX_TEXT}), snapshotHash: (hash >>> 0).toString(16) };
-    })()`,
-  ).pipe(
-    Effect.flatMap((value) => {
-      if (!value || typeof value !== "object")
-        return Effect.fail(new BrowserError({ code: "cdp_error", message: "Browser page snapshot was empty" }))
-      const state = value as { url?: unknown; title?: unknown; text?: unknown; snapshotHash?: unknown }
-      if (typeof state.url !== "string" || typeof state.title !== "string" || typeof state.snapshotHash !== "string")
-        return Effect.fail(new BrowserError({ code: "cdp_error", message: "Browser page snapshot was invalid" }))
-      return Effect.succeed({
-        page: BrowserSchema.Page.make({ id: pageID, url: state.url, title: state.title, snapshotHash: state.snapshotHash }),
-        text: typeof state.text === "string" ? state.text : "",
-      })
-    }),
-  )
-
-const accessibility = (connection: Connection) =>
-  cdpRequest(connection, "Accessibility.getFullAXTree").pipe(
-    Effect.map((value) => responseResult("Accessibility.getFullAXTree", value)),
-    Effect.map((value) => {
-      if (!value || typeof value !== "object" || !("nodes" in value) || !Array.isArray(value.nodes)) return []
-      return value.nodes.slice(0, MAX_ACCESSIBILITY_NODES).flatMap((node) => {
-        if (!node || typeof node !== "object") return []
-        const item = node as { role?: { value?: unknown }; name?: { value?: unknown } }
-        const role = typeof item.role?.value === "string" ? item.role.value : ""
-        const name = typeof item.name?.value === "string" ? item.name.value : ""
-        return role || name ? [`${role}${name ? `: ${name}` : ""}`] : []
-      })
-    }),
-  )
-
-const selectorExpression = (selector: string, expression: string) =>
-  `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element) throw new Error("Element not found"); ${expression} })()`
-
-const createConnection = (target: { id: string; webSocketDebuggerUrl?: string }, pageID: BrowserSchema.PageID) =>
-  Effect.tryPromise({
-    try: () =>
-      new Promise<Connection>((resolve, reject) => {
-        if (!target.webSocketDebuggerUrl) {
-          reject(new globalThis.Error("CDP target did not expose a websocket"))
-          return
-        }
-        const socket = new WebSocket(target.webSocketDebuggerUrl)
-        const pending = new Map<number, Pending>()
-        const connection: Connection = {
-          socket,
-          targetID: target.id,
-          pageID,
-          pending,
-          console: [],
-          nextID: 1,
-          connected: false,
-        }
-        const failPending = (cause: unknown) => {
-          connection.connected = false
-          for (const [id, item] of pending) {
-            clearTimeout(item.timer)
-            item.reject(cause)
-            pending.delete(id)
-          }
-        }
-        socket.onmessage = (event) => {
-          try {
-            const message = JSON.parse(String(event.data)) as { id?: number; method?: string; params?: unknown; result?: unknown; error?: unknown }
-            if (typeof message.id === "number") {
-              const item = pending.get(message.id)
-              if (!item) return
-              clearTimeout(item.timer)
-              pending.delete(message.id)
-              item.resolve(message)
-              return
-            }
-            if (message.method === "Runtime.consoleAPICalled" && message.params && typeof message.params === "object") {
-              const params = message.params as { args?: Array<{ value?: unknown }> }
-              const line = (params.args ?? [])
-                .map((arg) => (typeof arg.value === "string" ? arg.value : JSON.stringify(arg.value)))
-                .join(" ")
-              if (line) connection.console.push(line.slice(0, MAX_TEXT))
-              if (connection.console.length > 100) connection.console.shift()
-            }
-          } catch {
-            failPending(new globalThis.Error("Invalid CDP message"))
-          }
-        }
-        socket.onerror = () => failPending(new BrowserError({ code: "browser_disconnected", message: "Browser CDP connection failed" }))
-        socket.onclose = () => failPending(new BrowserError({ code: "browser_disconnected", message: "Browser CDP connection closed" }))
-        socket.onopen = () => {
-          connection.connected = true
-          resolve(connection)
-        }
-      }),
-    catch: asError,
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: ACTION_TIMEOUT_MS,
-      orElse: () => Effect.fail(new BrowserError({ code: "browser_disconnected", message: "Timed out connecting to Browser CDP" })),
-    }),
-    Effect.mapError((cause) =>
-      cause instanceof BrowserError
-        ? cause
-        : new BrowserError({ code: "browser_disconnected", message: `Unable to connect to Browser CDP: ${cause.message}` }),
-    ),
-  )
-
-const discoverTarget = (cdp: string, url: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const ws = cdp.startsWith("ws://") || cdp.startsWith("wss://")
-      if (ws) return { id: "attached", webSocketDebuggerUrl: cdp }
-      const base = browserBase(cdp)
-      if (!base) throw new globalThis.Error("Invalid CDP endpoint")
-      const list = async () => {
-        const response = await fetch(`${base}/json/list`)
-        if (!response.ok) throw new globalThis.Error(`CDP target list failed with ${response.status}`)
-        return (await response.json()) as Array<{ id: string; type?: string; url?: string; webSocketDebuggerUrl?: string }>
-      }
-      const targets = (await list()).filter((target) => target.type === "page" && target.webSocketDebuggerUrl)
-      const exact = targets.find((target) => target.url === url)
-      if (exact) return exact
-      // Reuse a blank tab, but never commandeer an unrelated active page. If
-      // Chrome already has work open, create a dedicated target for this URL.
-      const blank = targets.find((target) => target.url === "about:blank" || target.url === "chrome://newtab/")
-      if (blank) return blank
-      const response = await fetch(`${base}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })
-      if (!response.ok) throw new globalThis.Error(`CDP target creation failed with ${response.status}`)
-      return (await response.json()) as { id: string; webSocketDebuggerUrl?: string }
-    },
-    catch: asError,
-  }).pipe(
-    Effect.mapError((cause) => new BrowserError({ code: "browser_disconnected", message: `Unable to discover Browser CDP target: ${cause.message}` })),
-  )
-
 const validateUrl = (value: string) => {
   const url = (() => {
     try {
@@ -350,6 +123,105 @@ const updateInfo = (state: State, info: Partial<BrowserSchema.Info>) => {
   return state.info
 }
 
+const connectionError = (cause: unknown) =>
+  cause instanceof BrowserError
+    ? cause
+    : new BrowserError({ code: "browser_disconnected", message: `Unable to connect to Browser CDP: ${asError(cause).message}` })
+
+const connect = (endpoint: string, url: string, pageID: BrowserSchema.PageID) =>
+  Effect.tryPromise({
+    try: async () => {
+      const browser = await chromium.connectOverCDP(endpoint, { timeout: ACTION_TIMEOUT_MS })
+      const context = browser.contexts()[0]
+      if (!context) throw new globalThis.Error("Browser CDP did not expose a browser context")
+      const page =
+        context.pages().find((item) => item.url() === url) ??
+        context.pages().find((item) => item.url() === "about:blank" || item.url() === "chrome://newtab/") ??
+        (await context.newPage())
+      const connection: Connection = {
+        browser,
+        page,
+        pageID,
+        console: [],
+        connected: true,
+      }
+      page.on("console", (message) => {
+        const line = message.args().map((arg) => arg.toString()).join(" ")
+        if (!line) return
+        connection.console.push(line.slice(0, MAX_TEXT))
+        if (connection.console.length > 100) connection.console.shift()
+      })
+      page.on("close", () => {
+        connection.connected = false
+      })
+      browser.on("disconnected", () => {
+        connection.connected = false
+      })
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: ACTION_TIMEOUT_MS })
+      return connection
+    },
+    catch: connectionError,
+  }).pipe(
+    Effect.timeoutOrElse({
+      duration: ACTION_TIMEOUT_MS,
+      orElse: () => Effect.fail(new BrowserError({ code: "browser_disconnected", message: "Timed out connecting to Browser CDP" })),
+    }),
+    Effect.mapError(connectionError),
+  )
+
+const pageState = (connection: Connection, pageID: BrowserSchema.PageID) =>
+  Effect.tryPromise({
+    try: async () => {
+      if (!connection.connected || connection.page.isClosed())
+        throw new BrowserError({ code: "browser_disconnected", message: "Browser page is closed" })
+      const state = await connection.page.evaluate(() => {
+        const runtime = globalThis as unknown as {
+          location: { href: string }
+          document: {
+            title: string
+            body?: { innerText?: string }
+            documentElement?: { outerHTML?: string }
+          }
+        }
+        return {
+          url: runtime.location.href,
+          title: runtime.document.title,
+          text: (runtime.document.body?.innerText ?? "").slice(0, 12_000),
+          source: runtime.document.documentElement?.outerHTML ?? "",
+        }
+      })
+      let hash = 2166136261
+      for (let index = 0; index < state.source.length; index++) hash = Math.imul(hash ^ state.source.charCodeAt(index), 16777619)
+      return {
+        page: BrowserSchema.Page.make({
+          id: pageID,
+          url: state.url,
+          title: state.title,
+          snapshotHash: (hash >>> 0).toString(16),
+        }),
+        text: state.text,
+      }
+    },
+    catch: (cause) =>
+      cause instanceof BrowserError
+        ? cause
+        : new BrowserError({ code: "cdp_error", message: `Browser page snapshot failed: ${asError(cause).message}` }),
+  })
+
+const accessibility = (connection: Connection) =>
+  Effect.tryPromise({
+    try: async () => {
+      const snapshot = await connection.page.locator("body").ariaSnapshot({ timeout: ACTION_TIMEOUT_MS })
+      return snapshot.split("\n").slice(0, MAX_ACCESSIBILITY_NODES)
+    },
+    catch: asError,
+  }).pipe(Effect.orElseSucceed(() => [] as string[]))
+
+const actionError = (action: string, cause: unknown) =>
+  cause instanceof BrowserError
+    ? cause
+    : new BrowserError({ code: "cdp_error", message: `Browser ${action} failed: ${asError(cause).message}` })
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -360,14 +232,14 @@ const layer = Layer.effect(
     const sessions = new Map<BrowserSchema.BrowserSessionID, State>()
 
     const emitPage = Effect.fnUntraced(function* (state: State, page: BrowserSchema.Page) {
-      updateInfo(state, { page, status: "connected", lastActionAt: Date.now() })
+      updateInfo(state, { page, status: "connected", lastActionAt: Date.now(), disconnectedReason: undefined })
       yield* publish(events, BrowserSchema.Event.PageChanged, { browserSessionID: state.info.id, page })
     })
 
     const observe = Effect.fn("Browser.observe")(function* (state: State) {
       const current = yield* pageState(state.connection, state.connection.pageID)
       yield* emitPage(state, current.page)
-      const tree = yield* accessibility(state.connection).pipe(Effect.catch(() => Effect.succeed([] as string[])))
+      const tree = yield* accessibility(state.connection)
       const logs = state.connection.console.slice(-20)
       return {
         output: JSON.stringify({ page: current.page, text: current.text, accessibility: tree, console: logs }),
@@ -387,6 +259,16 @@ const layer = Layer.effect(
             return yield* new BrowserError({ code: "stale_target", message: "The page changed; observe it again before acting" })
         }
       })
+
+    const close = Effect.fn("Browser.close")(function* (browserSessionID: BrowserSchema.BrowserSessionID) {
+      const state = sessions.get(browserSessionID)
+      if (!state) return
+      state.connection.connected = false
+      void state.connection.browser.close()
+      updateInfo(state, { status: "closed", lastActionAt: Date.now() })
+      yield* publish(events, BrowserSchema.Event.Closed, { browserSessionID })
+      sessions.delete(browserSessionID)
+    })
 
     const act = Effect.fn("Browser.act")(function* (
       input: Omit<BrowserSchema.ActionInput, "browserSessionID"> & { readonly browserSessionID: BrowserSchema.BrowserSessionID },
@@ -409,52 +291,61 @@ const layer = Layer.effect(
         if (input.action === "open") {
           if (!input.url) return yield* new BrowserError({ code: "invalid_action", message: "browser.open requires url" })
           const url = yield* validateUrlEffect(input.url)
-          yield* cdpRequest(state.connection, "Page.navigate", { url }).pipe(
-            Effect.map((value) => responseResult("Page.navigate", value)),
-          )
+          yield* Effect.tryPromise({
+            try: () => state.connection.page.goto(url, { waitUntil: "domcontentloaded", timeout: ACTION_TIMEOUT_MS }),
+            catch: (cause) => actionError("open", cause),
+          })
           yield* Effect.sleep(100)
           return yield* observe(state)
         }
         if (input.action === "observe") return yield* observe(state)
         if (input.action === "click") {
           if (!input.selector) return yield* new BrowserError({ code: "invalid_action", message: "browser.click requires selector" })
-          yield* evaluate(state.connection, selectorExpression(input.selector, "element.click(); return true;"))
+          yield* Effect.tryPromise({
+            try: () => state.connection.page.locator(input.selector!).click({ timeout: ACTION_TIMEOUT_MS }),
+            catch: (cause) => actionError("click", cause),
+          })
           yield* Effect.sleep(50)
           return yield* observe(state)
         }
         if (input.action === "type") {
           if (!input.selector || input.text === undefined)
             return yield* new BrowserError({ code: "invalid_action", message: "browser.type requires selector and text" })
-          yield* evaluate(
-            state.connection,
-            selectorExpression(
-              input.selector,
-              "element.focus(); if (typeof element.select === 'function') element.select(); else document.execCommand('selectAll'); return true;",
-            ),
-          )
-          yield* cdpRequest(state.connection, "Input.insertText", { text: input.text })
+          yield* Effect.tryPromise({
+            try: () => state.connection.page.locator(input.selector!).fill(input.text!),
+            catch: (cause) => actionError("type", cause),
+          })
           return yield* observe(state)
         }
         if (input.action === "press") {
           if (!input.key) return yield* new BrowserError({ code: "invalid_action", message: "browser.press requires key" })
-          yield* cdpRequest(state.connection, "Input.dispatchKeyEvent", { type: "keyDown", key: input.key })
-          yield* cdpRequest(state.connection, "Input.dispatchKeyEvent", { type: "keyUp", key: input.key })
+          yield* Effect.tryPromise({
+            try: () => state.connection.page.keyboard.press(input.key!),
+            catch: (cause) => actionError("press", cause),
+          })
           return yield* observe(state)
         }
         if (input.action === "scroll") {
-          if (input.x === undefined || input.y === undefined)
+          const x = input.x
+          const y = input.y
+          if (x === undefined || y === undefined)
             return yield* new BrowserError({ code: "invalid_action", message: "browser.scroll requires x and y" })
-          yield* evaluate(state.connection, `window.scrollBy(${input.x}, ${input.y}); true`)
+          yield* Effect.tryPromise({
+            try: () =>
+              state.connection.page.evaluate(({ x, y }) => {
+                const runtime = globalThis as unknown as { scrollBy: (x: number, y: number) => void }
+                runtime.scrollBy(x, y)
+              }, { x, y }),
+            catch: (cause) => actionError("scroll", cause),
+          })
           return yield* observe(state)
         }
         if (input.action === "screenshot") {
-          const screenshot = yield* cdpRequest(state.connection, "Page.captureScreenshot", {
-            format: "png",
-            captureBeyondViewport: input.fullPage === true,
-          }).pipe(Effect.map((value) => responseResult("Page.captureScreenshot", value)))
-          if (!screenshot || typeof screenshot !== "object" || !("data" in screenshot) || typeof screenshot.data !== "string")
-            return yield* new BrowserError({ code: "artifact_error", message: "Browser did not return a screenshot" })
-          const screenshotData = screenshot.data
+          const screenshot = yield* Effect.tryPromise({
+            try: () => state.connection.page.screenshot({ type: "png", fullPage: input.fullPage === true }),
+            catch: (cause) => actionError("screenshot", cause),
+          })
+          const screenshotData = Buffer.from(screenshot).toString("base64")
           const artifactID = BrowserSchema.ArtifactID.create()
           const relativePath = artifactPath(state.info.id, artifactID)
           const bytes = Buffer.from(screenshotData, "base64")
@@ -499,36 +390,12 @@ const layer = Layer.effect(
       return { actionID, ...output }
     })
 
-    const close = Effect.fn("Browser.close")(function* (browserSessionID: BrowserSchema.BrowserSessionID) {
-      const state = sessions.get(browserSessionID)
-      if (!state) return
-      state.connection.connected = false
-      state.connection.socket.close()
-      updateInfo(state, { status: "closed", lastActionAt: Date.now() })
-      yield* publish(events, BrowserSchema.Event.Closed, { browserSessionID })
-      sessions.delete(browserSessionID)
-    })
-
     const open = Effect.fn("Browser.open")(function* (input: BrowserSchema.OpenInput) {
       const url = yield* validateUrlEffect(input.url)
       const endpoint = yield* cdpUrlEffect(input.cdpUrl)
-      const target = yield* discoverTarget(endpoint, url)
       const browserSessionID = BrowserSchema.BrowserSessionID.create()
       const pageID = BrowserSchema.PageID.create()
-      const connection = yield* createConnection(target, pageID).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof BrowserError
-            ? cause
-            : new BrowserError({ code: "browser_disconnected", message: `Unable to connect to Browser CDP: ${cause}` }),
-        ),
-      )
-      yield* cdpRequest(connection, "Runtime.enable")
-      yield* cdpRequest(connection, "Page.enable")
-      yield* cdpRequest(connection, "Network.enable")
-      yield* cdpRequest(connection, "Page.navigate", { url }).pipe(
-        Effect.map((value) => responseResult("Page.navigate", value)),
-      )
-      yield* Effect.sleep(100)
+      const connection = yield* connect(endpoint, url, pageID)
       const current = yield* pageState(connection, pageID)
       const info = BrowserSchema.Info.make({
         id: browserSessionID,
@@ -539,10 +406,7 @@ const layer = Layer.effect(
         createdAt: Date.now(),
         lastActionAt: Date.now(),
       })
-      const state = {
-        info,
-        connection,
-      } satisfies State
+      const state = { info, connection } satisfies State
       sessions.set(browserSessionID, state)
       yield* publish(events, BrowserSchema.Event.Started, {
         browserSessionID,

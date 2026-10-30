@@ -5,6 +5,7 @@ import {
   bootstrapSubagentCalls,
   bootstrapSubagentData,
   createSubagentData,
+  registerSubagent,
   reduceSubagentData,
   snapshotSubagentData,
 } from "@/cli/cmd/run/subagent-data"
@@ -210,6 +211,21 @@ function childMessage(input: {
 }
 
 describe("run subagent data", () => {
+  test("keeps a manually created browser child visible without a parent task part", () => {
+    const data = createSubagentData()
+
+    expect(registerSubagent(data, { sessionID: "browser-child", title: "Browser: inspect the page" })).toBe(true)
+    expect(snapshotSubagentData(data).tabs).toEqual([
+      expect.objectContaining({
+        sessionID: "browser-child",
+        label: "Browser",
+        description: "Browser: inspect the page",
+        status: "running",
+      }),
+    ])
+    expect(snapshotSubagentData(data).details).toHaveProperty("browser-child")
+  })
+
   test("bootstraps tabs and child blockers from parent task parts", () => {
     const data = createSubagentData()
 

@@ -62,7 +62,7 @@ const cliApi = async (method, endpoint, body) => {
   return stdout.trim() ? JSON.parse(stdout) : undefined
 }
 
-const result = { kind, sessionID: "", computerSessionID: "", events: 0, artifact: "", autocomplete: false, automatic: false }
+const result = { kind, sessionID: "", computerSessionID: "", events: 0, artifact: "", autocomplete: false, mutated: false, automatic: false }
 const api = (method, endpoint, body) => (kind === "cli" ? cliApi(method, endpoint, body) : runtime.api(endpoint, body))
 let cli
 let terminal
@@ -97,11 +97,19 @@ try {
     result.autocomplete = true
     cli.terminal.write("\x15")
     command("/computer")
-    const opened = await poll(async () => (await list()).find((item) => item.status === "ready"), "CLI computer open").catch(async (error) => {
-      console.error("CLI computer open debug", JSON.stringify(await list()), terminalText)
-      throw error
-    })
+    const opened = await poll(async () => (await list()).find((item) => item.status === "ready"), "CLI computer open")
     result.computerSessionID = opened.id
+    const eventList = async () => {
+      const response = await events(opened.id)
+      return response.data?.events ?? response.events ?? []
+    }
+    command('/computer type "Human typed"')
+    await poll(async () => (await eventList()).findLast((event) => event.type === "computer.action_completed" && event.data?.action === "type" && event.data?.status === "completed" && event.data?.snapshot?.text === "Typed Human typed"), "CLI computer type mutation")
+    command("/computer click 120 240")
+    await poll(async () => (await eventList()).findLast((event) => event.type === "computer.action_completed" && event.data?.action === "click" && event.data?.status === "completed" && event.data?.snapshot?.text === "Clicked 120,240"), "CLI computer click mutation")
+    command("/computer press Enter")
+    await poll(async () => (await eventList()).findLast((event) => event.type === "computer.action_completed" && event.data?.action === "press" && event.data?.status === "completed" && event.data?.snapshot?.text === "Pressed Enter"), "CLI computer press mutation")
+    result.mutated = true
     command("/computer screenshot")
     const artifact = await poll(async () => (await events(opened.id)).data?.events?.find((event) => event.type === "computer.artifact_created") ?? (await events(opened.id)).events?.find((event) => event.type === "computer.artifact_created"), "CLI computer screenshot")
     result.artifact = artifact.data.artifact.relativePath
@@ -128,15 +136,20 @@ try {
       await editor.waitFor({ state: "visible" })
       const submit = async (text) => { await editor.fill(text); await page.locator('[data-action="prompt-submit"]').click() }
       await editor.fill("/co")
-      await poll(async () => (await page.locator("body").innerText()).includes("/computer") && (await page.locator("body").innerText()).includes("Observe and control desktop applications with /computer"), "Desktop /computer autocomplete").catch(async (error) => {
-        console.error("desktop autocomplete debug", await page.locator("body").innerText())
-        throw error
-      })
+      await poll(async () => (await page.locator("body").innerText()).includes("/computer") && (await page.locator("body").innerText()).includes("Observe and control desktop applications with /computer"), "Desktop /computer autocomplete")
       result.autocomplete = true
       await editor.fill("")
       await submit("/computer")
       const opened = await poll(async () => (await list()).find((item) => item.status === "ready"), "Desktop computer open")
       result.computerSessionID = opened.id
+      const eventList = async () => (await events(opened.id)).events
+      await submit('/computer type "Human typed"')
+      await poll(async () => (await eventList()).findLast((event) => event.type === "computer.action_completed" && event.data?.action === "type" && event.data?.status === "completed" && event.data?.snapshot?.text === "Typed Human typed"), "Desktop computer type mutation")
+      await submit("/computer click 120 240")
+      await poll(async () => (await eventList()).findLast((event) => event.type === "computer.action_completed" && event.data?.action === "click" && event.data?.status === "completed" && event.data?.snapshot?.text === "Clicked 120,240"), "Desktop computer click mutation")
+      await submit("/computer press Enter")
+      await poll(async () => (await eventList()).findLast((event) => event.type === "computer.action_completed" && event.data?.action === "press" && event.data?.status === "completed" && event.data?.snapshot?.text === "Pressed Enter"), "Desktop computer press mutation")
+      result.mutated = true
       await submit("/computer screenshot")
       const artifact = await poll(async () => (await events(opened.id)).events.find((event) => event.type === "computer.artifact_created"), "Desktop computer screenshot")
       result.artifact = artifact.data.artifact.relativePath
@@ -159,11 +172,7 @@ try {
   const autoList = () => api("GET", `/api/session/${autoSession.id}/computer`)
   const autoEvents = (id) => api("GET", `/api/session/${autoSession.id}/computer/${id}/events`)
   await api("POST", `/api/session/${autoSession.id}/prompt`, { prompt: { text: "AUTO_COMPUTER" } })
-  const auto = await poll(async () => (await autoList()).find((item) => item.status === "ready"), `${kind} automatic computer tool trigger`).catch(async (error) => {
-    console.error("automatic computer debug", JSON.stringify(await autoList()))
-    console.error("automatic messages debug", JSON.stringify(await api("GET", `/api/session/${autoSession.id}/message`)))
-    throw error
-  })
+  const auto = await poll(async () => (await autoList()).find((item) => item.status === "ready"), `${kind} automatic computer tool trigger`)
   assert.ok(auto)
   result.automatic = true
   result.events = Math.max(result.events, (await autoEvents(auto.id)).events.length)

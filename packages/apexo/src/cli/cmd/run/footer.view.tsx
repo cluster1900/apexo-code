@@ -31,7 +31,7 @@ import {
   RunVariantSelectBody,
 } from "./footer.command"
 import { FOOTER_MENU_ROWS, RunFooterMenu } from "./footer.menu"
-import { RunFooterSubagentBody } from "./footer.subagent"
+import { RunFooterSubagentBody, SUBAGENT_INSPECTOR_ROWS } from "./footer.subagent"
 import { RunTasksBody } from "./footer.tasks"
 import { PluginsBrowser } from "@apexo/tui/component/plugins-browser"
 import { McpBrowser } from "@apexo/tui/component/mcp-browser"
@@ -72,6 +72,8 @@ import type { RunTheme } from "./theme"
 import { modelInfo } from "./variant.shared"
 import { minimalSlash } from "./footer.slash"
 import { resolveEffort, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
+import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { resolveModelArgs } from "@apexo/tui/util/slash-args"
 
 registerApexoSpinner()
@@ -563,6 +565,13 @@ export function RunFooterView(props: RunFooterViewProps) {
         (input.command?.name === "browser" || /^\/browser(?:\s|$)/u.test(input.text.trim()))
       ) {
         const args = input.command?.arguments ?? input.text.trim().replace(/^\/browser\s*/u, "")
+        if (parseBrowserCommand(args).action === "help" && args.trim() !== "") {
+          void props.browserActions
+            .runTask(args)
+            .then((message) => props.onStatus(message))
+            .catch((error: unknown) => props.onStatus(`browser: ${error instanceof Error ? error.message : String(error)}`))
+          return true
+        }
         void props.browserActions
           .run(args)
           .then((message) => props.onStatus(message))
@@ -575,6 +584,13 @@ export function RunFooterView(props: RunFooterViewProps) {
         (input.command?.name === "computer" || /^\/computer(?:\s|$)/u.test(input.text.trim()))
       ) {
         const args = input.command?.arguments ?? input.text.trim().replace(/^\/computer\s*/u, "")
+        if (parseComputerCommand(args).action === "help" && args.trim() !== "") {
+          return props.onSubmit({
+            ...input,
+            command: undefined,
+            text: `Use the computer tool to complete this desktop request. User request: ${args}`,
+          })
+        }
         void props.computerActions
           .run(args)
           .then((message) => props.onStatus(message))
@@ -1409,29 +1425,42 @@ export function RunFooterView(props: RunFooterViewProps) {
           </box>
         }
       >
-        <box
-          width="100%"
-          flexGrow={1}
-          flexShrink={1}
-          border={["left"]}
-          borderColor={theme().highlight}
-          customBorderChars={{
-            ...EMPTY_BORDER,
-            vertical: "┃",
-          }}
-        >
-          <RunFooterSubagentBody
-            active={inspecting}
-            theme={runTheme}
-            tab={selectedTab}
-            index={selectedIndex}
-            total={() => tabs().length}
-            detail={detail}
-            width={width}
-            diffStyle={props.diffStyle}
-            onCycle={cycleTab}
-            onClose={closeTab}
-          />
+        <box width="100%" flexDirection="column" flexGrow={1} flexShrink={1} gap={0}>
+          <box
+            width="100%"
+            height={SUBAGENT_INSPECTOR_ROWS + 3}
+            flexShrink={0}
+            border={["left"]}
+            borderColor={theme().highlight}
+            customBorderChars={{
+              ...EMPTY_BORDER,
+              vertical: "┃",
+            }}
+          >
+            <RunFooterSubagentBody
+              active={inspecting}
+              theme={runTheme}
+              tab={selectedTab}
+              index={selectedIndex}
+              total={() => tabs().length}
+              detail={detail}
+              width={width}
+              diffStyle={props.diffStyle}
+              onCycle={cycleTab}
+              onClose={closeTab}
+            />
+          </box>
+          <box width="100%" flexShrink={0}>
+            <RunPromptBody
+              theme={theme}
+              background={() => runTheme().background}
+              placeholder={composer.placeholder}
+              onSubmit={composer.onSubmit}
+              onKeyDown={composer.onKeyDown}
+              onContentChange={composer.onContentChange}
+              bind={composer.bind}
+            />
+          </box>
         </box>
       </Show>
     </box>

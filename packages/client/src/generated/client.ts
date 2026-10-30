@@ -526,6 +526,7 @@ export function make(options: ClientOptions) {
             path: `/api/session`,
             body: {
               id: input?.["id"],
+              parentID: input?.["parentID"],
               agent: input?.["agent"],
               model: input?.["model"],
               location: input?.["location"],

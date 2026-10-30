@@ -198,6 +198,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
+  if (input.agent.options.toolset === "browser") return tools
+
   if (goalRole) {
     const reports = goalRole.reports
     if (reports)
