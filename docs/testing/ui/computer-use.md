@@ -44,3 +44,35 @@ The native capture path creates the per-session artifact directory before invoki
 ## Remaining limitations
 
 The native backend currently targets macOS Accessibility APIs and `cliclick` for input. Other platforms return a typed unavailable status; native permission prompts must be granted by the user before input actions can succeed.
+
+## Bug ID
+
+`COMPUTER-USE-002`
+
+## Affected scope
+
+Bare `/computer` dispatch from the Desktop prompt and the CLI footer, including command catalogs that contain a colliding server command name.
+
+## Observed behavior
+
+Typing `/computer` in Desktop could be routed through the generic server-command path or treated as a command with an empty argument. The local handler was therefore skipped, even though `/computer open` worked. The CLI parser also treated the bare command as help instead of entering Computer Use.
+
+## Expected behavior
+
+`/computer` is the explicit manual trigger and must open the guarded Computer Use session on both surfaces. A server command with the same name must not shadow the local Desktop control.
+
+## Root cause
+
+Desktop's registered-slash filter gave every name present in the server command catalog precedence. The shared Computer parser also required an explicit `open` action.
+
+## Fix
+
+The local slash filter reserves `browser` and `computer` for the Desktop controls, and the Computer parser maps an omitted action to `open`. The acceptance fixture now exercises the bare command in both CLI and Desktop Playwright paths and keeps a separate Desktop V1 automatic tool-loop check.
+
+## Verification
+
+- `APEXO_COMPUTER_BACKEND=fixture bun run script/computer-slash-ui.mjs cli` passes with bare `/computer`, autocomplete, screenshot, close, and automatic tool invocation.
+- `APEXO_COMPUTER_BACKEND=fixture bun run script/computer-slash-ui.mjs desktop` passes with bare `/computer`, Playwright autocomplete, screenshot, close, and automatic tool invocation.
+- `bun run script/computer-desktop-v1-auto.mjs` passes with a Desktop V1 model-triggered `computer.open`.
+- `bun test test/computer-command.test.ts test/browser-command.test.ts` passes in `packages/sdk/js`.
+- `bun typecheck` passes in `packages/app`, `packages/core`, and `packages/apexo`; the focused App slash-route test was attempted with both `--conditions=browser` and `--conditions=solid` but is blocked before collection by the repository's existing `solid-js` `jsxDEV` export mismatch under Bun 1.4.4.

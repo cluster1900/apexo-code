@@ -33,7 +33,7 @@ const pageServer = http.createServer((request, response) => {
   }
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
   response.end(
-    `<!doctype html><title>Slash browser fixture</title><label>Name <input id="name"></label><button id="go" onclick="document.querySelector('#out').textContent='clicked:'+document.querySelector('#name').value">Go</button><div id="out">Idle</div>`,
+    `<!doctype html><title>Slash browser fixture</title><label>Name <input id="name" value="Old"></label><button id="go" onclick="document.querySelector('#out').textContent='clicked:'+document.querySelector('#name').value">Go</button><div id="out">Idle</div>`,
   )
 })
 await new Promise((resolve) => pageServer.listen(0, "127.0.0.1", resolve))
@@ -47,6 +47,8 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH ?? chromium.executablePath(),
   args: [`--remote-debugging-port=${cdpPort}`],
 })
+const unrelated = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+await unrelated.setContent("<!doctype html><title>Unrelated tab</title>")
 const fixture = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 await fixture.goto(pageURL)
 

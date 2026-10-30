@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { parseBrowserCommand } from "../src/v2/browser-command"
 
 describe("parseBrowserCommand", () => {
+  test("keeps a bare command as an explicit help action", () => {
+    expect(parseBrowserCommand()).toMatchObject({ action: "help" })
+  })
+
   test("parses open with a CDP URL", () => {
     expect(parseBrowserCommand('open "http://127.0.0.1:3000" --cdp-url http://127.0.0.1:9222')).toEqual({
       action: "open",

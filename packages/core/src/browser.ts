@@ -161,8 +161,21 @@ const evaluate = (connection: Connection, expression: string) =>
       const result = value.result
       if (!result || typeof result !== "object")
         return Effect.fail(new BrowserError({ code: "cdp_error", message: "Runtime.evaluate returned an invalid value" }))
-      if ("exceptionDetails" in value)
-        return Effect.fail(new BrowserError({ code: "cdp_error", message: "Browser page evaluation failed" }))
+      if ("exceptionDetails" in value) {
+        const detail = value.exceptionDetails
+        const description =
+          detail && typeof detail === "object" && "exception" in detail && detail.exception && typeof detail.exception === "object" && "description" in detail.exception
+            ? detail.exception.description
+            : detail && typeof detail === "object" && "text" in detail
+              ? detail.text
+              : undefined
+        return Effect.fail(
+          new BrowserError({
+            code: "cdp_error",
+            message: typeof description === "string" ? `Browser page evaluation failed: ${description}` : "Browser page evaluation failed",
+          }),
+        )
+      }
       return Effect.succeed("value" in result ? result.value : undefined)
     }),
   )
@@ -291,8 +304,13 @@ const discoverTarget = (cdp: string, url: string) =>
         if (!response.ok) throw new globalThis.Error(`CDP target list failed with ${response.status}`)
         return (await response.json()) as Array<{ id: string; type?: string; url?: string; webSocketDebuggerUrl?: string }>
       }
-      const existing = (await list()).find((target) => target.type === "page" && target.webSocketDebuggerUrl)
-      if (existing) return existing
+      const targets = (await list()).filter((target) => target.type === "page" && target.webSocketDebuggerUrl)
+      const exact = targets.find((target) => target.url === url)
+      if (exact) return exact
+      // Reuse a blank tab, but never commandeer an unrelated active page. If
+      // Chrome already has work open, create a dedicated target for this URL.
+      const blank = targets.find((target) => target.url === "about:blank" || target.url === "chrome://newtab/")
+      if (blank) return blank
       const response = await fetch(`${base}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })
       if (!response.ok) throw new globalThis.Error(`CDP target creation failed with ${response.status}`)
       return (await response.json()) as { id: string; webSocketDebuggerUrl?: string }
@@ -407,7 +425,13 @@ const layer = Layer.effect(
         if (input.action === "type") {
           if (!input.selector || input.text === undefined)
             return yield* new BrowserError({ code: "invalid_action", message: "browser.type requires selector and text" })
-          yield* evaluate(state.connection, selectorExpression(input.selector, "element.focus(); return true;"))
+          yield* evaluate(
+            state.connection,
+            selectorExpression(
+              input.selector,
+              "element.focus(); if (typeof element.select === 'function') element.select(); else document.execCommand('selectAll'); return true;",
+            ),
+          )
           yield* cdpRequest(state.connection, "Input.insertText", { text: input.text })
           return yield* observe(state)
         }

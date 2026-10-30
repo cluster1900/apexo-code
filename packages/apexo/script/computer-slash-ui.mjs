@@ -1,5 +1,4 @@
 import assert from "node:assert/strict"
-import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -11,64 +10,44 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const { chromium } = createRequire(join(repo, "packages/app/package.json"))("@playwright/test")
 const kind = process.argv[2] ?? "cli"
 assert.ok(kind === "cli" || kind === "desktop")
-let modelToolsSeen = false
-const modelFixture = createServer(async (request, response) => {
-  const chunks = []
-  for await (const chunk of request) chunks.push(chunk)
-  const body = JSON.parse(Buffer.concat(chunks).toString())
-  modelToolsSeen ||= body.tools?.some((tool) => tool.function?.name === "computer" || tool.name === "computer") === true
-  const hasComputerResult = body.messages?.some((item) => item.role === "tool" && item.name === "computer") === true
-  const call = !hasComputerResult && JSON.stringify(body.messages).includes("AUTO_COMPUTER")
-  const id = "computer-fixture"
-  const first = call
-    ? { role: "assistant", tool_calls: [{ index: 0, id: "computer-call", type: "function", function: { name: "computer", arguments: JSON.stringify({ action: "open" }) } }] }
-    : { role: "assistant", content: "AUTO_COMPUTER_DONE" }
-  const events = [
-    { id, object: "chat.completion.chunk", model: body.model, choices: [{ index: 0, delta: first, finish_reason: null }] },
-    { id, object: "chat.completion.chunk", model: body.model, choices: [{ index: 0, delta: {}, finish_reason: call ? "tool_calls" : "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
-  ]
-  response.writeHead(200, { "content-type": "text/event-stream" })
-  response.end(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n")
-})
-await new Promise((resolve) => modelFixture.listen(0, "127.0.0.1", resolve))
-const modelURL = `http://127.0.0.1:${modelFixture.address().port}/v1`
 let desktopAutoIssued = false
-const providersFor = (url) => ({
-  xai: {
-    name: "Computer Use fixture",
-    api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url, settings: { apiKey: "local-parity-key" } },
-    models: { "grok-4.7": { name: "Computer Use fixture", api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url, settings: { apiKey: "local-parity-key" } }, capabilities: { tools: true, input: ["text"], output: ["text"] }, limit: { context: 100000, output: 10000 } } },
-  },
-  fixture: {
-    name: "Computer Use fixture",
-    api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url, settings: { apiKey: "local-parity-key" } },
-    models: { "grok-4.7": { name: "Computer Use fixture", api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url, settings: { apiKey: "local-parity-key" } }, capabilities: { tools: true, input: ["text"], output: ["text"] }, limit: { context: 100000, output: 10000 } } },
-  },
-})
-const fixtureProviders = providersFor(modelURL)
 const runtime = await startShellFixture(kind, {
   server: "v2",
   deferBackend: true,
-  env: { APEXO_COMPUTER_BACKEND: "fixture", XAI_BASE_URL: modelURL },
+  env: { APEXO_COMPUTER_BACKEND: "fixture" },
   config:
     kind === "desktop"
-      ? { provider: { xai: { npm: "@ai-sdk/openai-compatible", options: { apiKey: "local-parity-key", baseURL: modelURL }, models: { "grok-4.7": { name: "Computer Use fixture", tool_call: true, limit: { context: 100000, output: 10000 } } } } } }
+      ? { provider: { xai: { npm: "@ai-sdk/openai-compatible", options: { apiKey: "local-parity-key" }, models: { "grok-4.7": { name: "Computer Use fixture", tool_call: true, limit: { context: 100000, output: 10000 } } } } } }
       : undefined,
   next: ({ text, finished }) => {
-    if (kind === "desktop" && text.includes("AUTO_COMPUTER") && !desktopAutoIssued) {
+    if (text.includes("AUTO_COMPUTER") && !finished && !desktopAutoIssued) {
       desktopAutoIssued = true
       return { tool: "computer", args: { action: "open" } }
     }
-    if (text.includes("AUTO_COMPUTER") && (kind === "cli" ? finished : desktopAutoIssued)) return { content: "AUTO_COMPUTER_DONE" }
+    if (text.includes("AUTO_COMPUTER") && finished) return { content: "AUTO_COMPUTER_DONE" }
     return undefined
   },
 })
 
 if (kind === "cli") {
-  await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify({ permissions: [{ action: "*", resource: "*", effect: "allow" }], providers: fixtureProviders }))
+  const provider = {
+    name: "Computer Use fixture",
+    api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: runtime.env.XAI_BASE_URL, settings: { apiKey: "local-parity-key" } },
+    models: {
+      "grok-4.7": {
+        name: "Computer Use fixture",
+        api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: runtime.env.XAI_BASE_URL, settings: { apiKey: "local-parity-key" } },
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        limit: { context: 100000, output: 10000 },
+      },
+    },
+  }
+  await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify({ permissions: [{ action: "*", resource: "*", effect: "allow" }], providers: { xai: provider } }))
   runtime.env.APEXO_CONFIG = join(runtime.directory, "apexo.json")
 } else {
-  await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify({ permission: { "*": "allow" }, provider: { xai: { npm: "@ai-sdk/openai-compatible", options: { apiKey: "local-parity-key", baseURL: modelURL }, models: { "grok-4.7": { name: "Computer Use fixture", tool_call: true, limit: { context: 100000, output: 10000 } } } } } }))
+  const provider = { fixture: { npm: "@ai-sdk/openai-compatible", options: { apiKey: "local-parity-key", baseURL: runtime.env.XAI_BASE_URL }, models: { "grok-4.7": { name: "Computer Use fixture", tool_call: true, limit: { context: 100000, output: 10000 } } } } }
+  await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify({ permission: { "*": "allow" }, provider }))
+  runtime.env.APEXO_CONFIG_CONTENT = JSON.stringify({ model: "xai/grok-4.7", permission: { "*": "allow" }, provider })
   runtime.env.APEXO_CONFIG = join(runtime.directory, "apexo.json")
 }
 await runtime.reopen()
@@ -117,7 +96,7 @@ try {
     await poll(() => screen().split("\n").some((line) => /\/computer\b/u.test(line)), "CLI /computer autocomplete")
     result.autocomplete = true
     cli.terminal.write("\x15")
-    command("/computer open")
+    command("/computer")
     const opened = await poll(async () => (await list()).find((item) => item.status === "ready"), "CLI computer open").catch(async (error) => {
       console.error("CLI computer open debug", JSON.stringify(await list()), terminalText)
       throw error
@@ -155,7 +134,7 @@ try {
       })
       result.autocomplete = true
       await editor.fill("")
-      await submit("/computer open")
+      await submit("/computer")
       const opened = await poll(async () => (await list()).find((item) => item.status === "ready"), "Desktop computer open")
       result.computerSessionID = opened.id
       await submit("/computer screenshot")
@@ -171,22 +150,24 @@ try {
     }
   }
 
-  if (kind === "cli") {
-    const autoSession = (await api("POST", "/api/session", { model: { providerID: "fixture", id: "grok-4.7" }, location: { directory: runtime.directory } })).data
-    const autoList = () => api("GET", `/api/session/${autoSession.id}/computer`)
-    const autoEvents = (id) => api("GET", `/api/session/${autoSession.id}/computer/${id}/events`)
-    await api("POST", `/api/session/${autoSession.id}/prompt`, { prompt: { text: "AUTO_COMPUTER" } })
-    const auto = await poll(async () => (await autoList()).find((item) => item.status === "ready"), `${kind} automatic computer tool trigger`).catch(async (error) => {
-      console.error("automatic computer debug", JSON.stringify(await autoList()))
-      console.error("automatic messages debug", JSON.stringify(await api("GET", `/api/session/${autoSession.id}/message`)))
-      console.error("automatic model fixture tools seen", modelToolsSeen)
-      throw error
+  const autoSession = (
+    await api("POST", "/api/session", {
+      model: { providerID: kind === "desktop" ? "fixture" : "xai", id: "grok-4.7" },
+      location: { directory: runtime.directory },
     })
-    assert.ok(auto)
-    result.automatic = true
-    result.events = (await autoEvents(auto.id)).events.length
-    assert.ok(result.events >= 1)
-  }
+  ).data
+  const autoList = () => api("GET", `/api/session/${autoSession.id}/computer`)
+  const autoEvents = (id) => api("GET", `/api/session/${autoSession.id}/computer/${id}/events`)
+  await api("POST", `/api/session/${autoSession.id}/prompt`, { prompt: { text: "AUTO_COMPUTER" } })
+  const auto = await poll(async () => (await autoList()).find((item) => item.status === "ready"), `${kind} automatic computer tool trigger`).catch(async (error) => {
+    console.error("automatic computer debug", JSON.stringify(await autoList()))
+    console.error("automatic messages debug", JSON.stringify(await api("GET", `/api/session/${autoSession.id}/message`)))
+    throw error
+  })
+  assert.ok(auto)
+  result.automatic = true
+  result.events = Math.max(result.events, (await autoEvents(auto.id)).events.length)
+  assert.ok(result.events >= 1)
   console.log(JSON.stringify(result))
 } finally {
   await appBrowser?.close()
@@ -195,6 +176,4 @@ try {
   cli?.kill("SIGTERM")
   if (cli) await deadline(cli.exited, 10_000, "CLI computer cleanup").catch(() => cli.kill("SIGKILL"))
   await runtime.close()
-  modelFixture.closeAllConnections()
-  await new Promise((resolve) => modelFixture.close(resolve))
 }

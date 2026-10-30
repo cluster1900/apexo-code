@@ -13,6 +13,11 @@ describe("registeredSlash", () => {
     expect(registeredSlash("/review src/app.ts", ["review"])).toBeUndefined()
   })
 
+  test("local browser and computer controls win over colliding server command names", () => {
+    expect(registeredSlash("/browser", ["browser"])).toEqual({ name: "browser", args: "" })
+    expect(registeredSlash("/computer", ["computer"])).toEqual({ name: "computer", args: "" })
+  })
+
   test("commands the submit path routes after creating a session are left alone", () => {
     expect(registeredSlash("/goal ship it --budget 10", [])).toBeUndefined()
     expect(registeredSlash("/remember use bun", [])).toBeUndefined()

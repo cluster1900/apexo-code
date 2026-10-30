@@ -11,12 +11,15 @@ export type ComputerSlashCommand =
   | { action: "close" }
 
 const HELP =
-  "Usage: /computer open | observe | click <x> <y> | type <text> | press <key> | scroll <y> | screenshot | events [after] [limit] | close"
+  "Usage: /computer [open] | observe | click <x> <y> | type <text> | press <key> | scroll <y> | screenshot | events [after] [limit] | close"
 
-export function parseComputerCommand(args: string): ComputerSlashCommand {
+export function parseComputerCommand(args = ""): ComputerSlashCommand {
   const tokens = tokenize(args)
   const action = tokens.shift()?.toLowerCase()
-  if (!action) return { action: "help", message: HELP }
+  // `/computer` is the explicit manual trigger. Treat an omitted action as
+  // `open` so both the slash palette and a hand-typed command enter the same
+  // guarded Computer Use session.
+  if (!action) return { action: "open" }
   if (action === "open") return { action: "open" }
   if (action === "observe" || action === "snapshot") return { action: "observe" }
   if (action === "close") return { action: "close" }

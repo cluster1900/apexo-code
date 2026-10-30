@@ -13,7 +13,7 @@ export type BrowserSlashCommand =
 const HELP =
   "Usage: /browser open <url> [--cdp-url <url>] | observe | click <selector> | type <selector> <text> | press <key> | scroll <x> <y> | screenshot [full] | events [after] [limit] | close"
 
-export function parseBrowserCommand(args: string): BrowserSlashCommand {
+export function parseBrowserCommand(args = ""): BrowserSlashCommand {
   const tokens = tokenize(args)
   const action = tokens.shift()?.toLowerCase()
   if (!action) return { action: "help", message: HELP }

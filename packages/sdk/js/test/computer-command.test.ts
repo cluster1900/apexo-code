@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { parseComputerCommand } from "../src/v2/computer-command"
 
 describe("parseComputerCommand", () => {
+  test("uses the bare command as the manual open trigger", () => {
+    expect(parseComputerCommand("")).toEqual({ action: "open" })
+  })
+
   test("parses coordinates and quoted typing", () => {
     expect(parseComputerCommand("click 120 240")).toEqual({ action: "click", x: 120, y: 240 })
     expect(parseComputerCommand('type "Close this window"')).toEqual({ action: "type", text: "Close this window" })

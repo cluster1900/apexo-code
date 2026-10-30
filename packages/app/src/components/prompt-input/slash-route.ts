@@ -8,7 +8,11 @@ import { parseSlashInput, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
 export function registeredSlash(text: string, serverCommands: string[]) {
   const slash = parseSlashInput(text)
   if (!slash) return
-  if (serverCommands.includes(slash.name)) return
+  // Browser and Computer are local Desktop commands. Keep them out of the
+  // server-command exclusion even if a provider or persisted command catalog
+  // happens to contain the same names; bare `/browser` and `/computer` must
+  // reach the local controls instead of becoming model prompts.
+  if (serverCommands.includes(slash.name) && !["browser", "computer"].includes(slash.name)) return
   if (slash.name === "goal" || slash.name === "remember") return
   if ((slash.name === "flush" || slash.name === "dream") && !slash.args) return
   return slash
