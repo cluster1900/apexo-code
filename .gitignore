@@ -20,6 +20,7 @@ ts-dist
 refs
 Session.vim
 /apexo.json
+packages/apexo/.apexo/
 a.out
 target
 .scripts
