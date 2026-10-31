@@ -54,7 +54,7 @@ import { useKV } from "../../context/kv"
 import { scrollback } from "../../context/scrollback"
 import { contextWindowChoice } from "../../context/context-window"
 import { effectiveContextWindow, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
-import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { browserTaskPrompt, parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
 import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { builtinSlashTarget } from "../../prompt/slash-guard"
 import { createFadeIn } from "../../util/signal"
@@ -492,20 +492,13 @@ export function Prompt(props: PromptProps) {
     return next
   }
   const runBrowserTask = async (task: string) => {
-    const parentID = await ensureSessionForAutomation("browser")
-    toast.show({ title: "Browser", message: "Starting the Browser agent…", variant: "info" })
-    const child = (
-      await sdk.client.v2.session.create(
-        { parentID, agent: "browser", location: location() },
-        { throwOnError: true },
-      )
-    ).data.data
-    route.navigate({ type: "session", sessionID: child.id })
+    const sessionID = await ensureSessionForAutomation("browser")
+    toast.show({ title: "Browser", message: "Sending the browser task to the current session…", variant: "info" })
     await sdk.client.v2.session.prompt(
-      { sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" },
+      { sessionID, prompt: { text: browserTaskPrompt(task) }, delivery: "steer" },
       { throwOnError: true },
     )
-    toast.show({ title: "Browser", message: `Started browser subagent ${child.id}`, variant: "success" })
+    toast.show({ title: "Browser", message: "Browser task submitted to the current session", variant: "success" })
   }
 
   const runComputerCommand = async (args: string) => {

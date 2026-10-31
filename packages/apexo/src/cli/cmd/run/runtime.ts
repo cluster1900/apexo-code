@@ -20,7 +20,7 @@ import { goalActions } from "@apexo/tui/component/session-goal"
 //      local sessions,
 //   4. runs the prompt queue until the footer closes.
 import { createApexoClient } from "@apexo/sdk/v2/client"
-import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { browserTaskPrompt, parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
 import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { Flag } from "@apexo/core/flag/flag"
 import { MessageID } from "@/session/schema"
@@ -338,29 +338,37 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     },
     runTask: async (task) => {
       await ensureSession()
-      const parentID = state.sessionID
-      if (!parentID) throw new Error("Session is unavailable")
-      const title = `Browser: ${task.trim().slice(0, 96)}`
+      const sessionID = state.sessionID
+      if (!sessionID) throw new Error("Session is unavailable")
+      const messageID = MessageID.ascending()
+      const promptText = `/browser ${task.trim()}`
+      const commit = {
+        kind: "user",
+        text: promptText,
+        phase: "start",
+        source: "system",
+        messageID,
+      } as const
+      state.shown = true
+      state.history.push({ messageID, text: promptText, parts: [] })
+      rememberLocal(commit)
+      footer.append(commit)
+      footer.event({ type: "stream.patch", patch: { phase: "running", status: "starting browser task" } })
+      await ensureStream()
+      const text = browserTaskPrompt(task)
       if (ctx.native) {
-        const child = await ctx.native.create({ parentID, agent: "browser" })
-        if (state.stream) await (await state.stream).handle.registerSubagent?.({ sessionID: child.id, title })
-        await ctx.native.admit({ sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" })
-        return `browser subagent started ${child.id}: ${title}`
+        await ctx.native.admit({ sessionID, prompt: { text }, delivery: "steer" })
+        return "browser task submitted to the current session"
       }
-      const child = (
-        await ctx.sdk.session.create({ parentID, title, directory: ctx.directory }, { throwOnError: true })
-      ).data
-      if (state.stream) await (await state.stream).handle.registerSubagent?.({ sessionID: child.id, title })
       await ctx.sdk.session.promptAsync(
         {
-          sessionID: child.id,
-          agent: "browser",
-          parts: [{ type: "text", text: task.trim() }],
+          sessionID,
+          parts: [{ type: "text", text }],
           directory: ctx.directory,
         },
         { throwOnError: true },
       )
-      return `browser subagent started ${child.id}: ${title}`
+      return "browser task submitted to the current session"
     },
   }
   const computer = {

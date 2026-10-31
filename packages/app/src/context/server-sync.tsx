@@ -1,4 +1,5 @@
 import type { Config, ApexoClient, Path, Project, ProviderAuthResponse, SessionStatus } from "@apexo/sdk/v2/client"
+import type { SessionMessageInfo } from "@apexo/client/promise"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@apexo/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -241,7 +242,28 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return sdk
   }
 
-  const session = createServerSession(serverSDK.client, serverSDK.api.session, serverSDK.api.message, {
+  const sessionDirectories = new Map<string, string>()
+  const v2MessageApi = {
+    list: async (input: { sessionID: string; limit?: number; cursor?: string }) => {
+      const directory =
+        sessionDirectories.get(input.sessionID) ??
+        (await serverSDK.client.v2.session.get({ sessionID: input.sessionID }, { throwOnError: true })).data.data
+          .location.directory
+      if (directory) sessionDirectories.set(input.sessionID, directory)
+      const client = directory ? sdkFor(directory) : serverSDK.client
+      const result = await client.v2.session.messages(
+        input.cursor
+          ? { sessionID: input.sessionID, limit: input.limit, cursor: input.cursor }
+          : { sessionID: input.sessionID, limit: input.limit, order: "desc" },
+        { throwOnError: true },
+      )
+      return {
+        data: result.data.data as unknown as SessionMessageInfo[],
+        cursor: { next: result.data.cursor.next },
+      }
+    },
+  }
+  const session = createServerSession(serverSDK.client, serverSDK.api.session, v2MessageApi, {
     protocol: serverSDK.protocol,
   })
   const queryOptionsApi = makeQueryOptionsApi(
@@ -403,6 +425,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       queue.clear(key)
       sessionMeta.delete(key)
       sdkCache.delete(key)
+      for (const [sessionID, sessionDirectory] of sessionDirectories) {
+        if (directoryKey(sessionDirectory) === key) sessionDirectories.delete(sessionID)
+      }
       clearProviderRev(serverSDK.scope, key)
     },
     translate: language.t,
@@ -569,6 +594,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const event = e.details
     const eventType: string = event.type
     const recent = bootingRoot || Date.now() - bootedAt < 1500
+
+    if (eventType === "session.deleted") {
+      const properties = event.properties as { sessionID?: string; info?: { id?: string } } | undefined
+      const sessionID = properties?.info?.id ?? properties?.sessionID
+      if (sessionID) sessionDirectories.delete(sessionID)
+    }
 
     if (event.current) session.applyV2(event.current)
     session.apply(event)

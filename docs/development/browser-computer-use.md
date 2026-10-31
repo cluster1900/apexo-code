@@ -4,11 +4,66 @@
 **Date:** 2026-10-30
 **Repository:** Apexo
 **Reviewed branch:** `browser-computer-use`
-**Reviewed revision:** `1824c8e83d749c0c9014dacaa263a02a5d210b46`
+**Reviewed revision:** working tree after the third-party provider migration (uncommitted)
 
 This document records what Apexo currently implements for Browser Use and Computer Use, what has been verified, what still behaves like a prototype, and the work required to make both capabilities dependable in daily use. It is based on the source tree, the CLI/Desktop acceptance scripts, the V2 HTTP API, the current PR validation, and the official Playwright, Chrome DevTools Protocol, OpenAI Computer Use, and Anthropic Browser/Computer Use documentation listed at the end.
 
-The central finding is that Apexo has a working control plane and a good deterministic acceptance harness, but it does not yet provide a complete closed-loop automation product. Browser Use is the stronger path: the real Chrome page can be attached, inspected, mutated, and replayed. Computer Use is still a guarded action adapter: on macOS it observes only the front application/window through AppleScript, sends coordinates and key presses through `cliclick`, and captures screenshots separately. The model does not yet receive a reliable screenshot/accessibility observation after every action and cannot consistently identify desktop controls by semantic reference.
+The original audit described the pre-migration implementation. The current branch replaces the in-house execution paths with third-party providers while keeping Apexo authoritative for session ownership, permissions, routing, durable events, stale-target checks, artifacts, and CLI/Desktop presentation. Browser Use now uses Stagehand first and an explicit Playwright CDP compatibility adapter when the attached Chrome does not expose the Stagehand extension CDP domain. Computer Use now uses the Cua Driver SDK for the host desktop and the Cua SDK's Lume runtime for isolated macOS execution. The old AppleScript, `cliclick`, and direct `screencapture` path has been removed from the Core service.
+
+## Current third-party execution layer
+
+The migration is intentionally an adapter boundary rather than a second orchestration engine.
+
+| Apexo boundary | Provider | Runtime behavior | Why Apexo still owns the integration |
+| --- | --- | --- | --- |
+| `Browser.Service` | `@browserbasehq/stagehand` 4.3.0 | `localBrowser.connect({ cdpUrl })`, Stagehand browser context/page, snapshot, locator, navigation, keyboard, scroll and screenshot APIs | Session IDs, URL policy, page IDs, snapshot hashes, event replay, artifacts, action results, and CLI/Desktop routing remain Apexo-owned |
+| Browser compatibility adapter | `playwright-core` 1.59.1 | Used only when Stagehand cannot load its extension because Chrome reports `Extensions.getExtensions` as unavailable; it attaches to the same supplied CDP endpoint and uses the same adapter contract | Keeps existing user Chrome/Playwright fixtures operable without silently opening a different browser or losing the target tab |
+| `Computer.Service` host runtime | `@trycua/cua-driver` 0.37.0 | Embedded Cua Driver session with desktop capture, active-window discovery, foreground input, text, key and scroll actions, and provider evidence | Apexo controls permission classification, expected-snapshot fencing, durable action events, artifact persistence and user-visible status |
+| `Computer.Service` isolated runtime | `@trycua/cua` 0.9.0 with `runtime: "lume"` | Creates a local macOS VM through the Cua SDK, attaches to its `cua-spacesd` computer service, and performs screenshot/click/type/press/scroll calls inside the VM | Apexo decides when isolation is required, records the sandbox provider, handles lifecycle errors, and exposes the same action protocol as host Computer Use |
+
+The provider modules are loaded dynamically. A normal Apexo start does not initialize native Cua bindings, boot a Lume VM, or install a browser extension until a corresponding session is opened. Fixture mode remains test-only and is selected by `APEXO_COMPUTER_BACKEND=fixture`; it is not a production fallback.
+
+### Browser connection behavior
+
+1. Apexo validates the requested URL and CDP endpoint before loading a provider.
+2. Stagehand is loaded lazily and tries to attach to the supplied CDP endpoint. It injects/uses the bundled Stagehand extension and exposes a Stagehand `BrowserContext` and `Page`.
+3. Page state uses Stagehand's page URL/title/evaluate/snapshot/screenshot/locator APIs. The accessibility payload is the Stagehand formatted page snapshot, bounded to the existing protocol limit.
+4. If Chrome rejects the Stagehand extension discovery command (`Extensions.getExtensions` / `Method not available`), Apexo closes that failed Stagehand attempt and creates a Playwright CDP adapter against the same endpoint. This is a compatibility path for Chrome builds that do not expose the extension domain; it does not create a second tab or launch an unrelated browser.
+5. Both adapters return the same Apexo `Page`, action, artifact and event shapes. The caller does not need to know which provider path was selected.
+
+### Computer connection behavior
+
+1. `APEXO_COMPUTER_RUNTIME` selects `cua` (default) or `lume`.
+2. The host path creates an embedded Cua Driver desktop session plus a lightweight `CaptureScope.Auto` reader session. The desktop session captures the image and `capture_id`; the reader resolves the largest visible application window and reads its accessibility tree for semantic before/after state.
+3. Host clicks use Cua Driver's `CapturedCoordinates`, binding model coordinates to the exact downscaled screenshot that produced them. Type, key, and scroll actions use the observed window target when available. Cua Driver returns its own action result/evidence; Apexo accepts confirmed/partial effects and fails closed for an unverifiable action whose semantic post-observation is unchanged.
+4. The isolated path requires macOS and a discoverable `lume` executable. Apexo creates a local VM with `runtime: "lume"`, publishes the provider's `env:3211` service, waits for `/health` to report HTTP 204, attaches to `spacesd`, captures the guest display, and performs actions in that VM. If Lume is missing or its service cannot become ready, the session is returned as `unavailable` with a clear reason instead of hanging while a native runtime attempts to provision indefinitely.
+5. `APEXO_COMPUTER_RUNTIME_TIMEOUT_MS` bounds provider startup (45 seconds by default). The timeout is reported as `unavailable`; it does not convert a provider failure into a fixture success.
+6. Fixture snapshots and mutations are still available for deterministic CLI/Desktop tests, but the fixture is not used when the environment is not explicitly configured for it.
+
+### Provider migration verification
+
+The migration was validated from the package directories so the same paths used by the CLI and Desktop harnesses were exercised:
+
+| Command | Result | What it proves |
+| --- | --- | --- |
+| `bun script/browser-slash-ui.mjs cli` from `packages/apexo` | Passed: autocomplete, CDP attach, type, click, screenshot artifact, visible main-session Browser task, and close; no Browser child session | CLI uses the provider adapter and keeps every Browser call in the active transcript |
+| `bun run build` from `packages/app`, then `bun script/browser-slash-ui.mjs desktop` from `packages/apexo` | Passed: Home autocomplete, root `build` session, visible main-session Browser task, structured actions, screenshot artifact, and close | Desktop uses the current source bundle and keeps the task in the active session; the harness rejects stale child-session bundles |
+| `bun script/computer-slash-ui.mjs cli` with fixture backend | Passed: autocomplete, type/click/press snapshot mutations, screenshot artifact, automatic tool trigger and close | CLI presentation and deterministic fixture contract remain intact |
+| `bun script/computer-slash-ui.mjs desktop` with fixture backend | Passed with the same assertions | Desktop presentation and automatic routing remain intact |
+| `bun script/computer-native-probe.mjs` | Passed: backend `cua-driver`, real provider observe, real provider screenshot artifact, close | The host Cua Driver SDK is available and the Core service no longer depends on AppleScript/cliclick/screencapture |
+| `APEXO_COMPUTER_PROBE_ACTION_JSON='{"action":"click","x":1172,"y":236}' bun script/computer-native-probe.mjs` | Passed against a foreground macOS Calculator: the service returned `ready` and the displayed value changed from `7` to `0` | Captured screenshot coordinates, provider result handling, and semantic accessibility readback work on a real native application |
+| `APEXO_COMPUTER_PROBE_ACTION_JSON='{"action":"click","x":800,"y":120}' bun script/computer-native-probe.mjs` | Correctly failed closed against Calculator: the blank-display click left the value unchanged and returned `Cua Driver could not verify click` | A provider `Unverifiable` result is no longer reported as a completed no-op |
+| `APEXO_COMPUTER_PROBE_ACTION_JSON='{"action":"press","key":"8"}' bun script/computer-native-probe.mjs` | Passed against Calculator: the window-targeted key changed `7` to `78` | Keyboard actions are routed to the observed native window and verified through its accessibility tree |
+| `PATH=/Users/hawkwu/.cua/runtimes/lume/0.6.0/lume.app/Contents/MacOS:$PATH APEXO_COMPUTER_RUNTIME=lume APEXO_COMPUTER_RUNTIME_TIMEOUT_MS=120000 bun script/computer-native-probe.mjs` | Passed: real Lume VM startup, guest observation, screenshot artifact, and close | The isolated third-party runtime is usable on the local macOS host when its executable is on `PATH`; the service readiness probe prevents an early `spacesd` race |
+| `PATH=/Users/hawkwu/.cua/runtimes/lume/0.6.0/lume.app/Contents/MacOS:$PATH APEXO_COMPUTER_RUNTIME=lume APEXO_COMPUTER_RUNTIME_TIMEOUT_MS=120000 APEXO_COMPUTER_PROBE_ACTION_JSON='{"action":"press","key":"a"}' bun script/computer-native-probe.mjs` | Passed: a real key action returned `press completed by lume` inside the isolated VM | Lume is not only observable; the third-party `spacesd` input path can execute a Computer action |
+| `APEXO_COMPUTER_RUNTIME=lume bun script/computer-native-probe.mjs` | Passed as a bounded `unavailable` result when Lume is not installed | Selecting isolation never falls back to host automation or hangs indefinitely |
+| `bun typecheck` from `packages/core` | Passed | The dynamic provider adapters and typed third-party SDK surfaces compile |
+| `bun typecheck` from `packages/apexo` and `packages/desktop` | Passed | The CLI/HTTP and Electron consumers compile against the provider-backed Core service |
+| `bun run build` from `packages/desktop` | Passed after adding the explicit `chromium-bidi` Playwright compatibility dependency | The Electron main bundle resolves the third-party CDP adapter and native provider imports |
+| `bun run test:httpapi` from `packages/apexo` (coverage mode) | Passed: 357 scenarios, 0 failures, 0 skips, 0 missing, 0 extra | Browser and Computer routes remain compatible with the complete coverage surface; the full effect run is substantially longer and was not used as the completion gate |
+| `bun run script/httpapi-exercise.ts --mode effect --include v2.computer --trace --fail-on-missing --fail-on-skip` from `packages/apexo` | Passed: 5 Computer routes, 0 failures, 0 skips, 0 missing, 0 extra | The Computer effect layer still acquires and cleans up correctly after the scope-finalizer and Lume readiness changes |
+
+The Stagehand connection path was also probed directly against the test Chromium. That browser reports `Extensions.getExtensions` as unavailable. Apexo correctly selects the Playwright compatibility adapter against the same CDP endpoint, which is why the Browser CLI/Desktop tests still mutate the intended test tab while the primary Stagehand path remains available for Chrome builds that expose the extension domain.
 
 ## 1. Product contract we should implement
 
@@ -16,8 +71,8 @@ Browser Use and Computer Use are related but different products.
 
 | Capability | Correct scope | Primary observation | Primary action space | Preferred backend |
 | --- | --- | --- | --- | --- |
-| Browser Use | Pages, tabs, forms, links, browser navigation and web application state | Accessibility tree, interactive element references, page text, tab state, screenshot when visual layout matters | Element references first, coordinates as fallback, navigation and keyboard actions | Playwright attached to Chrome/CDP |
-| Computer Use | The whole desktop, native applications, windows, dialogs and non-web surfaces | Desktop screenshot, active app/window, accessibility nodes when available, optional OCR | Coordinate and semantic desktop targets, keyboard, window/application actions | Native OS accessibility plus screenshot driver |
+| Browser Use | Pages, tabs, forms, links, browser navigation and web application state | Accessibility tree, interactive element references, page text, tab state, screenshot when visual layout matters | Element references first, coordinates as fallback, navigation and keyboard actions | Stagehand attached to Chrome/CDP, with Playwright compatibility fallback |
+| Computer Use | The whole desktop, native applications, windows, dialogs and non-web surfaces | Desktop screenshot, active app/window, accessibility nodes when available, optional OCR | Coordinate and semantic desktop targets, keyboard, window/application actions | Cua Driver for the host and Cua/Lume for isolated macOS execution |
 
 The product must preserve these boundaries:
 
@@ -35,16 +90,16 @@ The implementation is split across the correct package boundaries.
 | Layer | Current implementation | Responsibility |
 | --- | --- | --- |
 | Shared schema | [`packages/schema/src/browser.ts`](../../packages/schema/src/browser.ts), [`packages/schema/src/computer.ts`](../../packages/schema/src/computer.ts) | Branded session/action/page/artifact IDs, action inputs, status, snapshots, durable event definitions, replay cursors |
-| Core Browser service | [`packages/core/src/browser.ts`](../../packages/core/src/browser.ts) | Playwright CDP connection, page discovery, page snapshots, ARIA snapshot, actions, screenshots, snapshot fencing, durable events |
-| Core Computer service | [`packages/core/src/computer.ts`](../../packages/core/src/computer.ts) | macOS observation through `osascript`, `cliclick` actions, screenshots through `screencapture`, deterministic fixture backend, durable events |
+| Core Browser service | [`packages/core/src/browser.ts`](../../packages/core/src/browser.ts) | Stagehand CDP connection with a Playwright compatibility adapter, page discovery, provider snapshots, actions, screenshots, snapshot fencing, durable events |
+| Core Computer service | [`packages/core/src/computer.ts`](../../packages/core/src/computer.ts) | Cua Driver host sessions, Cua/Lume isolated sessions, provider observations/actions, deterministic fixture backend, durable events |
 | Core model tools | [`packages/core/src/tool/browser.ts`](../../packages/core/src/tool/browser.ts), [`packages/core/src/tool/computer.ts`](../../packages/core/src/tool/computer.ts) | V2 model-facing tools and V2 permission assertions |
 | Public HTTP API | [`packages/protocol/src/groups/browser.ts`](../../packages/protocol/src/groups/browser.ts), [`packages/protocol/src/groups/computer.ts`](../../packages/protocol/src/groups/computer.ts) | List, open, action, close, and replay endpoints |
 | HTTP handlers | [`packages/server/src/handlers/browser.ts`](../../packages/server/src/handlers/browser.ts), [`packages/server/src/handlers/computer.ts`](../../packages/server/src/handlers/computer.ts) | Session ownership checks, error mapping, service dispatch |
 | Compatibility tools | [`packages/apexo/src/tool/browser.ts`](../../packages/apexo/src/tool/browser.ts), [`packages/apexo/src/tool/computer.ts`](../../packages/apexo/src/tool/computer.ts) | Legacy/compatibility model tool adapters and `ctx.ask` permission calls |
-| Tool registry | [`packages/apexo/src/tool/registry.ts`](../../packages/apexo/src/tool/registry.ts), [`packages/apexo/src/session/tools.ts`](../../packages/apexo/src/session/tools.ts) | Advertises Browser and Computer to normal agents; restricts the hidden Browser agent to the Browser tool |
-| Browser agent | [`packages/apexo/src/agent/agent.ts`](../../packages/apexo/src/agent/agent.ts), [`packages/apexo/src/agent/prompt/browser.txt`](../../packages/apexo/src/agent/prompt/browser.txt) | Hidden `browser` subagent with a Browser-only toolset |
+| Tool registry | [`packages/apexo/src/tool/registry.ts`](../../packages/apexo/src/tool/registry.ts), [`packages/apexo/src/session/tools.ts`](../../packages/apexo/src/session/tools.ts) | Advertises Browser and Computer directly to the current agent; no Browser-only subagent is created |
+| Browser task routing | [`packages/sdk/js/src/v2/browser-command.ts`](../../packages/sdk/js/src/v2/browser-command.ts), [`packages/apexo/src/cli/cmd/run/runtime.ts`](../../packages/apexo/src/cli/cmd/run/runtime.ts) | Adds a short Browser-directed instruction to the active main Session; no hidden Browser subagent is created |
 | CLI/TUI | [`packages/apexo/src/cli/cmd/run/runtime.ts`](../../packages/apexo/src/cli/cmd/run/runtime.ts), [`packages/apexo/src/cli/cmd/run/footer.view.tsx`](../../packages/apexo/src/cli/cmd/run/footer.view.tsx), [`packages/tui/src/component/prompt/index.tsx`](../../packages/tui/src/component/prompt/index.tsx) | `/browser` and `/computer` parsing, session state, action queues, terminal feedback, child-agent tabs |
-| Desktop | [`packages/app/src/pages/session/use-session-commands.tsx`](../../packages/app/src/pages/session/use-session-commands.tsx), [`packages/app/src/pages/new-session/new-session-draft-controller.ts`](../../packages/app/src/pages/new-session/new-session-draft-controller.ts) | Slash commands, Home-session creation, Browser child routing, toasts, session hydration |
+| Desktop | [`packages/app/src/pages/session/use-session-commands.tsx`](../../packages/app/src/pages/session/use-session-commands.tsx), [`packages/app/src/pages/new-session/new-session-draft-controller.ts`](../../packages/app/src/pages/new-session/new-session-draft-controller.ts) | Slash commands, Home-session creation, main-session Browser routing, toasts, session hydration |
 | Shared command grammar | [`packages/sdk/js/src/v2/browser-command.ts`](../../packages/sdk/js/src/v2/browser-command.ts), [`packages/sdk/js/src/v2/computer-command.ts`](../../packages/sdk/js/src/v2/computer-command.ts) | Quoted tokenization and structured slash action parsing |
 | Acceptance harness | [`packages/apexo/script/browser-computer-use.mjs`](../../packages/apexo/script/browser-computer-use.mjs), [`packages/apexo/script/browser-slash-ui.mjs`](../../packages/apexo/script/browser-slash-ui.mjs), [`packages/apexo/script/computer-slash-ui.mjs`](../../packages/apexo/script/computer-slash-ui.mjs) | Real CDP page fixture, CLI PTY interaction, Desktop Playwright interaction, provider fixture and state assertions |
 
@@ -59,39 +114,37 @@ For `/browser open https://example.test` or `/browser type "#search" "hello"`, t
 3. The surface-specific action queue serializes commands for that UI session.
 4. The surface creates a root Session when it has enough model/agent context and is still on the Desktop Home composer.
 5. `browser.open` creates a process-local Browser session and calls `Browser.Service.open`.
-6. The Browser service validates the URL as `http` or `https`, resolves a CDP endpoint, and calls `chromium.connectOverCDP`.
+6. The Browser service validates the URL as `http` or `https`, resolves a CDP endpoint, and first calls Stagehand's `localBrowser.connect`.
 7. It chooses a page whose URL exactly matches the requested URL, then a blank/new-tab page, then creates a new page.
-8. It navigates with `page.goto(..., { waitUntil: "domcontentloaded" })`.
+8. It navigates through the provider page adapter. Stagehand owns the primary path; the Playwright compatibility adapter uses `domcontentloaded`.
 9. It creates a `Page` snapshot containing page ID, URL, title and a hash of `document.documentElement.outerHTML`.
 10. It writes `browser.session_started` and `browser.page_changed` durable events.
 11. Subsequent actions require the Browser session ID. Mutating actions can carry `pageID` and `expectedSnapshotHash`; a mismatch returns `stale_target`.
-12. `observe` returns visible body text, a Playwright ARIA snapshot and recent console lines.
-13. `click` uses a CSS selector and Playwright locator click.
-14. `type` uses `locator.fill`, which replaces the existing control value.
-15. `press` calls `page.keyboard.press` against the current page focus.
-16. `scroll` evaluates `scrollBy` in the page.
+12. `observe` returns visible body text, a Stagehand formatted page snapshot (or the Playwright ARIA compatibility snapshot) and the bounded console field.
+13. `click` uses the shared provider adapter's locator click.
+14. `type` uses the provider locator's fill operation, which replaces the existing control value.
+15. `press` calls the provider page key-press operation against the current page focus.
+16. `scroll` calls the provider page scroll operation; the compatibility adapter evaluates `scrollBy` in the page.
 17. `screenshot` saves a PNG under `.apexo/browser/<session>/<artifact>.png`, emits an artifact event and returns base64 data to the model adapter.
 18. `events` reads the durable aggregate and returns `earliest`, `head`, and an optional continuation cursor.
 19. The UI updates its page ID and snapshot hash after each result and shows a toast or terminal result.
-20. `close` closes the Playwright Browser connection and removes the process-local session.
+20. `close` closes the selected provider adapter and removes the process-local session.
 
 The service is therefore able to operate a real CDP page. It is not yet a complete Browser Use agent because the model does not receive stable element references, tab state, post-action wait state, or a consistent observation attachment after every mutation.
 
 ### 3.2 Free-form Browser task
 
-For `/browser search for the release notes and summarize the latest version`, the current path is different:
+For `/browser search for the release notes and summarize the latest version`, the current path submits the task to the current main Session:
 
-1. The CLI or Desktop identifies the text as a task rather than a structured action.
-2. It ensures a root Session exists.
-3. It creates a child Session with `parentID` and `agent: "browser"`.
-4. The CLI registers that child in its subagent tab list; Desktop navigates to the child route.
-5. It admits the user task to the child Session.
-6. The hidden Browser agent receives the Browser-only prompt and the Browser tool.
-7. The model is expected to call `browser.open`, then observe, then act with page IDs and snapshot hashes.
-8. The model-facing tool calls the Core Browser service and returns text or a screenshot attachment.
-9. The child continues until the provider returns a normal answer.
+1. The CLI, TUI, or Desktop identifies the text as a task rather than a structured action.
+2. It ensures a root Session exists, creating one from the Home composer when necessary.
+3. It admits a short browser-use instruction and the user task into that same Session.
+4. The normal main Agent receives the Browser tool alongside its other tools, so the existing session stream shows the prompt, Browser calls, permissions, observations, artifacts, and final answer together.
+5. The model is expected to call `browser.open`, then observe, then act with page IDs and snapshot hashes.
+6. The model-facing tool calls the Core Browser service and returns text or a screenshot attachment.
+7. The main Session continues until the provider returns a normal answer.
 
-This path fixes the earlier shell `open` fallback for the dedicated Browser agent. It still relies on the model choosing the Browser tool correctly when the user gives a normal natural-language request without `/browser`. Prompt rules help, but prompt rules are not a deterministic router or a safety boundary.
+The same-session route avoids hidden child state and keeps every Browser call visible in the user's active transcript. The explicit instruction makes `/browser <task>` deterministic while preserving the main Agent's normal permissions and tool lifecycle.
 
 ### 3.3 Manual Computer command
 
@@ -100,15 +153,15 @@ For `/computer open`, `/computer observe`, `/computer click 120 240`, or `/compu
 1. CLI/TUI/Desktop parse the command and serialize actions per UI session.
 2. The command calls the V2 Computer HTTP API directly.
 3. The service selects `fixture` only when `APEXO_COMPUTER_BACKEND=fixture` is set and the request did not force `native`.
-4. On macOS native mode, `observe` runs AppleScript through `/usr/bin/osascript` and returns only the front application name and first window name as text.
-5. Native `click`, `type`, `press`, and `scroll` run `cliclick`. `target` is currently not interpreted by the Core service.
-6. Native `screenshot` runs `/usr/sbin/screencapture` and stores a sensitive PNG artifact.
+4. In the default host mode, `observe` calls Cua Driver `getDesktopState` and `listWindows`, binds the returned `capture_id` to the image, filters out tiny auxiliary windows, and reads the selected application's accessibility tree through a second Auto-scope reader.
+5. Host `click` uses captured screenshot coordinates. Host `type`, `press`, and `scroll` use the observed application window when available. `target` remains available in the public contract for the next semantic-target layer.
+6. In isolated mode, `APEXO_COMPUTER_RUNTIME=lume` creates a Cua SDK sandbox with `runtime: "lume"` and calls its `spacesd` computer service. Missing Lume is reported as `unavailable` instead of invoking a host shell fallback.
 7. Fixture mode mutates a small in-memory state (`activeApp`, `window`, `text`) so tests can verify changed snapshots.
 8. A snapshot hash is checked before mutating actions when the caller sends `expectedSnapshotHash`.
 9. Durable `computer.session_started`, `computer.action_started`, `computer.action_completed`, `computer.artifact_created`, and `computer.closed` events are written.
 10. The UI receives a short toast or terminal string and updates its cached snapshot hash.
 
-This proves the transport and event path, but it does not yet prove that a native desktop control was found, clicked, or typed into. A fixture result such as `Clicked 120,240` is a state-transition assertion, not evidence that a real macOS window changed.
+The native probe now proves a real macOS Calculator click and window-targeted key press through Cua Driver, including semantic readback. The deterministic fixture remains useful for CLI/Desktop transport tests, but a fixture result such as `Clicked 120,240` is not evidence that a real native window changed.
 
 ### 3.4 Automatic Computer tool use
 
@@ -130,20 +183,20 @@ The automatic acceptance fixture deterministically injects a `computer.open` cal
 - The public V2 Browser contract is explicit and typed.
 - Browser actions and replay events are durable and scoped to a Browser session aggregate.
 - Server handlers reject a Browser session that belongs to another Session.
-- Playwright is used as a thin CDP adapter rather than reimplementing all CDP request plumbing.
+- Stagehand is the primary browser execution provider; Playwright remains an explicit compatibility adapter for Chrome builds that do not expose the Stagehand extension CDP domain.
 - URL validation rejects non-HTTP(S) page navigation.
 - Target selection prefers an exact URL and avoids commandeering an unrelated active tab when a blank/new-tab target exists.
 - `pageID` and `expectedSnapshotHash` provide a useful stale-target guard.
 - `type` replaces a control value instead of appending to an old value.
 - Screenshots are saved as artifacts and can be attached to model tool results.
 - CLI and Desktop use a per-session queue, which prevents the most obvious stale-cursor race from back-to-back UI commands.
-- Free-form `/browser` creates a dedicated hidden Browser subagent instead of exposing the parent agent to unrelated tools.
-- Desktop Home and existing-session flows both have acceptance coverage for Browser child creation and route selection.
+- Free-form `/browser` submits a Browser-directed prompt to the current main Agent, so the user sees the same prompt, tool calls, approvals, artifacts, and answer in one transcript.
+- CLI and Desktop Home flows have acceptance coverage for Browser autocomplete, real CDP actions, and visible main-session task routing. The Desktop existing-session flow covers the structured action lifecycle.
 
 ### 4.2 Computer Use strengths
 
-- Native Computer Use is guarded behind a dedicated service and typed action contract.
-- The macOS backend reports a useful explicit failure when the platform, Accessibility permission, or `cliclick` executable is unavailable.
+- Cua Driver host Computer Use and Cua/Lume isolated Computer Use are guarded behind a dedicated service and the existing typed action contract.
+- The Cua host backend reports a useful explicit failure when the platform, Accessibility/Screen Recording permission, or provider runtime is unavailable. The Lume path reports a bounded setup failure when Lume is not installed.
 - Native screenshots are marked sensitive and are stored separately from Browser screenshots.
 - `expectedSnapshotHash` prevents a caller from blindly acting on a known stale Computer snapshot.
 - The fixture backend is stateful enough to prove that an action caused an observable state transition.
@@ -176,11 +229,11 @@ The following are the issues most likely to explain poor real-world behavior.
 
 | Gap | Current behavior | Required change |
 | --- | --- | --- |
-| Observation is too weak | Native `observe` returns front application and first window name from AppleScript. It does not return a screenshot, accessibility tree, focused control, window bounds, or actionable target references. | Return a screenshot and a structured observation containing display size, active app/window, accessibility nodes, roles, names, bounds, stable references and focus. Keep a text summary for small models, but do not make it the only observation. |
-| Action success is not verified | Native `cliclick` exit success is treated as action success. A click can land on the wrong window or a disabled control and still exit successfully. | Capture an after-observation, compare the expected postcondition, and return `verified`, `changed`, `unchanged`, or `unknown`. A provider turn must see the after-state. |
+| Observation is still incomplete | Cua Driver now returns a desktop image/text payload and Apexo adds the selected window's accessibility tree. Lume still returns a guest screenshot and the public schema does not expose normalized nodes, display geometry, focused control, or stable semantic element references. | Return a normalized observation containing display size, active app/window, accessibility nodes, roles, names, bounds, stable references and focus. Keep a text summary for small models, but do not make it the only observation. |
+| Action success is partially verified | Cua Driver effects are interpreted and unverifiable actions are checked against a semantic before/after window readback. A caller-supplied postcondition is still not part of the public protocol, and pixel-only changes remain difficult to prove. | Add explicit postconditions and return `verified`, `changed`, `unchanged`, or `unknown`. A provider turn must see the after-state. |
 | Semantic target is ignored | `target` is accepted in the schema/tool but the Core native action path only uses coordinates or text/key arguments. | Resolve a semantic target to an accessibility node or require a coordinate fallback with a clear warning. |
 | Screenshot is optional instead of part of the loop | `screenshot` is a separate action and `computer.open`/mutation responses do not always include an image. | Return a normalized image observation after open and after each mutation, with a configurable sampling policy for cost control. |
-| Platform scope is macOS-only | Non-macOS returns unsupported. Native macOS depends on `osascript`, `screencapture`, Accessibility permissions and `cliclick`. | Define a backend capability handshake. Ship a robust macOS backend first, then add Windows UI Automation and Linux AT-SPI/portal backends or explicitly mark those platforms unsupported in the product UI. |
+| Platform scope is macOS-only | Non-macOS returns unsupported. Host Cua Driver and isolated Lume currently require macOS permissions/runtime support. | Define a backend capability handshake. Add Windows UI Automation and Linux AT-SPI/portal providers later, or explicitly mark those platforms unsupported in the product UI. |
 
 ### P1: Browser Use is functional but too brittle for general pages
 
@@ -199,7 +252,7 @@ The following are the issues most likely to explain poor real-world behavior.
 1. Browser and Computer live sessions are stored in process-local `Map` objects. Durable events survive, but a process restart cannot restore the active Playwright connection or native desktop handle.
 2. Browser disconnected state changes the in-memory `connected` flag, but the service does not consistently publish `browser.disconnected` with a reason.
 3. Browser `close` calls `browser.close()` without awaiting the connection shutdown or recording a final close failure.
-4. There is no explicit cancellation endpoint for a running Browser/Computer action. A long Playwright action and a native `cliclick` process need abort propagation.
+4. There is no explicit cancellation endpoint for a running Browser/Computer action. A long Stagehand/Playwright action or Cua/Lume provider call still needs abort propagation.
 5. Core services do not serialize concurrent API callers. CLI and Desktop queues cover their own surface, but two clients can still act on the same Browser/Computer session concurrently.
 6. Replay cursors are durable event cursors, not live-connection checkpoints. Replaying an event does not reattach to the target or restore a model-visible observation.
 7. Artifact retention, cleanup, size limits and sensitive-data redaction are not defined as a product policy.
@@ -207,7 +260,7 @@ The following are the issues most likely to explain poor real-world behavior.
 ### P1: routing and UX differences
 
 1. Automatic tool routing depends on model behavior and prompt text. `/browser` is deterministic, but a normal request such as “open Chrome and search for…” can still be routed to Computer Use or shell depending on the provider.
-2. The Browser child agent is hidden and Browser-only, but there is no equivalent dedicated Computer agent with a clearly constrained toolset and explicit visual loop.
+2. Browser tasks now run in the active main agent, so the transcript includes the Browser tool calls and their results. The provider still needs stronger model-side postcondition guidance for long multi-step tasks.
 3. Desktop uses toasts for many automation results. A toast is not sufficient for a multi-step run, approval wait, reconnect, or provider retry.
 4. CLI and Desktop do not expose the same progress vocabulary, action details, screenshot preview, or retry controls.
 5. `/computer` session creation behavior is not fully symmetric across all CLI/TUI/Home states. Some CLI paths still require an existing Session while Desktop can create one from Home.
@@ -218,7 +271,7 @@ The following are the issues most likely to explain poor real-world behavior.
 The current acceptance harness is valuable, but its scope is narrower than production behavior.
 
 - Browser tests use a local test page and a test Chromium process. They do not cover a real user Chrome profile, Chrome's remote-debugging permission dialog, extension pages, authentication, downloads, popups, dialogs, cross-origin iframes, shadow DOM, large virtualized pages, or network timeouts.
-- Computer tests use `APEXO_COMPUTER_BACKEND=fixture` for deterministic state changes. They do not exercise a real macOS application, Accessibility consent, `screencapture` output, `cliclick` coordinate accuracy, window movement, multiple displays, Retina scaling, or permission denial.
+- Computer tests use `APEXO_COMPUTER_BACKEND=fixture` for deterministic state changes and now include a Cua Driver host probe plus a Lume missing-runtime probe. They do not yet exercise a real native app control, Lume VM actions, multi-display scaling, or permission denial.
 - Automatic provider tests inject deterministic tool calls. They do not establish model routing quality, screenshot interpretation quality, prompt-injection resistance, or provider-specific tool-call batching.
 - No restart test proves reconnect or fail-closed behavior after the server, CLI, Desktop renderer, or Chrome process restarts.
 - No negative permission test proves that a direct slash command pauses for approval and remains blocked until the user accepts.
@@ -392,14 +445,14 @@ The provider must receive one tool result for every tool call. The executor must
 
 **Goal:** provide a real screenshot/accessibility/action loop.
 
-1. Define a native backend interface with `capabilities()`, `observe()`, `act()`, `capture()`, `cancel()` and `close()`.
-2. Add a small signed/packaged macOS helper where necessary for Accessibility API access instead of relying only on AppleScript window names.
+1. Define a provider adapter interface with `capabilities()`, `observe()`, `act()`, `capture()`, `cancel()` and `close()` while keeping the service lifecycle in Apexo.
+2. Add a small signed/packaged macOS helper only where Cua Driver's Accessibility attribution requires one; keep host input and window discovery inside the Cua Driver provider.
 3. Return screenshot, display geometry, active application, active window and accessibility nodes from `observe`.
 4. Resolve semantic target references to accessibility nodes; preserve coordinate fallback for canvas and inaccessible surfaces.
 5. Normalize Retina/display coordinate transforms.
 6. Capture an after-observation after every mutation and classify whether the requested state changed.
 7. Surface Accessibility permission status and a guided System Settings link.
-8. Detect missing `cliclick` and either install/locate a bundled driver or clearly explain the supported installation path.
+8. Detect a missing Cua Driver runtime or Lume executable and clearly explain the supported provider installation path.
 9. Add application/window allowlists and a user-visible active-target label.
 10. Add a Computer-only hidden agent or an equivalent toolset policy that guarantees screenshots and ordered tool results.
 
@@ -476,15 +529,15 @@ The provider must receive one tool result for every tool call. The executor must
 
 ### Computer backend tests
 
-- Native macOS permission missing/approved/denied.
+- Cua Driver macOS permission missing/approved/denied.
 - Active application/window changes.
 - Multiple displays and Retina scaling.
 - Accessibility node reference resolution.
 - Coordinate fallback on inaccessible/canvas content.
 - Screenshot before and after an action.
-- `cliclick` missing, non-zero exit, timeout and cancellation.
+- Cua Driver or Lume missing, provider refusal, timeout and cancellation.
 - Window moved/closed between observe and act.
-- Native app dialog and close-button postconditions.
+- Cua Driver host app dialog and close-button postconditions.
 
 ### CLI and Desktop acceptance
 

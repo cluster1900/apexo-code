@@ -1,6 +1,6 @@
 export * as Browser from "./browser"
 
-import { chromium, type Page } from "playwright-core"
+import type { StagehandBrowser } from "@browserbasehq/stagehand"
 import { Browser as BrowserSchema } from "@apexo/schema/browser"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Location } from "./location"
@@ -28,11 +28,25 @@ export class BrowserError extends Schema.TaggedErrorClass<BrowserError>()("Brows
 }) {}
 
 type Connection = {
-  readonly browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
-  readonly page: Page
+  readonly close: () => Promise<void>
+  readonly page: PageAdapter
   readonly pageID: BrowserSchema.PageID
   readonly console: string[]
   connected: boolean
+}
+
+type PageAdapter = {
+  readonly closed: () => boolean
+  readonly url: () => Promise<string>
+  readonly title: () => Promise<string>
+  readonly goto: (url: string, timeout: number) => Promise<unknown>
+  readonly evaluate: (expression: string, arg?: unknown) => Promise<unknown>
+  readonly snapshot: () => Promise<string[]>
+  readonly click: (selector: string, timeout: number) => Promise<void>
+  readonly fill: (selector: string, value: string, timeout: number) => Promise<void>
+  readonly keyPress: (key: string) => Promise<void>
+  readonly scroll: (x: number, y: number) => Promise<void>
+  readonly screenshot: (fullPage: boolean) => Promise<Uint8Array>
 }
 
 type State = {
@@ -128,37 +142,81 @@ const connectionError = (cause: unknown) =>
     ? cause
     : new BrowserError({ code: "browser_disconnected", message: `Unable to connect to Browser CDP: ${asError(cause).message}` })
 
+const stagehandPage = (page: import("@browserbasehq/stagehand").Page): PageAdapter => ({
+  closed: () => false,
+  url: () => page.url(),
+  title: () => page.title(),
+  goto: (url, timeout) => page.goto(url, { timeout }),
+  evaluate: (expression, arg) => page.evaluate(expression, arg),
+  snapshot: async () => (await page.snapshot({ timeout: ACTION_TIMEOUT_MS })).formattedTree.split("\n").slice(0, MAX_ACCESSIBILITY_NODES),
+  click: (selector, timeout) => page.locator(selector).click({ timeout }),
+  fill: (selector, value, timeout) => page.locator(selector).fill(value, { timeout }),
+  keyPress: (key) => page.keyPress(key),
+  scroll: (x, y) => page.scroll(0, 0, x, y),
+  screenshot: (fullPage) => page.screenshot({ type: "png", fullPage }),
+})
+
+const playwrightPage = (page: import("playwright-core").Page): PageAdapter => ({
+  closed: () => page.isClosed(),
+  url: () => Promise.resolve(page.url()),
+  title: () => page.title(),
+  goto: (url, timeout) => page.goto(url, { waitUntil: "domcontentloaded", timeout }),
+  evaluate: (expression, arg) => page.evaluate(expression, arg),
+  snapshot: async () => {
+    const snapshot = await page.locator("body").ariaSnapshot({ timeout: ACTION_TIMEOUT_MS })
+    return snapshot.split("\n").slice(0, MAX_ACCESSIBILITY_NODES)
+  },
+  click: (selector, timeout) => page.locator(selector).click({ timeout }),
+  fill: (selector, value, timeout) => page.locator(selector).fill(value, { timeout }),
+  keyPress: (key) => page.keyboard.press(key),
+  scroll: (x, y) => page.evaluate("({x, y}) => globalThis.scrollBy(x, y)", { x, y }).then(() => undefined),
+  screenshot: (fullPage) => page.screenshot({ type: "png", fullPage }),
+})
+
+const stagehandCompatibilityFallback = (cause: unknown) => /Extensions\.getExtensions|Method not available/iu.test(asError(cause).message)
+
 const connect = (endpoint: string, url: string, pageID: BrowserSchema.PageID) =>
   Effect.tryPromise({
     try: async () => {
-      const browser = await chromium.connectOverCDP(endpoint, { timeout: ACTION_TIMEOUT_MS })
-      const context = browser.contexts()[0]
-      if (!context) throw new globalThis.Error("Browser CDP did not expose a browser context")
-      const page =
-        context.pages().find((item) => item.url() === url) ??
-        context.pages().find((item) => item.url() === "about:blank" || item.url() === "chrome://newtab/") ??
-        (await context.newPage())
-      const connection: Connection = {
-        browser,
-        page,
-        pageID,
-        console: [],
-        connected: true,
+      let stagehandBrowser: StagehandBrowser | undefined
+      try {
+        const { localBrowser, Stagehand } = await import("@browserbasehq/stagehand")
+        stagehandBrowser = await localBrowser.connect({ cdpUrl: endpoint })
+        const stagehand = await Stagehand.create({ browser: stagehandBrowser, logging: { level: "off" } })
+        const context = stagehandBrowser.context
+        const pages = await context.pages()
+        const pageStates = await Promise.all(pages.map(async (item) => ({ item, url: await item.url() })))
+        const page =
+          pageStates.find((item) => item.url === url)?.item ??
+          pageStates.find((item) => item.url === "about:blank" || item.url === "chrome://newtab/")?.item ??
+          (await context.newPage())
+        const adapter = stagehandPage(page)
+        await adapter.goto(url, ACTION_TIMEOUT_MS)
+        return { close: () => stagehand.close(), page: adapter, pageID, console: [], connected: true }
+      } catch (cause) {
+        if (!stagehandCompatibilityFallback(cause)) {
+          await stagehandBrowser?.close().catch(() => undefined)
+          throw cause
+        }
+        await stagehandBrowser?.close().catch(() => undefined)
+        const { chromium } = await import("playwright-core")
+        const browser = await chromium.connectOverCDP(endpoint, { timeout: ACTION_TIMEOUT_MS })
+        try {
+          const context = browser.contexts()[0]
+          if (!context) throw new globalThis.Error("Browser CDP did not expose a browser context")
+          const pages = context.pages()
+          const page =
+            pages.find((item) => item.url() === url) ??
+            pages.find((item) => item.url() === "about:blank" || item.url() === "chrome://newtab/") ??
+            (await context.newPage())
+          const adapter = playwrightPage(page)
+          await adapter.goto(url, ACTION_TIMEOUT_MS)
+          return { close: () => browser.close(), page: adapter, pageID, console: [], connected: true }
+        } catch (error) {
+          await browser.close().catch(() => undefined)
+          throw error
+        }
       }
-      page.on("console", (message) => {
-        const line = message.args().map((arg) => arg.toString()).join(" ")
-        if (!line) return
-        connection.console.push(line.slice(0, MAX_TEXT))
-        if (connection.console.length > 100) connection.console.shift()
-      })
-      page.on("close", () => {
-        connection.connected = false
-      })
-      browser.on("disconnected", () => {
-        connection.connected = false
-      })
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: ACTION_TIMEOUT_MS })
-      return connection
     },
     catch: connectionError,
   }).pipe(
@@ -172,31 +230,20 @@ const connect = (endpoint: string, url: string, pageID: BrowserSchema.PageID) =>
 const pageState = (connection: Connection, pageID: BrowserSchema.PageID) =>
   Effect.tryPromise({
     try: async () => {
-      if (!connection.connected || connection.page.isClosed())
+      if (!connection.connected || connection.page.closed())
         throw new BrowserError({ code: "browser_disconnected", message: "Browser page is closed" })
-      const state = await connection.page.evaluate(() => {
-        const runtime = globalThis as unknown as {
-          location: { href: string }
-          document: {
-            title: string
-            body?: { innerText?: string }
-            documentElement?: { outerHTML?: string }
-          }
-        }
-        return {
-          url: runtime.location.href,
-          title: runtime.document.title,
-          text: (runtime.document.body?.innerText ?? "").slice(0, 12_000),
-          source: runtime.document.documentElement?.outerHTML ?? "",
-        }
-      })
+      const url = await connection.page.url()
+      const title = await connection.page.title()
+      const state = (await connection.page.evaluate(
+        "({ text: (document.body?.innerText ?? '').slice(0, 12000), source: document.documentElement?.outerHTML ?? '' })",
+      )) as { readonly text: string; readonly source: string }
       let hash = 2166136261
       for (let index = 0; index < state.source.length; index++) hash = Math.imul(hash ^ state.source.charCodeAt(index), 16777619)
       return {
         page: BrowserSchema.Page.make({
           id: pageID,
-          url: state.url,
-          title: state.title,
+          url,
+          title,
           snapshotHash: (hash >>> 0).toString(16),
         }),
         text: state.text,
@@ -211,8 +258,7 @@ const pageState = (connection: Connection, pageID: BrowserSchema.PageID) =>
 const accessibility = (connection: Connection) =>
   Effect.tryPromise({
     try: async () => {
-      const snapshot = await connection.page.locator("body").ariaSnapshot({ timeout: ACTION_TIMEOUT_MS })
-      return snapshot.split("\n").slice(0, MAX_ACCESSIBILITY_NODES)
+      return await connection.page.snapshot()
     },
     catch: asError,
   }).pipe(Effect.orElseSucceed(() => [] as string[]))
@@ -230,6 +276,14 @@ const layer = Layer.effect(
     const database = yield* Database.Service
     const events = yield* EventV2.Service
     const sessions = new Map<BrowserSchema.BrowserSessionID, State>()
+
+    yield* Effect.addFinalizer(() =>
+      Effect.forEach(
+        [...sessions.values()],
+        (state) => Effect.promise(() => state.connection.close()).pipe(Effect.ignore),
+        { discard: true },
+      ).pipe(Effect.andThen(Effect.sync(() => sessions.clear()))),
+    )
 
     const emitPage = Effect.fnUntraced(function* (state: State, page: BrowserSchema.Page) {
       updateInfo(state, { page, status: "connected", lastActionAt: Date.now(), disconnectedReason: undefined })
@@ -264,10 +318,10 @@ const layer = Layer.effect(
       const state = sessions.get(browserSessionID)
       if (!state) return
       state.connection.connected = false
-      void state.connection.browser.close()
+      sessions.delete(browserSessionID)
+      yield* Effect.promise(() => state.connection.close()).pipe(Effect.ignore)
       updateInfo(state, { status: "closed", lastActionAt: Date.now() })
       yield* publish(events, BrowserSchema.Event.Closed, { browserSessionID })
-      sessions.delete(browserSessionID)
     })
 
     const act = Effect.fn("Browser.act")(function* (
@@ -292,7 +346,7 @@ const layer = Layer.effect(
           if (!input.url) return yield* new BrowserError({ code: "invalid_action", message: "browser.open requires url" })
           const url = yield* validateUrlEffect(input.url)
           yield* Effect.tryPromise({
-            try: () => state.connection.page.goto(url, { waitUntil: "domcontentloaded", timeout: ACTION_TIMEOUT_MS }),
+            try: () => state.connection.page.goto(url, ACTION_TIMEOUT_MS),
             catch: (cause) => actionError("open", cause),
           })
           yield* Effect.sleep(100)
@@ -302,7 +356,7 @@ const layer = Layer.effect(
         if (input.action === "click") {
           if (!input.selector) return yield* new BrowserError({ code: "invalid_action", message: "browser.click requires selector" })
           yield* Effect.tryPromise({
-            try: () => state.connection.page.locator(input.selector!).click({ timeout: ACTION_TIMEOUT_MS }),
+            try: () => state.connection.page.click(input.selector!, ACTION_TIMEOUT_MS),
             catch: (cause) => actionError("click", cause),
           })
           yield* Effect.sleep(50)
@@ -312,7 +366,7 @@ const layer = Layer.effect(
           if (!input.selector || input.text === undefined)
             return yield* new BrowserError({ code: "invalid_action", message: "browser.type requires selector and text" })
           yield* Effect.tryPromise({
-            try: () => state.connection.page.locator(input.selector!).fill(input.text!),
+            try: () => state.connection.page.fill(input.selector!, input.text!, ACTION_TIMEOUT_MS),
             catch: (cause) => actionError("type", cause),
           })
           return yield* observe(state)
@@ -320,7 +374,7 @@ const layer = Layer.effect(
         if (input.action === "press") {
           if (!input.key) return yield* new BrowserError({ code: "invalid_action", message: "browser.press requires key" })
           yield* Effect.tryPromise({
-            try: () => state.connection.page.keyboard.press(input.key!),
+            try: () => state.connection.page.keyPress(input.key!),
             catch: (cause) => actionError("press", cause),
           })
           return yield* observe(state)
@@ -331,18 +385,14 @@ const layer = Layer.effect(
           if (x === undefined || y === undefined)
             return yield* new BrowserError({ code: "invalid_action", message: "browser.scroll requires x and y" })
           yield* Effect.tryPromise({
-            try: () =>
-              state.connection.page.evaluate(({ x, y }) => {
-                const runtime = globalThis as unknown as { scrollBy: (x: number, y: number) => void }
-                runtime.scrollBy(x, y)
-              }, { x, y }),
+            try: () => state.connection.page.scroll(x, y),
             catch: (cause) => actionError("scroll", cause),
           })
           return yield* observe(state)
         }
         if (input.action === "screenshot") {
           const screenshot = yield* Effect.tryPromise({
-            try: () => state.connection.page.screenshot({ type: "png", fullPage: input.fullPage === true }),
+            try: () => state.connection.page.screenshot(input.fullPage === true),
             catch: (cause) => actionError("screenshot", cause),
           })
           const screenshotData = Buffer.from(screenshot).toString("base64")
@@ -396,7 +446,9 @@ const layer = Layer.effect(
       const browserSessionID = BrowserSchema.BrowserSessionID.create()
       const pageID = BrowserSchema.PageID.create()
       const connection = yield* connect(endpoint, url, pageID)
-      const current = yield* pageState(connection, pageID)
+      const current = yield* pageState(connection, pageID).pipe(
+        Effect.tapError(() => Effect.promise(() => connection.close()).pipe(Effect.ignore)),
+      )
       const info = BrowserSchema.Info.make({
         id: browserSessionID,
         sessionID: input.sessionID,

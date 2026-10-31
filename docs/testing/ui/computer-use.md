@@ -1,5 +1,7 @@
 # Computer Use Acceptance Record
 
+> Historical record: the implementation described below predates the third-party provider migration. The active service uses Cua Driver for host input and Cua/Lume for isolated execution; retain these steps only as evidence for the original regression.
+
 ## Bug ID
 
 `COMPUTER-USE-001`
@@ -29,7 +31,7 @@ Computer Use was initially registered only in the V2 built-in tool graph. The le
 ## Fix
 
 The V1 registry now exposes an Apexo-owned Computer adapter and resolves the Core Computer service through the location service map. The adapter applies the existing permission callback to destructive actions and returns screenshot attachments. The acceptance fixtures keep V1 and V2 provider/permission configuration shapes separate.
-The native capture path creates the per-session artifact directory before invoking `screencapture`; read-only open/observe/screenshot operations do not request destructive approval, while input actions do.
+The former native capture path created the per-session artifact directory before invoking `screencapture`; read-only open/observe/screenshot operations did not request destructive approval, while input actions did. The current provider path delegates capture and input to Cua Driver or Lume and keeps the same session-level permission boundary.
 
 ## Verification
 
@@ -43,7 +45,7 @@ The native capture path creates the per-session artifact directory before invoki
 
 ## Remaining limitations
 
-The native backend currently targets macOS Accessibility APIs and `cliclick` for input. Other platforms return a typed unavailable status; native permission prompts must be granted by the user before input actions can succeed.
+The former backend targeted macOS Accessibility APIs and `cliclick` for input. The current backend targets Cua Driver on the host and Lume through the Cua SDK for isolated macOS execution. Other platforms return a typed unavailable status; provider availability and native permission prompts must be satisfied before input actions can succeed.
 
 ## Bug ID
 

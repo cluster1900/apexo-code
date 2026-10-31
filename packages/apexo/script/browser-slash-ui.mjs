@@ -3,6 +3,7 @@ import http from "node:http"
 import { createRequire } from "node:module"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { writeFile } from "node:fs/promises"
 import { Terminal } from "@xterm/headless"
 import { startShellFixture, deadline, poll } from "./grok-shell-fixture.mjs"
 
@@ -12,16 +13,73 @@ const kind = process.argv[2] ?? "cli"
 assert.ok(kind === "cli" || kind === "desktop")
 const runtime = await startShellFixture(kind, {
   ...(kind === "cli" ? { server: "v2" } : {}),
+  deferBackend: true,
+  ...(kind === "desktop"
+    ? {
+        config: {
+          provider: {
+            xai: {
+              npm: "@ai-sdk/openai-compatible",
+              options: { apiKey: "local-parity-key" },
+              models: {
+                "grok-4.7": {
+                  name: "Browser Use fixture",
+                  provider: { npm: "@ai-sdk/openai-compatible" },
+                  tool_call: true,
+                  limit: { context: 100000, output: 10000 },
+                },
+              },
+            },
+          },
+        },
+      }
+    : {}),
   next: ({ body, text, finished }) => {
     const hasBrowser = body.tools?.some((item) => item.function?.name === "browser" || item.name === "browser")
     if (!hasBrowser) return undefined
-    if (finished) return { content: "BROWSER_SUBAGENT_OK", usage: 0 }
+    if (finished) return { content: "BROWSER_MAIN_SESSION_OK", usage: 0 }
     const urls = [...text.matchAll(/https?:\/\/127\.0\.0\.1:\d+\/?/gu)].map((match) => match[0])
     const cdp = text.match(/CDP\s+(https?:\/\/127\.0\.0\.1:\d+)/u)?.[1]
-    if (!urls[0] || !cdp) return { content: "BROWSER_SUBAGENT_INPUT_MISSING", usage: 0 }
+    if (!urls[0] || !cdp) return { content: "BROWSER_MAIN_SESSION_INPUT_MISSING", usage: 0 }
     return { tool: "browser", args: { action: "open", url: urls[0], cdpUrl: cdp }, usage: 0 }
   },
 })
+if (kind === "cli") {
+  const provider = {
+    name: "Browser Use fixture",
+    api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: runtime.env.XAI_BASE_URL, settings: { apiKey: "local-parity-key" } },
+    models: {
+      "grok-4.7": {
+        name: "Browser Use fixture",
+          provider: { npm: "@ai-sdk/openai-compatible", api: runtime.env.XAI_BASE_URL },
+        api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: runtime.env.XAI_BASE_URL, settings: { apiKey: "local-parity-key" } },
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        limit: { context: 100000, output: 10000 },
+      },
+    },
+  }
+  await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify({ permissions: [{ action: "*", resource: "*", effect: "allow" }], providers: { xai: provider } }))
+  runtime.env.APEXO_CONFIG = join(runtime.directory, "apexo.json")
+} else {
+  const provider = {
+    xai: {
+      npm: "@ai-sdk/openai-compatible",
+      options: { apiKey: "local-parity-key", baseURL: runtime.env.XAI_BASE_URL },
+      models: {
+        "grok-4.7": {
+          name: "Browser Use fixture",
+          provider: { npm: "@ai-sdk/openai-compatible", api: runtime.env.XAI_BASE_URL },
+          tool_call: true,
+          limit: { context: 100000, output: 10000 },
+        },
+      },
+    },
+  }
+  await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify({ permission: { "*": "allow" }, provider }))
+  runtime.env.APEXO_CONFIG_CONTENT = JSON.stringify({ model: "xai/grok-4.7", permission: { "*": "allow" }, provider })
+  runtime.env.APEXO_CONFIG = join(runtime.directory, "apexo.json")
+}
+await runtime.reopen()
 const cliApi = async (method, endpoint, body) => {
   const path = `${endpoint}${endpoint.includes("?") ? "&" : "?"}directory=${encodeURIComponent(runtime.directory)}`
   const args = ["bun", join(repo, "packages/cli/src/index.ts"), "api", method, path]
@@ -63,7 +121,7 @@ await unrelated.setContent("<!doctype html><title>Unrelated tab</title>")
 const fixture = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 await fixture.goto(pageURL)
 
-const result = { kind, sessionID: "", browserSessionID: "", subagentSessionID: "", events: 0, artifact: "", autocomplete: false }
+const result = { kind, sessionID: "", browserSessionID: "", events: 0, artifact: "", autocomplete: false, mainSessionBrowserTask: false }
 let appBrowser
 let cli
 let terminal
@@ -161,17 +219,16 @@ try {
     result.events = events.events.length
     assert.ok(result.events >= 8)
     command(`/browser inspect ${pageURL} through CDP http://127.0.0.1:${cdpPort} and report the page title`)
-    const child = await poll(async () => {
-      const sessions = (await cliApi("GET", "/api/session")).data
-      return sessions?.find((item) => item.parentID === session.id && item.agent === "browser")
-    }, "CLI browser subagent", 30_000)
-    result.subagentSessionID = child.id
-    assert.equal(child.parentID, session.id)
-    assert.equal(child.agent, "browser")
     await poll(async () => {
-      const messages = await cliApi("GET", `/api/session/${child.id}/message`)
+      const sessions = (await cliApi("GET", "/api/session")).data
+      return !sessions?.some((item) => item.parentID === session.id && item.agent === "browser")
+    }, "CLI browser task stays in main session", 30_000)
+    await poll(async () => {
+      const messages = await cliApi("GET", `/api/session/${session.id}/message`)
       return JSON.stringify(messages).includes('"browser"')
-    }, "CLI browser subagent tool", 30_000)
+    }, "CLI main session browser tool", 30_000)
+    assert.match(terminalText, /\/browser inspect/u)
+    result.mainSessionBrowserTask = true
     command("/browser close")
     await poll(async () => {
       try {
@@ -213,12 +270,6 @@ try {
     try {
       appBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH ?? chromium.executablePath() })
       const home = await appBrowser.newPage({ viewport: { width: 1440, height: 1000 } })
-      let homeSubagentSessionID = ""
-      home.on("request", (request) => {
-        if (request.method() !== "POST") return
-        const match = new URL(request.url()).pathname.match(/^\/api\/session\/([^/]+)\/prompt$/u)
-        if (match) homeSubagentSessionID = match[1]
-      })
       const beforeHomeSessions = new Set(((await runtime.api("/api/session")).data ?? []).map((item) => item.id))
       await home.goto(`http://127.0.0.1:${frontend.address().port}/${Buffer.from(runtime.directory).toString("base64url")}/session`)
       const homeEditor = home.locator('[contenteditable="true"]').first()
@@ -227,40 +278,36 @@ try {
       await poll(
         async () => {
           const body = await home.locator("body").innerText()
-          return body.includes("/browser") && body.includes("Run a browser task in a dedicated CDP subagent")
+          return body.includes("/browser")
         },
         "Desktop Home /browser autocomplete",
       )
       await homeEditor.fill(`/browser inspect ${pageURL} through CDP http://127.0.0.1:${cdpPort} and report the page title`)
       await home.locator('[data-action="prompt-submit"]').click()
-      const homeRoot = await poll(async () => {
-        const sessions = (await runtime.api("/api/session")).data ?? []
-        return sessions.find((item) => !beforeHomeSessions.has(item.id) && !item.parentID)
-      }, "Desktop browser home session", 30_000)
+      const homeRoot = await poll(() => {
+        const match = home.url().match(/\/session\/([^/?#]+)/u)
+        return match && !beforeHomeSessions.has(match[1]) ? { id: match[1] } : undefined
+      }, "Desktop browser home main session route", 30_000)
       assert.ok(homeRoot?.id)
-      const homeChild = await poll(async () => {
-        if (!homeSubagentSessionID) return undefined
-        const info = await runtime.api(`/api/session/${homeSubagentSessionID}`)
-        return info?.data ?? info
-      }, "Desktop browser home subagent", 30_000)
-      assert.equal(homeChild.parentID, homeRoot.id)
-      assert.equal(homeChild.agent, "browser")
-      await poll(
-        () => home.url().endsWith(`/session/${homeChild.id}`),
-        "Desktop browser home child route",
-      )
+      const homeInfo = (await runtime.api(`/api/session/${homeRoot.id}`)).data
+      assert.equal(homeInfo?.agent, "build")
+      assert.equal(homeInfo?.parentID, undefined)
       await poll(async () => {
-        const messages = await runtime.api(`/api/session/${homeChild.id}/message`)
+        const sessions = (await runtime.api("/api/session")).data ?? []
+        return !sessions.some((item) => item.parentID === homeRoot.id && item.agent === "browser")
+      }, "Desktop browser home task stays in main session", 30_000)
+      await poll(async () => {
+        const messages = await runtime.api(`/api/session/${homeRoot.id}/message`)
         return JSON.stringify(messages).includes('"browser"')
-      }, "Desktop browser home subagent tool", 30_000)
+      }, "Desktop browser home main session browser tool", 30_000)
+      await poll(
+        async () => /BROWSER_MAIN_SESSION_OK|inspect/iu.test(await home.locator("body").innerText()),
+        "Desktop browser home visible transcript",
+        30_000,
+      )
+      result.mainSessionBrowserTask = true
       await home.close()
       const page = await appBrowser.newPage({ viewport: { width: 1440, height: 1000 } })
-      let desktopSubagentSessionID = ""
-      page.on("request", (request) => {
-        if (request.method() !== "POST") return
-        const match = new URL(request.url()).pathname.match(/^\/api\/session\/(ses_[^/]+)\/prompt$/u)
-        if (match) desktopSubagentSessionID = match[1]
-      })
       await page.goto(`http://127.0.0.1:${frontend.address().port}/${Buffer.from(runtime.directory).toString("base64url")}/session/${session.id}`)
       const editor = page.locator('[contenteditable="true"]').first()
       await editor.waitFor({ state: "visible" })
@@ -303,20 +350,6 @@ try {
           return true
         }
       }, "Desktop browser close")
-      await command(`/browser inspect ${pageURL} through CDP http://127.0.0.1:${cdpPort} and report the page title`)
-      const child = await poll(async () => {
-        if (!desktopSubagentSessionID) return undefined
-        const info = await runtime.api(`/api/session/${desktopSubagentSessionID}`)
-        return info?.data ?? info
-      }, "Desktop browser subagent", 30_000)
-      result.subagentSessionID = child.id
-      assert.equal(child.parentID, session.id)
-      assert.equal(child.agent, "browser")
-      await poll(() => page.url().endsWith(`/session/${child.id}`), "Desktop browser child route")
-      await poll(async () => {
-        const messages = await runtime.api(`/api/session/${child.id}/message`)
-        return JSON.stringify(messages).includes('"browser"')
-      }, "Desktop browser subagent tool", 30_000)
       console.log(JSON.stringify(result))
     } finally {
       await appBrowser?.close()

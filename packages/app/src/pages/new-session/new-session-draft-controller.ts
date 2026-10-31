@@ -8,15 +8,18 @@ import { useLocal } from "@/context/local"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useServerSync } from "@/context/server-sync"
+import { useSync } from "@/context/sync"
 import { showToast } from "@/utils/toast"
 import { createPromptInputController, createPromptProjectControls } from "@/pages/session/composer"
 import { createPromptModelSelection } from "@/pages/session/composer/prompt-model-selection"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
+import { browserTaskPrompt } from "@apexo/sdk/v2/browser-command"
 
 export function createNewSessionDraftController(workspace: { worktree: () => string; resetWorktree: () => void }) {
   const prompt = usePrompt()
   const serverSync = useServerSync()
+  const sync = useSync()
   const comments = useComments()
   const local = useLocal()
   const sdk = useSDK()
@@ -40,7 +43,7 @@ export function createNewSessionDraftController(workspace: { worktree: () => str
     const currentAgent = local.agent.current()
     if (!currentModel || !currentAgent) throw new Error("Select a model and agent before using /browser")
     const location = { directory: sdk().directory }
-    const parent = (
+    const session = (
       await sdk().client.v2.session.create(
         {
           agent: currentAgent.name,
@@ -54,24 +57,40 @@ export function createNewSessionDraftController(workspace: { worktree: () => str
         { throwOnError: true },
       )
     ).data.data
-    const child = (
-      await sdk().client.v2.session.create(
-        { parentID: parent.id, agent: "browser", location },
+    navigate(`/${base64Encode(sdk().directory)}/session/${session.id}`)
+    const promptText = browserTaskPrompt(task)
+    const admitted = (
+      await sdk().client.v2.session.prompt(
+        { sessionID: session.id, prompt: { text: promptText }, delivery: "steer" },
         { throwOnError: true },
       )
     ).data.data
-    navigate(`/${base64Encode(sdk().directory)}/session/${child.id}`)
-    await sdk().client.v2.session.prompt(
-      { sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" },
-      { throwOnError: true },
-    )
+    sync().session.addOptimisticMessage({
+      sessionID: session.id,
+      messageID: admitted.id,
+      parts: [
+        {
+          id: `${admitted.id}:text:0`,
+          sessionID: session.id,
+          messageID: admitted.id,
+          type: "text",
+          text: promptText,
+        },
+      ],
+      agent: currentAgent.name,
+      model: { providerID: currentModel.provider.id, modelID: currentModel.id },
+      variant: local.model.variant.current(),
+    })
+    await serverSync().session.sync(session.id).catch(() => undefined)
+    await serverSync().session.sync(session.id, { force: true }).catch(() => undefined)
   }
   command.register("new-session-browser", () => [
     {
-      id: "session.browser",
+      id: "new-session.browser",
       title: "Control browser through Chrome CDP",
-      description: "Run a browser task in a dedicated CDP subagent",
+      description: "Run a browser task in the current session through Chrome CDP",
       slash: "browser",
+      disabled: !!route.params.id,
       onSlash: (args) => {
         if (args.trim() === "") return
         void runBrowserTask(args).catch((error: unknown) =>

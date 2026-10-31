@@ -1,7 +1,7 @@
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@apexo/core/util/encode"
 import { nextSessionMode, parseCopyArgs, type SessionModeName } from "@apexo/sdk/v2/grok-commands"
-import { parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
+import { browserTaskPrompt, parseBrowserCommand } from "@apexo/sdk/v2/browser-command"
 import { parseComputerCommand } from "@apexo/sdk/v2/computer-command"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@apexo/ui/context/dialog"
@@ -660,19 +660,36 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const runBrowserTask = async (task: string) => {
     const parentID = await ensureBrowserSession()
     if (!parentID) return
-    showToast({ variant: "loading", title: "Browser", description: "Starting the Browser agent…" })
-    const child = (
-      await sdk().client.v2.session.create(
-        { parentID, agent: "browser", location: { directory: sdk().directory } },
+    showToast({ variant: "loading", title: "Browser", description: "Sending the browser task to the current session…" })
+    const promptText = browserTaskPrompt(task)
+    const admitted = (
+      await sdk().client.v2.session.prompt(
+        { sessionID: parentID, prompt: { text: promptText }, delivery: "steer" },
         { throwOnError: true },
       )
     ).data.data
-    navigate(`/${base64Encode(sdk().directory)}/session/${child.id}`)
-    await sdk().client.v2.session.prompt(
-      { sessionID: child.id, prompt: { text: task.trim() }, delivery: "steer" },
-      { throwOnError: true },
-    )
-    showToast({ variant: "success", title: "Browser", description: `Started browser subagent ${child.id}` })
+    sync().session.addOptimisticMessage({
+      sessionID: parentID,
+      messageID: admitted.id,
+      parts: [
+        {
+          id: `${admitted.id}:text:0`,
+          sessionID: parentID,
+          messageID: admitted.id,
+          type: "text",
+          text: promptText,
+        },
+      ],
+      agent: local.agent.current()?.name ?? "build",
+      model: {
+        providerID: local.model.current()?.provider.id ?? "",
+        modelID: local.model.current()?.id ?? "",
+      },
+      variant: local.model.variant.current(),
+    })
+    await serverSync().session.sync(parentID).catch(() => undefined)
+    await serverSync().session.sync(parentID, { force: true }).catch(() => undefined)
+    showToast({ variant: "success", title: "Browser", description: "Browser task submitted to the current session" })
   }
   const runComputerCommand = async (args: string) => {
     const sessionID = await ensureAutomationSession("computer")

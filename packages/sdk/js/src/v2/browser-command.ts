@@ -13,6 +13,9 @@ export type BrowserSlashCommand =
 const HELP =
   "Usage: /browser open <url> [--cdp-url <url>] | observe | click <selector> | type <selector> <text> | press <key> | scroll <x> <y> | screenshot [full] | events [after] [limit] | close"
 
+export const browserTaskPrompt = (task: string) =>
+  `Use the browser tool through Chrome DevTools Protocol for this request. User request: ${task.trim()}`
+
 export function parseBrowserCommand(args = ""): BrowserSlashCommand {
   const tokens = tokenize(args)
   const action = tokens.shift()?.toLowerCase()
