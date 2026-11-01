@@ -300,6 +300,38 @@ it.live(
           XDG_CACHE_HOME: path.join(root, "xdg-cache"),
         }
 
+        const bwrapBinary =
+          process.platform === "linux"
+            ? Bun.which("bwrap", {
+                PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+              })
+            : null
+        const kernelSandboxAvailable =
+          process.platform === "darwin" ||
+          (bwrapBinary !== null &&
+            Bun.spawnSync(
+              [
+                bwrapBinary,
+                "--die-with-parent",
+                "--unshare-pid",
+                "--unshare-net",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--",
+                "/bin/true",
+              ],
+              {
+                stdin: "ignore",
+                stdout: "pipe",
+                stderr: "pipe",
+              },
+            ).exitCode === 0)
+
         // 4a. Direct connection bypassing proxy (`--noproxy '*'`) is blocked by the OS kernel sandbox
         const directBypass = yield* Effect.promise(() =>
           spawnCli(
@@ -318,13 +350,14 @@ it.live(
             cliEnv,
           ),
         )
-        // If Linux host lacks unprivileged userns for bwrap, skip kernel assertions gracefully
-        const sandboxUnavailable =
-          process.platform === "linux" &&
-          directBypass.exitCode !== 0 &&
-          !directBypass.stdout.trim().startsWith("{") &&
-          directBypass.stderr.includes("command sandbox")
-        if (!sandboxUnavailable) {
+        if (!kernelSandboxAvailable) {
+          // When Linux CI lacks bwrap or restricts unprivileged user/net/pid namespaces, `apexo sandbox` must fail closed
+          expect(directBypass.exitCode).not.toBe(0)
+          expect(directBypass.stdout.trim()).toBe("")
+          expect(directBypass.stdout).not.toContain("DIRECT_SECRET_LEAK")
+          expect(directBypass.stderr.length).toBeGreaterThan(0)
+        }
+        if (kernelSandboxAvailable) {
           expect(directBypass.exitCode).not.toBe(0)
           const bypassReport = JSON.parse(directBypass.stdout) as SandboxExecReport
           expect(bypassReport.exitCode).not.toBe(0)
