@@ -19,7 +19,7 @@ import {
   type ToolResultPart,
 } from "../schema"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
-import { isContextOverflow } from "../provider-error"
+import { isContextOverflow, isRetryableProviderError } from "../provider-error"
 import { OpenAIOptions } from "./utils/openai-options"
 export { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
@@ -905,9 +905,11 @@ const providerErrorMessage = (event: OpenAIResponsesEvent, fallback: string): st
 const providerError = (event: OpenAIResponsesEvent, fallback: string) => {
   const code = event.code || event.response?.error?.code || undefined
   const message = providerErrorMessage(event, fallback)
+  const retryable = isRetryableProviderError(message, code)
   return LLMEvent.providerError({
     message,
     classification: code === "context_length_exceeded" || isContextOverflow(message) ? "context-overflow" : undefined,
+    ...(retryable ? { retryable: true } : {}),
   })
 }
 

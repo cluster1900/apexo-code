@@ -144,6 +144,30 @@ const make = (options: Config) =>
     return client
   })
 
+const isBusySqliteError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes("SQLITE_BUSY") || message.includes("database is locked")
+}
+
+const enableWalWithRetry = (native: DatabaseSync) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const applied = yield* Effect.try({
+        try: () => {
+          native.exec("PRAGMA journal_mode = WAL;")
+          return true
+        },
+        catch: (error) => error,
+      }).pipe(
+        Effect.catch((error) => {
+          if (!isBusySqliteError(error) || attempt === 7) return Effect.fail(error)
+          return Effect.sleep(`${20 * 2 ** attempt} millis`).pipe(Effect.as(false))
+        }),
+      )
+      if (applied) return
+    }
+  }).pipe(Effect.orDie)
+
 const nativeLayer = (config: Config) =>
   Layer.effect(
     Sqlite.Native,
@@ -157,7 +181,7 @@ const nativeLayer = (config: Config) =>
         open: true,
       })
       yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
-      if (config.disableWAL !== true && config.readonly !== true) native.exec("PRAGMA journal_mode = WAL;")
+      if (config.disableWAL !== true && config.readonly !== true) yield* enableWalWithRetry(native)
       return native
     }),
   )

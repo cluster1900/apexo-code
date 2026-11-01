@@ -5,6 +5,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { parse } from "toml"
+import { CommandSandboxNetworkProxy } from "./network-proxy"
 import { CommandSandboxPolicy } from "./policy"
 
 const EXTENDABLE_PROFILES = new Set<CommandSandboxPolicy.BaseProfile>(["workspace", "read-only", "strict", "devbox"])
@@ -45,6 +46,7 @@ interface CustomProfileConfig {
   readonly read_write: string[]
   readonly deny: string[]
   readonly restrict_network?: boolean
+  readonly allow_domains: string[]
 }
 
 interface SandboxTomlConfig {
@@ -60,6 +62,8 @@ export const resolve = (input: {
   readonly grokHome?: string
   readonly extraDenyLiterals?: ReadonlyArray<string>
   readonly extraDenyGlobs?: ReadonlyArray<CommandSandboxPolicy.DenyGlob>
+  readonly extraAllowDomains?: ReadonlyArray<string>
+  readonly networkOverride?: "off" | "unrestricted"
 }) =>
   Effect.tryPromise({
     try: async () => {
@@ -122,12 +126,23 @@ export const resolve = (input: {
         })
       const identities = [...new Map(entries.map((entry) => [entry.identity.path, entry.identity])).values()]
       const standardProfile = input.profile === "workspace" || input.profile === "read-only"
+      const allowDomains = CommandSandboxNetworkProxy.normalizeDomainPatterns([
+        ...resolvedProfile.allowDomains,
+        ...(input.extraAllowDomains ?? []),
+      ])
+      const network = input.networkOverride ?? (allowDomains.length > 0 ? "off" : resolvedProfile.network)
+      if (network === "unrestricted" && allowDomains.length > 0)
+        throw new CommandSandboxPolicy.Failure({
+          code: "invalid_policy",
+          message: "Cannot combine unrestricted network mode with allow_domains.",
+        })
       const policy = {
         version: 1 as const,
         scope: "native_commands" as const,
         profile: input.profile,
         ...(standardProfile && resolvedProfile.base === input.profile ? {} : { base: resolvedProfile.base }),
-        network: resolvedProfile.network,
+        network,
+        ...(allowDomains.length > 0 ? { allowDomains } : {}),
         workspace,
         identities,
         protected: protectedCanonical,
@@ -365,7 +380,7 @@ async function loadSandboxToml(filePath: string): Promise<SandboxTomlConfig> {
           message: `Invalid [profiles.${name}] table in ${filePath}`,
         })
       for (const key of Object.keys(raw)) {
-        if (!["extends", "read_only", "read_write", "deny", "restrict_network"].includes(key))
+        if (!["extends", "read_only", "read_write", "deny", "restrict_network", "allow_domains"].includes(key))
           throw new CommandSandboxPolicy.Failure({
             code: "invalid_policy",
             message: `Unknown key '${key}' in [profiles.${name}] in ${filePath}`,
@@ -382,6 +397,13 @@ async function loadSandboxToml(filePath: string): Promise<SandboxTomlConfig> {
           code: "invalid_policy",
           message: `Profile '${name}' restrict_network must be a boolean in ${filePath}`,
         })
+      const allowDomains =
+        raw.allow_domains !== undefined ? requireStringArray(raw.allow_domains, `[profiles.${name}].allow_domains`) : []
+      if (raw.restrict_network === false && allowDomains.length > 0)
+        throw new CommandSandboxPolicy.Failure({
+          code: "invalid_policy",
+          message: `Profile '${name}' cannot combine restrict_network = false with allow_domains in ${filePath}`,
+        })
       profiles.set(name, {
         extends: ext as CommandSandboxPolicy.BaseProfile | undefined,
         read_only: raw.read_only !== undefined ? requireStringArray(raw.read_only, `[profiles.${name}].read_only`) : [],
@@ -389,6 +411,7 @@ async function loadSandboxToml(filePath: string): Promise<SandboxTomlConfig> {
           raw.read_write !== undefined ? requireStringArray(raw.read_write, `[profiles.${name}].read_write`) : [],
         deny: raw.deny !== undefined ? requireStringArray(raw.deny, `[profiles.${name}].deny`) : [],
         restrict_network: raw.restrict_network as boolean | undefined,
+        allow_domains: CommandSandboxNetworkProxy.normalizeDomainPatterns(allowDomains),
       })
     }
   }
@@ -403,6 +426,7 @@ function resolveProfileSelection(
 ): {
   readonly base: CommandSandboxPolicy.BaseProfile
   readonly network: "off" | "unrestricted"
+  readonly allowDomains: string[]
   readonly readOnly: string[]
   readonly readWrite: string[]
   readonly deny: string[]
@@ -412,6 +436,7 @@ function resolveProfileSelection(
     return {
       base,
       network: base === "devbox" ? "unrestricted" : "off",
+      allowDomains: [],
       readOnly: [],
       readWrite: [],
       deny: [],
@@ -426,16 +451,19 @@ function resolveProfileSelection(
     })
   const base = custom.extends ?? "workspace"
   const network =
-    custom.restrict_network !== undefined
-      ? custom.restrict_network
-        ? "off"
-        : "unrestricted"
-      : base === "devbox"
-        ? "unrestricted"
-        : "off"
+    custom.allow_domains.length > 0
+      ? "off"
+      : custom.restrict_network !== undefined
+        ? custom.restrict_network
+          ? "off"
+          : "unrestricted"
+        : base === "devbox"
+          ? "unrestricted"
+          : "off"
   return {
     base,
     network,
+    allowDomains: custom.allow_domains,
     readOnly: custom.read_only,
     readWrite: custom.read_write,
     deny: custom.deny,

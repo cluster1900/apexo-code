@@ -48,6 +48,8 @@ const TOP_LEVEL = [
   "attach",
   "run",
   "review",
+  "doctor",
+  "sandbox",
   "debug",
   "providers", // aliased to `auth`
   "agent",

@@ -10,6 +10,7 @@ export class Failure extends Schema.TaggedErrorClass<Failure>()("CommandSandbox.
 }) {}
 
 const Path = Schema.String.check(Schema.isMaxLength(4096))
+const DomainPattern = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(253))
 const Identity = Schema.Struct({ path: Path, dev: Schema.String, ino: Schema.String, directory: Schema.Boolean })
 export const BaseProfile = Schema.Literals(["workspace", "read-only", "strict", "devbox"])
 export type BaseProfile = typeof BaseProfile.Type
@@ -32,6 +33,7 @@ export const Confined = Schema.Struct({
   base: Schema.optional(BaseProfile),
   revision: Schema.String,
   network: Schema.Literals(["off", "unrestricted"]),
+  allowDomains: Schema.optional(Schema.Array(DomainPattern).check(Schema.isMaxLength(128))),
   workspace: Path,
   identities: Schema.Array(Identity).check(Schema.isMaxLength(256)),
   protected: Schema.Array(Path).check(Schema.isMaxLength(256)),
@@ -80,6 +82,7 @@ export const freeze = (policy: Policy): Policy =>
         identities: Object.freeze(policy.identities.map((identity) => Object.freeze({ ...identity }))),
         protected: Object.freeze([...policy.protected]),
         ancestors: Object.freeze([...policy.ancestors]),
+        ...(policy.allowDomains ? { allowDomains: Object.freeze([...policy.allowDomains]) } : {}),
         ...(policy.readOnly ? { readOnly: Object.freeze([...policy.readOnly]) } : {}),
         ...(policy.readWrite ? { readWrite: Object.freeze([...policy.readWrite]) } : {}),
         ...(policy.denyLiterals ? { denyLiterals: Object.freeze([...policy.denyLiterals]) } : {}),

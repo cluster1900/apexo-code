@@ -3,6 +3,8 @@ import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"
 import { ReviewCommand } from "./cli/cmd/review"
+import { DoctorCommand } from "./cli/cmd/doctor"
+import { SandboxCommand } from "./cli/cmd/sandbox"
 import { GenerateCommand } from "./cli/cmd/generate"
 import { ProvidersCommand } from "./cli/cmd/providers"
 import { AgentCommand } from "./cli/cmd/agent"
@@ -119,6 +121,8 @@ const cli = yargs(args)
   .command(AttachCommand)
   .command(RunCommand)
   .command(ReviewCommand)
+  .command(DoctorCommand)
+  .command(SandboxCommand)
   .command(GenerateCommand)
   .command(DebugCommand)
   .command(ProvidersCommand)

@@ -15,6 +15,9 @@ export interface Input {
   readonly profile: string
   readonly base?: CommandSandboxPolicy.BaseProfile
   readonly network?: "off" | "unrestricted"
+  readonly proxyPort?: number
+  readonly proxyUnixSocket?: string
+  readonly proxyBridgeBinary?: string
   readonly protected: ReadonlyArray<string>
   readonly ancestors: ReadonlyArray<string>
   readonly readOnly?: ReadonlyArray<string>
@@ -82,6 +85,12 @@ export function prepare(input: Input) {
     throw new Error("Sandbox path policy exceeds its bound")
   if (denyGlobs.some((glob) => !glob.regex.startsWith("^") || glob.regex.includes("\0") || glob.regex.includes("\n")))
     throw new Error("Sandbox deny glob regex is invalid")
+  if (
+    input.proxyPort !== undefined &&
+    (!Number.isInteger(input.proxyPort) || input.proxyPort < 1 || input.proxyPort > 65535)
+  )
+    throw new Error("Sandbox proxy port is invalid")
+  const proxyUrl = network !== "unrestricted" && input.proxyPort !== undefined ? `http://127.0.0.1:${input.proxyPort}` : undefined
   const bindings = [
     ["WORKSPACE", input.workspace],
     ["TEMPORARY", input.temporary],
@@ -99,7 +108,11 @@ export function prepare(input: Input) {
     "(allow process-fork)",
     "(allow signal (target same-sandbox))",
     "(allow sysctl-read)",
-    ...(network === "unrestricted" ? ["(allow network*)", "(allow system-socket)"] : []),
+    ...(network === "unrestricted"
+      ? ["(allow network*)", "(allow system-socket)"]
+      : input.proxyPort !== undefined
+        ? [`(allow network-outbound (remote tcp "localhost:${input.proxyPort}"))`]
+        : []),
     ...(base === "strict"
       ? [
           '(allow file-read* (literal "/"))',
@@ -157,6 +170,18 @@ export function prepare(input: Input) {
         HOME: input.home,
         TMPDIR: input.temporary,
         LANG: "en_US.UTF-8",
+        ...(proxyUrl
+          ? {
+              HTTP_PROXY: proxyUrl,
+              HTTPS_PROXY: proxyUrl,
+              ALL_PROXY: proxyUrl,
+              http_proxy: proxyUrl,
+              https_proxy: proxyUrl,
+              all_proxy: proxyUrl,
+              NO_PROXY: "",
+              no_proxy: "",
+            }
+          : {}),
       },
       extendEnv: false,
       detached: true,

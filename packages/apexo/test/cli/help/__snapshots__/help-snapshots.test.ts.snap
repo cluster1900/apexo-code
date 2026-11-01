@@ -108,6 +108,8 @@ Options:
   -o, --output-last-message      write the final assistant message to a file                [string]
       --ephemeral                run in a temporary session and delete it on exit without persisting
                                  session history                          [boolean] [default: false]
+      --attempts                 run N parallel attempts in isolated git worktrees and compare
+                                 results                                                    [number]
   -f, --file                     file(s) to attach to message                                [array]
       --title                    title for the session (uses truncated prompt if no value provided)
                                                                                             [string]
@@ -182,6 +184,53 @@ Options:
                                                                            [boolean] [default: true]
       --background-wait-timeout  seconds to wait for background work after the latest turn ends
                                  before stopping it and exiting 1            [number] [default: 600]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo doctor --help 1`] = `
+"apexo doctor
+
+check environment health, config validity, sandbox readiness, and command permissions
+
+Options:
+  -h, --help           show help                                                           [boolean]
+  -v, --version        show version number                                                 [boolean]
+      --print-logs     print logs to stderr                                                [boolean]
+      --log-level      log level                [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure           run without external plugins                                        [boolean]
+      --memory         enable memory; --no-memory force-disables it for this process       [boolean]
+      --dir            workspace directory to inspect                                       [string]
+      --json           emit structured JSON output                        [boolean] [default: false]
+      --check-command  evaluate how bash permission rules classify a shell command without executing
+                       it                                                                   [string]
+      --agent          agent ID to evaluate --check-command against                         [string]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo sandbox --help 1`] = `
+"apexo sandbox [cmd..]
+
+run a shell command inside Apexo's native filesystem and network sandbox
+
+Positionals:
+  cmd  command or arguments to execute inside the sandbox (prefer \`-- <cmd...>\` for flags)
+                                                                               [array] [default: []]
+
+Options:
+  -h, --help          show help                                                            [boolean]
+  -v, --version       show version number                                                  [boolean]
+      --print-logs    print logs to stderr                                                 [boolean]
+      --log-level     log level                 [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure          run without external plugins                                         [boolean]
+      --memory        enable memory; --no-memory force-disables it for this process        [boolean]
+  -c, --command       shell script string to execute inside the sandbox                     [string]
+      --profile       sandbox profile (workspace, read-only, strict, devbox, or custom profile in
+                      sandbox.toml)                                  [string] [default: "workspace"]
+      --allow-domain  allow outbound HTTP/HTTPS only to matching domain or *.domain wildcard via
+                      local proxy                                                            [array]
+      --network       override sandbox network policy (off or unrestricted)
+                                                           [string] [choices: "off", "unrestricted"]
+      --dir           workspace directory to confine against                                [string]
+      --timeout       execution timeout in milliseconds                   [number] [default: 120000]
+      --json          emit structured JSON execution receipt              [boolean] [default: false]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo debug --help 1`] = `

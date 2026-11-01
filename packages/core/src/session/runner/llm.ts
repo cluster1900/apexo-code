@@ -18,6 +18,7 @@ import {
   Message,
   SystemPart,
   isContextOverflowFailure,
+  isRetryableProviderError,
   type ProviderErrorEvent,
 } from "@apexo/llm"
 import { eq } from "drizzle-orm"
@@ -83,7 +84,7 @@ import { llmClient } from "../../effect/app-node-platform"
  *   - [ ] Mark busy, retrying, idle, interrupted, or terminal-failure status durably.
  *   - [ ] Honor interruption and reject stale work after runtime attachment replacement.
  *   - [x] Honor optional agent step limits.
- *   - [ ] Bound provider retries and repeated identical tool calls.
+ *   - [x] Bound provider retries and repeated identical tool calls.
  *
  * - Runtime context assembly
  *   - Track V1 runtime-context parity canonically in `specs/v2/session.md`.
@@ -123,6 +124,46 @@ import { llmClient } from "../../effect/app-node-platform"
 
 const DOOM_LOOP_THRESHOLD = 3
 const DOOM_LOOP_EXEMPT_TOOLS = new Set(["process_wait", "process_output", "task_wait", "task_output"])
+export const MAX_CONCURRENT_TOOL_CALLS = 8
+export const MAX_PRE_OUTPUT_STREAM_RETRIES = 2
+const preOutputStreamRetry = { _tag: "PreOutputStreamRetry" as const }
+
+function retryPreOutputStream<E, R>(
+  open: () => Stream.Stream<LLMEvent, E, R>,
+  hasAssistantStarted: () => boolean,
+  attempt = 0,
+): Stream.Stream<LLMEvent, E, R> {
+  return Stream.unwrap(
+    Effect.sync(() => {
+      let sawContentOrUsage = false
+      return open().pipe(
+        Stream.mapEffect((event) => {
+          if (event.type !== "step-start" && event.type !== "provider-error") {
+            sawContentOrUsage = true
+          }
+          if (
+            LLMEvent.is.providerError(event) &&
+            !sawContentOrUsage &&
+            !hasAssistantStarted() &&
+            attempt < MAX_PRE_OUTPUT_STREAM_RETRIES &&
+            !isContextOverflowFailure(event) &&
+            (event.retryable === true || isRetryableProviderError(event.message))
+          ) {
+            return Effect.fail(preOutputStreamRetry)
+          }
+          return Effect.succeed(event)
+        }),
+        Stream.catchTag("PreOutputStreamRetry", () =>
+          Stream.unwrap(
+            Effect.sleep(`${200 * 2 ** attempt} millis`).pipe(
+              Effect.as(retryPreOutputStream(open, hasAssistantStarted, attempt + 1)),
+            ),
+          ),
+        ),
+      )
+    }),
+  )
+}
 
 function canonicalToolInput(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value)
@@ -554,10 +595,11 @@ const layer = Layer.effect(
             snapshot: startSnapshot,
           })
           const withPublication = Semaphore.makeUnsafe(1).withPermit
+          const withToolConcurrency = Semaphore.makeUnsafe(MAX_CONCURRENT_TOOL_CALLS).withPermit
           const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
             withPublication(publisher.publish(event, outputPaths))
           let overflowFailure: ProviderErrorEvent | undefined
-          const transport = () => llm.stream(request)
+          const transport = () => retryPreOutputStream(() => llm.stream(request), () => publisher.hasAssistantStarted())
           const source = summaryRole
             ? SessionGoalUsage.trackTerminal(goals, summaryRole.attempt, transport)
             : attempt
@@ -569,11 +611,9 @@ const layer = Layer.effect(
               Effect.gen(function* () {
                 summaryRole?.observe(event)
                 if (overflowFailure || publisher.hasProviderError()) return
-                if (LLMEvent.is.providerError(event)) {
-                  if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
-                    overflowFailure = event
-                    return
-                  }
+                if (LLMEvent.is.providerError(event) && isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
+                  overflowFailure = event
+                  return
                 }
                 yield* publish(event)
                 if (event.type !== "tool-call" || event.providerExecuted) return
@@ -635,12 +675,14 @@ const layer = Layer.effect(
                       }
                     }
                     const settlement = yield* restore(
-                      toolMaterialization.settle({
-                        sessionID: session.id,
-                        agent: agent.id,
-                        assistantMessageID,
-                        call: event,
-                      }),
+                      withToolConcurrency(
+                        toolMaterialization.settle({
+                          sessionID: session.id,
+                          agent: agent.id,
+                          assistantMessageID,
+                          call: event,
+                        }),
+                      ),
                     )
                     yield* publish(
                       LLMEvent.toolResult({

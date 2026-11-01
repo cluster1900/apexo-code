@@ -41,3 +41,16 @@ export const isContextOverflowFailure = (failure: unknown) =>
   failure instanceof LLMError
     ? failure.reason._tag === "InvalidRequest" && failure.reason.classification === "context-overflow"
     : Schema.is(ProviderErrorEvent)(failure) && failure.classification === "context-overflow"
+
+const nonRetryableCodes =
+  /^(insufficient_quota|billing_error|invalid_request|invalid_request_error|authentication_error|permission_error|not_found_error|content_policy|context_length_exceeded)$/i
+const retryableCodes =
+  /^(overloaded_error|rate_limit_error|api_error|rate_limit_exceeded|server_error|service_unavailable|slow_down|overloaded)$/i
+const retryableMessages =
+  /\b(overloaded|rate[_ ]limit|too many requests|service unavailable|temporarily unavailable|server[_ ]error|throttl(?:ed|ing))\b/i
+
+export const isRetryableProviderError = (message: string, code?: string) => {
+  if (code && nonRetryableCodes.test(code)) return false
+  if (/\b(insufficient[_ ]quota|billing)\b/i.test(message) || isContextOverflow(message)) return false
+  return Boolean((code && retryableCodes.test(code)) || retryableMessages.test(message))
+}

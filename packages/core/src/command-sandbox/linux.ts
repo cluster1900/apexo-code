@@ -1,10 +1,12 @@
 export * as Bwrap from "./linux"
 
 import { randomBytes } from "node:crypto"
+import { realpathSync } from "node:fs"
 import path from "node:path"
 import { Duration } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import type { AppProcess } from "../process"
+import { LINUX_TCP_TO_UNIX_BRIDGE_SCRIPT } from "./network-proxy"
 import type { Seatbelt } from "./seatbelt"
 
 export type Input = Seatbelt.Input
@@ -44,6 +46,22 @@ export function prepare(input: Input) {
   )
     throw new Error("Sandbox path policy exceeds its bound")
   const allowsWorkspaceWrites = base === "workspace" || base === "devbox"
+  const proxyUnixSocket = network === "off" ? input.proxyUnixSocket : undefined
+  if (proxyUnixSocket !== undefined && (!path.isAbsolute(proxyUnixSocket) || proxyUnixSocket.includes("\0")))
+    throw new Error("Sandbox proxy unix socket must be an absolute path")
+  const bridgeHostBinary = proxyUnixSocket ? (input.proxyBridgeBinary ?? realpathSync(process.execPath)) : undefined
+  const bridgeSandboxBinary = proxyUnixSocket ? path.join(input.temporary, ".apexo-proxy-bridge") : undefined
+  const marker = `APEXO_COMMAND_SANDBOX_${randomBytes(24).toString("hex")}\n`
+  const launcherScript = proxyUnixSocket
+    ? [
+        'PROXY_PORT=$(BUN_BE_BUN=1 "$4" -e "$5" "$6" 3>&1 </dev/null >/dev/null 2>&1 &)',
+        "case \"$PROXY_PORT\" in ''|*[!0-9]*) exit 126 ;; esac",
+        'PROXY_URL="http://127.0.0.1:$PROXY_PORT"',
+        'export HTTP_PROXY="$PROXY_URL" HTTPS_PROXY="$PROXY_URL" ALL_PROXY="$PROXY_URL"',
+        'export http_proxy="$PROXY_URL" https_proxy="$PROXY_URL" all_proxy="$PROXY_URL" NO_PROXY="" no_proxy=""',
+        'printf "%s" "$1"; exec "$2" -c "$3"',
+      ].join("; ")
+    : 'printf "%s" "$1"; exec "$2" -c "$3"'
   const args = [
     "--die-with-parent",
     "--unshare-pid",
@@ -74,6 +92,7 @@ export function prepare(input: Input) {
     "--bind",
     input.temporary,
     input.temporary,
+    ...(bridgeHostBinary && bridgeSandboxBinary ? ["--ro-bind", bridgeHostBinary, bridgeSandboxBinary] : []),
     ...readOnly.flatMap((dir) => ["--ro-bind-try", dir, dir]),
     ...readWrite.flatMap((dir) => ["--bind-try", dir, dir]),
     ...input.protected.flatMap((prot) => ["--ro-bind-try", prot, prot]),
@@ -83,13 +102,15 @@ export function prepare(input: Input) {
     "--",
     "/bin/sh",
     "-c",
-    'printf "%s" "$1"; exec "$2" -c "$3"',
+    launcherScript,
     "apexo-command-sandbox",
-    `APEXO_COMMAND_SANDBOX_${randomBytes(24).toString("hex")}\n`,
+    marker,
     input.shell,
     input.command,
+    ...(proxyUnixSocket && bridgeSandboxBinary
+      ? [bridgeSandboxBinary, LINUX_TCP_TO_UNIX_BRIDGE_SCRIPT, proxyUnixSocket]
+      : []),
   ]
-  const marker = args[args.length - 3]!
   const command = ChildProcess.make("bwrap", args, {
     cwd: input.cwd,
     shell: false,

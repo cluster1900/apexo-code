@@ -26,12 +26,23 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const db = yield* makeDatabase
 
-    yield* db.run("PRAGMA journal_mode = WAL")
-    yield* db.run("PRAGMA synchronous = NORMAL")
     yield* db.run("PRAGMA busy_timeout = 5000")
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const applied = yield* db.run("PRAGMA journal_mode = WAL").pipe(
+        Effect.as(true),
+        Effect.catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          if ((!message.includes("SQLITE_BUSY") && !message.includes("database is locked")) || attempt === 7)
+            return Effect.fail(error)
+          return Effect.sleep(`${20 * 2 ** attempt} millis`).pipe(Effect.as(false))
+        }),
+      )
+      if (applied) break
+    }
+    yield* db.run("PRAGMA synchronous = NORMAL")
     yield* db.run("PRAGMA cache_size = -64000")
     yield* db.run("PRAGMA foreign_keys = ON")
-    yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
+    yield* db.run("PRAGMA wal_checkpoint(PASSIVE)").pipe(Effect.catch(() => Effect.void))
     yield* DatabaseMigration.apply(db)
 
     return { db }
