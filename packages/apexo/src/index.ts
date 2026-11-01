@@ -5,6 +5,7 @@ import { RunCommand } from "./cli/cmd/run"
 import { ReviewCommand } from "./cli/cmd/review"
 import { DoctorCommand } from "./cli/cmd/doctor"
 import { SandboxCommand } from "./cli/cmd/sandbox"
+import { ApplyCommand } from "./cli/cmd/apply"
 import { GenerateCommand } from "./cli/cmd/generate"
 import { ProvidersCommand } from "./cli/cmd/providers"
 import { AgentCommand } from "./cli/cmd/agent"
@@ -123,6 +124,7 @@ const cli = yargs(args)
   .command(ReviewCommand)
   .command(DoctorCommand)
   .command(SandboxCommand)
+  .command(ApplyCommand)
   .command(GenerateCommand)
   .command(DebugCommand)
   .command(ProvidersCommand)

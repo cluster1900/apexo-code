@@ -10,6 +10,7 @@ import {
   validateRunOutputOptions,
   writeLastMessage,
   type LoadedOutputSchema,
+  type ParsedRunGuardrails,
 } from "./run-output-options"
 import type { RunInput } from "./cmd/run/types"
 
@@ -42,6 +43,7 @@ export async function runNativeHeadless(input: {
   outputSchema?: LoadedOutputSchema
   outputLastMessage?: string
   ephemeral?: boolean
+  guardrails?: ParsedRunGuardrails
   dispose?: () => Promise<void>
 }) {
   validateNativeInputID(input)
@@ -203,6 +205,17 @@ export async function runNativeHeadless(input: {
       executionPolicy: {
         mode: "headless" as const,
         permissions: input.auto ? ("approve_once" as const) : ("reject" as const),
+        ...(input.guardrails?.maxTurns === undefined ? {} : { maxTurns: input.guardrails.maxTurns }),
+        ...(input.guardrails?.maxTokens === undefined ? {} : { maxTokens: input.guardrails.maxTokens }),
+        ...(input.guardrails?.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: input.guardrails.maxBudgetUsd }),
+        ...(input.guardrails?.fallbackModel === undefined
+          ? {}
+          : {
+              fallbackModel: {
+                providerID: input.guardrails.fallbackModel.providerID,
+                id: input.guardrails.fallbackModel.id,
+              },
+            }),
       },
     }
     const decode = Schema.decodeUnknownSync(SessionInput.Execution)

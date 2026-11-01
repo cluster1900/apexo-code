@@ -75,12 +75,17 @@ export type Error =
 
 export interface Interface {
   readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>
+  readonly pricing?: (
+    providerID: ProviderV2.ID,
+    modelID: ModelV2.ID,
+  ) => Effect.Effect<ReadonlyArray<ModelV2.Info["cost"][number]>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/SessionRunnerModel") {}
 
 /** Test or embedding seam for supplying a model resolver directly. */
-export const layerWith = (resolve: Interface["resolve"]) => Layer.succeed(Service, Service.of({ resolve }))
+export const layerWith = (resolve: Interface["resolve"], pricing?: Interface["pricing"]) =>
+  Layer.succeed(Service, Service.of({ resolve, ...(pricing ? { pricing } : {}) }))
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -265,6 +270,8 @@ export const locationLayer = Layer.effect(
           connection ? yield* integrations.connection.resolve(connection) : undefined,
         )
       }),
+      pricing: (providerID, modelID) =>
+        catalog.model.get(providerID, modelID).pipe(Effect.map((info) => info?.cost ?? [])),
     })
   }),
 )

@@ -36,6 +36,7 @@ export {
 
 const decodePrompt = Schema.decodeUnknownSync(Prompt)
 const encodePrompt = Schema.encodeSync(Prompt)
+const encodeExecutionPolicy = Schema.encodeSync(ExecutionPolicy)
 
 const fromRow = (row: typeof SessionInputTable.$inferSelect): Admitted =>
   Admitted.make({
@@ -330,7 +331,8 @@ export const equivalent = (
   },
 ) =>
   input.delivery === expected.delivery &&
-  JSON.stringify(input.executionPolicy ?? null) === JSON.stringify(expected.executionPolicy ?? null) &&
+  JSON.stringify(input.executionPolicy ? encodeExecutionPolicy(input.executionPolicy) : null) ===
+    JSON.stringify(expected.executionPolicy ? encodeExecutionPolicy(expected.executionPolicy) : null) &&
   matchesPrompt(input, expected)
 
 const matchesPrompt = (input: Admitted, expected: { readonly sessionID: SessionSchema.ID; readonly prompt: Prompt }) =>

@@ -127,6 +127,63 @@ const DOOM_LOOP_EXEMPT_TOOLS = new Set(["process_wait", "process_output", "task_
 export const MAX_CONCURRENT_TOOL_CALLS = 8
 export const MAX_PRE_OUTPUT_STREAM_RETRIES = 2
 const preOutputStreamRetry = { _tag: "PreOutputStreamRetry" as const }
+const fallbackStreamSwitch = { _tag: "FallbackStreamSwitch" as const }
+
+type StepTokens = {
+  readonly input: number
+  readonly output: number
+  readonly reasoning: number
+  readonly cache: {
+    readonly read: number
+    readonly write: number
+  }
+}
+
+type InputBudgetLedger = {
+  inputID?: SessionMessageID
+  tokens: number
+  costUsd: number
+}
+
+type SessionMessageID = string
+
+function stepTokenTotal(tokens: StepTokens) {
+  return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+}
+
+function computeStepCostUsd(tokens: StepTokens, pricing: ReadonlyArray<ModelV2.Info["cost"][number]>) {
+  if (pricing.length === 0) return undefined
+  const contextTokens = tokens.input + tokens.cache.read + tokens.cache.write
+  const base = pricing.find((entry) => entry.tier === undefined) ?? pricing[0]!
+  const matchedTier = pricing
+    .filter((entry) => entry.tier?.type === "context" && contextTokens > entry.tier.size)
+    .toSorted((left, right) => (right.tier?.size ?? 0) - (left.tier?.size ?? 0))[0]
+  const rate = matchedTier ?? base
+  return (
+    (tokens.input * rate.input +
+      (tokens.output + tokens.reasoning) * rate.output +
+      tokens.cache.read * rate.cache.read +
+      tokens.cache.write * rate.cache.write) /
+    1_000_000
+  )
+}
+
+function isFallbackEligibleLLMError(error: LLMError) {
+  if (isContextOverflowFailure(error)) return false
+  if (error.retryable || error.reason._tag === "QuotaExceeded" || error.reason._tag === "Transport") {
+    return true
+  }
+  return error.reason._tag === "InvalidProviderOutput" && /^Failed to read .+ stream$/i.test(error.reason.message)
+}
+
+function isFallbackEligibleProviderError(event: ProviderErrorEvent) {
+  if (isContextOverflowFailure(event)) return false
+  return (
+    event.retryable === true ||
+    isRetryableProviderError(event.message) ||
+    /insufficient[-_\s]?quota|quota[-_\s]?exceeded/i.test(event.message)
+  )
+}
 
 function retryPreOutputStream<E, R>(
   open: () => Stream.Stream<LLMEvent, E, R>,
@@ -165,6 +222,58 @@ function retryPreOutputStream<E, R>(
   )
 }
 
+function openStreamWithFallback<R>(input: {
+  readonly openPrimary: () => Stream.Stream<LLMEvent, LLMError, R>
+  readonly openFallback?: () => Stream.Stream<LLMEvent, LLMError, R>
+  readonly onFallback?: () => void
+  readonly hasAssistantStarted: () => boolean
+}): Stream.Stream<LLMEvent, LLMError, R> {
+  const openFallback = input.openFallback
+  if (!openFallback) return retryPreOutputStream(input.openPrimary, input.hasAssistantStarted)
+  return Stream.unwrap(
+    Effect.sync(() => {
+      let sawPrimaryOutput = false
+      let sawTerminal = false
+      const canFallback = () => !sawPrimaryOutput && !input.hasAssistantStarted()
+      const switchToFallback = () =>
+        Stream.unwrap(
+          Effect.sync(() => {
+            input.onFallback?.()
+            return retryPreOutputStream(openFallback, input.hasAssistantStarted)
+          }),
+        )
+      const primaryWithEofGuard = Stream.concat(
+        retryPreOutputStream(input.openPrimary, input.hasAssistantStarted).pipe(
+          Stream.mapEffect((event) => {
+            if (event.type === "finish" || event.type === "step-finish") {
+              sawTerminal = true
+            }
+            if (event.type !== "step-start" && event.type !== "provider-error") {
+              sawPrimaryOutput = true
+            }
+            if (LLMEvent.is.providerError(event)) {
+              if (canFallback() && isFallbackEligibleProviderError(event)) {
+                return Effect.fail(fallbackStreamSwitch)
+              }
+              sawTerminal = true
+            }
+            return Effect.succeed(event)
+          }),
+        ),
+        Stream.unwrap(
+          Effect.sync(() => (!sawTerminal && canFallback() ? Stream.fail(fallbackStreamSwitch) : Stream.empty)),
+        ),
+      )
+      return primaryWithEofGuard.pipe(
+        Stream.catchTag("FallbackStreamSwitch", () => switchToFallback()),
+        Stream.catchTag("LLM.Error", (error) =>
+          canFallback() && isFallbackEligibleLLMError(error) ? switchToFallback() : Stream.fail(error),
+        ),
+      )
+    }),
+  )
+}
+
 function canonicalToolInput(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonicalToolInput).join(",")}]`
@@ -180,6 +289,10 @@ const CompletionAdmission = Context.Reference<boolean>("@apexo/CompletionAdmissi
 
 const StopContinuation = Context.Reference<string | undefined>("@apexo/StopContinuation", {
   defaultValue: () => undefined,
+})
+
+const InputBudget = Context.Reference<InputBudgetLedger>("@apexo/SessionRunner/InputBudget", {
+  defaultValue: () => ({ tokens: 0, costUsd: 0 }),
 })
 
 const layer = Layer.effect(
@@ -422,6 +535,17 @@ const layer = Layer.effect(
           })
       }
       yield* SessionExecutionPolicy.select(sessionID, execution?.policy)
+      const budgetLedger = yield* InputBudget
+      if (!execution) {
+        budgetLedger.inputID = undefined
+        budgetLedger.tokens = 0
+        budgetLedger.costUsd = 0
+      }
+      if (execution && (budgetLedger.inputID !== execution.inputID || promoted > 0)) {
+        budgetLedger.inputID = execution.inputID
+        budgetLedger.tokens = 0
+        budgetLedger.costUsd = 0
+      }
       if (
         !execution &&
         !ownedRole &&
@@ -478,6 +602,122 @@ const layer = Layer.effect(
               return publisher.failAssistant(error.message).pipe(Effect.ensuring(publisher.flush()))
             }),
           )
+          const primaryModelRef = {
+            id: ModelV2.ID.make(model.id),
+            providerID: ProviderV2.ID.make(model.provider),
+            ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+          }
+          const requestedFallbackRef = execution?.policy.fallbackModel
+          const effectiveFallbackRef =
+            requestedFallbackRef &&
+            (requestedFallbackRef.providerID !== primaryModelRef.providerID ||
+              requestedFallbackRef.id !== primaryModelRef.id ||
+              (requestedFallbackRef.variant ?? undefined) !== (session.model?.variant ?? undefined))
+              ? requestedFallbackRef
+              : undefined
+          const fallbackModel = effectiveFallbackRef
+            ? yield* models.resolve({ ...session, model: effectiveFallbackRef }).pipe(
+                Effect.tapError((error) => {
+                  if (summaryRole) return Effect.void
+                  const publisher = createLLMEventPublisher(events, {
+                    sessionID: session.id,
+                    agent: agent.id,
+                    model: effectiveFallbackRef,
+                  })
+                  return publisher.failAssistant(error.message).pipe(Effect.ensuring(publisher.flush()))
+                }),
+              )
+            : undefined
+          const loadPricing = (providerID: ProviderV2.ID, modelID: ModelV2.ID) =>
+            models.pricing ? models.pricing(providerID, modelID) : Effect.succeed([])
+          const primaryPricing =
+            execution?.policy.maxBudgetUsd !== undefined
+              ? yield* loadPricing(primaryModelRef.providerID, primaryModelRef.id)
+              : []
+          const fallbackPricing =
+            execution?.policy.maxBudgetUsd !== undefined && fallbackModel
+              ? yield* loadPricing(ProviderV2.ID.make(fallbackModel.provider), ModelV2.ID.make(fallbackModel.id))
+              : []
+          if (execution?.policy.maxBudgetUsd !== undefined && primaryPricing.length === 0) {
+            const publisher = createLLMEventPublisher(events, {
+              sessionID: session.id,
+              agent: agent.id,
+              model: primaryModelRef,
+            })
+            yield* publisher
+              .failAssistant(
+                `Cannot enforce --max-budget-usd: model ${primaryModelRef.providerID}/${primaryModelRef.id} has no token pricing metadata configured`,
+              )
+              .pipe(Effect.ensuring(publisher.flush()))
+            return {
+              needsContinuation: false,
+              step: currentStep,
+              failed: false,
+              normalStop: false,
+              turnLimit: false,
+              budgetLimit: true,
+              usageIncomplete: false,
+            }
+          }
+          if (
+            execution?.policy.maxBudgetUsd !== undefined &&
+            fallbackModel &&
+            effectiveFallbackRef &&
+            fallbackPricing.length === 0
+          ) {
+            const publisher = createLLMEventPublisher(events, {
+              sessionID: session.id,
+              agent: agent.id,
+              model: effectiveFallbackRef,
+            })
+            yield* publisher
+              .failAssistant(
+                `Cannot enforce --max-budget-usd: fallback model ${fallbackModel.provider}/${fallbackModel.id} has no token pricing metadata configured`,
+              )
+              .pipe(Effect.ensuring(publisher.flush()))
+            return {
+              needsContinuation: false,
+              step: currentStep,
+              failed: false,
+              normalStop: false,
+              turnLimit: false,
+              budgetLimit: true,
+              usageIncomplete: false,
+            }
+          }
+          if (execution?.policy.maxTurns !== undefined && currentStep > execution.policy.maxTurns) {
+            return {
+              needsContinuation: false,
+              step: currentStep,
+              failed: false,
+              normalStop: false,
+              turnLimit: true,
+              budgetLimit: false,
+              usageIncomplete: false,
+            }
+          }
+          if (execution?.policy.maxTokens !== undefined && budgetLedger.tokens >= execution.policy.maxTokens) {
+            return {
+              needsContinuation: false,
+              step: currentStep,
+              failed: false,
+              normalStop: false,
+              turnLimit: false,
+              budgetLimit: true,
+              usageIncomplete: false,
+            }
+          }
+          if (execution?.policy.maxBudgetUsd !== undefined && budgetLedger.costUsd >= execution.policy.maxBudgetUsd) {
+            return {
+              needsContinuation: false,
+              step: currentStep,
+              failed: false,
+              normalStop: false,
+              turnLimit: false,
+              budgetLimit: true,
+              usageIncomplete: false,
+            }
+          }
           const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
           const context = entries.map((entry) => entry.message)
           const lastInputIndex = context.findLastIndex(
@@ -558,39 +798,68 @@ const layer = Layer.effect(
             remainingGoalBudget !== undefined
               ? Math.min(32_000, Math.max(1, remainingGoalBudget - estimatedInputTokens))
               : undefined
-          const request = LLM.request({
-            model,
-            ...(remainingGoalTokens !== undefined ? { generation: { maxTokens: remainingGoalTokens } } : {}),
-            http: {
-              headers: {
-                "x-apexo-session-id": session.id,
-                ...(session.parentID ? { "x-apexo-parent-session-id": session.parentID } : {}),
-                "x-session-affinity": session.id,
-                "x-grok-conv-id": session.id,
-                "X-Session-Id": session.id,
-                ...(session.parentID ? { "x-parent-session-id": session.parentID } : {}),
+          const buildRequest = (targetModel: typeof model, messages: ReadonlyArray<Message>) =>
+            LLM.request({
+              model: targetModel,
+              ...(remainingGoalTokens !== undefined ? { generation: { maxTokens: remainingGoalTokens } } : {}),
+              http: {
+                headers: {
+                  "x-apexo-session-id": session.id,
+                  ...(session.parentID ? { "x-apexo-parent-session-id": session.parentID } : {}),
+                  "x-session-affinity": session.id,
+                  "x-grok-conv-id": session.id,
+                  "X-Session-Id": session.id,
+                  ...(session.parentID ? { "x-parent-session-id": session.parentID } : {}),
+                },
               },
-            },
-            providerOptions: {
-              openai: { promptCacheKey },
-              xai: { promptCacheKey },
-            },
-            system: systemParts,
-            messages: llmMessages,
-            tools: llmTools,
-            toolChoice: isLastStep || summaryRole ? "none" : undefined,
-          })
+              providerOptions: {
+                openai: { promptCacheKey },
+                xai: { promptCacheKey },
+              },
+              system: systemParts,
+              messages,
+              tools: llmTools,
+              toolChoice: isLastStep || summaryRole ? "none" : undefined,
+            })
+          const request = buildRequest(model, llmMessages)
+          const fallbackMessages = fallbackModel
+            ? [
+                ...(yield* Effect.fromResult(toLLMMessages(context, fallbackModel))),
+                ...(isLastStep ? [Message.user(MAX_STEPS_PROMPT)] : []),
+              ]
+            : undefined
+          const fallbackRequest =
+            fallbackModel && fallbackMessages ? buildRequest(fallbackModel, fallbackMessages) : undefined
           if (!summaryRole && (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request })))
             return yield* Effect.die(continueAfterCompaction(currentStep))
           yield* SessionExecutionStore.Current
           const startSnapshot = yield* snapshots.capture()
+          const activeModelState = {
+            current: {
+              ref: primaryModelRef,
+              model,
+              request,
+              pricing: primaryPricing,
+            },
+          }
+          const fallbackCandidate =
+            fallbackModel && fallbackRequest && effectiveFallbackRef
+              ? {
+                  ref: {
+                    id: ModelV2.ID.make(fallbackModel.id),
+                    providerID: ProviderV2.ID.make(fallbackModel.provider),
+                    ...(effectiveFallbackRef.variant === undefined ? {} : { variant: effectiveFallbackRef.variant }),
+                  },
+                  model: fallbackModel,
+                  request: fallbackRequest,
+                  pricing: fallbackPricing,
+                }
+              : undefined
           const publisher = createLLMEventPublisher(events, {
             sessionID: session.id,
             agent: agent.id,
-            model: {
-              id: ModelV2.ID.make(model.id),
-              providerID: ProviderV2.ID.make(model.provider),
-              ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+            get model() {
+              return activeModelState.current.ref
             },
             snapshot: startSnapshot,
           })
@@ -599,7 +868,17 @@ const layer = Layer.effect(
           const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
             withPublication(publisher.publish(event, outputPaths))
           let overflowFailure: ProviderErrorEvent | undefined
-          const transport = () => retryPreOutputStream(() => llm.stream(request), () => publisher.hasAssistantStarted())
+          const transport = () =>
+            openStreamWithFallback({
+              openPrimary: () => llm.stream(request),
+              openFallback: fallbackCandidate ? () => llm.stream(fallbackCandidate.request) : undefined,
+              onFallback: fallbackCandidate
+                ? () => {
+                    activeModelState.current = fallbackCandidate
+                  }
+                : undefined,
+              hasAssistantStarted: () => publisher.hasAssistantStarted(),
+            })
           const source = summaryRole
             ? SessionGoalUsage.trackTerminal(goals, summaryRole.attempt, transport)
             : attempt
@@ -716,7 +995,14 @@ const layer = Layer.effect(
                 recoverOverflow &&
                 !publisher.hasAssistantStarted() &&
                 isContextOverflowFailure(overflowFailure ?? failure) &&
-                (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, request })))
+                (yield* restore(
+                  recoverOverflow({
+                    sessionID: session.id,
+                    entries,
+                    model: activeModelState.current.model,
+                    request: activeModelState.current.request,
+                  }),
+                ))
               )
                 return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
               if (overflowFailure) yield* publish(overflowFailure)
@@ -793,13 +1079,32 @@ const layer = Layer.effect(
               if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
               if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
                 return yield* Effect.failCause(settled.cause)
+              if (execution && stepSettlement && !publisher.hasProviderError()) {
+                budgetLedger.tokens += stepTokenTotal(stepSettlement.tokens)
+                const stepCostUsd = computeStepCostUsd(stepSettlement.tokens, activeModelState.current.pricing)
+                if (stepCostUsd !== undefined) budgetLedger.costUsd += stepCostUsd
+              }
+              const rawContinuation = !publisher.hasProviderError() && !doomLoopHalted && needsContinuation
+              const policyTurnLimit =
+                execution?.policy.maxTurns !== undefined && rawContinuation && currentStep >= execution.policy.maxTurns
+              const tokenBudgetExceeded =
+                execution?.policy.maxTokens !== undefined &&
+                (budgetLedger.tokens > execution.policy.maxTokens ||
+                  (rawContinuation && budgetLedger.tokens >= execution.policy.maxTokens))
+              const costBudgetExceeded =
+                execution?.policy.maxBudgetUsd !== undefined &&
+                (budgetLedger.costUsd > execution.policy.maxBudgetUsd ||
+                  (rawContinuation && budgetLedger.costUsd >= execution.policy.maxBudgetUsd))
+              const budgetLimit = Boolean(tokenBudgetExceeded || costBudgetExceeded)
+              const turnLimit = isLastStep || doomLoopHalted || Boolean(policyTurnLimit)
               return {
-                needsContinuation: !publisher.hasProviderError() && !doomLoopHalted && needsContinuation,
+                needsContinuation: !turnLimit && !budgetLimit && rawContinuation,
                 step: currentStep,
                 failed: publisher.hasProviderError() || (execution !== undefined && !stepSettlement),
-                normalStop: !isLastStep && !doomLoopHalted && stepSettlement?.finish === "stop",
+                normalStop: !turnLimit && !budgetLimit && stepSettlement?.finish === "stop",
                 finish: stepSettlement?.finish,
-                turnLimit: isLastStep || doomLoopHalted,
+                turnLimit,
+                budgetLimit,
                 usageIncomplete: !stepSettlement,
               }
             }),
@@ -825,6 +1130,7 @@ const layer = Layer.effect(
         readonly normalStop: boolean
         readonly finish?: string
         readonly turnLimit: boolean
+        readonly budgetLimit: boolean
         readonly usageIncomplete: boolean
       },
       RunError
@@ -1037,6 +1343,15 @@ const layer = Layer.effect(
                 return yield* new SessionGoal.Conflict({ code: "invalid", message: "Goal review provider failed" })
               return
             }
+            if (result.budgetLimit || result.turnLimit) {
+              yield* settleInput(
+                input.sessionID,
+                "failed",
+                result.budgetLimit ? "budget_limit" : "turn_limit",
+                result.finish,
+                result.usageIncomplete,
+              )
+            }
             needsContinuation = result.needsContinuation
             step = result.step + 1
             promotion = "steer"
@@ -1107,8 +1422,8 @@ const layer = Layer.effect(
             if (!needsContinuation)
               yield* settleInput(
                 input.sessionID,
-                result.turnLimit ? "failed" : "completed",
-                result.turnLimit ? "turn_limit" : "completed",
+                result.budgetLimit || result.turnLimit ? "failed" : "completed",
+                result.budgetLimit ? "budget_limit" : result.turnLimit ? "turn_limit" : "completed",
                 result.finish,
                 result.usageIncomplete,
               )
@@ -1173,6 +1488,7 @@ const layer = Layer.effect(
           Effect.ensuring(SessionInputExecutionOwner.release(input.sessionID)),
           Effect.provideService(SessionExecutionPolicy.Current, policies),
           Effect.provideService(SessionInputExecutionOwner.Observers, observers),
+          Effect.provideService(InputBudget, { tokens: 0, costUsd: 0 }),
           Effect.provideService(
             PermissionV2.Inherited,
             taskRoles.get(input.sessionID)

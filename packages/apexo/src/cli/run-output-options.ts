@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { Tool } from "@apexo/core/tool/tool"
+import { Model } from "@apexo/schema/model"
+import { Provider } from "@apexo/schema/provider"
 import { JsonSchema, Option, Schema } from "effect"
 
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
@@ -16,6 +18,87 @@ export interface LoadedOutputSchema {
   readonly validate: (value: unknown) => ValidationResult
 }
 
+export interface ParsedRunGuardrails {
+  readonly maxTurns?: number
+  readonly maxTokens?: number
+  readonly maxBudgetUsd?: number
+  readonly fallbackModel?: Model.Ref
+}
+
+export function hasRunGuardrailFlags(input: {
+  readonly "max-turns"?: number
+  readonly "max-tokens"?: number
+  readonly "max-budget-usd"?: number
+  readonly "fallback-model"?: string
+}) {
+  return (
+    input["max-turns"] !== undefined ||
+    input["max-tokens"] !== undefined ||
+    input["max-budget-usd"] !== undefined ||
+    input["fallback-model"] !== undefined
+  )
+}
+
+export function parseRunGuardrails(input: {
+  readonly interactive?: boolean
+  readonly command?: string
+  readonly model?: string
+  readonly maxTurns?: number
+  readonly maxTokens?: number
+  readonly maxBudgetUsd?: number
+  readonly fallbackModel?: string
+}): ParsedRunGuardrails {
+  if (input.interactive) {
+    if (input.maxTurns !== undefined) throw new Error("--max-turns cannot be used in interactive mode")
+    if (input.maxTokens !== undefined) throw new Error("--max-tokens cannot be used in interactive mode")
+    if (input.maxBudgetUsd !== undefined) throw new Error("--max-budget-usd cannot be used in interactive mode")
+    if (input.fallbackModel !== undefined) throw new Error("--fallback-model cannot be used in interactive mode")
+  }
+  const hasAny =
+    input.maxTurns !== undefined ||
+    input.maxTokens !== undefined ||
+    input.maxBudgetUsd !== undefined ||
+    input.fallbackModel !== undefined
+  if (hasAny && input.command !== undefined) {
+    throw new Error(
+      "Execution guardrails (--max-turns, --max-tokens, --max-budget-usd, --fallback-model) cannot be used with --command",
+    )
+  }
+  if (input.maxTurns !== undefined && (!Number.isSafeInteger(input.maxTurns) || input.maxTurns < 1)) {
+    throw new Error("--max-turns must be a positive integer")
+  }
+  if (input.maxTokens !== undefined && (!Number.isSafeInteger(input.maxTokens) || input.maxTokens < 1)) {
+    throw new Error("--max-tokens must be a positive integer")
+  }
+  if (
+    input.maxBudgetUsd !== undefined &&
+    (typeof input.maxBudgetUsd !== "number" || !Number.isFinite(input.maxBudgetUsd) || input.maxBudgetUsd <= 0)
+  ) {
+    throw new Error("--max-budget-usd must be a positive number")
+  }
+  const fallbackModel = (() => {
+    if (input.fallbackModel === undefined) return undefined
+    const trimmed = input.fallbackModel.trim()
+    const slash = trimmed.indexOf("/")
+    if (slash <= 0 || slash === trimmed.length - 1) {
+      throw new Error("--fallback-model must use provider/model syntax")
+    }
+    if (input.model !== undefined && trimmed === input.model.trim()) {
+      throw new Error("--fallback-model must differ from --model")
+    }
+    return Model.Ref.make({
+      providerID: Provider.ID.make(trimmed.slice(0, slash)),
+      id: Model.ID.make(trimmed.slice(slash + 1)),
+    })
+  })()
+  return {
+    ...(input.maxTurns === undefined ? {} : { maxTurns: input.maxTurns }),
+    ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
+    ...(input.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: input.maxBudgetUsd }),
+    ...(fallbackModel === undefined ? {} : { fallbackModel }),
+  }
+}
+
 export function validateRunOutputOptions(input: {
   readonly interactive?: boolean
   readonly command?: string
@@ -26,6 +109,11 @@ export function validateRunOutputOptions(input: {
   readonly inputID?: string
   readonly outputSchema?: string
   readonly outputLastMessage?: string
+  readonly model?: string
+  readonly maxTurns?: number
+  readonly maxTokens?: number
+  readonly maxBudgetUsd?: number
+  readonly fallbackModel?: string
 }) {
   if (input.interactive) {
     if (input.outputSchema !== undefined) throw new Error("--output-schema cannot be used in interactive mode")
@@ -37,6 +125,7 @@ export function validateRunOutputOptions(input: {
     throw new Error("--output-schema cannot be used with --command")
   if (input.ephemeral && (input.session !== undefined || input.continue || input.fork || input.inputID !== undefined))
     throw new Error("--ephemeral cannot be used with --session, --continue, --fork, or --input-id")
+  parseRunGuardrails(input)
 }
 
 export async function loadOutputSchema(filePath: string, baseDir: string): Promise<LoadedOutputSchema> {

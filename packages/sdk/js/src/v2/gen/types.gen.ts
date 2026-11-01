@@ -954,6 +954,7 @@ export type GlobalEvent = {
             | "completed"
             | "provider_error"
             | "turn_limit"
+            | "budget_limit"
             | "interrupted"
             | "process_restart"
             | "superseded"
@@ -3761,6 +3762,10 @@ export type LocationRef = {
 export type SessionInputExecutionPolicy = {
   mode: "headless"
   permissions: "reject" | "approve_once"
+  maxTurns?: number
+  maxTokens?: number
+  maxBudgetUsd?: number
+  fallbackModel?: ModelRef
 }
 
 export type SessionNextRetryError = {
@@ -4159,6 +4164,7 @@ export type SyncEventSessionNextInputExecutionSettled = {
         | "completed"
         | "provider_error"
         | "turn_limit"
+        | "budget_limit"
         | "interrupted"
         | "process_restart"
         | "superseded"
@@ -5308,6 +5314,7 @@ export type SessionInputExecution = {
     | "completed"
     | "provider_error"
     | "turn_limit"
+    | "budget_limit"
     | "interrupted"
     | "process_restart"
     | "superseded"
@@ -5568,6 +5575,7 @@ export type SessionNextInputExecutionSettled = {
       | "completed"
       | "provider_error"
       | "turn_limit"
+      | "budget_limit"
       | "interrupted"
       | "process_restart"
       | "superseded"
@@ -8127,6 +8135,7 @@ export type EventSessionNextInputExecutionSettled = {
       | "completed"
       | "provider_error"
       | "turn_limit"
+      | "budget_limit"
       | "interrupted"
       | "process_restart"
       | "superseded"

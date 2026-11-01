@@ -33,6 +33,10 @@ export interface NativeLocalOptions {
   "output-last-message"?: string
   o?: string
   ephemeral?: boolean
+  "max-turns"?: number
+  "max-tokens"?: number
+  "max-budget-usd"?: number
+  "fallback-model"?: string
 }
 
 export function validateNativeLocal(input: NativeLocalOptions) {
@@ -49,6 +53,10 @@ export function validateNativeLocal(input: NativeLocalOptions) {
     ["--output-schema", input["output-schema"] !== undefined],
     ["--output-last-message", (input["output-last-message"] ?? input.o) !== undefined],
     ["--ephemeral", input.ephemeral],
+    ["--max-turns", input["max-turns"] !== undefined],
+    ["--max-tokens", input["max-tokens"] !== undefined],
+    ["--max-budget-usd", input["max-budget-usd"] !== undefined],
+    ["--fallback-model", input["fallback-model"] !== undefined],
   ].find((entry) => entry[1])?.[0]
   if (unsupported) throw new Error(`${unsupported} is not available for native local interactive startup`)
   if (input["replay-limit"] !== undefined && (!Number.isInteger(input["replay-limit"]) || input["replay-limit"] <= 0))
@@ -64,7 +72,7 @@ export async function nativeLocalDirectory(directory?: string) {
 export async function runNativeLocalMini(input: NativeLocalOptions) {
   if (!input.mini) {
     const { runNativeHeadless, validateNativeInputID } = await import("./native-headless")
-    const { loadOutputSchema, validateRunOutputOptions } = await import("./run-output-options")
+    const { loadOutputSchema, parseRunGuardrails, validateRunOutputOptions } = await import("./run-output-options")
     const rawLastMessage = input["output-last-message"] ?? input.o
     validateNativeInputID({ inputID: input["input-id"], session: input.session, continue: input.continue })
     validateRunOutputOptions({
@@ -77,12 +85,25 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
       inputID: input["input-id"],
       outputSchema: input["output-schema"],
       outputLastMessage: rawLastMessage,
+      model: input.model,
+      maxTurns: input["max-turns"],
+      maxTokens: input["max-tokens"],
+      maxBudgetUsd: input["max-budget-usd"],
+      fallbackModel: input["fallback-model"],
+    })
+    const guardrails = parseRunGuardrails({
+      interactive: false,
+      command: input.command,
+      model: input.model,
+      maxTurns: input["max-turns"],
+      maxTokens: input["max-tokens"],
+      maxBudgetUsd: input["max-budget-usd"],
+      fallbackModel: input["fallback-model"],
     })
     const unsupported = [
       ["--fork", input.fork],
       ["--command", input.command !== undefined],
       ["--demo", input.demo],
-      ["--profile", input.profile !== undefined],
       ["--title", input.title !== undefined],
       ["--port", input.port !== undefined],
       ["--replay-limit", input["replay-limit"] !== undefined],
@@ -114,6 +135,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
         })()
       : []
     if (!text.trim() && !files.length) throw new Error("A new prompt or file is required for native headless execution")
+    if (input.profile) process.env.APEXO_RUNTIME_PROFILE = input.profile
     if (input.ephemeral && process.env.GROK_MEMORY === undefined) process.env.GROK_MEMORY = "0"
     process.chdir(directory)
     const { createNativeLocalHost } = await import("./native-local-host")
@@ -137,6 +159,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
         outputSchema,
         outputLastMessage,
         ephemeral: input.ephemeral,
+        guardrails,
       })
     } finally {
       await host.close()
