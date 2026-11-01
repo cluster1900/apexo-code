@@ -1,5 +1,6 @@
 import type { Argv } from "yargs"
 import PROMPT_REVIEW from "../../command/template/review.txt"
+import { hasRunGuardrailFlags } from "../run-output-options"
 import { UI } from "../ui"
 import { cmd } from "./cmd"
 import { runHeadless } from "./run"
@@ -134,6 +135,23 @@ export const ReviewCommand = cmd({
         default: false,
         describe: "run in a temporary session and delete it on exit without persisting session history",
       })
+      .option("max-turns", {
+        type: "number",
+        describe: "maximum number of agent turns before stopping with exit code 1",
+      })
+      .option("max-tokens", {
+        type: "number",
+        describe: "maximum total tokens allowed for the review before stopping with exit code 1",
+      })
+      .option("max-budget-usd", {
+        type: "number",
+        describe: "maximum estimated USD spend allowed for the review before stopping with exit code 1",
+      })
+      .option("fallback-model", {
+        type: "string",
+        describe:
+          "fallback model (provider/model) when the primary model is overloaded or rate-limited before emitting output",
+      })
       .option("thinking", { type: "boolean", describe: "show thinking blocks" })
       .option("auto", {
         type: "boolean",
@@ -174,7 +192,7 @@ export const ReviewCommand = cmd({
       "--": [],
       message: [reviewPrompt],
       title:
-        args["session-protocol"] === "native"
+        args["session-protocol"] === "native" || hasRunGuardrailFlags(args)
           ? undefined
           : args.title?.trim()
             ? `Review: ${args.title.trim()}`

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdir, rm } from "node:fs/promises"
+import { mkdir, realpath, rm } from "node:fs/promises"
 import { EOL } from "node:os"
 import path from "node:path"
 import { Effect, Schema } from "effect"
@@ -8,13 +8,18 @@ import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { FSUtil } from "@apexo/core/fs-util"
 import { Git } from "@apexo/core/git"
-import { Global } from "@apexo/core/global"
 import { AbsolutePath } from "@apexo/core/schema"
 import { Slug } from "@apexo/core/util/slug"
 import { SessionInput } from "@apexo/schema/session-input"
 import { SessionMessage } from "@apexo/schema/session-message"
 import { createApexoClient, type ApexoClient } from "@apexo/sdk/v2/client"
 import { nativeSessionTransport } from "@apexo/tui/transport/native-session"
+import {
+  attemptsBaseDirectory,
+  captureWorktreeTree,
+  selectWinnerAttempt,
+  writeAttemptsManifest,
+} from "./attempts-worktree"
 import { readPipedStdin } from "./cmd/run/runtime.stdin"
 import type { RunInput } from "./cmd/run/types"
 import { CliError } from "./effect-cmd"
@@ -24,10 +29,12 @@ import { createNativeLocalHost } from "./native-local-host"
 import {
   appendOutputSchemaPrompt,
   loadOutputSchema,
+  parseRunGuardrails,
   parseStructuredText,
   validateRunOutputOptions,
   writeLastMessage,
   type LoadedOutputSchema,
+  type ParsedRunGuardrails,
 } from "./run-output-options"
 
 export interface ParallelAttemptItem {
@@ -48,6 +55,8 @@ export interface ParallelAttemptsReport {
   readonly succeeded: number
   readonly failed: number
   readonly sourceDirectory: string
+  readonly batchDirectory?: string
+  readonly winnerAttempt?: number
   readonly attempts: ReadonlyArray<ParallelAttemptItem>
 }
 
@@ -65,6 +74,10 @@ export interface ParallelAttemptsArgs {
   readonly "output-last-message"?: string
   readonly o?: string
   readonly ephemeral?: boolean
+  readonly "max-turns"?: number
+  readonly "max-tokens"?: number
+  readonly "max-budget-usd"?: number
+  readonly "fallback-model"?: string
   readonly auto?: boolean
   readonly yolo?: boolean
   readonly "dangerously-skip-permissions"?: boolean
@@ -95,7 +108,7 @@ async function hashFileSafe(filepath: string): Promise<string | undefined> {
 }
 
 function listDirtyPaths(worktree: string): string[] {
-  const tracked = Bun.spawnSync(["git", "diff", "--name-only", "HEAD"], {
+  const tracked = Bun.spawnSync(["git", "diff", "--no-renames", "--name-only", "HEAD"], {
     cwd: worktree,
     stdin: "ignore",
     stdout: "pipe",
@@ -191,6 +204,7 @@ async function runSingleWorktreeAttempt(options: {
   readonly auto: boolean
   readonly thinking: boolean
   readonly outputSchema?: LoadedOutputSchema
+  readonly guardrails?: ParsedRunGuardrails
   readonly ephemeral: boolean
   readonly signal: AbortSignal
 }): Promise<ParallelAttemptItem> {
@@ -281,6 +295,17 @@ async function runSingleWorktreeAttempt(options: {
       executionPolicy: {
         mode: "headless" as const,
         permissions: options.auto ? ("approve_once" as const) : ("reject" as const),
+        ...(options.guardrails?.maxTurns === undefined ? {} : { maxTurns: options.guardrails.maxTurns }),
+        ...(options.guardrails?.maxTokens === undefined ? {} : { maxTokens: options.guardrails.maxTokens }),
+        ...(options.guardrails?.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: options.guardrails.maxBudgetUsd }),
+        ...(options.guardrails?.fallbackModel === undefined
+          ? {}
+          : {
+              fallbackModel: {
+                providerID: options.guardrails.fallbackModel.providerID,
+                id: options.guardrails.fallbackModel.id,
+              },
+            }),
       },
     }
 
@@ -419,6 +444,12 @@ function formatAttemptsReport(report: ParallelAttemptsReport): string {
       lines.push(item.message.trimEnd())
     }
   }
+  if (report.batchDirectory && report.winnerAttempt !== undefined) {
+    lines.push("")
+    lines.push(
+      `Tip: run "apexo apply" (or "apexo apply --attempt ${report.winnerAttempt} --check") to promote changes into ${report.sourceDirectory}`,
+    )
+  }
   return lines.join(EOL) + EOL
 }
 
@@ -445,16 +476,31 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
     failCli("--attempts supports --format default or --format json")
   }
   const rawLastMessage = args["output-last-message"] ?? args.o
-  try {
-    validateRunOutputOptions({
-      interactive: false,
-      ephemeral: args.ephemeral,
-      outputSchema: args["output-schema"],
-      outputLastMessage: rawLastMessage,
-    })
-  } catch (error) {
-    failCli(error instanceof Error ? error.message : String(error))
-  }
+  const guardrails = (() => {
+    try {
+      validateRunOutputOptions({
+        interactive: false,
+        ephemeral: args.ephemeral,
+        outputSchema: args["output-schema"],
+        outputLastMessage: rawLastMessage,
+        model: args.model,
+        maxTurns: args["max-turns"],
+        maxTokens: args["max-tokens"],
+        maxBudgetUsd: args["max-budget-usd"],
+        fallbackModel: args["fallback-model"],
+      })
+      return parseRunGuardrails({
+        interactive: false,
+        model: args.model,
+        maxTurns: args["max-turns"],
+        maxTokens: args["max-tokens"],
+        maxBudgetUsd: args["max-budget-usd"],
+        fallbackModel: args["fallback-model"],
+      })
+    } catch (error) {
+      return failCli(error instanceof Error ? error.message : String(error))
+    }
+  })()
 
   const modelParts = args.model?.split("/")
   if (modelParts && (!modelParts[0] || !modelParts.slice(1).join("/"))) {
@@ -490,7 +536,9 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
   if (args.profile) process.env.APEXO_RUNTIME_PROFILE = args.profile
   if (args.ephemeral && process.env.GROK_MEMORY === undefined) process.env.GROK_MEMORY = "0"
 
-  const batchRoot = path.join(Global.make().data, "worktree", "attempts", `${Date.now()}-${Slug.create()}`)
+  const createdAt = Date.now()
+  const batchID = `${createdAt}-${Slug.create()}`
+  const batchRoot = path.join(attemptsBaseDirectory(), batchID)
   const worktrees = await Effect.runPromise(
     Effect.gen(function* () {
       const git = yield* Git.Service
@@ -508,13 +556,15 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
       const baselineChanges = yield* git.change
         .capture({ repository: repo, path: repo.worktree })
         .pipe(Effect.mapError((err) => new CliError({ message: err.message })))
+      const canonicalSourceWorktree = yield* fs.resolve(repo.worktree)
       const relativeSubdir = path.relative(repo.worktree, startDirectory)
       yield* Effect.promise(() => mkdir(batchRoot, { recursive: true }))
+      const canonicalBatchRoot = yield* fs.resolve(batchRoot)
 
       const created: Array<{ attempt: number; worktreeRoot: AbsolutePath; directory: string }> = []
       return yield* Effect.gen(function* () {
         for (let idx = 1; idx <= attempts; idx += 1) {
-          const targetRoot = AbsolutePath.make(path.join(batchRoot, `attempt-${idx}`))
+          const targetRoot = AbsolutePath.make(path.join(canonicalBatchRoot, `attempt-${idx}`))
           const wtRepo = yield* git.worktree
             .create({ repository: repo, directory: targetRoot, revision: head })
             .pipe(Effect.mapError((err) => new CliError({ message: err.message })))
@@ -528,7 +578,13 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
           const targetDir = relativeSubdir ? path.join(canonicalRoot, relativeSubdir) : canonicalRoot
           created[created.length - 1] = { attempt: idx, worktreeRoot: canonicalRoot, directory: targetDir }
         }
-        return { repo, created }
+        return {
+          repo,
+          head,
+          canonicalSourceWorktree,
+          canonicalBatchRoot,
+          created,
+        }
       }).pipe(
         Effect.onError(() =>
           Effect.gen(function* () {
@@ -537,12 +593,16 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
                 .remove({ repository: repo, directory: wt.worktreeRoot, force: true })
                 .pipe(Effect.catch(() => Effect.void))
             }
-            yield* Effect.promise(() => rm(batchRoot, { recursive: true, force: true }).catch(() => undefined))
+            yield* Effect.promise(() => rm(canonicalBatchRoot, { recursive: true, force: true }).catch(() => undefined))
           }),
         ),
       )
     }).pipe(Effect.provide(gitRuntimeLayer)),
   )
+
+  const baselineTree = args.ephemeral
+    ? undefined
+    : await captureWorktreeTree(worktrees.created[0]!.worktreeRoot)
 
   const baselinePerAttempt = await Promise.all(
     worktrees.created.map(async (item) => [item.attempt, await snapshotDirtyHashes(item.worktreeRoot)] as const),
@@ -583,6 +643,7 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
           auto,
           thinking,
           outputSchema,
+          guardrails,
           ephemeral,
           signal: controller.signal,
         }),
@@ -591,16 +652,45 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
 
     const ordered = items.toSorted((a, b) => a.attempt - b.attempt)
     const succeeded = ordered.filter((item) => item.status === "completed").length
+    const winnerAttempt = selectWinnerAttempt(ordered)
+    const worktreeByAttempt = new Map(worktrees.created.map((wt) => [wt.attempt, wt.worktreeRoot] as const))
+    const canonicalSourceDir = await realpath(startDirectory).catch(() => startDirectory)
+    if (!ephemeral && baselineTree) {
+      await writeAttemptsManifest(worktrees.canonicalBatchRoot, {
+        version: 1,
+        batchID,
+        createdAt,
+        sourceWorktree: worktrees.canonicalSourceWorktree,
+        sourceDirectory: canonicalSourceDir,
+        headCommit: worktrees.head,
+        baselineTree,
+        ...(winnerAttempt === undefined ? {} : { winnerAttempt }),
+        attempts: ordered.map((item) => ({
+          attempt: item.attempt,
+          status: item.status,
+          ...(item.sessionID ? { sessionID: item.sessionID } : {}),
+          worktreeRoot: worktreeByAttempt.get(item.attempt) ?? item.directory,
+          directory: item.directory,
+          changedFiles: [...item.changedFiles],
+          diffStat: item.diffStat,
+          ...(item.error ? { error: item.error } : {}),
+        })),
+      })
+    }
     const report: ParallelAttemptsReport = {
       type: "attempts.result",
       total: attempts,
       succeeded,
       failed: attempts - succeeded,
       sourceDirectory: startDirectory,
+      ...(ephemeral ? {} : { batchDirectory: worktrees.canonicalBatchRoot }),
+      ...(winnerAttempt === undefined ? {} : { winnerAttempt }),
       attempts: ordered,
     }
 
-    const firstWinner = ordered.find((item) => item.status === "completed")
+    const firstWinner =
+      (winnerAttempt !== undefined ? ordered.find((item) => item.attempt === winnerAttempt) : undefined) ??
+      ordered.find((item) => item.status === "completed")
     if (outputLastMessage && firstWinner) {
       await writeLastMessage(
         outputLastMessage,
@@ -629,7 +719,7 @@ export async function runParallelAttempts(args: ParallelAttemptsArgs) {
           }
         }).pipe(Effect.provide(gitRuntimeLayer)),
       ).catch(() => undefined)
-      await rm(batchRoot, { recursive: true, force: true }).catch(() => undefined)
+      await rm(worktrees.canonicalBatchRoot, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 }

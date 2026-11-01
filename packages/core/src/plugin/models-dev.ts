@@ -11,17 +11,18 @@ function released(date: string) {
 }
 
 function cost(input: ModelsDev.Model["cost"]): ModelV2Info["cost"] {
+  if (!input) return []
   const base = {
-    input: input?.input ?? 0,
-    output: input?.output ?? 0,
+    input: input.input,
+    output: input.output,
     cache: {
-      read: input?.cache_read ?? 0,
-      write: input?.cache_write ?? 0,
+      read: input.cache_read ?? 0,
+      write: input.cache_write ?? 0,
     },
   }
   return [
     base,
-    ...(input?.tiers?.map((item) => ({
+    ...(input.tiers?.map((item) => ({
       tier: item.tier,
       input: item.input,
       output: item.output,
@@ -30,7 +31,7 @@ function cost(input: ModelsDev.Model["cost"]): ModelV2Info["cost"] {
         write: item.cache_write ?? 0,
       },
     })) ?? []),
-    ...(input?.context_over_200k
+    ...(input.context_over_200k
       ? [
           {
             tier: {
@@ -52,6 +53,8 @@ function cost(input: ModelsDev.Model["cost"]): ModelV2Info["cost"] {
 function mergeCost(base: ModelV2Info["cost"], override: ModelsDev.Model["cost"] | undefined) {
   if (!override) return base
   const next = cost(override)
+  if (next.length === 0) return base
+  if (base.length === 0) return next
   const [baseDefault, ...baseTiers] = base
   const [nextDefault, ...nextTiers] = next
   const tierKey = (item: ModelV2Info["cost"][number]) => `${item.tier?.type ?? "base"}:${item.tier?.size ?? 0}`
@@ -66,7 +69,7 @@ function mergeCost(base: ModelV2Info["cost"], override: ModelsDev.Model["cost"] 
     const current = tiers.get(tierKey(item))
     tiers.set(tierKey(item), current ? merge(current, item) : item)
   }
-  return [merge(baseDefault ?? { input: 0, output: 0, cache: { read: 0, write: 0 } }, nextDefault), ...tiers.values()]
+  return [merge(baseDefault!, nextDefault!), ...tiers.values()]
 }
 
 function modeName(model: ModelsDev.Model, mode: string) {

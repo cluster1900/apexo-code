@@ -513,7 +513,14 @@ export type SessionsPromptInput = {
       }>
     }
     readonly delivery?: "steer" | "queue" | null
-    readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" } | null
+    readonly executionPolicy?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    } | null
     readonly resume?: boolean | null
   }["id"]
   readonly prompt: {
@@ -532,7 +539,14 @@ export type SessionsPromptInput = {
       }>
     }
     readonly delivery?: "steer" | "queue" | null
-    readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" } | null
+    readonly executionPolicy?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    } | null
     readonly resume?: boolean | null
   }["prompt"]
   readonly delivery?: {
@@ -551,7 +565,14 @@ export type SessionsPromptInput = {
       }>
     }
     readonly delivery?: "steer" | "queue" | null
-    readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" } | null
+    readonly executionPolicy?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    } | null
     readonly resume?: boolean | null
   }["delivery"]
   readonly executionPolicy?: {
@@ -570,7 +591,14 @@ export type SessionsPromptInput = {
       }>
     }
     readonly delivery?: "steer" | "queue" | null
-    readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" } | null
+    readonly executionPolicy?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    } | null
     readonly resume?: boolean | null
   }["executionPolicy"]
   readonly resume?: {
@@ -589,7 +617,14 @@ export type SessionsPromptInput = {
       }>
     }
     readonly delivery?: "steer" | "queue" | null
-    readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" } | null
+    readonly executionPolicy?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    } | null
     readonly resume?: boolean | null
   }["resume"]
 }
@@ -614,7 +649,14 @@ export type SessionsPromptOutput = {
       }>
     }
     readonly delivery: "steer" | "queue"
-    readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+    readonly executionPolicy?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    }
     readonly timeCreated: number
     readonly promotedSeq?: number
     readonly withdrawnSeq?: number
@@ -630,7 +672,14 @@ export type SessionsInputExecutionOutput = {
   readonly data: {
     readonly id: string
     readonly sessionID: string
-    readonly policy: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+    readonly policy: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    }
     readonly status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
     readonly admittedSeq: number
     readonly promotedSeq?: number
@@ -640,6 +689,7 @@ export type SessionsInputExecutionOutput = {
       | "completed"
       | "provider_error"
       | "turn_limit"
+      | "budget_limit"
       | "interrupted"
       | "process_restart"
       | "superseded"
@@ -661,7 +711,14 @@ export type SessionsInputWaitOutput = {
     readonly execution: {
       readonly id: string
       readonly sessionID: string
-      readonly policy: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+      readonly policy: {
+        readonly mode: "headless"
+        readonly permissions: "reject" | "approve_once"
+        readonly maxTurns?: number
+        readonly maxTokens?: number
+        readonly maxBudgetUsd?: number
+        readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      }
       readonly status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
       readonly admittedSeq: number
       readonly promotedSeq?: number
@@ -671,6 +728,7 @@ export type SessionsInputWaitOutput = {
         | "completed"
         | "provider_error"
         | "turn_limit"
+        | "budget_limit"
         | "interrupted"
         | "process_restart"
         | "superseded"
@@ -692,7 +750,14 @@ export type SessionsInputInterruptOutput = {
   readonly data: {
     readonly id: string
     readonly sessionID: string
-    readonly policy: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+    readonly policy: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    }
     readonly status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
     readonly admittedSeq: number
     readonly promotedSeq?: number
@@ -702,6 +767,7 @@ export type SessionsInputInterruptOutput = {
       | "completed"
       | "provider_error"
       | "turn_limit"
+      | "budget_limit"
       | "interrupted"
       | "process_restart"
       | "superseded"
@@ -1215,7 +1281,14 @@ export type SessionsHistoryOutput = {
             }>
           }
           readonly delivery: "steer" | "queue"
-          readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+          readonly executionPolicy?: {
+            readonly mode: "headless"
+            readonly permissions: "reject" | "approve_once"
+            readonly maxTurns?: number
+            readonly maxTokens?: number
+            readonly maxBudgetUsd?: number
+            readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          }
         }
       }
     | {
@@ -1243,7 +1316,14 @@ export type SessionsHistoryOutput = {
             }>
           }
           readonly delivery: "steer" | "queue"
-          readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+          readonly executionPolicy?: {
+            readonly mode: "headless"
+            readonly permissions: "reject" | "approve_once"
+            readonly maxTurns?: number
+            readonly maxTokens?: number
+            readonly maxBudgetUsd?: number
+            readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          }
         }
       }
     | {
@@ -1269,6 +1349,7 @@ export type SessionsHistoryOutput = {
             | "completed"
             | "provider_error"
             | "turn_limit"
+            | "budget_limit"
             | "interrupted"
             | "process_restart"
             | "superseded"
@@ -1916,7 +1997,14 @@ export type SessionsEventsOutput =
           }>
         }
         readonly delivery: "steer" | "queue"
-        readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+        readonly executionPolicy?: {
+          readonly mode: "headless"
+          readonly permissions: "reject" | "approve_once"
+          readonly maxTurns?: number
+          readonly maxTokens?: number
+          readonly maxBudgetUsd?: number
+          readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        }
       }
     }
   | {
@@ -1944,7 +2032,14 @@ export type SessionsEventsOutput =
           }>
         }
         readonly delivery: "steer" | "queue"
-        readonly executionPolicy?: { readonly mode: "headless"; readonly permissions: "reject" | "approve_once" }
+        readonly executionPolicy?: {
+          readonly mode: "headless"
+          readonly permissions: "reject" | "approve_once"
+          readonly maxTurns?: number
+          readonly maxTokens?: number
+          readonly maxBudgetUsd?: number
+          readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        }
       }
     }
   | {
@@ -1970,6 +2065,7 @@ export type SessionsEventsOutput =
           | "completed"
           | "provider_error"
           | "turn_limit"
+          | "budget_limit"
           | "interrupted"
           | "process_restart"
           | "superseded"

@@ -110,6 +110,14 @@ Options:
                                  session history                          [boolean] [default: false]
       --attempts                 run N parallel attempts in isolated git worktrees and compare
                                  results                                                    [number]
+      --max-turns                maximum number of agent turns before stopping with exit code 1
+                                                                                            [number]
+      --max-tokens               maximum total tokens allowed for the run before stopping with exit
+                                 code 1                                                     [number]
+      --max-budget-usd           maximum estimated USD spend allowed for the run before stopping
+                                 with exit code 1                                           [number]
+      --fallback-model           fallback model (provider/model) when the primary model is
+                                 overloaded or rate-limited before emitting output          [string]
   -f, --file                     file(s) to attach to message                                [array]
       --title                    title for the session (uses truncated prompt if no value provided)
                                                                                             [string]
@@ -177,6 +185,14 @@ Options:
   -o, --output-last-message      write the final review message to a file                   [string]
       --ephemeral                run in a temporary session and delete it on exit without persisting
                                  session history                          [boolean] [default: false]
+      --max-turns                maximum number of agent turns before stopping with exit code 1
+                                                                                            [number]
+      --max-tokens               maximum total tokens allowed for the review before stopping with
+                                 exit code 1                                                [number]
+      --max-budget-usd           maximum estimated USD spend allowed for the review before stopping
+                                 with exit code 1                                           [number]
+      --fallback-model           fallback model (provider/model) when the primary model is
+                                 overloaded or rate-limited before emitting output          [string]
       --thinking                 show thinking blocks                                      [boolean]
       --auto                     auto-approve permissions that are not explicitly denied
                                  (dangerous!)                             [boolean] [default: false]
@@ -231,6 +247,35 @@ Options:
       --dir           workspace directory to confine against                                [string]
       --timeout       execution timeout in milliseconds                   [number] [default: 120000]
       --json          emit structured JSON execution receipt              [boolean] [default: false]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo apply --help 1`] = `
+"apexo apply [target]
+
+apply changes from a parallel worktree attempt or patch file to the working tree
+
+Positionals:
+  target  attempt number (e.g. 2 or attempt-2), attempt/batch directory, attempts.result JSON file,
+          or patch file                                                                     [string]
+
+Options:
+  -h, --help              show help                                                        [boolean]
+  -v, --version           show version number                                              [boolean]
+      --print-logs        print logs to stderr                                             [boolean]
+      --log-level         log level             [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure              run without external plugins                                     [boolean]
+      --memory            enable memory; --no-memory force-disables it for this process    [boolean]
+  -a, --attempt           1-based attempt number to select from an attempts batch           [number]
+      --dir               target repository directory to apply changes into                 [string]
+      --check, --dry-run  verify that changes apply cleanly and preview diff stats without modifying
+                          files                                           [boolean] [default: false]
+      --3way              attempt a 3-way merge when target files have diverged
+                                                                          [boolean] [default: false]
+      --index             also apply changes to the Git index (stage applied changes)
+                                                                          [boolean] [default: false]
+      --cleanup           remove the candidate Git worktree(s) after a clean apply
+                                                                          [boolean] [default: false]
+      --json              emit structured JSON report                     [boolean] [default: false]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo debug --help 1`] = `

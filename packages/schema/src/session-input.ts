@@ -1,9 +1,9 @@
 export * as SessionInput from "./session-input"
 
 import { Schema } from "effect"
-import { optional } from "./schema"
+import { Model } from "./model"
 import { Prompt } from "./prompt"
-import { DateTimeUtcFromMillis, NonNegativeInt } from "./schema"
+import { DateTimeUtcFromMillis, NonNegativeInt, PositiveInt, optional } from "./schema"
 import { SessionDelivery } from "./session-delivery"
 import { SessionID } from "./session-id"
 import { SessionMessage } from "./session-message"
@@ -11,10 +11,16 @@ import { SessionMessage } from "./session-message"
 export const Delivery = SessionDelivery.Delivery
 export type Delivery = SessionDelivery.Delivery
 
+const PositiveFinite = Schema.Finite.check(Schema.isGreaterThan(0))
+
 /** Invocation policy belongs to one canonical admitted input, never the mutable Session. */
 export const ExecutionPolicy = Schema.Struct({
   mode: Schema.Literal("headless"),
   permissions: Schema.Literals(["reject", "approve_once"]),
+  maxTurns: PositiveInt.pipe(optional),
+  maxTokens: PositiveInt.pipe(optional),
+  maxBudgetUsd: PositiveFinite.pipe(optional),
+  fallbackModel: Model.Ref.pipe(optional),
 }).annotate({ identifier: "SessionInput.ExecutionPolicy" })
 export type ExecutionPolicy = typeof ExecutionPolicy.Type
 
@@ -31,6 +37,7 @@ export const ExecutionReason = Schema.Literals([
   "completed",
   "provider_error",
   "turn_limit",
+  "budget_limit",
   "interrupted",
   "process_restart",
   "superseded",

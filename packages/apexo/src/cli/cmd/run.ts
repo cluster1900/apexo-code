@@ -24,7 +24,9 @@ import { Filesystem } from "@/util/filesystem"
 import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v2/client"
 import { FormatError, FormatUnknownError } from "../error"
 import {
+  hasRunGuardrailFlags,
   loadOutputSchema,
+  parseRunGuardrails,
   parseStructuredText,
   validateRunOutputOptions,
   writeLastMessage,
@@ -291,6 +293,23 @@ const CompatibilityRunCommand = effectCmd({
         type: "number",
         describe: "run N parallel attempts in isolated git worktrees and compare results",
       })
+      .option("max-turns", {
+        type: "number",
+        describe: "maximum number of agent turns before stopping with exit code 1",
+      })
+      .option("max-tokens", {
+        type: "number",
+        describe: "maximum total tokens allowed for the run before stopping with exit code 1",
+      })
+      .option("max-budget-usd", {
+        type: "number",
+        describe: "maximum estimated USD spend allowed for the run before stopping with exit code 1",
+      })
+      .option("fallback-model", {
+        type: "string",
+        describe:
+          "fallback model (provider/model) when the primary model is overloaded or rate-limited before emitting output",
+      })
       .option("profile", {
         type: "string",
         choices: ["apexo", "grok-build"],
@@ -455,21 +474,37 @@ const CompatibilityRunCommand = effectCmd({
         die("--background-wait-timeout must be a positive integer number of seconds")
       }
 
-      try {
-        validateRunOutputOptions({
-          interactive,
-          command: args.command,
-          ephemeral: args.ephemeral,
-          session: args.session,
-          continue: args.continue,
-          fork: args.fork,
-          inputID: args["input-id"],
-          outputSchema: args["output-schema"],
-          outputLastMessage: args["output-last-message"],
-        })
-      } catch (error) {
-        die(error instanceof Error ? error.message : String(error))
-      }
+      const guardrails = (() => {
+        try {
+          validateRunOutputOptions({
+            interactive,
+            command: args.command,
+            ephemeral: args.ephemeral,
+            session: args.session,
+            continue: args.continue,
+            fork: args.fork,
+            inputID: args["input-id"],
+            outputSchema: args["output-schema"],
+            outputLastMessage: args["output-last-message"],
+            model: args.model,
+            maxTurns: args["max-turns"],
+            maxTokens: args["max-tokens"],
+            maxBudgetUsd: args["max-budget-usd"],
+            fallbackModel: args["fallback-model"],
+          })
+          return parseRunGuardrails({
+            interactive,
+            command: args.command,
+            model: args.model,
+            maxTurns: args["max-turns"],
+            maxTokens: args["max-tokens"],
+            maxBudgetUsd: args["max-budget-usd"],
+            fallbackModel: args["fallback-model"],
+          })
+        } catch (error) {
+          return die(error instanceof Error ? error.message : String(error))
+        }
+      })()
 
       if (interactive) {
         try {
@@ -817,6 +852,7 @@ const CompatibilityRunCommand = effectCmd({
                 outputSchema: outputSchemaSpec,
                 outputLastMessage: outputLastMessagePath,
                 ephemeral: args.ephemeral,
+                guardrails,
               })
             }
             if (args.fork) throw new Error("Fork is not available on the native terminal transport")
@@ -837,6 +873,11 @@ const CompatibilityRunCommand = effectCmd({
               replay,
               replayLimit: args["replay-limit"],
             })
+          }
+          if (hasRunGuardrailFlags(args)) {
+            throw new Error(
+              "Execution guardrails (--max-turns, --max-tokens, --max-budget-usd, --fallback-model) require a server supporting the native V2 session API",
+            )
           }
         }
         const sess = await session(sdk)
@@ -1474,7 +1515,17 @@ export const RunCommand: typeof CompatibilityRunCommand = {
         mini: args.mini,
       })
     }
-    if (args["session-protocol"] === "native" && !args.attach) {
+    const guardrailsRequested = hasRunGuardrailFlags(args)
+    if (guardrailsRequested && args["session-protocol"] === "compatibility") {
+      throw new Error(
+        "Execution guardrails (--max-turns, --max-tokens, --max-budget-usd, --fallback-model) require --session-protocol native or auto",
+      )
+    }
+    if (
+      (args["session-protocol"] === "native" ||
+        (guardrailsRequested && !args.mini && !args.interactive && !args.command)) &&
+      !args.attach
+    ) {
       if (args.mini && args._?.[0] !== "mini") throw new Error("--mini must be used without the run subcommand")
       const { runNativeLocalMini } = await import("../native-local")
       return runNativeLocalMini(args)
@@ -1507,6 +1558,14 @@ function defaultRunArgs(subcommand: string): RunHandlerArgs {
     o: undefined,
     ephemeral: false,
     attempts: undefined,
+    "max-turns": undefined,
+    maxTurns: undefined,
+    "max-tokens": undefined,
+    maxTokens: undefined,
+    "max-budget-usd": undefined,
+    maxBudgetUsd: undefined,
+    "fallback-model": undefined,
+    fallbackModel: undefined,
     profile: undefined,
     file: undefined,
     title: undefined,
