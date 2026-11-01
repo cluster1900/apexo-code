@@ -287,6 +287,10 @@ const CompatibilityRunCommand = effectCmd({
         default: false,
         describe: "run in a temporary session and delete it on exit without persisting session history",
       })
+      .option("attempts", {
+        type: "number",
+        describe: "run N parallel attempts in isolated git worktrees and compare results",
+      })
       .option("profile", {
         type: "string",
         choices: ["apexo", "grok-build"],
@@ -1456,6 +1460,10 @@ const CompatibilityRunCommand = effectCmd({
 export const RunCommand: typeof CompatibilityRunCommand = {
   ...CompatibilityRunCommand,
   async handler(args) {
+    if (args.attempts !== undefined) {
+      const { runParallelAttempts } = await import("../run-attempts")
+      return runParallelAttempts(args)
+    }
     if (args["input-id"] !== undefined) {
       if (args["session-protocol"] !== "native") throw new Error("--input-id requires --session-protocol native")
       const { validateNativeInputID } = await import("../native-headless")
@@ -1498,6 +1506,7 @@ function defaultRunArgs(subcommand: string): RunHandlerArgs {
     outputLastMessage: undefined,
     o: undefined,
     ephemeral: false,
+    attempts: undefined,
     profile: undefined,
     file: undefined,
     title: undefined,

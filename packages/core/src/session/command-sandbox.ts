@@ -173,7 +173,13 @@ export const make = Effect.gen(function* () {
         const parent = capabilities.get(captured)
         if (!parent || !lifecycle.available(parent.claim))
           return yield* failure("The parent command sandbox capability is unavailable.")
-        if (parent.policy.profile !== target.profile || parent.policy.network !== target.network)
+        const parentAllowDomains = CommandSandboxPolicy.isOff(parent.policy) ? [] : (parent.policy.allowDomains ?? [])
+        const targetAllowDomains = CommandSandboxPolicy.isOff(target) ? [] : (target.allowDomains ?? [])
+        if (
+          parent.policy.profile !== target.profile ||
+          parent.policy.network !== target.network ||
+          JSON.stringify(parentAllowDomains) !== JSON.stringify(targetAllowDomains)
+        )
           return yield* failure("Child placement cannot change its command sandbox profile.")
         const derived = CommandSandboxPolicy.isOff(target)
           ? target
@@ -186,6 +192,7 @@ export const make = Effect.gen(function* () {
               ],
               extraDenyLiterals: CommandSandboxPolicy.isOff(parent.policy) ? undefined : parent.policy.denyLiterals,
               extraDenyGlobs: CommandSandboxPolicy.isOff(parent.policy) ? undefined : parent.policy.denyGlobs,
+              extraAllowDomains: CommandSandboxPolicy.isOff(parent.policy) ? undefined : parent.policy.allowDomains,
             })
         const result: Capability = Object.freeze({ [capability]: true as const })
         capabilities.set(result, { ...parent, derived })

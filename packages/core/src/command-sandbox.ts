@@ -7,6 +7,7 @@ import path from "node:path"
 import { Context, DateTime, Duration, Effect, Layer } from "effect"
 import { Sandbox } from "@apexo/schema/sandbox"
 import { Bwrap } from "./command-sandbox/linux"
+import { CommandSandboxNetworkProxy } from "./command-sandbox/network-proxy"
 import { CommandSandboxPaths } from "./command-sandbox/paths"
 import { CommandSandboxPolicy } from "./command-sandbox/policy"
 import { Seatbelt } from "./command-sandbox/seatbelt"
@@ -72,12 +73,24 @@ export const make = Effect.gen(function* () {
         })
       yield* CommandSandboxPaths.verify(policy)
       const directory = yield* temporary
+      const proxy =
+        policy.network === "off" && policy.allowDomains && policy.allowDomains.length > 0
+          ? yield* CommandSandboxNetworkProxy.start({
+              allowDomains: policy.allowDomains,
+              listen:
+                backendKind === "bwrap"
+                  ? { kind: "unix", socketPath: path.join(directory, "proxy.sock") }
+                  : { kind: "tcp" },
+            })
+          : undefined
       const launchInput: Seatbelt.Input = {
         ...input,
         workspace: policy.workspace,
         profile: policy.profile,
         base: policy.base,
         network: policy.network,
+        ...(proxy?.port !== undefined ? { proxyPort: proxy.port } : {}),
+        ...(proxy?.socketPath !== undefined ? { proxyUnixSocket: proxy.socketPath } : {}),
         protected: policy.protected,
         ancestors: policy.ancestors,
         readOnly: policy.readOnly,
@@ -354,6 +367,87 @@ export const make = Effect.gen(function* () {
             }),
         }
       }),
+    exec: (options: {
+      readonly profile: Sandbox.Profile
+      readonly allowDomains?: ReadonlyArray<string>
+      readonly network?: "off" | "unrestricted"
+      readonly shell?: string
+      readonly command: string
+      readonly cwd?: string
+      readonly timeoutMs?: number
+    }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          if (options.profile === "off")
+            return yield* new CommandSandboxPolicy.Failure({
+              code: "invalid_policy",
+              message: "Sandbox execution requires a confined profile (e.g. workspace, read-only, strict, devbox).",
+            })
+          const policy = yield* CommandSandboxPaths.resolve({
+            workspace: location.directory,
+            profile: options.profile,
+            home: global.home,
+            protected: [
+              global.config,
+              global.data,
+              global.state,
+              global.cache,
+              ...PROJECT_PROTECTED_NAMES.map((name) => path.join(location.directory, name)),
+            ],
+            ...(options.allowDomains && options.allowDomains.length > 0
+              ? { extraAllowDomains: options.allowDomains }
+              : {}),
+            ...(options.network !== undefined ? { networkOverride: options.network } : {}),
+          })
+          if (CommandSandboxPolicy.isOff(policy))
+            return yield* new CommandSandboxPolicy.Failure({
+              code: "invalid_policy",
+              message: "Sandbox execution requires a confined profile.",
+            })
+          const prepared = yield* prepare(policy, {
+            shell: options.shell ?? (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh"),
+            command: options.command,
+            cwd: options.cwd ?? policy.workspace,
+          })
+          const timeoutMs = options.timeoutMs ?? 120_000
+          const maxBytes = 1024 * 1024
+          const rawResult = yield* appProcess
+            .run(prepared.command, {
+              combineOutput: false,
+              timeout: Duration.millis(timeoutMs),
+              maxOutputBytes: maxBytes + 128,
+              maxErrorBytes: maxBytes,
+            })
+            .pipe(
+              Effect.mapError(
+                (error) =>
+                  new CommandSandboxPolicy.Failure({
+                    code: "unavailable",
+                    message:
+                      error.cause instanceof Error && error.cause.message === "Timed out"
+                        ? `Sandboxed command exceeded timeout of ${timeoutMs} ms.`
+                        : `Sandboxed command failed to execute: ${error.message}`,
+                  }),
+              ),
+            )
+          const confirmed = prepared.confirm(rawResult)
+          if (!confirmed)
+            return yield* new CommandSandboxPolicy.Failure({
+              code: "unavailable",
+              message: "The command sandbox launch did not confirm policy application.",
+            })
+          backend.availability = "available"
+          return {
+            backend: backendKind === "bwrap" ? ("bwrap" as const) : ("seatbelt" as const),
+            profile: policy.profile,
+            network: policy.network,
+            allowDomains: policy.allowDomains ?? [],
+            exitCode: confirmed.exitCode,
+            stdout: confirmed.stdout,
+            stderr: confirmed.stderr,
+          }
+        }),
+      ),
   }
 })
 

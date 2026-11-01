@@ -137,6 +137,23 @@ export interface Interface {
   readonly get: (id: ID) => EffectRuntime.Effect<Request | undefined>
   readonly forSession: (sessionID: SessionV2.ID) => EffectRuntime.Effect<ReadonlyArray<Request>>
   readonly list: () => EffectRuntime.Effect<ReadonlyArray<Request>>
+  /** Evaluate static agent permissions plus project-saved rules without mutating or requiring a Session. */
+  readonly evaluateOffline: (input: {
+    readonly action: string
+    readonly resources: readonly string[]
+    readonly exactResource?: string
+    readonly agent?: AgentV2.ID | string
+  }) => EffectRuntime.Effect<{
+    readonly agent: string
+    readonly agentFound: boolean
+    readonly effect: Permission.Effect
+    readonly exactGranted: boolean
+    readonly segments: ReadonlyArray<{
+      readonly resource: string
+      readonly effect: Permission.Effect
+      readonly rule: Permission.Rule
+    }>
+  }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/Permission") {}
@@ -480,7 +497,68 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
     })
 
-    return Service.of({ capture, inspect, exact, ask, assert, reply, get, forSession, list })
+    const evaluateOffline = EffectRuntime.fn("PermissionV2.evaluateOffline")(function* (input: {
+      readonly action: string
+      readonly resources: readonly string[]
+      readonly exactResource?: string
+      readonly agent?: AgentV2.ID | string
+    }) {
+      const defaultAgent = yield* agents.default()
+      const requested = input.agent ?? defaultAgent?.id ?? AgentV2.defaultID
+      const resolved = yield* agents.resolve(requested)
+      const rules = resolved?.permissions ?? missingAgentPermissions
+      const savedList = yield* savedRules()
+      const all = [...rules, ...savedList]
+      const canonical = PermissionV1.canonicalPermission(input.action)
+      const wholeConfigured =
+        input.exactResource !== undefined ? evaluate(input.action, input.exactResource, rules) : undefined
+      const wholeAll = input.exactResource !== undefined ? evaluate(input.action, input.exactResource, all) : undefined
+      const wholeDeniedRule =
+        wholeConfigured?.effect === "deny" ? wholeConfigured : wholeAll?.effect === "deny" ? wholeAll : undefined
+      if (wholeDeniedRule && input.exactResource !== undefined) {
+        return {
+          agent: resolved?.id ?? String(requested),
+          agentFound: resolved !== undefined,
+          effect: "deny" as const,
+          exactGranted: false,
+          segments: [{ resource: input.exactResource, effect: "deny" as const, rule: wholeDeniedRule }],
+        }
+      }
+      const trimmedExact = input.exactResource?.trim()
+      const exactGranted =
+        trimmedExact !== undefined &&
+        !denied(input, rules) &&
+        !input.resources.some((resource) => evaluate(input.action, resource, all).effect === "deny") &&
+        savedList.some(
+          (rule) =>
+            rule.effect === "allow" &&
+            rule.resource === trimmedExact &&
+            PermissionV1.canonicalPermission(rule.action) === canonical,
+        )
+      const segments = input.resources.map((resource) => {
+        const configuredRule = evaluate(input.action, resource, rules)
+        const rule = configuredRule.effect === "deny" ? configuredRule : evaluate(input.action, resource, all)
+        return {
+          resource,
+          effect: exactGranted ? ("allow" as const) : rule.effect,
+          rule,
+        }
+      })
+      const effect: Permission.Effect = segments.some((item) => item.effect === "deny")
+        ? "deny"
+        : segments.some((item) => item.effect === "ask")
+          ? "ask"
+          : "allow"
+      return {
+        agent: resolved?.id ?? String(requested),
+        agentFound: resolved !== undefined,
+        effect,
+        exactGranted,
+        segments,
+      }
+    })
+
+    return Service.of({ capture, inspect, exact, ask, assert, reply, get, forSession, list, evaluateOffline })
   }),
 )
 
