@@ -8,6 +8,7 @@ import { Cause, Context, Effect, Exit, Fiber, FiberSet, Layer, Schema, Scope } f
 import { Mcp } from "@apexo/schema/mcp"
 import { McpEvent } from "@apexo/schema/mcp-event"
 import { CommandSandbox } from "./command-sandbox"
+import type { AgentV2 } from "./agent"
 import { Config } from "./config"
 import { EventV2 } from "./event"
 import { ConfigMCP } from "./config/mcp"
@@ -15,8 +16,12 @@ import { Location } from "./location"
 import { LocationRuntimeGuard } from "./location-runtime-guard"
 import { PermissionV2 } from "./permission"
 import { PluginBundleState } from "./plugin-bundle-state"
+import { SystemContext } from "./system-context/index"
 import { ToolRegistry } from "./tool/registry"
 import { Tools } from "./tool/tools"
+import { CodeModeTool } from "./tool/code-mode"
+import { ToolSearchTools } from "./tool/tool-search"
+import { McpToolIndex } from "./mcp-tool-index"
 import { McpTools } from "./mcp-tools"
 import { McpResources } from "./mcp-resources"
 import { McpOAuth } from "./mcp-oauth"
@@ -37,6 +42,9 @@ export interface Prepared {
 }
 export interface Interface {
   readonly status: Effect.Effect<Mcp.StatusMap>
+  readonly toolCatalog: Effect.Effect<ReadonlyArray<McpTools.CatalogEntry>>
+  readonly reconnecting: Effect.Effect<boolean>
+  readonly systemContext: (agent: AgentV2.Selection) => Effect.Effect<SystemContext.SystemContext>
   readonly authStart: (server: string) => Effect.Effect<Mcp.AuthenticationStart, Failure>
   readonly authCancel: (server: string, id: string) => Effect.Effect<void, Failure>
   readonly resourceServers: Effect.Effect<readonly string[]>
@@ -54,16 +62,42 @@ export interface Interface {
 }
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/MCP") {}
 
+interface ExposureDefaults {
+  readonly codemode?: boolean
+  readonly deferTools?: boolean
+}
+
 interface Connection {
   readonly client: Client
   readonly timeout: number
   readonly scope: Scope.Closeable
   readonly token: object
   readonly status: Mcp.Status
+  readonly mode: McpTools.ExposureMode
+  readonly catalog: ReadonlyArray<McpTools.CatalogEntry>
   readonly healthy: () => boolean
   readonly reconnectable: () => boolean
   readonly verify: () => void
   readonly commit: () => void
+}
+
+const envFlag = (name: string) => {
+  const value = process.env[name]?.trim().toLowerCase()
+  return value === "1" || value === "true"
+}
+
+const resolveExposureMode = (
+  server: typeof ConfigMCP.Server.Type,
+  defaults: ExposureDefaults,
+): McpTools.ExposureMode => {
+  const codemode = server.codemode ?? defaults.codemode ?? (envFlag("APEXO_EXPERIMENTAL_CODE_MODE") ? true : undefined)
+  if (codemode) return "codemode"
+  const defer =
+    server.defer_tools ??
+    defaults.deferTools ??
+    (!envFlag("APEXO_MCP_EAGER_TOOLS") && envFlag("APEXO_MCP_DEFER_TOOLS") ? true : undefined)
+  if (defer) return "deferred"
+  return "eager"
 }
 
 const close = (scope: Scope.Closeable) => Scope.close(scope, Exit.void)
@@ -86,6 +120,7 @@ const make = Effect.gen(function* () {
   const bundles = yield* PluginBundleState.Service
   const permission = yield* PermissionV2.Service
   const guard = yield* LocationRuntimeGuard.Service
+  const registry = yield* ToolRegistry.Service
   const tools = yield* Tools.Service
   const sandbox = yield* CommandSandbox.Service
   const lifetime = yield* Scope.Scope
@@ -116,6 +151,7 @@ const make = Effect.gen(function* () {
     status: Map<string, Mcp.Status>
     servers: Record<string, typeof ConfigMCP.Server.Type>
     defaults: ConfigMCP.Timeout
+    exposure: ExposureDefaults
     overrides: Map<string, boolean>
     preferenceError: boolean
   } = {
@@ -123,9 +159,26 @@ const make = Effect.gen(function* () {
     status: new Map(),
     servers: {},
     defaults: {},
+    exposure: {},
     overrides: new Map(),
     preferenceError: false,
   }
+
+  const toolCatalog = Effect.sync(() =>
+    [...current.connections.values()]
+      .filter((connection) => connection.healthy())
+      .flatMap((connection) => connection.catalog),
+  )
+  const reconnecting = Effect.sync(() => jobs.size > 0)
+  const codeModeTool = CodeModeTool.makeTool({ toolCatalog, permission })
+  const toolSearchTools = ToolSearchTools.makeTools({
+    toolCatalog,
+    reconnecting,
+    permission,
+    sandbox,
+    location,
+    registry,
+  })
 
   const notify = (server?: string) => {
     if (!stopped.value)
@@ -184,7 +237,7 @@ const make = Effect.gen(function* () {
                 )
                 if (!(choices.get(name) ?? !server.disabled)) return "credentials_ready" as const
                 const previous = current.connections.get(name)
-                const candidate = yield* prepareConnection(name, server, current.defaults)
+                const candidate = yield* prepareConnection(name, server, current.defaults, current.exposure)
                 return yield* preferences
                   .inspect((latest) =>
                     Effect.sync(() => {
@@ -230,6 +283,7 @@ const make = Effect.gen(function* () {
     name: string,
     server: typeof ConfigMCP.Server.Type,
     defaults: ConfigMCP.Timeout,
+    exposure: ExposureDefaults,
   ) {
     const ownership = { committed: false, open: true }
     const token = {}
@@ -375,7 +429,8 @@ const make = Effect.gen(function* () {
           if (page.cursor) cursors.add(page.cursor)
         } while (page.cursor)
       }
-      const entries = yield* Effect.tryPromise({
+      const mode = resolveExposureMode(server, exposure)
+      const catalog = yield* Effect.tryPromise({
         try: () =>
           Promise.all(
             definitions.map((definition) =>
@@ -389,6 +444,7 @@ const make = Effect.gen(function* () {
                 location,
                 sandbox,
                 remote: server.type === "remote",
+                mode,
                 active: () => ownership.committed && current.connections.get(name)?.token === token && alive.value,
               }),
             ),
@@ -400,13 +456,21 @@ const make = Effect.gen(function* () {
             message: "Invalid MCP tool schema",
           }),
       })
-      if (new Set(entries.map(([key]) => key)).size !== entries.length)
+      if (new Set(catalog.map((entry) => entry.key)).size !== catalog.length)
         return yield* new Failure({
           code: "invalid",
           server: name,
           message: "MCP server advertised duplicate tool names",
         })
-      const publish = yield* tools.prepare(Object.fromEntries(entries)).pipe(
+      const advertised =
+        catalog.length === 0
+          ? {}
+          : mode === "codemode"
+            ? { [CodeModeTool.NAME]: codeModeTool }
+            : mode === "deferred"
+              ? toolSearchTools
+              : Object.fromEntries(catalog.map((entry) => [entry.key, entry.tool]))
+      const publish = yield* tools.prepare(advertised).pipe(
         Effect.provideService(Scope.Scope, registration),
         Effect.mapError(
           () =>
@@ -428,7 +492,9 @@ const make = Effect.gen(function* () {
         client,
         timeout: server.timeout?.request ?? defaults.request ?? 30_000,
         token,
-        status: { status: "connected", tools: entries.length } as Mcp.Status,
+        status: { status: "connected", tools: catalog.length } as Mcp.Status,
+        mode,
+        catalog,
         healthy: () => ownership.open && alive.value,
         reconnectable: () => ownership.open && !alive.value,
         verify: () => {
@@ -455,6 +521,14 @@ const make = Effect.gen(function* () {
     const base = new Set(documents.slice(1).flatMap((document) => Object.keys(document.info.mcp?.servers ?? {})))
     const defaults = documents.reduce<ConfigMCP.Timeout>(
       (value, document) => ({ ...value, ...document.info.mcp?.timeout }),
+      {},
+    )
+    const exposure = documents.reduce<ExposureDefaults>(
+      (value, document) => ({
+        ...value,
+        ...(document.info.mcp?.codemode !== undefined ? { codemode: document.info.mcp.codemode } : {}),
+        ...(document.info.mcp?.defer_tools !== undefined ? { deferTools: document.info.mcp.defer_tools } : {}),
+      }),
       {},
     )
     const installed = new Set(Object.keys((yield* bundles.get).config.mcp ?? {}).filter((name) => !base.has(name)))
@@ -498,7 +572,7 @@ const make = Effect.gen(function* () {
         statuses.set(name, { status: "disabled", tools: 0 })
         continue
       }
-      const attempt = yield* prepareConnection(name, server, defaults).pipe(Effect.exit)
+      const attempt = yield* prepareConnection(name, server, defaults, exposure).pipe(Effect.exit)
       if (Exit.isSuccess(attempt)) {
         connections.set(name, attempt.value)
         statuses.set(name, attempt.value.status)
@@ -522,6 +596,7 @@ const make = Effect.gen(function* () {
         current.status = statuses
         current.servers = servers
         current.defaults = defaults
+        current.exposure = exposure
         current.overrides = choices
         current.preferenceError = Exit.isFailure(saved)
         notify()
@@ -598,7 +673,7 @@ const make = Effect.gen(function* () {
                 })
               const candidate =
                 enabled && (operation === "retry" || !previous?.healthy())
-                  ? yield* prepareConnection(name, server, current.defaults)
+                  ? yield* prepareConnection(name, server, current.defaults, current.exposure)
                   : undefined
               const publish = (values: ReadonlyMap<string, boolean>) =>
                 Effect.sync(() => {
@@ -891,7 +966,55 @@ const make = Effect.gen(function* () {
       }),
     )
 
+  const systemContext = (selection: AgentV2.Selection) =>
+    Effect.map(toolCatalog, (catalog) => {
+      const rules = selection.info?.permissions ?? []
+      const allowed = (action: string) => PermissionV2.evaluate(action, "*", rules).effect !== "deny"
+      const codemodeEntries = allowed(CodeModeTool.NAME)
+        ? catalog.filter((entry) => entry.mode === "codemode" && allowed(entry.key))
+        : []
+      const deferredEntries = allowed(McpToolIndex.SEARCH_TOOL)
+        ? catalog.filter((entry) => entry.mode === "deferred" && allowed(entry.key))
+        : []
+      const deferredReminder = deferredEntries.length ? McpToolIndex.serverReminder(deferredEntries) : undefined
+      const contexts = [
+        codemodeEntries.length
+          ? SystemContext.make({
+              key: SystemContext.Key.make("core/mcp-codemode"),
+              codec: Schema.toCodecJson(Schema.String),
+              load: Effect.succeed(CodeModeTool.describeCatalog(codemodeEntries)),
+              baseline: (text) => text,
+              update: (_previous, text) =>
+                ["The Code Mode MCP tool catalog has changed. This catalog supersedes the previous one.", text].join(
+                  "\n\n",
+                ),
+              removed: () =>
+                "Code Mode MCP tools are no longer connected. Do not call previously listed Code Mode tools.",
+            })
+          : undefined,
+        deferredReminder
+          ? SystemContext.make({
+              key: SystemContext.Key.make("core/mcp-deferred-servers"),
+              codec: Schema.toCodecJson(Schema.String),
+              load: Effect.succeed(
+                [deferredReminder, "Use `search_tool` to inspect tool schemas and `use_tool` to invoke them."].join(
+                  "\n",
+                ),
+              ),
+              baseline: (text) => text,
+              update: (_previous, text) => ["The connected deferred MCP servers have changed.", text].join("\n"),
+              removed: () =>
+                "Deferred MCP servers are no longer connected. Run `search_tool` before attempting any MCP tool call.",
+            })
+          : undefined,
+      ].filter((item): item is SystemContext.SystemContext => item !== undefined)
+      return contexts.length === 0 ? SystemContext.empty : SystemContext.combine(contexts)
+    })
+
   return Service.of({
+    toolCatalog,
+    reconnecting,
+    systemContext,
     resourceServers,
     resourceFence: (servers) =>
       Effect.gen(function* () {
@@ -978,6 +1101,7 @@ export const node = makeLocationNode({
     PluginBundleState.node,
     PermissionV2.node,
     LocationRuntimeGuard.node,
+    ToolRegistry.node,
     ToolRegistry.toolsNode,
     CommandSandbox.node,
   ],

@@ -48,6 +48,7 @@ import { MemoryContextNative } from "../../memory-context-native"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
+import { MCP } from "../../mcp"
 import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
@@ -158,6 +159,7 @@ const layer = Layer.effect(
     const systemContext = yield* SystemContextRegistry.Service
     const skillGuidance = yield* SkillGuidance.Service
     const referenceGuidance = yield* ReferenceGuidance.Service
+    const mcp = yield* MCP.Service
     const memory = yield* MemoryNative.Service
     const memoryContext = yield* MemoryContextNative.Service
     const hookSnapshot = yield* HookSnapshotLocation.Service
@@ -284,6 +286,7 @@ const layer = Layer.effect(
           systemContext.load(),
           skillGuidance.load(agent),
           referenceGuidance.load(),
+          mcp.systemContext(agent),
           memoryContext.load(sessionID, agent.id),
           Effect.succeed(stop),
           SessionTaskCompletion.Current.pipe(Effect.map(SessionTaskCompletion.context)),
@@ -1158,6 +1161,7 @@ export const node = makeLocationNode({
     SystemContextRegistry.node,
     SkillGuidance.node,
     ReferenceGuidance.node,
+    MCP.node,
     MemoryContextNative.node,
     MemoryNative.node,
     HookSnapshotLocation.node,

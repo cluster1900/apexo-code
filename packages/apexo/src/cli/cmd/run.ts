@@ -23,11 +23,19 @@ import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createApexoClient, type ApexoClient, type ToolPart } from "@apexo/sdk/v2/client"
 import { FormatError, FormatUnknownError } from "../error"
+import {
+  loadOutputSchema,
+  parseStructuredText,
+  validateRunOutputOptions,
+  writeLastMessage,
+  type LoadedOutputSchema,
+} from "../run-output-options"
 import { INTERACTIVE_INPUT_ERROR, readPipedStdin, resolveInteractiveStdin } from "./run/runtime.stdin"
 import { GrokBuildTools } from "@/tool/grok-build"
 import { Permission } from "@/permission"
 
 type ModelInput = Parameters<ApexoClient["session"]["prompt"]>[0]["model"]
+type PromptResponseData = NonNullable<Awaited<ReturnType<ApexoClient["session"]["prompt"]>>["data"]>
 
 function pick(value: string | undefined): ModelInput | undefined {
   if (!value) return undefined
@@ -205,6 +213,7 @@ const CompatibilityRunCommand = effectCmd({
     if ((args["session-protocol"] ?? "auto") !== "auto" && !args.attach)
       throw new Error("--session-protocol requires --attach; local terminal bootstrap uses compatibility")
     if (args.profile) process.env.APEXO_RUNTIME_PROFILE = args.profile
+    if (args.ephemeral && !args.attach && process.env.GROK_MEMORY === undefined) process.env.GROK_MEMORY = "0"
   },
   command: "run [message..]",
   describe: "run apexo with a message",
@@ -263,6 +272,20 @@ const CompatibilityRunCommand = effectCmd({
         choices: ["default", "json", "streaming-json"],
         default: "default",
         describe: "format: default (formatted), json (completed events), or streaming-json (streaming event JSONL)",
+      })
+      .option("output-schema", {
+        type: "string",
+        describe: "path to a JSON Schema file constraining the final assistant output",
+      })
+      .option("output-last-message", {
+        alias: ["o"],
+        type: "string",
+        describe: "write the final assistant message to a file",
+      })
+      .option("ephemeral", {
+        type: "boolean",
+        default: false,
+        describe: "run in a temporary session and delete it on exit without persisting session history",
       })
       .option("profile", {
         type: "string",
@@ -428,6 +451,22 @@ const CompatibilityRunCommand = effectCmd({
         die("--background-wait-timeout must be a positive integer number of seconds")
       }
 
+      try {
+        validateRunOutputOptions({
+          interactive,
+          command: args.command,
+          ephemeral: args.ephemeral,
+          session: args.session,
+          continue: args.continue,
+          fork: args.fork,
+          inputID: args["input-id"],
+          outputSchema: args["output-schema"],
+          outputLastMessage: args["output-last-message"],
+        })
+      } catch (error) {
+        die(error instanceof Error ? error.message : String(error))
+      }
+
       if (interactive) {
         try {
           resolveInteractiveStdin().cleanup?.()
@@ -439,6 +478,14 @@ const CompatibilityRunCommand = effectCmd({
       const replay = args.replay === false ? false : args.replay || args["replay-limit"] !== undefined
 
       const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
+      const outputSchemaSpec: LoadedOutputSchema | undefined = args["output-schema"]
+        ? await loadOutputSchema(args["output-schema"], root).catch((error) =>
+            die(error instanceof Error ? error.message : String(error)),
+          )
+        : undefined
+      const outputLastMessagePath = args["output-last-message"]
+        ? path.resolve(root, args["output-last-message"])
+        : undefined
       const directory = (() => {
         if (!args.dir) return args.attach ? undefined : root
         if (args.attach) return args.dir
@@ -763,6 +810,9 @@ const CompatibilityRunCommand = effectCmd({
                 auto,
                 thinking,
                 format: args.format,
+                outputSchema: outputSchemaSpec,
+                outputLastMessage: outputLastMessagePath,
+                ephemeral: args.ephemeral,
               })
             }
             if (args.fork) throw new Error("Fork is not available on the native terminal transport")
@@ -1160,6 +1210,9 @@ const CompatibilityRunCommand = effectCmd({
               await client.session.abort({ sessionID }).catch(() => undefined)
               await Promise.race([completed, Bun.sleep(3500)])
               stream.abort()
+              if (args.ephemeral) {
+                await client.session.delete({ sessionID }).catch(() => undefined)
+              }
               process.exit(signalCode)
             })()
           }
@@ -1167,10 +1220,22 @@ const CompatibilityRunCommand = effectCmd({
           const onSigterm = () => handleSignal("SIGTERM")
           process.once("SIGINT", onSigint)
           process.once("SIGTERM", onSigterm)
-          async function finish(responseData?: {
-            info?: { role?: string; agent?: string; modelID?: string }
-            parts?: Array<{ id: string; type: string; text?: string }>
-          }) {
+          const emitFailure = (msg: string, raw?: unknown) => {
+            if (printedErrors.has(msg)) return
+            printedErrors.add(msg)
+            if (args.format === "streaming-json") {
+              emit("error", { message: msg })
+              return
+            }
+            if (emit("error", raw !== undefined ? { error: raw } : { message: msg })) return
+            UI.error(msg)
+          }
+          const lastAssistantText = async (responseData?: PromptResponseData) => {
+            const messages = (await client.session.messages({ sessionID }).catch(() => undefined))?.data ?? []
+            const parts = messages.findLast((item) => item.info.role === "assistant")?.parts ?? responseData?.parts ?? []
+            return parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n")
+          }
+          async function finish(responseData?: PromptResponseData) {
             if (args.attach) {
               await Promise.race([completed, Bun.sleep(1500)])
               stream.abort()
@@ -1192,7 +1257,7 @@ const CompatibilityRunCommand = effectCmd({
                 if (part.type !== "text" || printedTextParts.has(part.id)) continue
                 printedTextParts.add(part.id)
                 if (emit("text", { part })) continue
-                const text = (part.text ?? "").trim()
+                const text = part.text.trim()
                 if (!text) continue
                 if (!process.stdout.isTTY) {
                   process.stdout.write(text + EOL)
@@ -1203,6 +1268,33 @@ const CompatibilityRunCommand = effectCmd({
                 UI.empty()
               }
             }
+            if (responseData?.info?.error) {
+              const rawError = responseData.info.error
+              const dataMsg = "data" in rawError && rawError.data && "message" in rawError.data ? String(rawError.data.message) : undefined
+              emitFailure(FormatError(rawError) ?? dataMsg ?? formatRunError(rawError), rawError)
+              process.exitCode = 1
+            }
+            if (process.exitCode === 1) return
+            if (outputSchemaSpec) {
+              const checked =
+                responseData?.info?.structured !== undefined
+                  ? outputSchemaSpec.validate(responseData.info.structured)
+                  : parseStructuredText(await lastAssistantText(responseData), outputSchemaSpec)
+              if (!checked.ok) {
+                emitFailure(checked.message)
+                process.exitCode = 1
+                return
+              }
+              const formattedJson = JSON.stringify(checked.value, null, 2)
+              if (responseData?.info?.structured !== undefined && printedTextParts.size === 0) {
+                if (!emit("structured_output", { output: checked.value })) {
+                  process.stdout.write(formattedJson + EOL)
+                }
+              }
+              if (outputLastMessagePath) await writeLastMessage(outputLastMessagePath, formattedJson + "\n")
+              return
+            }
+            if (outputLastMessagePath) await writeLastMessage(outputLastMessagePath, await lastAssistantText(responseData))
           }
 
           try {
@@ -1240,6 +1332,9 @@ const CompatibilityRunCommand = effectCmd({
               agent,
               model,
               variant: args.variant,
+              ...(outputSchemaSpec
+                ? { format: { type: "json_schema" as const, schema: outputSchemaSpec.schema } }
+                : {}),
               // The prompt is sent as typed; only --command arguments keep their shell-style quoting.
               parts: [...files, { type: "text", text: initialInput ?? "" }],
             })
@@ -1266,6 +1361,9 @@ const CompatibilityRunCommand = effectCmd({
             if (signalCode !== undefined) {
               await Promise.race([completed, Bun.sleep(3500)])
               process.exitCode = signalCode
+            }
+            if (args.ephemeral) {
+              await client.session.delete({ sessionID }).catch(() => undefined)
             }
           }
         }
@@ -1377,6 +1475,63 @@ export const RunCommand: typeof CompatibilityRunCommand = {
   },
 }
 
+type RunHandlerArgs = Parameters<NonNullable<typeof RunCommand.handler>>[0]
+
+function defaultRunArgs(subcommand: string): RunHandlerArgs {
+  return {
+    $0: "apexo",
+    _: [subcommand],
+    "--": [],
+    message: [],
+    command: undefined,
+    continue: undefined,
+    session: undefined,
+    "input-id": undefined,
+    inputId: undefined,
+    fork: undefined,
+    model: undefined,
+    agent: undefined,
+    format: "default",
+    "output-schema": undefined,
+    outputSchema: undefined,
+    "output-last-message": undefined,
+    outputLastMessage: undefined,
+    o: undefined,
+    ephemeral: false,
+    profile: undefined,
+    file: undefined,
+    title: undefined,
+    attach: undefined,
+    "session-protocol": "auto",
+    sessionProtocol: "auto",
+    password: undefined,
+    username: undefined,
+    dir: undefined,
+    port: undefined,
+    variant: undefined,
+    thinking: undefined,
+    "wait-for-background": true,
+    waitForBackground: true,
+    "background-wait-timeout": 600,
+    backgroundWaitTimeout: 600,
+    mini: false,
+    interactive: false,
+    replay: true,
+    "replay-limit": undefined,
+    replayLimit: undefined,
+    auto: false,
+    yolo: false,
+    "dangerously-skip-permissions": false,
+    dangerouslySkipPermissions: false,
+    demo: false,
+  }
+}
+
+export async function runHeadless(overrides: Partial<RunHandlerArgs> & { message: string[] }) {
+  if (!RunCommand.handler) throw new Error("Run command handler is unavailable")
+  await RunCommand.handler({ ...defaultRunArgs("review"), ...overrides })
+}
+
 type MiniCommandInput = {
   sessionProtocol?: "auto" | "native" | "compatibility"
   directory?: string
@@ -1397,43 +1552,23 @@ type MiniCommandInput = {
 export async function runMini(input: MiniCommandInput) {
   if (!RunCommand.handler) throw new Error("Mini command handler is unavailable")
   await RunCommand.handler({
-    $0: "apexo",
-    _: ["mini"],
+    ...defaultRunArgs("mini"),
     message: input.prompt ? [input.prompt] : [],
-    command: undefined,
     continue: input.continue,
     session: input.session,
-    "input-id": undefined,
-    inputId: undefined,
     fork: input.fork,
     model: input.model,
     agent: input.agent,
-    format: "default",
-    profile: undefined,
-    file: undefined,
-    title: undefined,
     attach: input.attach,
     "session-protocol": input.sessionProtocol ?? "auto",
     sessionProtocol: input.sessionProtocol ?? "auto",
     password: input.password,
     username: input.username,
     dir: input.directory,
-    port: undefined,
-    variant: undefined,
-    thinking: undefined,
-    "wait-for-background": true,
-    waitForBackground: true,
-    "background-wait-timeout": 600,
-    backgroundWaitTimeout: 600,
     mini: true,
-    interactive: false,
     replay: input.replay ?? true,
     "replay-limit": input.replayLimit,
     replayLimit: input.replayLimit,
-    auto: false,
-    yolo: false,
-    "dangerously-skip-permissions": false,
-    dangerouslySkipPermissions: false,
     demo: input.demo ?? false,
   })
 }

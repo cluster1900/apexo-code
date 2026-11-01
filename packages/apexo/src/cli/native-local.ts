@@ -29,6 +29,10 @@ export interface NativeLocalOptions {
   thinking?: boolean
   replay?: boolean
   "replay-limit"?: number
+  "output-schema"?: string
+  "output-last-message"?: string
+  o?: string
+  ephemeral?: boolean
 }
 
 export function validateNativeLocal(input: NativeLocalOptions) {
@@ -42,6 +46,9 @@ export function validateNativeLocal(input: NativeLocalOptions) {
     ["--port", input.port !== undefined],
     ["--auto", input.auto || input.yolo || input["dangerously-skip-permissions"]],
     ["--format", input.format !== undefined && input.format !== "default"],
+    ["--output-schema", input["output-schema"] !== undefined],
+    ["--output-last-message", (input["output-last-message"] ?? input.o) !== undefined],
+    ["--ephemeral", input.ephemeral],
   ].find((entry) => entry[1])?.[0]
   if (unsupported) throw new Error(`${unsupported} is not available for native local interactive startup`)
   if (input["replay-limit"] !== undefined && (!Number.isInteger(input["replay-limit"]) || input["replay-limit"] <= 0))
@@ -57,7 +64,20 @@ export async function nativeLocalDirectory(directory?: string) {
 export async function runNativeLocalMini(input: NativeLocalOptions) {
   if (!input.mini) {
     const { runNativeHeadless, validateNativeInputID } = await import("./native-headless")
+    const { loadOutputSchema, validateRunOutputOptions } = await import("./run-output-options")
+    const rawLastMessage = input["output-last-message"] ?? input.o
     validateNativeInputID({ inputID: input["input-id"], session: input.session, continue: input.continue })
+    validateRunOutputOptions({
+      interactive: false,
+      command: input.command,
+      ephemeral: input.ephemeral,
+      session: input.session,
+      continue: input.continue,
+      fork: input.fork,
+      inputID: input["input-id"],
+      outputSchema: input["output-schema"],
+      outputLastMessage: rawLastMessage,
+    })
     const unsupported = [
       ["--fork", input.fork],
       ["--command", input.command !== undefined],
@@ -73,6 +93,11 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
       throw new Error("Unsupported native output format")
     const parts = input.model?.split("/")
     if (parts && (!parts[0] || !parts.slice(1).join("/"))) throw new Error("Model must use provider/model syntax")
+    const callerRoot = path.resolve(process.env.PWD ?? process.cwd())
+    const outputSchema = input["output-schema"]
+      ? await loadOutputSchema(input["output-schema"], callerRoot)
+      : undefined
+    const outputLastMessage = rawLastMessage ? path.resolve(callerRoot, rawLastMessage) : undefined
     const directory = await nativeLocalDirectory(input.dir)
     const positional = [...(input.message ?? []), ...(input["--"] ?? [])].join(" ")
     const text = [
@@ -89,6 +114,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
         })()
       : []
     if (!text.trim() && !files.length) throw new Error("A new prompt or file is required for native headless execution")
+    if (input.ephemeral && process.env.GROK_MEMORY === undefined) process.env.GROK_MEMORY = "0"
     process.chdir(directory)
     const { createNativeLocalHost } = await import("./native-local-host")
     const host = createNativeLocalHost(undefined, true)
@@ -108,6 +134,9 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
         format,
         thinking: input.thinking,
         auto: input.auto || input.yolo || input["dangerously-skip-permissions"],
+        outputSchema,
+        outputLastMessage,
+        ephemeral: input.ephemeral,
       })
     } finally {
       await host.close()

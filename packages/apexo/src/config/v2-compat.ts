@@ -40,6 +40,7 @@ const Server = Schema.Union([
     environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
     disabled: Schema.optional(Schema.Boolean),
     codemode: Schema.optional(Schema.Boolean),
+    defer_tools: Schema.optional(Schema.Boolean),
     timeout: Schema.optional(Timeout),
   }),
   Schema.Struct({
@@ -49,6 +50,7 @@ const Server = Schema.Union([
     oauth: Schema.optional(Schema.Union([OAuth, Schema.Literal(false)])),
     disabled: Schema.optional(Schema.Boolean),
     codemode: Schema.optional(Schema.Boolean),
+    defer_tools: Schema.optional(Schema.Boolean),
     timeout: Schema.optional(Timeout),
   }),
 ])
@@ -263,6 +265,10 @@ function normalizeMcp(input: Record<string, unknown>, result: Record<string, unk
   for (const [name, value] of Object.entries(mcp.value)) {
     if (name === "servers" && envelope) continue
     if (name === "timeout" && globalTimeout) continue
+    if ((name === "codemode" || name === "defer_tools") && typeof value === "boolean") {
+      unsupported(["mcp", name], diagnostics)
+      continue
+    }
     const path = ["mcp", name]
     const record = decodeRecord(value)
     const oauth = Option.isSome(record) ? decodeRecord(record.value.oauth) : Option.none()
@@ -270,6 +276,7 @@ function normalizeMcp(input: Record<string, unknown>, result: Record<string, unk
       Option.isSome(record) &&
       (Object.hasOwn(record.value, "disabled") ||
         Object.hasOwn(record.value, "codemode") ||
+        Object.hasOwn(record.value, "defer_tools") ||
         typeof record.value.timeout === "object" ||
         (Option.isSome(oauth) &&
           ["client_id", "client_secret", "callback_port", "redirect_uri"].some((key) =>
@@ -326,6 +333,7 @@ function normalizeServer(input: unknown, path: string[], diagnostics: Diagnostic
   const server = decodeValue(Server, input, path, diagnostics)
   if (server === undefined) return
   if (server.codemode !== undefined) unsupported([...path, "codemode"], diagnostics)
+  if (server.defer_tools !== undefined) unsupported([...path, "defer_tools"], diagnostics)
   if (server.timeout && lowerTimeout(server.timeout) === undefined && Object.keys(server.timeout).length)
     unsupported([...path, "timeout"], diagnostics)
   const raw = decodeRecord(input)
@@ -377,6 +385,7 @@ function lowerServer(input: Schema.Schema.Type<typeof Server>) {
   }
   delete result.disabled
   delete result.codemode
+  delete result.defer_tools
   delete result.timeout
 
   if (input.timeout) {
