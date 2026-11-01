@@ -11,6 +11,36 @@ export * as ShellEnvironment from "./shell-environment"
 
 import { Context, Effect, Layer, Scope } from "effect"
 import { makeLocationNode } from "./effect/app-node"
+import { Wildcard } from "./util/wildcard"
+
+const SECRET_ENV_PATTERN =
+  /(?:^|_)(?:API_KEY|APIKEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY|CLIENT_SECRET)(?:_|$)|^PGPASSWORD$|^MYSQL_PWD$/i
+
+export function isSensitiveName(name: string): boolean {
+  return SECRET_ENV_PATTERN.test(name)
+}
+
+export function subprocessEnv(
+  overrides: Readonly<Record<string, string>>,
+  options?: {
+    readonly scrub?: boolean
+    readonly allow?: readonly string[]
+    readonly base?: NodeJS.ProcessEnv
+  },
+): Record<string, string> {
+  const base = options?.base ?? process.env
+  const scrub = options?.scrub !== false
+  const allow = options?.allow ?? []
+  const inherited = Object.entries(base).filter(
+    (entry): entry is [string, string] =>
+      typeof entry[1] === "string" &&
+      (!scrub || !isSensitiveName(entry[0]) || allow.some((pattern) => Wildcard.match(entry[0], pattern))),
+  )
+  return {
+    ...Object.fromEntries(inherited),
+    ...overrides,
+  }
+}
 
 export interface Event {
   readonly cwd: string
