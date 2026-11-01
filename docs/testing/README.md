@@ -6,6 +6,7 @@ Each record must include: a stable ID, affected scope, observed vs. expected beh
 
 | Category       | Record                                                                                          | Status                        | Verified Occurrences |
 | -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- | -------------------- |
+| Types | [CI `apexo#typecheck` rejected `JSON.parse(searched.result.value)` without `typeof === "string"` narrowing](types/tool-result-value-string-narrowing.md) | Fixed; `mcp-codemode-toolsearch.test.ts` 2/2, `mcp-serve.test.ts` 3/3, and `typecheck` 21/21 pass | 1 |
 | Test stability | [`pty-process.test.ts` concurrent worker watchdog clipped steady repetition #9/10 at 20s under macOS batch load](test-stability/pty-worker-watchdog-headroom.md) | Fixed; standalone `pty-process.test.ts` 3/3 and `APEXO_TEST_SHARD=1/6` (batches 1, 7, 13) pass | 1 |
 | Runtime | [`apexo mcp serve` ignored `stdin` EOF and waited for `SIGTERM` on client close](runtime/mcp-serve-stdin-eof.md) | Fixed; real subprocess stdio E2E 3/3, V2 scrub/doom-loop 2/2, and `typecheck` 21/21 pass | 1 |
 | Test stability | [App browser and E2E scripts target missing test paths](test-stability/app-browser-script-missing.md) | Fixed; browser 107/107 and E2E smoke 1/1 pass | 1 |

@@ -296,7 +296,8 @@ it.live(
 
           const searched = yield* invoke("search_tool", { query: "add two numbers sum" })
           expect(searched.result.type).toBe("text")
-          if (searched.result.type === "text") {
+          expect(typeof searched.result.value).toBe("string")
+          if (searched.result.type === "text" && typeof searched.result.value === "string") {
             const parsed = JSON.parse(searched.result.value) as {
               results: Array<{ server: string; tools: Array<{ tool_name: string; input_schema: { required?: string[] } }> }>
               total_hidden_tools: number

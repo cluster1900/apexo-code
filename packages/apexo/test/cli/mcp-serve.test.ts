@@ -535,7 +535,8 @@ it.live(
           })
 
           expect(settled.result.type).toBe("text")
-          if (settled.result.type === "text") {
+          expect(typeof settled.result.value).toBe("string")
+          if (settled.result.type === "text" && typeof settled.result.value === "string") {
             expect(settled.result.value).toContain("tools.worker.apexo_review")
             expect(settled.result.value).toContain('"sameSession": true')
             expect(settled.result.value).toContain("WORKER_STEP_1_DONE")
