@@ -1,4 +1,5 @@
 import { cmd } from "./cmd"
+import { McpServeCommand } from "./mcp-serve"
 import { ConfigV1 } from "@apexo/core/v1/config/config"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 import { Cause } from "effect"
@@ -104,6 +105,7 @@ export const McpCommand = cmd({
       .command(McpAuthCommand)
       .command(McpLogoutCommand)
       .command(McpDebugCommand)
+      .command(McpServeCommand)
       .demandCommand(),
   async handler() {},
 })

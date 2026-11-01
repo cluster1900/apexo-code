@@ -121,6 +121,19 @@ import { llmClient } from "../../effect/app-node-platform"
  * explicit loop starts the next provider turn after local settlement. Configured agent step limits bound the loop.
  */
 
+const DOOM_LOOP_THRESHOLD = 3
+const DOOM_LOOP_EXEMPT_TOOLS = new Set(["process_wait", "process_output", "task_wait", "task_output"])
+
+function canonicalToolInput(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalToolInput).join(",")}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record)
+    .toSorted()
+    .flatMap((key) => (record[key] === undefined ? [] : [`${JSON.stringify(key)}:${canonicalToolInput(record[key])}`]))
+    .join(",")}}`
+}
+
 // A durable ready row is evidence, not permission to restart a continuation after a drain closes.
 const CompletionAdmission = Context.Reference<boolean>("@apexo/CompletionAdmission", { defaultValue: () => false })
 
@@ -426,6 +439,18 @@ const layer = Layer.effect(
           )
           const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
           const context = entries.map((entry) => entry.message)
+          const lastInputIndex = context.findLastIndex(
+            (message) => message.type === "user" || message.type === "synthetic" || message.type === "shell",
+          )
+          const recentToolCalls = context
+            .slice(lastInputIndex + 1)
+            .flatMap((message) => (message.type === "assistant" ? message.content : []))
+            .filter(
+              (part): part is Extract<typeof part, { readonly type: "tool" }> =>
+                part.type === "tool" && part.provider?.executed !== true && part.state.status !== "pending",
+            )
+            .map((part) => ({ name: part.name, key: canonicalToolInput(part.state.input) }))
+          let doomLoopHalted = false
           const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
           const baseTools =
             isLastStep || summaryRole
@@ -560,27 +585,73 @@ const layer = Layer.effect(
                 }
                 needsContinuation = true
                 const assistantMessageID = yield* publisher.assistantMessageID(event.id)
+                const streak = DOOM_LOOP_EXEMPT_TOOLS.has(event.name)
+                  ? 0
+                  : (() => {
+                      const key = canonicalToolInput(event.input)
+                      recentToolCalls.push({ name: event.name, key })
+                      const mismatch = recentToolCalls.findLastIndex(
+                        (item) => item.name !== event.name || item.key !== key,
+                      )
+                      return recentToolCalls.length - 1 - mismatch
+                    })()
                 const execute = Effect.uninterruptibleMask((restore) =>
-                  restore(
-                    toolMaterialization.settle({
-                      sessionID: session.id,
-                      agent: agent.id,
-                      assistantMessageID,
-                      call: event,
-                    }),
-                  ).pipe(
-                    Effect.flatMap((settlement) =>
-                      publish(
-                        LLMEvent.toolResult({
-                          id: event.id,
-                          name: event.name,
-                          result: settlement.result,
-                          output: settlement.output,
-                        }),
-                        settlement.outputPaths ?? [],
-                      ),
-                    ),
-                  ),
+                  Effect.gen(function* () {
+                    if (streak >= DOOM_LOOP_THRESHOLD) {
+                      const blocked = yield* restore(
+                        permission
+                          .assert({
+                            action: "doom_loop",
+                            resources: [event.name],
+                            save: [event.name],
+                            metadata: { tool: event.name, input: event.input },
+                            sessionID: session.id,
+                            agent: agent.id,
+                            source: { type: "tool", messageID: assistantMessageID, callID: event.id },
+                          })
+                          .pipe(
+                            Effect.as<string | undefined>(undefined),
+                            Effect.catchTags({
+                              "PermissionV2.BlockedError": () =>
+                                Effect.sync(() => {
+                                  if (streak > DOOM_LOOP_THRESHOLD) doomLoopHalted = true
+                                  return `Repeated identical tool call blocked (doom_loop): "${event.name}" was called ${streak} consecutive times with identical input. Change your approach or conclude with what you know.`
+                                }),
+                              "PermissionV2.CorrectedError": (error) =>
+                                Effect.succeed(`Repeated identical tool call rejected: ${error.feedback}`),
+                              "Session.NotFoundError": () => Effect.succeed("Session is no longer available"),
+                            }),
+                          ),
+                      )
+                      if (blocked !== undefined) {
+                        yield* publish(
+                          LLMEvent.toolResult({
+                            id: event.id,
+                            name: event.name,
+                            result: { type: "error", value: blocked },
+                          }),
+                        )
+                        return
+                      }
+                    }
+                    const settlement = yield* restore(
+                      toolMaterialization.settle({
+                        sessionID: session.id,
+                        agent: agent.id,
+                        assistantMessageID,
+                        call: event,
+                      }),
+                    )
+                    yield* publish(
+                      LLMEvent.toolResult({
+                        id: event.id,
+                        name: event.name,
+                        result: settlement.result,
+                        output: settlement.output,
+                      }),
+                      settlement.outputPaths ?? [],
+                    )
+                  }),
                 ).pipe(Effect.provideService(PermissionV2.Inherited, authority))
                 // A mode transition sees the complete provider batch and settled ordinary tools.
                 if (SessionPlan.transition(event.name)) {
@@ -681,12 +752,12 @@ const layer = Layer.effect(
               if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
                 return yield* Effect.failCause(settled.cause)
               return {
-                needsContinuation: !publisher.hasProviderError() && needsContinuation,
+                needsContinuation: !publisher.hasProviderError() && !doomLoopHalted && needsContinuation,
                 step: currentStep,
                 failed: publisher.hasProviderError() || (execution !== undefined && !stepSettlement),
-                normalStop: !isLastStep && stepSettlement?.finish === "stop",
+                normalStop: !isLastStep && !doomLoopHalted && stepSettlement?.finish === "stop",
                 finish: stepSettlement?.finish,
-                turnLimit: isLastStep,
+                turnLimit: isLastStep || doomLoopHalted,
                 usageIncomplete: !stepSettlement,
               }
             }),

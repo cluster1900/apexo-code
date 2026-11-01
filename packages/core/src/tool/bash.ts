@@ -291,7 +291,7 @@ const layer = Layer.effectDiscard(
                   command: rawCommand,
                   cwd: target.canonical,
                 })
-                // Plugin shell.env variables extend the host environment; sandboxed commands keep their fixed environment.
+                // Plugin shell.env variables extend the scrubbed host environment; sandboxed commands keep their fixed environment.
                 const env = confined
                   ? {}
                   : yield* shellEnvironment.resolve({
@@ -299,7 +299,15 @@ const layer = Layer.effectDiscard(
                       sessionID: context.sessionID,
                       callID: context.toolCallID,
                     })
-                const extraEnv = Object.keys(env).length ? { env, extendEnv: true } : {}
+                const extraEnv = confined
+                  ? {}
+                  : {
+                      env: ShellEnvironment.subprocessEnv(env, {
+                        scrub: settings?.scrub_env,
+                        allow: settings?.env_allow,
+                      }),
+                      extendEnv: false,
+                    }
                 const powershell = kind === "powershell"
                 const invocation = BashApproval.invocation(shell, rawCommand)
                 const command =

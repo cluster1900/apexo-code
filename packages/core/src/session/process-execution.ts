@@ -6,6 +6,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { SessionProcess } from "@apexo/schema/session-process"
 import { BackgroundJob } from "../background-job"
 import { CommandSandbox } from "../command-sandbox"
+import { Config } from "../config"
 import { makeLocationNode } from "../effect/app-node"
 import { Location } from "../location"
 import { AppProcess } from "../process"
@@ -36,6 +37,7 @@ const make = Effect.gen(function* () {
   const sandbox = yield* CommandSandbox.Service
   const appProcess = yield* AppProcess.Service
   const location = yield* Location.Service
+  const config = yield* Config.Service
   const shellEnvironment = yield* ShellEnvironment.Service
   const ownerships = new Map<Scope.Closeable, SessionProcess.ID>()
   const lifetime = { closed: false }
@@ -186,6 +188,7 @@ const make = Effect.gen(function* () {
                     cwd: input.request.cwd,
                   })
                   // Plugin shell.env variables are resolved at spawn time and never persisted with the request.
+                  const settings = Config.latest(yield* config.entries(), "toolset")?.bash
                   const env = confined
                     ? {}
                     : yield* shellEnvironment.resolve({
@@ -201,7 +204,11 @@ const make = Effect.gen(function* () {
                       stdin: "ignore",
                       detached: process.platform !== "win32",
                       forceKillAfter: Duration.seconds(3),
-                      ...(Object.keys(env).length ? { env, extendEnv: true } : {}),
+                      env: ShellEnvironment.subprocessEnv(env, {
+                        scrub: settings?.scrub_env,
+                        allow: settings?.env_allow,
+                      }),
+                      extendEnv: false,
                     })
                   // A coalesced dirty signal gives quiet processes a trailing write without polling storage.
                   const ticker = yield* Effect.forever(
@@ -333,6 +340,7 @@ export const node = makeLocationNode({
     SessionGoal.node,
     BackgroundJob.node,
     CommandSandbox.node,
+    Config.node,
     AppProcess.node,
     Location.node,
   ],

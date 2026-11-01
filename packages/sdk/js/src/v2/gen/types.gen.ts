@@ -2207,6 +2207,8 @@ export type Config = {
       default_block_until_ms?: number
       max_block_until_ms?: number
       max_timeout_secs?: number
+      scrub_env?: boolean
+      env_allow?: Array<string>
     }
   }
   grok_media?: {

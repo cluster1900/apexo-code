@@ -26,6 +26,14 @@ export const Bash = Schema.Struct({
     description:
       "Additional Grok Shell foreground wait ceiling in seconds. Positive values round to milliseconds with a 1ms minimum and 10-hour maximum; non-positive or omitted values add no limit. Does not shorten background execution.",
   }),
+  scrub_env: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Remove sensitive host credential variables (such as *_API_KEY, *_SECRET, *_TOKEN, and *_PASSWORD) from unconfined shell subprocesses. Defaults to true.",
+  }),
+  env_allow: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Environment variable names or * wildcard patterns preserved from the host environment when scrub_env is enabled.",
+  }),
 })
 
 export type Bash = Schema.Schema.Type<typeof Bash>

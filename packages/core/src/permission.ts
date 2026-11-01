@@ -277,6 +277,7 @@ const layer = Layer.effect(
       const action = PermissionV1.canonicalPermission(input.action)
       if (SessionExecutionPolicy.unsupported.has(action)) return { ...result, effect: "deny" as const }
       if (result.effect !== "ask") return result
+      if (action === "doom_loop") return { ...result, effect: "deny" as const }
       return { ...result, effect: policy.permissions === "approve_once" ? ("allow" as const) : ("deny" as const) }
     })
 

@@ -8,6 +8,7 @@ import { InstanceState } from "@/effect/instance-state"
 import type { Node } from "web-tree-sitter"
 
 import { FSUtil } from "@apexo/core/fs-util"
+import { ShellEnvironment } from "@apexo/core/shell-environment"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@apexo/core/shell"
@@ -426,12 +427,18 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      const configured = (yield* config.get()).env ?? {}
-      return {
-        ...process.env,
-        ...configured,
-        ...extra.env,
-      }
+      const cfg = yield* config.get()
+      const configured = cfg.env ?? {}
+      return ShellEnvironment.subprocessEnv(
+        {
+          ...configured,
+          ...extra.env,
+        },
+        {
+          scrub: cfg.toolset?.bash?.scrub_env,
+          allow: cfg.toolset?.bash?.env_allow,
+        },
+      )
     })
 
     const run = Effect.fn("ShellTool.run")(function* (
