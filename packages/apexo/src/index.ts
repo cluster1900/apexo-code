@@ -2,6 +2,7 @@ import "@apexo/core/flag/apexo-env"
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"
+import { ReviewCommand } from "./cli/cmd/review"
 import { GenerateCommand } from "./cli/cmd/generate"
 import { ProvidersCommand } from "./cli/cmd/providers"
 import { AgentCommand } from "./cli/cmd/agent"
@@ -117,6 +118,7 @@ const cli = yargs(args)
   .command(TuiThreadCommand)
   .command(AttachCommand)
   .command(RunCommand)
+  .command(ReviewCommand)
   .command(GenerateCommand)
   .command(DebugCommand)
   .command(ProvidersCommand)

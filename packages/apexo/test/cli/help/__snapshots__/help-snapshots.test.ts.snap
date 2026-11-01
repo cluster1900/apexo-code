@@ -102,6 +102,11 @@ Options:
       --format                   format: default (formatted), json (completed events), or
                                  streaming-json (streaming event JSONL)
                         [string] [choices: "default", "json", "streaming-json"] [default: "default"]
+      --output-schema            path to a JSON Schema file constraining the final assistant output
+                                                                                            [string]
+  -o, --output-last-message      write the final assistant message to a file                [string]
+      --ephemeral                run in a temporary session and delete it on exit without persisting
+                                 session history                          [boolean] [default: false]
   -f, --file                     file(s) to attach to message                                [array]
       --title                    title for the session (uses truncated prompt if no value provided)
                                                                                             [string]
@@ -125,6 +130,57 @@ Options:
                                                                           [boolean] [default: false]
       --auto                     auto-approve permissions that are not explicitly denied
                                  (dangerous!)                             [boolean] [default: false]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo review --help 1`] = `
+"apexo review [prompt..]
+
+run a non-interactive code review
+
+Positionals:
+  prompt  optional custom review focus or instructions                         [array] [default: []]
+
+Options:
+  -h, --help                     show help                                                 [boolean]
+  -v, --version                  show version number                                       [boolean]
+      --print-logs               print logs to stderr                                      [boolean]
+      --log-level                log level      [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure                     run without external plugins                              [boolean]
+      --memory                   enable memory; --no-memory force-disables it for this process
+                                                                                           [boolean]
+      --uncommitted              review staged, unstaged, and untracked working tree changes
+                                                                          [boolean] [default: false]
+      --base                     review changes against a base branch or git ref            [string]
+      --commit                   review the changes introduced by a commit                  [string]
+      --pr                       review a pull request by number or URL                     [string]
+      --title                    optional commit or PR title for review context             [string]
+  -m, --model                    model to use in the format of provider/model               [string]
+      --variant                  model variant (provider-specific reasoning effort, e.g., high, max,
+                                 minimal)                                                   [string]
+      --agent                    agent to use                                               [string]
+      --dir                      directory to run in, path on remote server if attaching    [string]
+      --attach                   attach to a running apexo server (e.g., http://localhost:4096)
+                                                                                            [string]
+      --session-protocol         Session API transport (native also enables local execution)
+                                      [choices: "auto", "native", "compatibility"] [default: "auto"]
+  -p, --password                 basic auth password (defaults to APEXO_SERVER_PASSWORD)    [string]
+  -u, --username                 basic auth username (defaults to APEXO_SERVER_USERNAME or 'apexo')
+                                                                                            [string]
+      --format                   format: default (formatted), json (completed events), or
+                                 streaming-json (streaming event JSONL)
+                        [string] [choices: "default", "json", "streaming-json"] [default: "default"]
+      --output-schema            path to a JSON Schema file constraining the final review output
+                                                                                            [string]
+  -o, --output-last-message      write the final review message to a file                   [string]
+      --ephemeral                run in a temporary session and delete it on exit without persisting
+                                 session history                          [boolean] [default: false]
+      --thinking                 show thinking blocks                                      [boolean]
+      --auto                     auto-approve permissions that are not explicitly denied
+                                 (dangerous!)                             [boolean] [default: false]
+      --wait-for-background      wait for background work started during the review
+                                                                           [boolean] [default: true]
+      --background-wait-timeout  seconds to wait for background work after the latest turn ends
+                                 before stopping it and exiting 1            [number] [default: 600]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo debug --help 1`] = `

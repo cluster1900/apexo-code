@@ -64,6 +64,7 @@
     "@ai-sdk/provider": "3.0.16",
     "@ai-sdk/provider-utils": "4.0.51",
     "@ai-sdk/xai": "3.0.139",
+    "@apexo/codemode": "workspace:*",
     "@apexo/effect-drizzle-sqlite": "workspace:*",
     "@apexo/effect-sqlite-node": "workspace:*",
     "@apexo/llm": "workspace:*",

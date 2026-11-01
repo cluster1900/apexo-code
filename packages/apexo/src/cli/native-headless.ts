@@ -4,6 +4,13 @@ import { SessionMessage } from "@apexo/schema/session-message"
 import { SessionInput } from "@apexo/schema/session-input"
 import { nativeSessionTransport } from "@apexo/tui/transport/native-session"
 import { nativeHeadlessOutput } from "./native-headless-output"
+import {
+  appendOutputSchemaPrompt,
+  parseStructuredText,
+  validateRunOutputOptions,
+  writeLastMessage,
+  type LoadedOutputSchema,
+} from "./run-output-options"
 import type { RunInput } from "./cmd/run/types"
 
 export function validateNativeInputID(input: {
@@ -32,9 +39,18 @@ export async function runNativeHeadless(input: {
   auto?: boolean
   thinking?: boolean
   format: "default" | "json" | "streaming-json"
+  outputSchema?: LoadedOutputSchema
+  outputLastMessage?: string
+  ephemeral?: boolean
   dispose?: () => Promise<void>
 }) {
   validateNativeInputID(input)
+  validateRunOutputOptions({
+    ephemeral: input.ephemeral,
+    session: input.session,
+    continue: input.continue,
+    inputID: input.inputID,
+  })
   if (!input.text.trim() && !input.files.length)
     throw new Error("A new prompt or file is required for native headless execution")
   const requests = new AbortController()
@@ -45,6 +61,7 @@ export async function runNativeHeadless(input: {
     cleanupConfirmed: false,
     cleanupFailed: false,
     identity: undefined as { sessionID: string; inputID: string } | undefined,
+    ephemeralSessionID: undefined as string | undefined,
   }
   let cancel: (() => Promise<void>) | undefined
   const interrupt = () => {
@@ -92,6 +109,7 @@ export async function runNativeHeadless(input: {
       return
     }
     const session = existing ?? (await transport.create({ agent, model: selected }, AbortSignal.timeout(10000)))
+    if (!existing && input.ephemeral) state.ephemeralSessionID = session.id
     if (existing && input.agent && input.agent !== existing.agent)
       await transport.switchAgent({ sessionID: session.id, agent: input.agent }, AbortSignal.timeout(10000))
     if (existing && (input.model || input.variant) && selected)
@@ -170,11 +188,14 @@ export async function runNativeHeadless(input: {
           output.apply(value)
       }
     }
+    const promptText = input.outputSchema
+      ? appendOutputSchemaPrompt(input.text, input.outputSchema.rawText)
+      : input.text
     const request = {
       sessionID: session.id,
       id: inputID,
       prompt: {
-        text: input.text,
+        text: promptText,
         ...(input.files.length
           ? { files: input.files.map((file) => ({ uri: file.url, mime: file.mime, name: file.filename })) }
           : {}),
@@ -232,7 +253,33 @@ export async function runNativeHeadless(input: {
       await replay(execution.endedSeq)
       if (waited.timedOut) continue
       output.finish(execution)
-      process.exitCode = execution.status === "completed" ? 0 : 1
+      if (execution.status !== "completed") {
+        process.exitCode = 1
+        return
+      }
+      const lastText = output.lastMessage() ?? ""
+      if (input.outputSchema) {
+        const checked = parseStructuredText(lastText, input.outputSchema)
+        if (!checked.ok) {
+          if (input.format === "default") process.stderr.write(`${checked.message}\n`)
+          if (input.format !== "default")
+            process.stdout.write(
+              JSON.stringify(
+                input.format === "json"
+                  ? { type: "error", timestamp: Date.now(), sessionID: session.id, message: checked.message }
+                  : { type: "error", message: checked.message },
+              ) + "\n",
+            )
+          process.exitCode = 1
+          return
+        }
+        if (input.outputLastMessage)
+          await writeLastMessage(input.outputLastMessage, JSON.stringify(checked.value, null, 2) + "\n")
+        process.exitCode = 0
+        return
+      }
+      if (input.outputLastMessage) await writeLastMessage(input.outputLastMessage, lastText)
+      process.exitCode = 0
       return
     }
   } catch (error) {
@@ -261,6 +308,11 @@ export async function runNativeHeadless(input: {
     streamOwner.abort()
     try {
       await stream
+      if (state.ephemeralSessionID) {
+        await input.sdk.v2.session
+          .remove({ sessionID: state.ephemeralSessionID }, { signal: AbortSignal.timeout(10000) })
+          .catch(() => {})
+      }
       await input.dispose?.()
       if (state.signal && state.cleanupConfirmed) process.exitCode = state.signal === "SIGINT" ? 130 : 143
     } finally {

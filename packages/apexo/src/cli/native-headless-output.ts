@@ -33,6 +33,18 @@ export function nativeHeadlessOutput(input: {
     get sequence() {
       return view.sequence
     },
+    lastMessage() {
+      const messages = view
+        .snapshot()
+        .filter((item) => item.info.role === "assistant" && item.info.parentID === input.inputID)
+      for (const message of messages.toReversed()) {
+        const text = message.parts
+          .flatMap((part) => (part.type === "text" && part.text.length > 0 ? [part.text] : []))
+          .join("\n")
+        if (text.length > 0) return text
+      }
+      return undefined
+    },
     apply(value: unknown) {
       if (
         typeof value !== "object" ||
