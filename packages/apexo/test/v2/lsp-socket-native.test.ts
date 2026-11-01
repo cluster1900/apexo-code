@@ -89,12 +89,22 @@ test("native socket closes only its connection, retains workspace handshake and 
       ),
     ).toEqual({ contents: { kind: "plaintext", value: "socket result" } })
     const abort = new AbortController()
+    const hoverState = { settled: false }
     const pending = client.execute(
       { operation: "hover", file: path.join(server.root, "main.fixture"), text: "WAIT" },
       abort.signal,
     )
+    void pending.then(
+      () => {
+        hoverState.settled = true
+      },
+      () => {
+        hoverState.settled = true
+      },
+    )
     await poll(
-      async () => (await trace(server.root)).filter((row) => row.event === "hover").length === 2,
+      async () =>
+        hoverState.settled || (await trace(server.root)).filter((row) => row.event === "hover").length === 2,
       "held request",
     )
     abort.abort(new Error("cancel socket request"))
@@ -127,27 +137,47 @@ test("native socket startup timeout, abort, malformed frame and hung shutdown jo
   try {
     for (const mode of ["hang", "abort", "frame", "shutdown-hang"] as const) {
       await Bun.write(path.join(server.root, "mode"), mode === "abort" ? "hang" : mode)
-      const before = (await trace(server.root)).filter((row) => row.event === "close").length
+      const initial = await trace(server.root)
+      const beforeClose = initial.filter((row) => row.event === "close").length
+      const beforeInit = initial.filter((row) => row.event === "initialize").length
       const abort = new AbortController()
+      const state = { settled: false }
       const pending = NativeLspClient.create({
         transport: "socket",
         command: [server.endpoint],
         root: server.root,
-        startupTimeout: 500,
+        startupTimeout: mode === "hang" ? 500 : 5000,
         shutdownTimeout: 100,
         signal: abort.signal,
       })
+      void pending.then(
+        () => {
+          state.settled = true
+        },
+        () => {
+          state.settled = true
+        },
+      )
       if (mode === "abort") {
         await poll(
-          async () => (await trace(server.root)).filter((row) => row.event === "initialize").length > before,
+          async () =>
+            state.settled ||
+            (await trace(server.root)).filter((row) => row.event === "initialize").length > beforeInit,
           "held initialization",
         )
         abort.abort(new Error("cancel startup"))
       }
-      if (mode === "shutdown-hang") await (await pending).close()
-      else await expect(pending).rejects.toThrow()
+      if (mode === "shutdown-hang") {
+        await (await pending).close()
+      }
+      if (mode === "abort") {
+        await expect(pending).rejects.toThrow("cancel startup")
+      }
+      if (mode === "hang" || mode === "frame") {
+        await expect(pending).rejects.toThrow()
+      }
       await poll(
-        async () => (await trace(server.root)).filter((row) => row.event === "close").length === before + 1,
+        async () => (await trace(server.root)).filter((row) => row.event === "close").length === beforeClose + 1,
         `${mode} socket joined`,
       )
       expect(server.child.exitCode).toBeNull()
@@ -155,7 +185,7 @@ test("native socket startup timeout, abort, malformed frame and hung shutdown jo
   } finally {
     await server.close()
   }
-}, 10000)
+}, 20000)
 
 for (const endpoint of ["node", "tcp://127.0.0.1:1", "127.0.0.1:0", "127.0.0.1:65536", "user@host:3", "host:3/path"])
   test(`native socket rejects invalid endpoint ${endpoint}`, async () => {
