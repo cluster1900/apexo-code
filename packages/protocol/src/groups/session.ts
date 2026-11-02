@@ -148,6 +148,32 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       ),
     )
     .add(
+      HttpApiEndpoint.post("session.fork", "/api/session/:sessionID/fork", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          messageID: SessionMessage.ID.pipe(Schema.optional),
+          title: Schema.String.pipe(Schema.optional),
+        }),
+        success: Schema.Struct({ data: Session.Info }),
+        error: [
+          ConflictError,
+          InvalidRequestError,
+          MessageNotFoundError,
+          ServiceUnavailableError,
+          SessionNotFoundError,
+        ],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.fork",
+            summary: "Fork session",
+            description:
+              "Create a new top-level session with a copy of the source session history, optionally sliced strictly before messageID.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.get("session.sandbox", "/api/session/:sessionID/sandbox", {
         params: { sessionID: Session.ID },
         success: Sandbox.Status,

@@ -21,6 +21,7 @@ import { normalizeSessionInfo } from "@/utils/session"
 import { compareMessages, messageKey, normalizeSessionMessages } from "@/utils/session-message"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 import { createV2SessionReducer, type V2SessionReduction } from "./server-session-v2-reducer"
+import { isNativeSession, markNativeSession } from "@/utils/server-compat"
 import type { ServerApi } from "@/utils/server"
 
 type MessageApi = ServerApi["message"]
@@ -251,13 +252,17 @@ export function createServerSession(
     at: {} as Record<string, number | undefined>,
   })
 
+  let projectingV2 = false
   const indexLegacyMessage = (message: Message) => {
+    if (projectingV2) return
     const current = data.session_message[message.sessionID] ?? []
     const next = legacyMessageSource([{ info: message, parts: data.part[message.id] ?? [] }])[0]
     if (!next) return
     const index = current.findIndex((item) => item.id === message.id)
     if (index >= 0) {
-      if (current[index] === next) return
+      const existing = current[index]
+      if (existing === next) return
+      if (existing?.type === "assistant" && existing.content.length > 0 && next.type === "assistant") return
       setData("session_message", message.sessionID, index, reconcile(next))
       return
     }
@@ -545,35 +550,42 @@ export function createServerSession(
       pickSessionCacheEvictions({ seen, keep: sessionID, limit: SESSION_CACHE_LIMIT, preserve: protectedSessions() }),
     )
 
+  const fetchV2Messages = async (sessionID: string, limit: number, before?: string, onAttempt?: () => void) => {
+    if (!messageApi) return
+    const request = (cursor?: string) =>
+      (options?.retry ?? retry)(() => {
+        onAttempt?.()
+        return messageApi.list(cursor ? { sessionID, limit, cursor } : { sessionID, limit, order: "desc" })
+      })
+    const first = await request(before)
+    const pages = [first]
+    while (pages.at(-1)?.cursor.next && needsOlderTurnRoot(pages.flatMap((page) => page.data).toReversed())) {
+      const response = await request(pages.at(-1)!.cursor.next ?? undefined)
+      pages.push(response)
+      if (!response.data.length) break
+    }
+    const response = pages.at(-1)!
+    const source = pages.flatMap((page) => page.data).toReversed()
+    if (source.length > 0) markNativeSession(sessionID)
+    const normalized = normalizeSessionMessages(sessionID, source)
+    return {
+      session: normalized.messages.sort(compareMessages),
+      part: [...normalized.parts.entries()]
+        .map(([id, part]) => ({ id, part: part.sort((a, b) => cmp(a.id, b.id)) }))
+        .sort((a, b) => cmp(a.id, b.id)),
+      source,
+      sourceMode: before ? ("older" as const) : ("latest" as const),
+      projectSource: true,
+      cursor: response.cursor.next ?? undefined,
+      complete: response.data.length === 0,
+    }
+  }
+
   const fetchMessages = async (sessionID: string, limit: number, before?: string, onAttempt?: () => void) => {
-    if (messageApi && (await options?.protocol) !== "v1") {
-      const request = (cursor?: string) =>
-        (options?.retry ?? retry)(() => {
-          onAttempt?.()
-          return messageApi.list(cursor ? { sessionID, limit, cursor } : { sessionID, limit, order: "desc" })
-        })
-      const first = await request(before)
-      const pages = [first]
-      while (pages.at(-1)?.cursor.next && needsOlderTurnRoot(pages.flatMap((page) => page.data).toReversed())) {
-        const response = await request(pages.at(-1)!.cursor.next ?? undefined)
-        pages.push(response)
-        if (!response.data.length) break
-      }
-      const response = pages.at(-1)!
-      const source = pages.flatMap((page) => page.data).toReversed()
-      const normalized = normalizeSessionMessages(sessionID, source)
-      const currentPage = {
-        session: normalized.messages.sort(compareMessages),
-        part: [...normalized.parts.entries()]
-          .map(([id, part]) => ({ id, part: part.sort((a, b) => cmp(a.id, b.id)) }))
-          .sort((a, b) => cmp(a.id, b.id)),
-        source,
-        sourceMode: before ? ("older" as const) : ("latest" as const),
-        projectSource: true,
-        cursor: response.cursor.next ?? undefined,
-        complete: response.data.length === 0,
-      }
-      if (source.length > 0 || before) return currentPage
+    if (messageApi && ((await options?.protocol) !== "v1" || isNativeSession(sessionID))) {
+      const currentPage = await fetchV2Messages(sessionID, limit, before, onAttempt)
+      if (!currentPage) throw new Error("Missing message API")
+      if (currentPage.source.length > 0 || before) return currentPage
       const legacy = await (options?.retry ?? retry)(() => {
         onAttempt?.()
         return client.session.messages({ sessionID, limit, before })
@@ -596,8 +608,19 @@ export function createServerSession(
     const response = await (options?.retry ?? retry)(() => {
       onAttempt?.()
       return client.session.messages({ sessionID, limit, before })
+    }).catch(async (error) => {
+      if (!messageApi) throw error
+      const v2Page = await fetchV2Messages(sessionID, limit, before, onAttempt).catch(() => undefined)
+      if (!v2Page) throw error
+      markNativeSession(sessionID)
+      return { v2Page }
     })
+    if ("v2Page" in response) return response.v2Page
     const items = (response.data ?? []).filter((item) => !!item?.info?.id)
+    if (!items.length && messageApi) {
+      const v2Page = await fetchV2Messages(sessionID, limit, before, onAttempt).catch(() => undefined)
+      if (v2Page && v2Page.source.length > 0) return v2Page
+    }
     return {
       session: items.map((item) => cleanMessage(item.info)).sort(compareMessages),
       part: items.map((item) => ({
@@ -612,11 +635,12 @@ export function createServerSession(
   }
 
   const fetchMessage = async (sessionID: string, messageID: string, onAttempt?: () => void) => {
-    if (sessionApi && (await options?.protocol) !== "v1") {
+    if (sessionApi && ((await options?.protocol) !== "v1" || isNativeSession(sessionID))) {
       const response = await (options?.retry ?? retry)(() => {
         onAttempt?.()
         return sessionApi.message({ sessionID, messageID })
       })
+      markNativeSession(sessionID)
       const normalized = normalizeSessionMessages(sessionID, [response])
       const message = normalized.messages[0]
       if (!message) throw new Error(`Message not found: ${messageID}`)
@@ -922,8 +946,9 @@ export function createServerSession(
     }
     if (reduction.touched.length === 0) return
 
+    const fallbackParentID = data.message[reduction.sessionID]?.findLast((item) => item.role === "user")?.id
     const touched = new Set(reduction.touched)
-    let parentID: string | undefined
+    let parentID: string | undefined = fallbackParentID
     for (const message of reduction.messages) {
       if (message.type === "user" || (message.type === "synthetic" && message.description?.trim()))
         parentID = message.id
@@ -935,27 +960,32 @@ export function createServerSession(
       if (message.type === "compaction" && touched.has(message.id) && parentID) touched.add(parentID)
     }
 
-    const normalized = normalizeSessionMessages(reduction.sessionID, reduction.messages)
-    batch(() => {
-      for (const message of normalized.messages) {
-        if (!touched.has(message.id)) continue
-        apply({ type: "message.updated", properties: { sessionID: reduction.sessionID, info: message } })
-      }
-      for (const messageID of touched) {
-        const next = normalized.parts.get(messageID) ?? []
-        const nextIDs = new Set(next.map((part) => part.id))
-        for (const part of next) {
-          apply({ type: "message.part.updated", properties: { sessionID: reduction.sessionID, part } })
+    const normalized = normalizeSessionMessages(reduction.sessionID, reduction.messages, fallbackParentID)
+    projectingV2 = true
+    try {
+      batch(() => {
+        for (const message of normalized.messages) {
+          if (!touched.has(message.id)) continue
+          apply({ type: "message.updated", properties: { sessionID: reduction.sessionID, info: message } })
         }
-        for (const part of data.part[messageID] ?? []) {
-          if (nextIDs.has(part.id)) continue
-          apply({
-            type: "message.part.removed",
-            properties: { sessionID: reduction.sessionID, messageID, partID: part.id },
-          })
+        for (const messageID of touched) {
+          const next = normalized.parts.get(messageID) ?? []
+          const nextIDs = new Set(next.map((part) => part.id))
+          for (const part of next) {
+            apply({ type: "message.part.updated", properties: { sessionID: reduction.sessionID, part } })
+          }
+          for (const part of data.part[messageID] ?? []) {
+            if (nextIDs.has(part.id)) continue
+            apply({
+              type: "message.part.removed",
+              properties: { sessionID: reduction.sessionID, messageID, partID: part.id },
+            })
+          }
         }
-      }
-    })
+      })
+    } finally {
+      projectingV2 = false
+    }
   }
 
   const hydrateV2Message = (sessionID: string, messageID: string) => {
@@ -970,10 +1000,24 @@ export function createServerSession(
       .catch(() => {})
   }
 
-  const applyV2 = (event: ApexoEvent) => {
-    if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
-    const sessionID = event.data.sessionID
-    const reduction = v2.reduce(data.session_message[sessionID] ?? [], event)
+  const applyV2 = (rawEvent: ApexoEvent) => {
+    const event = rawEvent as unknown as {
+      id: string
+      type: string
+      created?: number
+      data?: Record<string, unknown>
+    }
+    const dataPayload = event.data
+    const sessionID = dataPayload?.sessionID
+    if (!dataPayload || typeof sessionID !== "string") return
+    if (
+      event.type.startsWith("session.next.") ||
+      event.type.startsWith("permission.v2.") ||
+      event.type.startsWith("question.v2.")
+    )
+      markNativeSession(sessionID)
+    const timestamp = typeof dataPayload.timestamp === "number" ? dataPayload.timestamp : (event.created ?? Date.now())
+    const reduction = v2.reduce(data.session_message[sessionID] ?? [], rawEvent)
     if (reduction) {
       projectV2(reduction)
       if (reduction.missing) hydrateV2Message(sessionID, reduction.missing)
@@ -981,41 +1025,116 @@ export function createServerSession(
 
     const info = data.info[sessionID]
     if (event.type === "session.renamed" && info)
-      remember({ ...info, title: event.data.title, time: { ...info.time, updated: event.created } })
-    if (event.type === "session.moved" && info)
+      remember({ ...info, title: String(dataPayload.title ?? info.title), time: { ...info.time, updated: timestamp } })
+    if ((event.type === "session.moved" || event.type === "session.next.moved") && info) {
+      const location = (dataPayload.location as { workspaceID?: string; directory?: string } | undefined) ?? {}
       remember({
         ...info,
-        projectID: event.data.projectID ?? info.projectID,
-        workspaceID: event.data.location.workspaceID,
-        directory: event.data.location.directory,
-        path: event.data.subpath,
-        time: { ...info.time, updated: event.created },
+        projectID: typeof dataPayload.projectID === "string" ? dataPayload.projectID : info.projectID,
+        workspaceID: location.workspaceID,
+        directory: location.directory ?? info.directory,
+        path:
+          typeof dataPayload.subpath === "string"
+            ? dataPayload.subpath
+            : typeof dataPayload.subdirectory === "string"
+              ? dataPayload.subdirectory
+              : info.path,
+        time: { ...info.time, updated: timestamp },
+      })
+    }
+    if (event.type === "session.next.agent.switched" && info && typeof dataPayload.agent === "string")
+      remember({ ...info, agent: dataPayload.agent, time: { ...info.time, updated: timestamp } })
+    if (event.type === "session.next.model.switched" && info && dataPayload.model)
+      remember({
+        ...info,
+        model: dataPayload.model as Session["model"],
+        time: { ...info.time, updated: timestamp },
       })
     if (event.type === "session.usage.updated" && info)
-      remember({ ...info, cost: event.data.cost, tokens: event.data.tokens })
+      remember({
+        ...info,
+        cost: typeof dataPayload.cost === "number" ? dataPayload.cost : info.cost,
+        tokens: (dataPayload.tokens as Session["tokens"]) ?? info.tokens,
+      })
+    if (event.type === "session.next.step.ended" && info)
+      remember({
+        ...info,
+        cost: (info.cost ?? 0) + (typeof dataPayload.cost === "number" ? dataPayload.cost : 0),
+        tokens: (dataPayload.tokens as Session["tokens"]) ?? info.tokens,
+        time: { ...info.time, updated: timestamp },
+      })
     // if (event.type === "session.archived") {
     //   if (info) remember({ ...info, time: { ...info.time, archived: event.created, updated: event.created } })
     //   evict([sessionID])
     // }
-    if (event.type === "session.execution.started") setData("session_status", sessionID, { type: "busy" })
+    if (
+      event.type === "session.execution.started" ||
+      event.type === "session.next.prompted" ||
+      event.type === "session.next.step.started" ||
+      event.type === "session.next.shell.started" ||
+      (event.type === "session.next.prompt.admitted" && dataPayload.delivery !== "queue")
+    )
+      setData("session_status", sessionID, { type: "busy" })
+    const interruptedTool =
+      event.type === "session.next.tool.failed" &&
+      (dataPayload.error as { message?: string } | undefined)?.message === "Tool execution interrupted"
+    const interruptedStep =
+      event.type === "session.next.step.ended" &&
+      (data.session_message[sessionID] ?? []).some(
+        (msg) =>
+          msg.type === "assistant" &&
+          msg.id === dataPayload.assistantMessageID &&
+          msg.content.some(
+            (part) =>
+              part.type === "tool" &&
+              part.state.status === "error" &&
+              part.state.error.message === "Tool execution interrupted",
+          ),
+      )
     if (
       event.type === "session.execution.succeeded" ||
       event.type === "session.execution.failed" ||
-      event.type === "session.execution.interrupted"
-    )
+      event.type === "session.execution.interrupted" ||
+      event.type === "session.next.step.failed" ||
+      event.type === "session.next.shell.ended" ||
+      interruptedTool ||
+      interruptedStep ||
+      (event.type === "session.next.step.ended" && dataPayload.finish !== "tool-calls") ||
+      (event.type === "session.next.input.execution.settled" && dataPayload.status !== "superseded")
+    ) {
       setData("session_status", sessionID, { type: "idle" })
-    if (event.type === "session.retry.scheduled")
+      if (
+        interruptedTool ||
+        interruptedStep ||
+        event.type === "session.next.step.failed" ||
+        event.type === "session.execution.interrupted"
+      ) {
+        if (data.permission[sessionID]?.length) setData("permission", sessionID, [])
+        if (data.question[sessionID]?.length) setData("question", sessionID, [])
+      }
+    }
+    if (event.type === "session.retry.scheduled" || event.type === "session.next.retried") {
+      const error = dataPayload.error as { message?: string } | undefined
       setData("session_status", sessionID, {
         type: "retry",
-        attempt: event.data.attempt,
-        message: event.data.error.message,
-        next: event.data.at,
+        attempt: typeof dataPayload.attempt === "number" ? dataPayload.attempt : 1,
+        message: error?.message ?? "Retrying",
+        next: typeof dataPayload.at === "number" ? dataPayload.at : timestamp + 1000,
       })
-    if (event.type === "session.forked") void resolve(sessionID, { force: true }).catch(() => {})
+    }
+    if (event.type === "session.forked" || event.type === "session.next.history.copy.completed") {
+      if (event.type === "session.next.history.copy.completed" && Array.isArray(dataPayload.todos)) {
+        setData("todo", sessionID, reconcile(dataPayload.todos as Todo[], { key: "id" }))
+      }
+      void resolve(sessionID, { force: true }).catch(() => {})
+    }
     if (
       event.type === "session.revert.staged" ||
       event.type === "session.revert.cleared" ||
-      event.type === "session.revert.committed"
+      event.type === "session.revert.committed" ||
+      event.type === "session.next.revert.staged" ||
+      event.type === "session.next.revert.cleared" ||
+      event.type === "session.next.revert.committed"
     )
       void resolve(sessionID, { force: true }).catch(() => {})
   }
@@ -1429,8 +1548,8 @@ export function createServerSession(
     async todo(sessionID: string, request?: { force?: boolean }) {
       touch(sessionID)
       if (data.todo[sessionID] !== undefined && !request?.force) return
-      if ((await options?.protocol) === "v2") {
-        setData("todo", sessionID, [])
+      if ((await options?.protocol) === "v2" || isNativeSession(sessionID)) {
+        if (data.todo[sessionID] === undefined) setData("todo", sessionID, [])
         return
       }
       return runInflight(inflightTodo, sessionID, () => {

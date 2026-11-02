@@ -3070,6 +3070,13 @@ export type SessionNotFoundError = {
   message: string
 }
 
+export type MessageNotFoundError = {
+  _tag: "MessageNotFoundError"
+  sessionID: string
+  messageID: string
+  message: string
+}
+
 export type SessionActive = {
   type: "running"
 }
@@ -3078,13 +3085,6 @@ export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
-}
-
-export type MessageNotFoundError = {
-  _tag: "MessageNotFoundError"
-  sessionID: string
-  messageID: string
-  message: string
 }
 
 export type UnknownError1 = {
@@ -5248,6 +5248,8 @@ export type SessionV2Info = {
 
 export type SandboxProfile = string
 
+export type SandboxBaseProfile = "workspace" | "read-only" | "strict" | "devbox"
+
 export type SandboxReceipt = {
   id: string
   revision: string
@@ -5269,12 +5271,14 @@ export type SandboxStatus = {
   scope: "native_commands"
   stored: boolean
   profile?: SandboxProfile
+  base?: SandboxBaseProfile
   revision?: string
   backend: {
     kind: "seatbelt" | "bwrap" | "none"
     availability: "unchecked" | "available" | "unsupported" | "unavailable"
   }
   network?: "off" | "unrestricted"
+  allowDomains?: Array<string>
   latestExecution?: SandboxReceipt
   failure?: {
     code: SandboxFailureCode
@@ -6429,6 +6433,28 @@ export type SessionMcpAttachmentOperation = {
   prepared?: SessionMcpAttachmentPrepared
   error?: {
     code: string
+    message: string
+  }
+}
+
+export type SandboxProfileInfo = {
+  name: SandboxProfile
+  builtin: boolean
+  base?: SandboxBaseProfile
+  network: "off" | "unrestricted"
+  allowDomains: Array<string>
+  source?: "builtin" | "user" | "project"
+}
+
+export type SandboxCatalog = {
+  scope: "native_commands"
+  backend: {
+    kind: "seatbelt" | "bwrap" | "none"
+    availability: "unchecked" | "available" | "unsupported" | "unavailable"
+  }
+  profiles: Array<SandboxProfileInfo>
+  failure?: {
+    code: SandboxFailureCode
     message: string
   }
 }
@@ -15013,6 +15039,54 @@ export type V2SessionCreateResponses = {
 
 export type V2SessionCreateResponse = V2SessionCreateResponses[keyof V2SessionCreateResponses]
 
+export type V2SessionForkData = {
+  body: {
+    messageID?: string
+    title?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/fork"
+}
+
+export type V2SessionForkErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * MessageNotFoundError | SessionNotFoundError
+   */
+  404: MessageNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SessionForkError = V2SessionForkErrors[keyof V2SessionForkErrors]
+
+export type V2SessionForkResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionV2Info
+  }
+}
+
+export type V2SessionForkResponse = V2SessionForkResponses[keyof V2SessionForkResponses]
+
 export type V2SessionSandboxData = {
   body?: never
   path: {
@@ -18861,6 +18935,44 @@ export type V2LspStatusResponses = {
 }
 
 export type V2LspStatusResponse = V2LspStatusResponses[keyof V2LspStatusResponses]
+
+export type V2SandboxCatalogData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/sandbox"
+}
+
+export type V2SandboxCatalogErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2SandboxCatalogError = V2SandboxCatalogErrors[keyof V2SandboxCatalogErrors]
+
+export type V2SandboxCatalogResponses = {
+  /**
+   * Sandbox.Catalog
+   */
+  200: SandboxCatalog
+}
+
+export type V2SandboxCatalogResponse = V2SandboxCatalogResponses[keyof V2SandboxCatalogResponses]
 
 export type V2WorkflowRelatedData = {
   body?: never

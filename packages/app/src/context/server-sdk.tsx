@@ -13,74 +13,38 @@ import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
+import { adaptLegacySyncEvent, adaptServerEvent, type ServerEvent } from "@/utils/server-event"
+
+export { adaptLegacySyncEvent, adaptServerEvent, type ServerEvent }
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
 
 const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(error) || signal?.aborted === true
-export type ServerEvent = Event & { current?: ApexoEvent }
 type QueuedServerEvent = { directory: string; payload: ServerEvent }
-type CurrentDelta = Extract<
-  ApexoEvent,
-  { type: "session.text.delta" | "session.reasoning.delta" | "session.tool.input.delta" | "session.compaction.delta" }
->
-
-export function adaptServerEvent(event: ApexoEvent): ServerEvent {
-  if (event.type === "permission.v2.asked") {
-    return {
-      id: event.id,
-      type: "permission.asked",
-      properties: {
-        id: event.data.id,
-        sessionID: event.data.sessionID,
-        permission: event.data.action,
-        patterns: event.data.resources,
-        always: event.data.save ?? [],
-        metadata: event.data.metadata ?? {},
-        tool:
-          event.data.source?.type === "tool"
-            ? { messageID: event.data.source.messageID, callID: event.data.source.callID }
-            : undefined,
-      },
-      current: event,
-    } as ServerEvent
-  }
-  if (event.type === "permission.v2.replied")
-    return { id: event.id, type: "permission.replied", properties: event.data, current: event } as ServerEvent
-  if (event.type === "question.v2.asked")
-    return { id: event.id, type: "question.asked", properties: event.data, current: event } as ServerEvent
-  if (event.type === "question.v2.replied")
-    return { id: event.id, type: "question.replied", properties: event.data, current: event } as ServerEvent
-  if (event.type === "question.v2.rejected")
-    return { id: event.id, type: "question.rejected", properties: event.data, current: event } as ServerEvent
-  return { id: event.id, type: event.type, properties: event.data, current: event } as ServerEvent
-}
-
-function adaptLegacySyncEvent(payload: unknown): ServerEvent | undefined {
-  if (!payload || typeof payload !== "object") return
-  const value = payload as Record<string, unknown>
-  if (value.type !== "sync" || !value.syncEvent || typeof value.syncEvent !== "object") return
-  const syncEvent = value.syncEvent as Record<string, unknown>
-  if (
-    typeof syncEvent.id !== "string" ||
-    typeof syncEvent.type !== "string" ||
-    typeof syncEvent.aggregateID !== "string" ||
-    typeof syncEvent.seq !== "number" ||
-    typeof syncEvent.data !== "object" ||
-    syncEvent.data === null
-  )
-    return
-  const version = Number(syncEvent.type.split(".").at(-1))
-  if (!Number.isInteger(version)) return
-  const type = syncEvent.type.replace(/\.\d+$/, "")
-  const current = {
-    id: syncEvent.id,
-    type,
-    durable: { aggregateID: syncEvent.aggregateID, seq: syncEvent.seq, version },
-    data: syncEvent.data,
-  } as ApexoEvent
-  return { id: syncEvent.id, type, properties: syncEvent.data, current } as ServerEvent
-}
+type CurrentDelta =
+  | Extract<
+      ApexoEvent,
+      { type: "session.text.delta" | "session.reasoning.delta" | "session.tool.input.delta" | "session.compaction.delta" }
+    >
+  | {
+      id: string
+      type:
+        | "session.next.text.delta"
+        | "session.next.reasoning.delta"
+        | "session.next.tool.input.delta"
+        | "session.next.compaction.delta"
+      created: number
+      data: {
+        sessionID: string
+        assistantMessageID?: string
+        textID?: string
+        reasoningID?: string
+        callID?: string
+        delta?: string
+        text?: string
+      }
+    }
 
 const coalescedKey = (event: QueuedServerEvent) => {
   if (event.payload.type === "lsp.updated") return `lsp.updated:${event.directory}`
@@ -117,7 +81,7 @@ export function coalesceServerEvents(events: QueuedServerEvent[]) {
       ) {
         const fragment = currentDeltaFragment(prior) + currentDeltaFragment(current)
         const data =
-          current.type === "session.compaction.delta"
+          current.type === "session.compaction.delta" || current.type === "session.next.compaction.delta"
             ? { ...current.data, text: fragment }
             : { ...current.data, delta: fragment }
         output[output.length - 1] = {
@@ -125,7 +89,7 @@ export function coalesceServerEvents(events: QueuedServerEvent[]) {
           payload: {
             ...event.payload,
             properties: data,
-            current: { ...current, data } as CurrentDelta,
+            current: { ...current, data } as unknown as ApexoEvent,
           } as ServerEvent,
         }
         return
@@ -169,20 +133,33 @@ function currentDelta(event: ApexoEvent | undefined): CurrentDelta | undefined {
     event?.type === "session.text.delta" ||
     event?.type === "session.reasoning.delta" ||
     event?.type === "session.tool.input.delta" ||
-    event?.type === "session.compaction.delta"
+    event?.type === "session.compaction.delta" ||
+    (event as { type?: string } | undefined)?.type === "session.next.text.delta" ||
+    (event as { type?: string } | undefined)?.type === "session.next.reasoning.delta" ||
+    (event as { type?: string } | undefined)?.type === "session.next.tool.input.delta" ||
+    (event as { type?: string } | undefined)?.type === "session.next.compaction.delta"
   )
-    return event
+    return event as unknown as CurrentDelta
 }
 
 function currentDeltaKey(event: CurrentDelta) {
-  if (event.type === "session.tool.input.delta")
+  if (event.type === "session.tool.input.delta" || event.type === "session.next.tool.input.delta")
     return `${event.type}:${event.data.sessionID}:${event.data.assistantMessageID}:${event.data.callID}`
-  if (event.type === "session.compaction.delta") return `${event.type}:${event.data.sessionID}`
-  return `${event.type}:${event.data.sessionID}:${event.data.assistantMessageID}:${event.data.ordinal}`
+  if (event.type === "session.compaction.delta" || event.type === "session.next.compaction.delta")
+    return `${event.type}:${event.data.sessionID}`
+  if (event.type === "session.next.text.delta")
+    return `${event.type}:${event.data.sessionID}:${event.data.assistantMessageID}:${event.data.textID}`
+  if (event.type === "session.next.reasoning.delta")
+    return `${event.type}:${event.data.sessionID}:${event.data.assistantMessageID}:${event.data.reasoningID}`
+  if (event.type === "session.text.delta" || event.type === "session.reasoning.delta")
+    return `${event.type}:${event.data.sessionID}:${event.data.assistantMessageID}:${event.data.ordinal}`
+  return `${event.type}:${event.data.sessionID}`
 }
 
 function currentDeltaFragment(event: CurrentDelta) {
-  return event.type === "session.compaction.delta" ? event.data.text : event.data.delta
+  return event.type === "session.compaction.delta" || event.type === "session.next.compaction.delta"
+    ? (event.data.text ?? "")
+    : (event.data.delta ?? "")
 }
 
 export function resumeStreamAfterPageShow(event: PageTransitionEvent, start: () => unknown) {

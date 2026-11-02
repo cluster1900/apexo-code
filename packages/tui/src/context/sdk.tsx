@@ -186,10 +186,13 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         if (selected.kind !== "native") return
         return restorationNotice(await selected.restore(sessionID))
       },
-      async forkSession(sessionID: string) {
+      async forkSession(sessionID: string, messageID?: string) {
         const selected = await transport()
-        if (selected.kind === "native") throw new Error("Forking native Sessions is not available in the terminal")
-        return sdk.session.fork({ sessionID }, { throwOnError: true })
+        if (selected.kind === "native") {
+          const { terminalSession } = await import("../transport/native-catalog")
+          return { data: terminalSession(await selected.fork({ sessionID, messageID })) }
+        }
+        return sdk.session.fork({ sessionID, messageID }, { throwOnError: true })
       },
       async interrupt(sessionID: string) {
         const selected = await transport()

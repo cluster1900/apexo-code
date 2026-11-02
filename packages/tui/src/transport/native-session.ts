@@ -42,6 +42,17 @@ export function nativeSessionTransport(client: ApexoClient, directory?: string, 
       if (!location) throw new Error("A directory is required to create a native terminal Session")
       return (await client.v2.session.create({ ...input, location }, requestOptions(signal, owner))).data.data
     },
+    async fork(input: Parameters<Native["fork"]>[0], signal?: AbortSignal) {
+      return (
+        await client.v2.session.fork(
+          { messageID: undefined, title: undefined, ...input },
+          requestOptions(signal, owner),
+        )
+      ).data.data
+    },
+    async sandboxCatalog(signal?: AbortSignal) {
+      return (await client.v2.sandbox.catalog({ location: { directory } }, requestOptions(signal, owner))).data
+    },
     async switchAgent(input: Parameters<Native["switchAgent"]>[0], signal?: AbortSignal) {
       return client.v2.session.switchAgent(input, requestOptions(signal, owner))
     },

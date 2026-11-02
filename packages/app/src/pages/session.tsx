@@ -1841,6 +1841,11 @@ export default function Page() {
     busy(sessionID)
       ? sdk()
           .api.session.interrupt({ sessionID })
+          .then(() => {
+            serverSync().session.set("session_status", sessionID, { type: "idle" })
+            serverSync().session.set("permission", sessionID, [])
+            serverSync().session.set("question", sessionID, [])
+          })
           .catch(() => {})
       : Promise.resolve()
 

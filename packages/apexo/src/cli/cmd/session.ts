@@ -1,9 +1,13 @@
 import type { Argv } from "yargs"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { cmd } from "./cmd"
-import { effectCmd, fail } from "../effect-cmd"
+import { CliError, effectCmd, fail } from "../effect-cmd"
 import { Session } from "@/session/session"
-import { SessionID } from "../../session/schema"
+import { SessionV2 } from "@apexo/core/session"
+import { SessionMessage } from "@apexo/schema/session-message"
+import { MessageID, SessionID } from "../../session/schema"
+import { InstanceStore } from "@/project/instance-store"
+import { InstanceRef } from "@/effect/instance-ref"
 import { UI } from "../ui"
 import { Locale } from "@/util/locale"
 import { Flag } from "@apexo/core/flag/flag"
@@ -44,8 +48,144 @@ function pagerCmd(): string[] {
 export const SessionCommand = cmd({
   command: "session",
   describe: "manage sessions",
-  builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).demandCommand(),
+  builder: (yargs: Argv) =>
+    yargs.command(SessionListCommand).command(SessionForkCommand).command(SessionDeleteCommand).demandCommand(),
   async handler() {},
+})
+
+export const SessionForkCommand = effectCmd({
+  command: "fork <sessionID>",
+  describe: "fork a session into a new top-level session",
+  instance: false,
+  builder: (yargs) =>
+    yargs
+      .positional("sessionID", {
+        describe: "source session ID to fork",
+        type: "string",
+        demandOption: true,
+      })
+      .option("message", {
+        alias: "m",
+        describe: "fork strictly before this message ID",
+        type: "string",
+      })
+      .option("title", {
+        alias: "t",
+        describe: "custom title for the forked session",
+        type: "string",
+      })
+      .option("format", {
+        describe: "output format",
+        type: "string",
+        choices: ["text", "json"] as const,
+        default: "text" as const,
+      }),
+  handler: Effect.fn("Cli.session.fork")(function* (args) {
+    if (!Schema.is(SessionID)(args.sessionID)) {
+      return yield* fail(`Session '${args.sessionID}' not found.`)
+    }
+    const messageID =
+      args.message === undefined
+        ? undefined
+        : yield* Schema.decodeUnknownEffect(SessionMessage.ID)(args.message).pipe(
+            Effect.mapError(() => new CliError({ message: `Invalid message ID '${args.message}'.`, exitCode: 1 })),
+          )
+    const session = yield* SessionV2.Service
+    const forkLegacySession = Effect.fn("Cli.session.forkLegacy")(function* () {
+      const source = yield* session
+        .get(args.sessionID)
+        .pipe(Effect.catchTag("Session.NotFoundError", () => fail(`Session '${args.sessionID}' not found.`)))
+      const store = yield* InstanceStore.Service
+      const legacySession = yield* Session.Service
+      const ctx = yield* store.load({ directory: source.location.directory })
+      const created = yield* Effect.gen(function* () {
+        if (messageID) {
+          const msgs = yield* legacySession
+            .messages({ sessionID: args.sessionID })
+            .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session '${args.sessionID}' not found.`)))
+          if (!msgs.some((msg) => String(msg.info.id) === String(messageID))) {
+            return yield* fail(`Message '${messageID}' not found in session '${args.sessionID}'.`)
+          }
+        }
+        const cutoff = messageID
+          ? MessageID.make(String(messageID))
+          : source.revert?.messageID
+            ? MessageID.make(String(source.revert.messageID))
+            : undefined
+        return yield* legacySession
+          .fork({
+            sessionID: args.sessionID,
+            messageID: cutoff,
+            title: args.title,
+          })
+          .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session '${args.sessionID}' not found.`)))
+      }).pipe(Effect.provideService(InstanceRef, ctx), Effect.ensuring(store.dispose(ctx)))
+      return {
+        id: created.id,
+        title: created.title,
+        directory: created.directory,
+        agent: created.agent,
+        model: created.model,
+        created: created.time.created,
+        updated: created.time.updated,
+      }
+    })
+    const forked = yield* session
+      .fork({
+        sessionID: args.sessionID,
+        messageID,
+        title: args.title,
+      })
+      .pipe(
+        Effect.map((created) => ({
+          id: created.id,
+          title: created.title,
+          directory: created.location.directory,
+          agent: created.agent,
+          model: created.model,
+          created: DateTime.toEpochMillis(created.time.created),
+          updated: DateTime.toEpochMillis(created.time.updated),
+        })),
+        Effect.catchTag("Session.NotFoundError", () => fail(`Session '${args.sessionID}' not found.`)),
+        Effect.catchTag("Session.MessageNotFoundError", (error) =>
+          fail(`Message '${error.messageID}' not found in session '${error.sessionID}'.`),
+        ),
+        Effect.catchTag("Session.ManagedInputError", () =>
+          fail(`Managed child session '${args.sessionID}' cannot be forked directly.`),
+        ),
+        Effect.catchTag("SessionHistoryCopy.Conflict", (error) => {
+          if (error.message !== "History source uses legacy transcript storage") {
+            return fail(error.message)
+          }
+          return forkLegacySession()
+        }),
+        Effect.catchTag("CommandSandbox.Failure", (error) => fail(error.message)),
+      )
+    if (args.format === "json") {
+      console.log(
+        JSON.stringify(
+          {
+            id: forked.id,
+            sourceSessionID: args.sessionID,
+            ...(messageID ? { beforeMessageID: messageID } : {}),
+            title: forked.title,
+            directory: forked.directory,
+            agent: forked.agent,
+            model: forked.model,
+            created: forked.created,
+            updated: forked.updated,
+          },
+          null,
+          2,
+        ),
+      )
+      return
+    }
+    UI.println(
+      UI.Style.TEXT_SUCCESS_BOLD + `Session ${forked.id} forked from ${args.sessionID}` + UI.Style.TEXT_NORMAL,
+    )
+    UI.println(`Title: ${forked.title}`)
+  }),
 })
 
 export const SessionDeleteCommand = effectCmd({

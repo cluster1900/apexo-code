@@ -14,6 +14,7 @@ import { PluginsHandler } from "./handlers/plugins"
 import { SessionMcpAttachmentHandler } from "./handlers/session-mcp-attachment"
 import { McpHandler } from "./handlers/mcp"
 import { LspHandler } from "./handlers/lsp"
+import { SandboxHandler } from "./handlers/sandbox"
 import { WorkflowHandler } from "./handlers/workflow"
 import { SideQuestionHandler } from "./handlers/side-question"
 import { SessionHandler } from "./handlers/session"
@@ -50,6 +51,7 @@ export const handlers = Layer.mergeAll(
   McpHandler,
   SessionMcpAttachmentHandler,
   LspHandler,
+  SandboxHandler,
   WorkflowHandler,
   SideQuestionHandler,
   MessageHandler,

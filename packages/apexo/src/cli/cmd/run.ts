@@ -828,9 +828,9 @@ const CompatibilityRunCommand = effectCmd({
           const native = await sessionTransport(sdk, directory, args["session-protocol"])(AbortSignal.timeout(10_000))
           if (native.kind === "native") {
             if (!interactive) {
-              if (args.fork || args.command || args.demo || args.profile || args.title)
+              if (args.command || args.demo || args.profile || args.title)
                 throw new Error(
-                  "Native headless attachment does not support fork, command, demo, profile or title options",
+                  "Native headless attachment does not support command, demo, profile or title options",
                 )
               if (args.format !== "default" && args.format !== "json" && args.format !== "streaming-json")
                 throw new Error("Unsupported native output format")
@@ -840,6 +840,7 @@ const CompatibilityRunCommand = effectCmd({
                 directory,
                 session: args.session,
                 continue: args.continue,
+                fork: args.fork,
                 inputID: args["input-id"],
                 agent: args.agent,
                 model: pick(args.model),
@@ -1512,6 +1513,7 @@ export const RunCommand: typeof CompatibilityRunCommand = {
         inputID: args["input-id"],
         session: args.session,
         continue: args.continue,
+        fork: args.fork,
         mini: args.mini,
       })
     }

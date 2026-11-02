@@ -451,7 +451,17 @@ export async function bootstrapDirectory(input: {
       () =>
         retry(() =>
           (async () => {
-            if ((await input.protocol) === "v1") return (await input.sdk.permission.list()).data ?? []
+            if ((await input.protocol) === "v1") {
+              const [legacyList, v2List] = await Promise.all([
+                input.sdk.permission.list().then((res) => res.data ?? []),
+                input.api.permission.request
+                  .list({ location: { directory: input.directory } })
+                  .then((result) => result.data.map(normalizePermissionRequest))
+                  .catch(() => [] as PermissionRequest[]),
+              ])
+              const seen = new Set(legacyList.map((item) => item.id))
+              return [...legacyList, ...v2List.filter((item) => !seen.has(item.id))]
+            }
             return input.api.permission.request
               .list({ location: { directory: input.directory } })
               .then((result) => result.data.map(normalizePermissionRequest))
@@ -487,7 +497,17 @@ export async function bootstrapDirectory(input: {
       () =>
         retry(() =>
           (async () => {
-            if ((await input.protocol) === "v1") return (await input.sdk.question.list()).data ?? []
+            if ((await input.protocol) === "v1") {
+              const [legacyList, v2List] = await Promise.all([
+                input.sdk.question.list().then((res) => res.data ?? []),
+                input.api.question.request
+                  .list({ location: { directory: input.directory } })
+                  .then((result) => result.data)
+                  .catch(() => [] as QuestionRequest[]),
+              ])
+              const seen = new Set(legacyList.map((item) => item.id))
+              return [...legacyList, ...v2List.filter((item) => !seen.has(item.id))]
+            }
             return input.api.question.request
               .list({ location: { directory: input.directory } })
               .then((result) => result.data)

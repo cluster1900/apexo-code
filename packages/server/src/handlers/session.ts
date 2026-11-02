@@ -109,6 +109,52 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           }
         }),
       )
+      .handle(
+        "session.fork",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* session
+              .fork({
+                sessionID: ctx.params.sessionID,
+                messageID: ctx.payload.messageID,
+                title: ctx.payload.title,
+              })
+              .pipe(
+                Effect.catchTag("Session.NotFoundError", (error) =>
+                  Effect.fail(new SessionNotFoundError({ sessionID: error.sessionID, message: "Session not found" })),
+                ),
+                Effect.catchTag("Session.MessageNotFoundError", (error) =>
+                  Effect.fail(
+                    new MessageNotFoundError({
+                      sessionID: error.sessionID,
+                      messageID: error.messageID,
+                      message: "Message not found",
+                    }),
+                  ),
+                ),
+                Effect.catchTag("Session.ManagedInputError", () =>
+                  Effect.fail(
+                    new ConflictError({
+                      message: "Managed child sessions do not accept direct fork requests",
+                    }),
+                  ),
+                ),
+                Effect.catchTag("SessionHistoryCopy.Conflict", (error) =>
+                  Effect.fail(new ConflictError({ message: error.message })),
+                ),
+                Effect.catchTag("CommandSandbox.Failure", (error) =>
+                  Effect.fail(
+                    error.code === "identity_conflict" || error.code === "missing_inheritance"
+                      ? new ConflictError({ message: error.message })
+                      : error.code === "invalid_policy" || error.code === "unsafe_path"
+                        ? new InvalidRequestError({ message: error.message })
+                        : new ServiceUnavailableError({ message: error.message }),
+                  ),
+                ),
+              ),
+          }
+        }),
+      )
       .handle("session.sandbox", ({ params }) =>
         Effect.gen(function* () {
           yield* session

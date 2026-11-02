@@ -2,6 +2,10 @@ import { mediaMetadata } from "@/utils/media-output"
 import type { ApexoEvent, SessionMessageInfo, SessionPendingMessage } from "@apexo/client/promise"
 
 type Assistant = Extract<SessionMessageInfo, { type: "assistant" }>
+type AssistantTool = Extract<Assistant["content"][number], { type: "tool" }>
+type AssistantReasoning = Extract<Assistant["content"][number], { type: "reasoning" }>
+type ProviderState = AssistantTool["providerState"]
+type ToolRunningMetadata = Extract<AssistantTool["state"], { status: "running" }>["metadata"]
 type Compaction = Extract<SessionMessageInfo, { type: "compaction" }>
 type Shell = Extract<SessionMessageInfo, { type: "shell" }>
 
@@ -16,16 +20,49 @@ export type V2SessionReduction = {
 export function createV2SessionReducer() {
   const pending = new Map<string, SessionPendingMessage>()
 
-  const reduce = (source: readonly SessionMessageInfo[], event: ApexoEvent): V2SessionReduction | undefined => {
-    if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
-    const sessionID = event.data.sessionID
+  const reduce = (source: readonly SessionMessageInfo[], rawEvent: ApexoEvent): V2SessionReduction | undefined => {
+    const unknownEvent = rawEvent as unknown as {
+      id: string
+      type: string
+      created?: number
+      metadata?: SessionMessageInfo["metadata"]
+      data?: Record<string, unknown>
+    }
+    if (!unknownEvent.data || typeof unknownEvent.data.sessionID !== "string") return
+    const sessionID = unknownEvent.data.sessionID
+    const timestamp =
+      typeof unknownEvent.data.timestamp === "number"
+        ? unknownEvent.data.timestamp
+        : (unknownEvent.created ?? Date.now())
     const result = (messages: SessionMessageInfo[], touched: string[] = []): V2SessionReduction => ({
       sessionID,
       messages,
       touched,
     })
-    const append = (message: SessionMessageInfo) =>
-      result(source.some((item) => item.id === message.id) ? [...source] : [...source, message], [message.id])
+    const append = (message: SessionMessageInfo) => {
+      const exists = source.some((item) => item.id === message.id)
+      if (exists) {
+        return result(
+          update(source, message.id, () => message),
+          [message.id],
+        )
+      }
+      return result([...source, message], [message.id])
+    }
+
+    if (unknownEvent.type.startsWith("session.next.")) {
+      return reduceNext(
+        source,
+        { ...unknownEvent, data: unknownEvent.data },
+        sessionID,
+        timestamp,
+        result,
+        append,
+      )
+    }
+
+    const event = rawEvent
+    if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
 
     switch (event.type) {
       case "session.input.admitted":
@@ -518,4 +555,499 @@ function insertOrdinal<T extends Assistant["content"][number]["type"]>(
   const matches = source.filter((content) => content.type === type)
   if (matches[ordinal]) return source
   return [...source, item]
+}
+
+function reduceNext(
+  source: readonly SessionMessageInfo[],
+  event: {
+    id: string
+    type: string
+    created?: number
+    metadata?: SessionMessageInfo["metadata"]
+    data: Record<string, unknown>
+  },
+  sessionID: string,
+  timestamp: number,
+  result: (messages: SessionMessageInfo[], touched?: string[]) => V2SessionReduction,
+  append: (message: SessionMessageInfo) => V2SessionReduction,
+): V2SessionReduction | undefined {
+  const data = event.data
+  switch (event.type) {
+    case "session.next.prompt.admitted":
+    case "session.next.prompt.withdrawn":
+    case "session.next.history.copy.started":
+    case "session.next.history.copy.completed":
+    case "session.next.context.updated":
+    case "session.next.moved":
+      return result([...source])
+    case "session.next.history.copy.message": {
+      const message = data.message as SessionMessageInfo | undefined
+      if (!message || typeof message.id !== "string") return result([...source])
+      return append(message)
+    }
+    case "session.next.prompted": {
+      const prompt = (data.prompt as { text?: string; files?: unknown[]; agents?: unknown[] } | undefined) ?? {}
+      return append({
+        id: String(data.messageID ?? messageID(event.id)),
+        type: "user",
+        metadata: event.metadata,
+        text: typeof prompt.text === "string" ? prompt.text : "",
+        files: prompt.files as Extract<SessionMessageInfo, { type: "user" }>["files"],
+        agents: prompt.agents as Extract<SessionMessageInfo, { type: "user" }>["agents"],
+        time: { created: timestamp },
+      })
+    }
+    case "session.next.agent.switched":
+      return append({
+        id: String(data.messageID ?? messageID(event.id)),
+        type: "agent-switched",
+        metadata: event.metadata,
+        agent: String(data.agent ?? ""),
+        time: { created: timestamp },
+      })
+    case "session.next.model.switched":
+      return append({
+        id: String(data.messageID ?? messageID(event.id)),
+        type: "model-switched",
+        metadata: event.metadata,
+        model: data.model as Extract<SessionMessageInfo, { type: "model-switched" }>["model"],
+        previous: source.findLast(
+          (item): item is Extract<SessionMessageInfo, { type: "model-switched" | "assistant" }> =>
+            item.type === "model-switched" || item.type === "assistant",
+        )?.model,
+        time: { created: timestamp },
+      })
+    case "session.next.synthetic":
+      return append({
+        id: String(data.messageID ?? messageID(event.id)),
+        type: "synthetic",
+        metadata: event.metadata,
+        text: String(data.text ?? ""),
+        description: typeof data.description === "string" ? data.description : undefined,
+        time: { created: timestamp },
+      })
+    case "session.next.shell.started":
+      return append({
+        id: String(data.messageID ?? messageID(event.id)),
+        type: "shell",
+        metadata: event.metadata,
+        shellID: String(data.callID ?? ""),
+        command: String(data.command ?? ""),
+        status: "running",
+        time: { created: timestamp },
+      })
+    case "session.next.shell.ended": {
+      const callID = String(data.callID ?? "")
+      const rawOutput = data.output
+      const output =
+        typeof rawOutput === "string"
+          ? { output: rawOutput, cursor: rawOutput.length, size: rawOutput.length, truncated: false }
+          : (rawOutput as Shell["output"])
+      return updateMessage<Shell>(
+        source,
+        (item): item is Shell =>
+          item.type === "shell" &&
+          (item.shellID === callID || ("callID" in item && (item as { callID?: string }).callID === callID)),
+        (item) => ({
+          ...item,
+          status: "exited",
+          output,
+          time: { ...item.time, completed: timestamp },
+        }),
+        sessionID,
+      )
+    }
+    case "session.next.step.started": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const current = source.findLast((item): item is Assistant => item.type === "assistant" && !item.time.completed)
+      const completed =
+        current && current.id !== assistantMessageID
+          ? update(source, current.id, (item) =>
+              item.type === "assistant"
+                ? { ...item, retry: undefined, time: { ...item.time, completed: timestamp } }
+                : item,
+            )
+          : [...source]
+      const existing = completed.find((item) => item.id === assistantMessageID)
+      const snapshot = typeof data.snapshot === "string" ? data.snapshot : undefined
+      if (existing?.type === "assistant")
+        return result(
+          update(completed, existing.id, (item) =>
+            item.type === "assistant"
+              ? {
+                  ...item,
+                  agent: String(data.agent ?? item.agent),
+                  model: (data.model as Assistant["model"]) ?? item.model,
+                  retry: undefined,
+                  error: undefined,
+                  finish: undefined,
+                  snapshot: snapshot ? { ...item.snapshot, start: snapshot } : item.snapshot,
+                  time: { ...item.time, completed: undefined },
+                }
+              : item,
+          ),
+          current && current.id !== existing.id ? [current.id, existing.id] : [existing.id],
+        )
+      return result(
+        [
+          ...completed,
+          {
+            id: assistantMessageID,
+            type: "assistant",
+            metadata: event.metadata,
+            agent: String(data.agent ?? ""),
+            model: data.model as Assistant["model"],
+            content: [],
+            snapshot: snapshot ? { start: snapshot } : undefined,
+            time: { created: timestamp },
+          },
+        ],
+        current ? [current.id, assistantMessageID] : [assistantMessageID],
+      )
+    }
+    case "session.next.step.ended": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const snapshot = typeof data.snapshot === "string" ? data.snapshot : undefined
+      const files = Array.isArray(data.files) ? (data.files as NonNullable<Assistant["snapshot"]>["files"]) : undefined
+      return updateAssistant(source, assistantMessageID, sessionID, (item) => ({
+        ...item,
+        finish: data.finish as Assistant["finish"],
+        cost: typeof data.cost === "number" ? data.cost : item.cost,
+        tokens: (data.tokens as Assistant["tokens"]) ?? item.tokens,
+        snapshot: snapshot || files ? { ...item.snapshot, end: snapshot, files } : item.snapshot,
+        time: { ...item.time, completed: timestamp },
+      }))
+    }
+    case "session.next.step.failed": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      return updateAssistant(source, assistantMessageID, sessionID, (item) => ({
+        ...item,
+        finish: "error",
+        error: data.error as Assistant["error"],
+        retry: undefined,
+        time: { ...item.time, completed: timestamp },
+      }))
+    }
+    case "session.next.text.started": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const textID = String(data.textID ?? "")
+      return updateAssistant(source, assistantMessageID, sessionID, (item) => ({
+        ...item,
+        content: hasContentByID(item.content, "text", textID)
+          ? item.content
+          : [...item.content, { type: "text", id: textID, text: "" } as Assistant["content"][number]],
+      }))
+    }
+    case "session.next.text.delta": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const textID = String(data.textID ?? "")
+      const delta = String(data.delta ?? "")
+      return updateContentByID(source, assistantMessageID, sessionID, "text", textID, (item) => ({
+        ...item,
+        text: item.text + delta,
+      }))
+    }
+    case "session.next.text.ended": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const textID = String(data.textID ?? "")
+      const text = String(data.text ?? "")
+      return updateContentByID(source, assistantMessageID, sessionID, "text", textID, (item) => ({
+        ...item,
+        text,
+      }))
+    }
+    case "session.next.reasoning.started": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const reasoningID = String(data.reasoningID ?? "")
+      return updateAssistant(source, assistantMessageID, sessionID, (item) => ({
+        ...item,
+        content: hasContentByID(item.content, "reasoning", reasoningID)
+          ? item.content
+          : [
+              ...item.content,
+              {
+                type: "reasoning",
+                id: reasoningID,
+                text: "",
+                state: data.providerMetadata as AssistantReasoning["state"],
+                time: { created: timestamp },
+              } as Assistant["content"][number],
+            ],
+      }))
+    }
+    case "session.next.reasoning.delta": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const reasoningID = String(data.reasoningID ?? "")
+      const delta = String(data.delta ?? "")
+      return updateContentByID(source, assistantMessageID, sessionID, "reasoning", reasoningID, (item) => ({
+        ...item,
+        text: item.text + delta,
+      }))
+    }
+    case "session.next.reasoning.ended": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const reasoningID = String(data.reasoningID ?? "")
+      const text = String(data.text ?? "")
+      return updateContentByID(source, assistantMessageID, sessionID, "reasoning", reasoningID, (item) => ({
+        ...item,
+        text,
+        state: (data.providerMetadata as AssistantReasoning["state"]) ?? item.state,
+        time: { created: item.time?.created ?? timestamp, completed: timestamp },
+      }))
+    }
+    case "session.next.tool.input.started": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      const name = String(data.name ?? "")
+      return updateAssistant(source, assistantMessageID, sessionID, (item) => ({
+        ...item,
+        content: item.content.some((content) => content.type === "tool" && content.id === callID)
+          ? item.content
+          : [
+              ...item.content,
+              {
+                type: "tool",
+                id: callID,
+                name,
+                state: { status: "streaming", input: "" },
+                time: { created: timestamp },
+              },
+            ],
+      }))
+    }
+    case "session.next.tool.input.delta": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      const delta = String(data.delta ?? "")
+      return updateTool(source, assistantMessageID, callID, sessionID, (tool) =>
+        tool.state.status === "streaming"
+          ? { ...tool, state: { ...tool.state, input: tool.state.input + delta } }
+          : tool,
+      )
+    }
+    case "session.next.tool.input.ended": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      const text = String(data.text ?? "")
+      return updateTool(source, assistantMessageID, callID, sessionID, (tool) =>
+        tool.state.status === "streaming" ? { ...tool, state: { ...tool.state, input: text } } : tool,
+      )
+    }
+    case "session.next.tool.called": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      const provider = data.provider as { executed?: boolean; metadata?: ProviderState } | undefined
+      return updateAssistant(source, assistantMessageID, sessionID, (assistant) => {
+        const exists = assistant.content.some((item) => item.type === "tool" && item.id === callID)
+        const nextInput = (data.input as Extract<AssistantTool["state"], { status: "running" }>["input"]) ?? {}
+        const content: Assistant["content"] = exists
+          ? assistant.content.map((item): Assistant["content"][number] =>
+              item.type === "tool" && item.id === callID
+                ? {
+                    ...item,
+                    executed: provider?.executed,
+                    providerState: provider?.metadata,
+                    state: {
+                      status: "running",
+                      input: nextInput,
+                      metadata: {},
+                    },
+                    time: { ...item.time, ran: timestamp },
+                  }
+                : item,
+            )
+          : [
+              ...assistant.content,
+              {
+                type: "tool",
+                id: callID,
+                name: String(data.tool ?? "tool"),
+                executed: provider?.executed,
+                providerState: provider?.metadata,
+                state: {
+                  status: "running",
+                  input: nextInput,
+                  metadata: {},
+                },
+                time: { created: timestamp, ran: timestamp },
+              },
+            ]
+        return { ...assistant, content }
+      })
+    }
+    case "session.next.tool.progress": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      return updateTool(source, assistantMessageID, callID, sessionID, (tool) =>
+        tool.state.status === "running"
+          ? {
+              ...tool,
+              state: {
+                ...tool.state,
+                metadata:
+                  ((mediaMetadata(tool.name, data) ?? data.structured) as ToolRunningMetadata | undefined) ??
+                  tool.state.metadata,
+              },
+            }
+          : tool,
+      )
+    }
+    case "session.next.tool.success": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      const provider = data.provider as { executed?: boolean; metadata?: ProviderState } | undefined
+      return updateTool(source, assistantMessageID, callID, sessionID, (tool) => {
+        if (tool.state.status !== "running" && tool.state.status !== "streaming") return tool
+        return {
+          ...tool,
+          executed: Boolean(provider?.executed) || tool.executed === true,
+          providerResultState: provider?.metadata,
+          state: {
+            status: "completed",
+            input: typeof tool.state.input === "string" ? {} : tool.state.input,
+            metadata: ((mediaMetadata(tool.name, data) ?? data.structured) as ToolRunningMetadata | undefined) ?? {},
+            content: (data.content as Extract<typeof tool.state, { status: "completed" }>["content"]) ?? [],
+          },
+          time: { ...tool.time, completed: timestamp },
+        }
+      })
+    }
+    case "session.next.tool.failed": {
+      const assistantMessageID = String(data.assistantMessageID ?? "")
+      const callID = String(data.callID ?? "")
+      const provider = data.provider as { executed?: boolean; metadata?: ProviderState } | undefined
+      return updateTool(source, assistantMessageID, callID, sessionID, (tool) => {
+        if (tool.state.status !== "streaming" && tool.state.status !== "running") return tool
+        return {
+          ...tool,
+          executed: Boolean(provider?.executed) || tool.executed === true,
+          providerResultState: provider?.metadata,
+          state: {
+            status: "error",
+            input: typeof tool.state.input === "string" ? {} : tool.state.input,
+            metadata: tool.state.status === "running" ? tool.state.metadata : {},
+            content: (data.content ?? []) as unknown as Extract<typeof tool.state, { status: "error" }>["content"],
+            error: data.error as Extract<typeof tool.state, { status: "error" }>["error"],
+          },
+          time: { ...tool.time, completed: timestamp },
+        }
+      })
+    }
+    case "session.next.retried": {
+      const current = source.findLast((item): item is Assistant => item.type === "assistant" && !item.time.completed)
+      if (!current) return result([...source])
+      return updateAssistant(source, current.id, sessionID, (item) => ({
+        ...item,
+        retry: {
+          attempt: Number(data.attempt ?? 1),
+          at: timestamp + 1000,
+          error: data.error as NonNullable<Assistant["retry"]>["error"],
+        },
+      }))
+    }
+    case "session.next.input.execution.settled": {
+      const current = source.findLast((item): item is Assistant => item.type === "assistant" && !item.time.completed)
+      if (!current?.retry) return result([...source])
+      return updateAssistant(source, current.id, sessionID, (item) => ({ ...item, retry: undefined }))
+    }
+    case "session.next.compaction.started":
+      return append({
+        id: String(data.messageID ?? messageID(event.id)),
+        type: "compaction",
+        status: "running",
+        metadata: event.metadata,
+        reason: data.reason as Compaction["reason"],
+        summary: "",
+        recent: String(data.recent ?? ""),
+        time: { created: timestamp },
+      })
+    case "session.next.compaction.delta":
+      return updateMessage<Extract<Compaction, { status: "running" }>>(
+        source,
+        (item): item is Extract<Compaction, { status: "running" }> =>
+          item.type === "compaction" && item.status === "running",
+        (item) => ({
+          ...item,
+          summary: item.summary + String(data.text ?? ""),
+        }),
+        sessionID,
+      )
+    case "session.next.compaction.ended": {
+      const current = source.findLast(
+        (item): item is Extract<Compaction, { status: "running" }> =>
+          item.type === "compaction" && item.status === "running",
+      )
+      if (!current)
+        return append({
+          id: String(data.messageID ?? messageID(event.id)),
+          type: "compaction",
+          status: "completed",
+          metadata: event.metadata,
+          reason: data.reason as Compaction["reason"],
+          summary: String(data.text ?? ""),
+          recent: data.recent as Extract<Compaction, { status: "completed" }>["recent"],
+          time: { created: timestamp },
+        })
+      return result(
+        update(source, current.id, () => ({
+          ...current,
+          status: "completed",
+          reason: data.reason as Compaction["reason"],
+          summary: String(data.text ?? ""),
+          recent: data.recent as Extract<Compaction, { status: "completed" }>["recent"],
+        })),
+        [current.id],
+      )
+    }
+    case "session.next.revert.committed": {
+      const targetID = String(data.messageID ?? "")
+      const index = source.findIndex((item) => item.id === targetID)
+      if (index < 0) return result([...source])
+      return {
+        sessionID,
+        messages: source.slice(0, index),
+        touched: [],
+        removed: source.slice(index).map((item) => item.id),
+      }
+    }
+    default:
+      return
+  }
+}
+
+function hasContentByID(source: Assistant["content"], type: "text" | "reasoning", id: string) {
+  return source.some((item) => item.type === type && (item as { id?: string }).id === id)
+}
+
+function updateContentByID<T extends "text" | "reasoning">(
+  source: readonly SessionMessageInfo[],
+  messageID: string,
+  sessionID: string,
+  type: T,
+  id: string,
+  apply: (
+    item: Extract<Assistant["content"][number], { type: T }>,
+  ) => Extract<Assistant["content"][number], { type: T }>,
+) {
+  return updateAssistant(source, messageID, sessionID, (assistant) => {
+    const targetIndex = assistant.content.findLastIndex(
+      (item) => item.type === type && ((item as { id?: string }).id === id || !(item as { id?: string }).id),
+    )
+    if (targetIndex < 0) {
+      const initial =
+        type === "text"
+          ? ({ type: "text", id, text: "" } as unknown as Extract<Assistant["content"][number], { type: T }>)
+          : ({ type: "reasoning", id, text: "" } as unknown as Extract<Assistant["content"][number], { type: T }>)
+      return {
+        ...assistant,
+        content: [...assistant.content, apply(initial)],
+      }
+    }
+    return {
+      ...assistant,
+      content: assistant.content.map((item, index) =>
+        index === targetIndex ? apply(item as Extract<Assistant["content"][number], { type: T }>) : item,
+      ),
+    }
+  })
 }

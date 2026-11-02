@@ -74,7 +74,12 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
     const { runNativeHeadless, validateNativeInputID } = await import("./native-headless")
     const { loadOutputSchema, parseRunGuardrails, validateRunOutputOptions } = await import("./run-output-options")
     const rawLastMessage = input["output-last-message"] ?? input.o
-    validateNativeInputID({ inputID: input["input-id"], session: input.session, continue: input.continue })
+    validateNativeInputID({
+      inputID: input["input-id"],
+      session: input.session,
+      continue: input.continue,
+      fork: input.fork,
+    })
     validateRunOutputOptions({
       interactive: false,
       command: input.command,
@@ -100,8 +105,9 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
       maxBudgetUsd: input["max-budget-usd"],
       fallbackModel: input["fallback-model"],
     })
+    if (input.fork && !input.session && !input.continue)
+      throw new Error("--fork requires --continue or --session")
     const unsupported = [
-      ["--fork", input.fork],
       ["--command", input.command !== undefined],
       ["--demo", input.demo],
       ["--title", input.title !== undefined],
@@ -146,6 +152,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
         directory,
         session: input.session,
         continue: input.continue,
+        fork: input.fork,
         inputID: input["input-id"],
         agent: input.agent,
         model: parts ? { providerID: parts[0], modelID: parts.slice(1).join("/") } : undefined,

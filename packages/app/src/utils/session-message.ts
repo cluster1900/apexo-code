@@ -50,12 +50,16 @@ function normalizeToolMetadata(name: string, metadata: Record<string, unknown>) 
   }
 }
 
-export function normalizeSessionMessages(sessionID: string, source: readonly (SessionMessageInfo | NativeUser)[]) {
+export function normalizeSessionMessages(
+  sessionID: string,
+  source: readonly (SessionMessageInfo | NativeUser)[],
+  fallbackParentID?: string,
+) {
   const messages: Message[] = []
   const parts = new Map<string, Part[]>()
   let agent = ""
   let model = emptyModel
-  let parentID: string | undefined
+  let parentID: string | undefined = fallbackParentID
 
   source.forEach((message) => {
     if (message.type === "agent-switched") {
@@ -161,18 +165,27 @@ function shellMessages(
 function shellPart(sessionID: string, message: SessionMessageShell): ToolPart {
   const input = { command: message.command }
   const start = message.time.created
+  const callID =
+    "callID" in message && typeof (message as { callID?: unknown }).callID === "string"
+      ? (message as { callID: string }).callID
+      : message.shellID
+  const running = "status" in message && message.status ? message.status === "running" : message.time.completed === undefined
+  const outputText =
+    typeof (message as { output?: unknown }).output === "string"
+      ? ((message as unknown as { output: string }).output ?? "")
+      : (message.output?.output ?? "")
   const state: ToolPart["state"] =
-    message.status === "running"
+    running
       ? { status: "running", input, time: { start } }
       : {
           status: "completed",
           input,
-          output: message.output?.output ?? "",
+          output: outputText,
           title: "Shell",
           metadata: {
-            status: message.status,
+            status: message.status ?? "completed",
             exit: message.exit,
-            truncated: message.output?.truncated,
+            truncated: typeof message.output === "object" ? message.output?.truncated : false,
           },
           time: { start, end: message.time.completed ?? start },
         }
@@ -181,7 +194,7 @@ function shellPart(sessionID: string, message: SessionMessageShell): ToolPart {
     sessionID,
     messageID: `${message.id}:assistant`,
     type: "tool",
-    callID: message.shellID,
+    callID,
     tool: "bash",
     state,
   }
@@ -321,10 +334,12 @@ function textPart(sessionID: string, messageID: string, ordinal: number, text: s
 function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssistantTool): ToolPart {
   const start = tool.time.ran ?? tool.time.created
   const state = (() => {
-    if (tool.state.status === "streaming") {
-      const value = Option.getOrUndefined(decodeToolInput(tool.state.input))
+    const rawStatus = (tool.state as { status: string }).status
+    if (tool.state.status === "streaming" || rawStatus === "pending") {
+      const rawInput = typeof tool.state.input === "string" ? tool.state.input : ""
+      const value = Option.getOrUndefined(decodeToolInput(rawInput))
       const input = normalizeToolInput(tool.name, record(value) ? value : {})
-      return { status: "pending" as const, input, raw: tool.state.input }
+      return { status: "pending" as const, input, raw: rawInput }
     }
     if (tool.state.status === "running") {
       return {

@@ -78,10 +78,7 @@ export function DialogMessage(props: {
           value: "session.fork",
           description: "create a new session",
           onSelect: async (dialog) => {
-            const result = await sdk.client.session.fork({
-              sessionID: props.sessionID,
-              messageID: props.messageID,
-            })
+            const result = await sdk.forkSession(props.sessionID, props.messageID)
             const msg = message()
             const prompt = msg
               ? sync.data.part[msg.id].reduce(

@@ -21,8 +21,9 @@ type LegacyClient = ApexoClient
 type LegacyFor = (directory?: string) => LegacyClient
 type CompatibleSessionApi = Omit<
   SessionApi,
-  "prompt" | "command" | "shell" | "compact" | "rename" | "archive" | "remove"
+  "create" | "prompt" | "command" | "shell" | "compact" | "rename" | "archive" | "remove"
 > & {
+  create: (input?: Parameters<SessionApi["create"]>[0] & { commandSandbox?: string }) => ReturnType<SessionApi["create"]>
   prompt: (input: SessionPromptInput & LegacyPrompt) => Promise<SessionPromptOutput>
   command: (input: SessionCommandInput) => Promise<SessionCommandOutput>
   shell: (input: SessionShellInput & LegacyPrompt) => Promise<SessionShellOutput>
@@ -105,9 +106,18 @@ function sessionInfo(session: Session): SessionInfo {
   }
 }
 
+const nativeSessions = new Set<string>()
+
+export function markNativeSession(sessionID: string) {
+  nativeSessions.add(sessionID)
+}
+
+export function isNativeSession(sessionID: string) {
+  return nativeSessions.has(sessionID)
+}
+
 export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
-  const v1 = createV1Api(input)
-  const current = {
+  const current: CompatibleApi = {
     ...input.current,
     integration: {
       ...input.current.integration,
@@ -126,6 +136,28 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
     },
     session: {
       ...input.current.session,
+      async create(value?: Parameters<CompatibleSessionApi["create"]>[0]) {
+        if (value?.commandSandbox && value.commandSandbox !== "off") {
+          const result = await input
+            .legacy(value.location?.directory ?? input.directory)
+            .v2.session.create(
+              {
+                id: value.id ?? undefined,
+                agent: value.agent ?? undefined,
+                model: value.model ?? undefined,
+                location: value.location ?? undefined,
+                commandSandbox: value.commandSandbox,
+              },
+              { throwOnError: true },
+            )
+          const info = result.data.data as unknown as SessionInfo
+          markNativeSession(info.id)
+          return info
+        }
+        const result = await input.current.session.create(value)
+        markNativeSession(result.id)
+        return result
+      },
       async rename(value: Parameters<ServerApi["session"]["rename"]>[0] & LegacyLocation) {
         return input.current.session.rename(value).catch(async () => {
           await input.legacy(value.directory ?? input.directory).session.update({
@@ -135,11 +167,19 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
         })
       },
       async fork(value: Parameters<ServerApi["session"]["fork"]>[0]) {
-        return input.current.session.fork(value).catch(async () => {
-          const result = await input.legacy(input.directory).session.fork(value)
-          if (!result.data) throw new Error("Failed to fork session")
-          return sessionInfo(result.data)
-        })
+        return input
+          .legacy(input.directory)
+          .v2.session.fork(value, { throwOnError: true })
+          .then((result) => {
+            const info = result.data.data as unknown as SessionInfo
+            markNativeSession(info.id)
+            return info
+          })
+          .catch(async () => {
+            const result = await input.legacy(input.directory).session.fork(value)
+            if (!result.data) throw new Error("Failed to fork session")
+            return sessionInfo(result.data)
+          })
       },
       async command(value: SessionCommandInput): Promise<SessionCommandOutput> {
         if (value.command === "loop") {
@@ -173,6 +213,7 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
         })
       },
       async prompt(value: SessionPromptInput & LegacyPrompt): Promise<SessionPromptOutput> {
+        markNativeSession(value.sessionID)
         const match = /^\/loop(?:[ \t]+|\r?\n|$)([\s\S]*)/u.exec(value.text ?? "")
         const text = match
           ? await loopPrompt(input.legacy(input.directory), { arguments: match[1], directory: input.directory })
@@ -230,6 +271,7 @@ export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
       },
     },
   }
+  const v1 = createV1Api(input, current)
   return lazyApi(
     input.protocol.then((protocol) => (protocol === "v1" ? v1 : current)),
     current,
@@ -269,7 +311,7 @@ function lazyApi<T extends object>(implementation: Promise<T>, shape: T): T {
   })
 }
 
-function createV1Api(input: CompatibleInput): CompatibleApi {
+function createV1Api(input: CompatibleInput, current: CompatibleApi): CompatibleApi {
   const directory = (location?: { directory?: string }) => location?.directory ?? input.directory
   const legacy = (location?: { directory?: string }) => input.legacy(directory(location))
   const located = <T>(data: T, value?: { directory?: string }) => ({
@@ -279,6 +321,18 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
     },
     data,
   })
+  const probeNativeSession = async (sessionID: string) => {
+    if (isNativeSession(sessionID)) return true
+    const sandbox = await legacy()
+      .v2.session.sandbox({ sessionID }, { throwOnError: true })
+      .then((res) => res.data)
+      .catch(() => undefined)
+    if (sandbox?.profile && sandbox.profile !== "off") {
+      markNativeSession(sessionID)
+      return true
+    }
+    return false
+  }
 
   return {
     ...input.current,
@@ -313,7 +367,10 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         })
         return { data: (result.data ?? []).map(sessionInfo), cursor: {} }
       },
-      async create(value?: Parameters<ServerApi["session"]["create"]>[0]) {
+      async create(value?: Parameters<CompatibleSessionApi["create"]>[0]) {
+        if (value?.commandSandbox && value.commandSandbox !== "off") {
+          return current.session.create(value)
+        }
         const result = await legacy(value?.location ?? undefined).session.create({
           directory: directory(value?.location ?? undefined),
         })
@@ -326,12 +383,18 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         return sessionInfo(result.data)
       },
       async active() {
-        const result = await legacy().session.status()
-        return Object.fromEntries(
-          Object.entries(result.data ?? {}).flatMap(([sessionID, status]) =>
-            status.type === "idle" ? [] : [[sessionID, { type: "running" as const }]],
+        const [result, currentActive] = await Promise.all([
+          legacy().session.status(),
+          input.current.session.active().catch(() => ({})),
+        ])
+        return {
+          ...Object.fromEntries(
+            Object.entries(result.data ?? {}).flatMap(([sessionID, status]) =>
+              status.type === "idle" ? [] : [[sessionID, { type: "running" as const }]],
+            ),
           ),
-        )
+          ...currentActive,
+        }
       },
       async rename(value: Parameters<ServerApi["session"]["rename"]>[0] & LegacyLocation) {
         await legacy(value).session.update({ sessionID: value.sessionID, title: value.title })
@@ -343,45 +406,57 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         await legacy(value).session.delete(value)
       },
       async fork(value: Parameters<ServerApi["session"]["fork"]>[0]) {
+        const currentResult = await current.session.fork(value).catch(() => undefined)
+        if (currentResult) return currentResult
         const result = await legacy().session.fork(value)
         if (!result.data) throw new Error("Failed to fork session")
         return sessionInfo(result.data)
       },
       async interrupt(value: Parameters<ServerApi["session"]["interrupt"]>[0]) {
-        await legacy().session.abort(value)
+        if (isNativeSession(value.sessionID)) {
+          await current.session.interrupt(value)
+          return
+        }
+        await Promise.all([legacy().session.abort(value), current.session.interrupt(value).catch(() => undefined)])
       },
       async prompt(value: SessionPromptInput & LegacyPrompt) {
-        await legacy().session.promptAsync({
-          sessionID: value.sessionID,
-          messageID: value.id ?? undefined,
-          agent: value.agent,
-          model: value.model,
-          variant: value.variant,
-          ...(value.contextWindow ? { contextWindow: value.contextWindow } : {}),
-          parts: value.legacyParts ?? [
-            { type: "text", text: value.text },
-            ...(value.files ?? []).map((file) => ({
-              type: "file" as const,
-              mime: file.mention ? "text/plain" : mime(file.uri),
-              url: file.uri,
-              filename: file.name,
-              source: file.mention
-                ? {
-                    type: "file" as const,
-                    text: { value: file.mention.text, start: file.mention.start, end: file.mention.end },
-                    path: file.uri,
-                  }
-                : undefined,
-            })),
-            ...(value.agents ?? []).map((agent) => ({
-              type: "agent" as const,
-              name: agent.name,
-              source: agent.mention
-                ? { value: agent.mention.text, start: agent.mention.start, end: agent.mention.end }
-                : undefined,
-            })),
-          ],
-        })
+        if (isNativeSession(value.sessionID)) return current.session.prompt(value)
+        try {
+          await legacy().session.promptAsync({
+            sessionID: value.sessionID,
+            messageID: value.id ?? undefined,
+            agent: value.agent,
+            model: value.model,
+            variant: value.variant,
+            ...(value.contextWindow ? { contextWindow: value.contextWindow } : {}),
+            parts: value.legacyParts ?? [
+              { type: "text", text: value.text },
+              ...(value.files ?? []).map((file) => ({
+                type: "file" as const,
+                mime: file.mention ? "text/plain" : mime(file.uri),
+                url: file.uri,
+                filename: file.name,
+                source: file.mention
+                  ? {
+                      type: "file" as const,
+                      text: { value: file.mention.text, start: file.mention.start, end: file.mention.end },
+                      path: file.uri,
+                    }
+                  : undefined,
+              })),
+              ...(value.agents ?? []).map((agent) => ({
+                type: "agent" as const,
+                name: agent.name,
+                source: agent.mention
+                  ? { value: agent.mention.text, start: agent.mention.start, end: agent.mention.end }
+                  : undefined,
+              })),
+            ],
+          })
+        } catch (error) {
+          if (await probeNativeSession(value.sessionID)) return current.session.prompt(value)
+          throw error
+        }
         return {
           admittedSeq: 0,
           id: value.id ?? "",
@@ -393,21 +468,27 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         }
       },
       async command(value: SessionCommandInput) {
-        await legacy().session.command({
-          sessionID: value.sessionID,
-          messageID: value.id ?? undefined,
-          command: value.command,
-          arguments: value.arguments ?? "",
-          agent: value.agent ?? undefined,
-          model: value.model ? `${value.model.providerID}/${value.model.id}` : undefined,
-          variant: value.model?.variant,
-          parts: value.files?.map((file) => ({
-            type: "file" as const,
-            mime: mime(file.uri),
-            url: file.uri,
-            filename: file.name,
-          })),
-        })
+        if (isNativeSession(value.sessionID)) return current.session.command(value)
+        try {
+          await legacy().session.command({
+            sessionID: value.sessionID,
+            messageID: value.id ?? undefined,
+            command: value.command,
+            arguments: value.arguments ?? "",
+            agent: value.agent ?? undefined,
+            model: value.model ? `${value.model.providerID}/${value.model.id}` : undefined,
+            variant: value.model?.variant,
+            parts: value.files?.map((file) => ({
+              type: "file" as const,
+              mime: mime(file.uri),
+              url: file.uri,
+              filename: file.name,
+            })),
+          })
+        } catch (error) {
+          if (await probeNativeSession(value.sessionID)) return current.session.command(value)
+          throw error
+        }
         return {
           admittedSeq: 0,
           id: value.id ?? "",
@@ -419,12 +500,18 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         }
       },
       async shell(value: SessionShellInput & LegacyPrompt) {
-        await legacy().session.shell({
-          sessionID: value.sessionID,
-          command: value.command,
-          agent: value.agent,
-          model: value.model,
-        })
+        if (isNativeSession(value.sessionID)) return current.session.shell(value)
+        try {
+          await legacy().session.shell({
+            sessionID: value.sessionID,
+            command: value.command,
+            agent: value.agent,
+            model: value.model,
+          })
+        } catch (error) {
+          if (await probeNativeSession(value.sessionID)) return current.session.shell(value)
+          throw error
+        }
       },
       compact: async (value: SessionCompactInput & { model?: LegacyPrompt["model"] }) => {
         if (!value.model) throw new Error("A model is required to compact a V1 session")
@@ -686,25 +773,46 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
     permission: {
       ...input.current.permission,
       async reply(value: Parameters<ServerApi["permission"]["reply"]>[0] & { location?: { directory?: string } }) {
-        await legacy(value.location).permission.respond({
-          sessionID: value.sessionID,
-          permissionID: value.requestID,
-          response: value.reply,
-          ...(chosen(value) ? { always: [...chosen(value)!] } : {}),
-          directory: directory(value.location),
-        })
+        if (isNativeSession(value.sessionID)) {
+          return current.permission.reply(value)
+        }
+        try {
+          await legacy(value.location).permission.respond({
+            sessionID: value.sessionID,
+            permissionID: value.requestID,
+            response: value.reply,
+            ...(chosen(value) ? { always: [...chosen(value)!] } : {}),
+            directory: directory(value.location),
+          })
+        } catch {
+          return current.permission.reply(value)
+        }
       },
     },
     question: {
       ...input.current.question,
       async reply(value: Parameters<ServerApi["question"]["reply"]>[0]) {
-        await legacy().question.reply({
-          requestID: value.requestID,
-          answers: value.answers.map((answer) => [...answer]),
-        })
+        if (isNativeSession(value.sessionID)) {
+          return current.question.reply(value)
+        }
+        try {
+          await legacy().question.reply({
+            requestID: value.requestID,
+            answers: value.answers.map((answer) => [...answer]),
+          })
+        } catch {
+          return current.question.reply(value)
+        }
       },
       async reject(value: Parameters<ServerApi["question"]["reject"]>[0]) {
-        await legacy().question.reject({ requestID: value.requestID })
+        if (isNativeSession(value.sessionID)) {
+          return current.question.reject(value)
+        }
+        try {
+          await legacy().question.reject({ requestID: value.requestID })
+        } catch {
+          return current.question.reject(value)
+        }
       },
     },
   }

@@ -483,6 +483,9 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         state.sessionID
           ? (await ctx.sdk.v2.session.sandbox({ sessionID: state.sessionID }, { signal, throwOnError: true })).data
           : undefined,
+      catalog: async (signal) =>
+        (await ctx.sdk.v2.sandbox.catalog(undefined, { signal, throwOnError: true })).data,
+      native: () => Boolean(ctx.native),
     },
     hooksActions: {
       trust: async (hostHooksRepositoryTrust, signal) => {

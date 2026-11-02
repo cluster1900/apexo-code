@@ -11,6 +11,8 @@ import type {
   SessionsListOutput,
   SessionsCreateInput,
   SessionsCreateOutput,
+  SessionsForkInput,
+  SessionsForkOutput,
   SessionsSandboxInput,
   SessionsSandboxOutput,
   SessionsActiveOutput,
@@ -183,6 +185,8 @@ import type {
   SessionMcpAttachmentsCancelOutput,
   ServerLspStatusInput,
   ServerLspStatusOutput,
+  SandboxCatalogInput,
+  SandboxCatalogOutput,
   ServerWorkflowRelatedInput,
   ServerWorkflowRelatedOutput,
   ServerWorkflowLaunchInput,
@@ -513,6 +517,18 @@ export function make(options: ClientOptions) {
             },
             successStatus: 200,
             declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      fork: (input: SessionsForkInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsForkOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/fork`,
+            body: { messageID: input["messageID"], title: input["title"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 404, 503, 401],
             empty: false,
           },
           requestOptions,
@@ -1558,6 +1574,20 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/lsp`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    sandbox: {
+      catalog: (input?: SandboxCatalogInput, requestOptions?: RequestOptions) =>
+        request<SandboxCatalogOutput>(
+          {
+            method: "GET",
+            path: `/api/sandbox`,
             query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [503, 401, 400],
