@@ -405,18 +405,60 @@ export type SessionsCreateOutput = {
   }
 }["data"]
 
+export type SessionsForkInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly messageID?: { readonly messageID?: string | undefined; readonly title?: string | undefined }["messageID"]
+  readonly title?: { readonly messageID?: string | undefined; readonly title?: string | undefined }["title"]
+}
+
+export type SessionsForkOutput = {
+  readonly data: {
+    readonly id: string
+    readonly parentID?: string
+    readonly projectID: string
+    readonly agent?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly cost: number
+    readonly tokens: {
+      readonly input: number
+      readonly output: number
+      readonly reasoning: number
+      readonly cache: { readonly read: number; readonly write: number }
+    }
+    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly subpath?: string
+    readonly revert?: {
+      readonly messageID: string
+      readonly partID?: string
+      readonly snapshot?: string
+      readonly diff?: string
+      readonly files?: ReadonlyArray<{
+        readonly path: string
+        readonly status: "added" | "modified" | "deleted"
+        readonly additions: number
+        readonly deletions: number
+        readonly patch: string
+      }>
+    }
+  }
+}["data"]
+
 export type SessionsSandboxInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsSandboxOutput = {
   readonly scope: "native_commands"
   readonly stored: boolean
   readonly profile?: string
+  readonly base?: "workspace" | "read-only" | "strict" | "devbox"
   readonly revision?: string
   readonly backend: {
     readonly kind: "seatbelt" | "bwrap" | "none"
     readonly availability: "unchecked" | "available" | "unsupported" | "unavailable"
   }
   readonly network?: "off" | "unrestricted"
+  readonly allowDomains?: ReadonlyArray<string>
   readonly latestExecution?: {
     readonly id: string
     readonly revision: string
@@ -5792,6 +5834,38 @@ export type ServerLspStatusOutput = ReadonlyArray<{
   >
   readonly error?: string | undefined
 }>
+
+export type SandboxCatalogInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type SandboxCatalogOutput = {
+  readonly scope: "native_commands"
+  readonly backend: {
+    readonly kind: "seatbelt" | "bwrap" | "none"
+    readonly availability: "unchecked" | "available" | "unsupported" | "unavailable"
+  }
+  readonly profiles: ReadonlyArray<{
+    readonly name: string
+    readonly builtin: boolean
+    readonly base?: "workspace" | "read-only" | "strict" | "devbox"
+    readonly network: "off" | "unrestricted"
+    readonly allowDomains: ReadonlyArray<string>
+    readonly source?: "builtin" | "user" | "project"
+  }>
+  readonly failure?: {
+    readonly code:
+      | "invalid_policy"
+      | "unsupported_platform"
+      | "unavailable"
+      | "identity_conflict"
+      | "unsafe_path"
+      | "missing_inheritance"
+    readonly message: string
+  }
+}
 
 export type ServerWorkflowRelatedInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 

@@ -51,6 +51,10 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@apexo/core/session/projector"
+import { SessionV2 } from "@apexo/core/session"
+import { SessionExecution } from "@apexo/core/session/execution"
+import { SessionExecutionLocal } from "@apexo/core/session/execution/local"
+import { LocationServiceMap } from "@apexo/core/location-services"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
@@ -73,6 +77,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Permission.node,
     Todo.node,
     Session.node,
+    SessionV2.node,
     SessionProjector.node,
     SessionStatus.node,
     BackgroundJob.node,
@@ -100,6 +105,10 @@ export const AppLayer = AppNodeBuilderV1.build(
     Worktree.node,
     Installation.node,
   ]),
+  [
+    [LocationServiceMap.node, AppNodeBuilderV1.locationServiceMap],
+    [SessionExecution.node, SessionExecutionLocal.node],
+  ],
 ).pipe(Layer.provideMerge(AppNodeBuilderV1.build(Ripgrep.node)), Layer.provideMerge(Observability.layer))
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })

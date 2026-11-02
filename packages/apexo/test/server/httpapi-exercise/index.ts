@@ -2057,6 +2057,15 @@ const scenarios: Scenario[] = [
     }))
     .status(403),
   http.protected
+    .get("/api/sandbox", "v2.sandbox.catalog")
+    .at((ctx) => ({ path: "/api/sandbox", headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(body.scope === "native_commands", "sandbox catalog exposes native_commands scope")
+      array(body.profiles)
+      check(body.profiles.length >= 5, "sandbox catalog includes built-in profiles")
+    }),
+  http.protected
     .get("/api/session/{sessionID}/sandbox", "v2.session.sandbox.off")
     .seeded((ctx) => ctx.session({ title: "Native command sandbox owner" }))
     .at((ctx) => ({ path: `/api/session/${ctx.state.id}/sandbox`, headers: ctx.headers() }))
@@ -2074,6 +2083,29 @@ const scenarios: Scenario[] = [
   http.protected
     .get("/api/session/{sessionID}/sandbox", "v2.session.sandbox.missing")
     .at((ctx) => ({ path: "/api/session/ses_httpapi_sandbox_missing/sandbox", headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/fork", "v2.session.fork")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Native fork source" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/fork`,
+      headers: ctx.headers(),
+      body: {},
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      object(body.data)
+      check(typeof body.data.id === "string" && body.data.id !== ctx.state.id, "fork returns a new Session ID")
+      check(body.data.title === "Native fork source (fork #1)", "fork derives default fork title")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/fork", "v2.session.fork.missing")
+    .at((ctx) => ({
+      path: "/api/session/ses_httpapi_fork_missing/fork",
+      headers: ctx.headers(),
+      body: {},
+    }))
     .status(404),
   http.protected
     .post("/api/session", "v2.session.create.invalidSandbox")

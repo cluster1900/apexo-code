@@ -214,8 +214,14 @@ export const make = Effect.gen(function* () {
           scope: "native_commands" as const,
           stored: true,
           profile: current.policy.profile,
+          ...(CommandSandboxPolicy.isConfined(current.policy) ? { base: current.policy.base } : {}),
           revision: current.policy.revision,
           network: current.policy.network,
+          ...(CommandSandboxPolicy.isConfined(current.policy) &&
+          current.policy.allowDomains &&
+          current.policy.allowDomains.length > 0
+            ? { allowDomains: [...current.policy.allowDomains] }
+            : {}),
           backend: {
             kind: backendKind,
             availability: backend.availability,
@@ -236,6 +242,36 @@ export const make = Effect.gen(function* () {
           } satisfies Sandbox.Status),
         ),
       ),
+    catalog: Effect.gen(function* () {
+      if (backendKind !== "none" && backend.availability !== "available") {
+        yield* probeBackend
+      }
+      const profiles = yield* CommandSandboxPaths.listProfiles({
+        workspace: location.directory,
+        home: global.home,
+      })
+      const catalog: Sandbox.Catalog = {
+        scope: "native_commands",
+        backend: {
+          kind: backendKind,
+          availability: backend.availability,
+        },
+        profiles,
+      }
+      return catalog
+    }).pipe(
+      Effect.catchTag("CommandSandbox.Failure", (failure) =>
+        Effect.succeed<Sandbox.Catalog>({
+          scope: "native_commands",
+          backend: {
+            kind: backendKind,
+            availability: backend.availability,
+          },
+          profiles: [...CommandSandboxPaths.BUILTIN_PROFILES],
+          failure: { code: failure.code, message: failure.message },
+        }),
+      ),
+    ),
     assertRead: (sessionID: SessionSchema.ID, targetPath: string, rawPath?: string) =>
       Effect.gen(function* () {
         const current = yield* sessions.inspect(sessionID)

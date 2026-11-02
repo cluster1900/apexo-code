@@ -34,6 +34,7 @@ export const groupNames = {
   "server.question": "questions",
   "server.reference": "references",
   "server.projectCopy": "projectCopies",
+  "server.sandbox": "sandbox",
 } as const
 
 export const endpointNames = {

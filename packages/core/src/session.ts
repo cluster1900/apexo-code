@@ -3,8 +3,10 @@ import type { SessionSchedule } from "@apexo/schema/session-schedule"
 import { SessionInputExecution } from "./session/input-execution"
 import { SessionManagedChild } from "./session/managed-child"
 import { CommandSandbox } from "./command-sandbox"
+import { CommandSandboxPaths } from "./command-sandbox/paths"
 import { CommandSandboxPolicy } from "./command-sandbox/policy"
 import { SessionCommandSandbox } from "./session/command-sandbox"
+import { SessionHistoryCopy } from "./session/history-copy"
 import { Sandbox } from "@apexo/schema/sandbox"
 import { SessionRemoval } from "./session/removal"
 export * as SessionV2 from "./session"
@@ -149,6 +151,18 @@ export interface Interface {
   readonly create: (
     input: CreateInput,
   ) => Effect.Effect<SessionSchema.Info, NotFoundError | CommandSandboxPolicy.Failure>
+  readonly fork: (input: {
+    sessionID: SessionSchema.ID
+    messageID?: SessionMessage.ID
+    title?: string
+  }) => Effect.Effect<
+    SessionSchema.Info,
+    | NotFoundError
+    | MessageNotFoundError
+    | ManagedInputError
+    | SessionHistoryCopy.Conflict
+    | CommandSandboxPolicy.Failure
+  >
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly messages: (input: {
     sessionID: SessionSchema.ID
@@ -393,6 +407,106 @@ const layer = Layer.effect(
           )
           .pipe(Effect.catchTag("SessionLifecycle.Closed", () => Effect.fail(new NotFoundError({ sessionID }))))
       }),
+      fork: Effect.fn("V2Session.fork")(
+        function* (input) {
+          const source = yield* result.get(input.sessionID)
+          if (
+            yield* tasks
+              .managed(input.sessionID)
+              .pipe(Effect.mapError(() => new ManagedInputError({ sessionID: input.sessionID })))
+          )
+            return yield* new ManagedInputError({ sessionID: input.sessionID })
+          if ((yield* execution.active).has(input.sessionID))
+            return yield* new SessionHistoryCopy.Conflict({ message: "Cannot fork an active Session" })
+          const sourcePolicy = yield* policies.get(input.sessionID)
+          if (CommandSandboxPolicy.isConfined(sourcePolicy)) {
+            yield* CommandSandboxPaths.verify(sourcePolicy)
+          }
+          const snapshot = yield* SessionHistoryCopy.captureForFork(db, {
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            revertMessageID: source.revert?.messageID,
+          })
+          const truncated = input.messageID !== undefined || Boolean(source.revert?.messageID)
+          const agent = truncated
+            ? (snapshot.messages.findLast(
+                (message): message is SessionMessage.AgentSwitched | SessionMessage.Assistant =>
+                  message.type === "agent-switched" || message.type === "assistant",
+              )?.agent ?? snapshot.initialAgent)
+            : source.agent
+          const model = truncated
+            ? (snapshot.messages.findLast(
+                (message): message is SessionMessage.ModelSwitched | SessionMessage.Assistant =>
+                  message.type === "model-switched" || message.type === "assistant",
+              )?.model ?? snapshot.initialModel)
+            : source.model
+          const forkedID = SessionSchema.ID.create()
+          const claim = yield* lifecycle
+            .capture(forkedID)
+            .pipe(Effect.mapError(() => new NotFoundError({ sessionID: forkedID })))
+          return yield* lifecycle
+            .owned(
+              claim,
+              lifecycle.use(
+                forkedID,
+                Effect.gen(function* () {
+                  const project = yield* projects.resolve(source.location.directory)
+                  const prepared = yield* policies.prepareRoot(forkedID, sourcePolicy)
+                  yield* db
+                    .insert(ProjectTable)
+                    .values({ id: project.id, worktree: project.directory, vcs: project.vcs?.type, sandboxes: [] })
+                    .onConflictDoNothing()
+                    .run()
+                    .pipe(Effect.orDie)
+                  const now = Date.now()
+                  const info = SessionV1.SessionInfo.make({
+                    id: forkedID,
+                    parentID: undefined,
+                    slug: Slug.create(),
+                    version: InstallationVersion,
+                    projectID: project.id,
+                    directory: source.location.directory,
+                    path: path.relative(project.directory, source.location.directory).replaceAll("\\", "/"),
+                    workspaceID: source.location.workspaceID
+                      ? WorkspaceV2.ID.make(source.location.workspaceID)
+                      : undefined,
+                    title: input.title?.trim() || forkedTitle(source.title),
+                    agent,
+                    model: model
+                      ? {
+                          id: ModelV2.ID.make(model.id),
+                          providerID: model.providerID,
+                          variant: model.variant,
+                        }
+                      : undefined,
+                    cost: 0,
+                    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                    time: { created: now, updated: now },
+                  })
+                  yield* events
+                    .publish(
+                      SessionV1.Event.Created,
+                      { sessionID: forkedID, info },
+                      {
+                        location: source.location,
+                        id: prepared.eventID,
+                        commit: () => prepared.commit.pipe(Effect.orDie),
+                      },
+                    )
+                    .pipe(
+                      Effect.catchDefect((defect) =>
+                        defect instanceof CommandSandboxPolicy.Failure ? Effect.fail(defect) : Effect.die(defect),
+                      ),
+                    )
+                  yield* SessionHistoryCopy.copy(db, events, snapshot, forkedID)
+                  return yield* result.get(forkedID)
+                }),
+              ),
+            )
+            .pipe(Effect.tapError(() => removal.remove(forkedID).pipe(Effect.ignore)))
+        },
+        (effect, input) => mutate(input.sessionID, effect),
+      ),
       get: Effect.fn("V2Session.get")(function* (sessionID) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* new NotFoundError({ sessionID })
@@ -658,6 +772,12 @@ const resolvePrompt = (input: PromptInput.Prompt) =>
       }
     }),
   })
+
+function forkedTitle(title: string) {
+  const match = title.match(/^(.+) \(fork #(\d+)\)$/)
+  if (match) return `${match[1]} (fork #${Number.parseInt(match[2], 10) + 1})`
+  return `${title} (fork #1)`
+}
 
 export const node = makeGlobalNode({
   service: Service,

@@ -16,6 +16,7 @@ import { makePluginsGroup } from "./groups/plugins"
 import { SessionMcpAttachmentGroup } from "./groups/session-mcp-attachment"
 import { McpGroup } from "./groups/mcp"
 import { LspGroup } from "./groups/lsp"
+import { SandboxGroup } from "./groups/sandbox"
 import { WorkflowGroup } from "./groups/workflow"
 import { SideQuestionGroup } from "./groups/side-question"
 import { makeSessionGroup } from "./groups/session"
@@ -67,6 +68,7 @@ const makeApiFromGroup = <
     .add(McpGroup.middleware(locationMiddleware))
     .add(SessionMcpAttachmentGroup.middleware(sessionLocationMiddleware))
     .add(LspGroup.middleware(locationMiddleware))
+    .add(SandboxGroup.middleware(locationMiddleware))
     .add(WorkflowGroup.middleware(sessionLocationMiddleware))
     .add(SideQuestionGroup.middleware(sessionLocationMiddleware))
     .add(MessageGroup.middleware(sessionLocationMiddleware))

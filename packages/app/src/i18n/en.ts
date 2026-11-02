@@ -127,16 +127,20 @@ export const dict = {
   "commandSandbox.immutable":
     "This session’s stored profile cannot be changed. Create a new session to choose another profile.",
   "commandSandbox.stored": "Stored profile: {{profile}}",
+  "commandSandbox.storedWithBase": "Stored profile: {{profile}} (extends {{base}})",
   "commandSandbox.backend": "Backend availability: {{status}}",
   "commandSandbox.off": "Off",
   "commandSandbox.workspace": "Workspace",
   "commandSandbox.readOnly": "Read-only",
+  "commandSandbox.strict": "Strict",
+  "commandSandbox.devbox": "Devbox",
   "commandSandbox.unknown": "Unavailable",
   "commandSandbox.unchecked": "Not checked",
   "commandSandbox.available": "Available",
   "commandSandbox.unsupported": "Unsupported",
   "commandSandbox.unavailable": "Unavailable",
   "commandSandbox.networkOff": "Command network access is disabled.",
+  "commandSandbox.networkAllowlist": "Command network access is restricted to allowlisted domains ({{domains}}).",
   "commandSandbox.networkUnrestricted": "This policy does not restrict command network access.",
   "commandSandbox.networkUnknown": "Command network policy is unavailable.",
   "commandSandbox.receipt":
@@ -151,6 +155,11 @@ export const dict = {
     "Workspace: commands may write within the workspace and private temporary folders; network access is disabled.",
   "commandSandbox.readOnlyHint":
     "Read-only: commands cannot write to the workspace; private temporary folders remain writable and network access is disabled.",
+  "commandSandbox.strictHint":
+    "Strict: commands cannot write to the workspace and sensitive paths are blocked; private temporary folders remain writable and network access is disabled.",
+  "commandSandbox.devboxHint":
+    "Devbox: commands may write within the workspace, package caches, and private temporary folders; network access is unrestricted.",
+  "commandSandbox.customHint": "{{profile}} (extends {{base}}): custom policy from sandbox.toml.",
   "commandSandbox.offHint": "Off: no command sandbox is applied. Existing Apexo permissions still apply.",
   "commandSandbox.refresh": "Refresh status",
   "commandSandbox.loading": "Loading…",

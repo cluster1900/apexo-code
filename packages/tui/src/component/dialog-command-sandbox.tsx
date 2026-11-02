@@ -25,6 +25,9 @@ export function DialogCommandSandbox(props: { sessionID?: string }) {
               ? (await sdk.client.v2.session.sandbox({ sessionID: props.sessionID }, { signal, throwOnError: true }))
                   .data
               : undefined,
+          catalog: async (signal) =>
+            (await sdk.client.v2.sandbox.catalog(undefined, { signal, throwOnError: true })).data,
+          native: async () => (await sdk.transport()).kind === "native",
         }}
       />
     </box>

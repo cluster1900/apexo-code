@@ -428,7 +428,7 @@ export interface Interface {
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
   }) => Effect.Effect<Info>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID; title?: string }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -709,29 +709,46 @@ const layer: Layer.Layer<
     )
 
     const fork = Effect.fn("Session.fork")(
-      function* (input: { sessionID: SessionID; messageID?: MessageID }) {
+      function* (input: { sessionID: SessionID; messageID?: MessageID; title?: string }) {
         const ctx = yield* InstanceState.context
         const original = yield* get(input.sessionID)
         yield* policies.assertLegacy(input.sessionID).pipe(Effect.orDie)
-        const title = getForkedTitle(original.title)
+        const title = input.title?.trim() ? input.title.trim() : getForkedTitle(original.title)
         const id = SessionID.descending()
         return yield* lifecycle
           .use(
             id,
             Effect.gen(function* () {
+              const msgs = yield* messages({ sessionID: input.sessionID })
+              const idMap = new Map<string, MessageID>()
+              const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
+              const sliced = msgs.slice(0, target < 0 ? msgs.length : target)
+              const selectedUser =
+                input.messageID === undefined
+                  ? undefined
+                  : (sliced.findLast(
+                      (msg): msg is SessionV1.WithParts & { info: SessionV1.User } => msg.info.role === "user",
+                    ) ??
+                    msgs.find((msg): msg is SessionV1.WithParts & { info: SessionV1.User } => msg.info.role === "user"))
+              const selectedModel = selectedUser?.info.model
+                ? {
+                    id: ModelV2.ID.make(selectedUser.info.model.modelID),
+                    providerID: ProviderV2.ID.make(selectedUser.info.model.providerID),
+                    variant: selectedUser.info.model.variant,
+                  }
+                : original.model
               const session = yield* createNext({
                 id,
                 directory: ctx.directory,
                 path: sessionPath(ctx.worktree, ctx.directory),
                 workspaceID: original.workspaceID,
                 title,
+                agent: selectedUser?.info.agent ?? original.agent,
+                model: selectedModel,
                 metadata: structuredClone(original.metadata),
               })
-              const msgs = yield* messages({ sessionID: input.sessionID })
-              const idMap = new Map<string, MessageID>()
-              const target = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : msgs.length
 
-              for (const msg of msgs.slice(0, target < 0 ? msgs.length : target)) {
+              for (const msg of sliced) {
                 const newID = MessageID.ascending()
                 idMap.set(msg.info.id, newID)
 

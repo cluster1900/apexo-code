@@ -25,6 +25,7 @@ import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
 import { normalizeSessionInfo } from "@/utils/session"
+import { markNativeSession } from "@/utils/server-compat"
 import { Event } from "@apexo/schema/event"
 import { blobDataUrl } from "@/utils/draft-store"
 import { shouldQueueFollowup } from "./followup-delivery"
@@ -293,6 +294,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
     return sdk()
       .api.session.interrupt({ sessionID })
+      .then(() => {
+        serverSync().session.set("session_status", sessionID, { type: "idle" })
+        serverSync().session.set("permission", sessionID, [])
+        serverSync().session.set("question", sessionID, [])
+      })
       .catch(() => {})
   }
 
@@ -490,7 +496,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           ? sdk().api.session.create(creation)
           : sdk()
               .client.v2.session.create({ ...creation, commandSandbox }, { throwOnError: true })
-              .then((result) => result.data.data)
+              .then((result) => {
+                markNativeSession(result.data.data.id)
+                return result.data.data
+              })
       )
         .then(normalizeSessionInfo)
         .catch((err) => {

@@ -18,10 +18,11 @@ export function validateNativeInputID(input: {
   inputID?: string
   session?: string
   continue?: boolean
+  fork?: boolean
   mini?: boolean
 }) {
   if (input.inputID === undefined) return
-  if (!input.session || input.continue || input.mini)
+  if (!input.session || input.continue || input.fork || input.mini)
     throw new Error("--input-id requires native headless execution with an explicit --session")
   Schema.decodeUnknownSync(SessionMessage.ID)(input.inputID)
 }
@@ -31,6 +32,7 @@ export async function runNativeHeadless(input: {
   directory?: string
   session?: string
   continue?: boolean
+  fork?: boolean
   inputID?: string
   agent?: string
   model?: RunInput["model"]
@@ -51,8 +53,11 @@ export async function runNativeHeadless(input: {
     ephemeral: input.ephemeral,
     session: input.session,
     continue: input.continue,
+    fork: input.fork,
     inputID: input.inputID,
   })
+  if (input.fork && !input.session && !input.continue)
+    throw new Error("--fork requires --continue or --session")
   if (!input.text.trim() && !input.files.length)
     throw new Error("A new prompt or file is required for native headless execution")
   const requests = new AbortController()
@@ -86,7 +91,7 @@ export async function runNativeHeadless(input: {
       : input.continue
         ? (await transport.list(undefined, AbortSignal.timeout(10000))).data.find((item) => !item.parentID)
         : undefined
-    if (input.continue && !existing) throw new Error("No native Session is available to continue")
+    if ((input.continue || input.fork) && !existing) throw new Error("No native Session is available to continue")
     const catalog = await transport.catalog(AbortSignal.timeout(10000))
     const agent =
       input.agent ?? existing?.agent ?? catalog.agents.find((item) => item.mode !== "subagent" && !item.hidden)?.id
@@ -110,9 +115,13 @@ export async function runNativeHeadless(input: {
       process.exitCode = state.signal === "SIGINT" ? 130 : 143
       return
     }
-    const session = existing ?? (await transport.create({ agent, model: selected }, AbortSignal.timeout(10000)))
+    const session = existing
+      ? input.fork
+        ? await transport.fork({ sessionID: existing.id }, AbortSignal.timeout(10000))
+        : existing
+      : await transport.create({ agent, model: selected }, AbortSignal.timeout(10000))
     if (!existing && input.ephemeral) state.ephemeralSessionID = session.id
-    if (existing && input.agent && input.agent !== existing.agent)
+    if (existing && input.agent && input.agent !== session.agent)
       await transport.switchAgent({ sessionID: session.id, agent: input.agent }, AbortSignal.timeout(10000))
     if (existing && (input.model || input.variant) && selected)
       await transport.switchModel({ sessionID: session.id, model: selected }, AbortSignal.timeout(10000))

@@ -553,6 +553,8 @@ import type {
   V2QuestionRequestListResponses,
   V2ReferenceListErrors,
   V2ReferenceListResponses,
+  V2SandboxCatalogErrors,
+  V2SandboxCatalogResponses,
   V2ScheduleDeleteErrors,
   V2ScheduleDeleteResponses,
   V2ScheduleGetErrors,
@@ -573,6 +575,8 @@ import type {
   V2SessionCreateResponses,
   V2SessionEventsErrors,
   V2SessionEventsResponses,
+  V2SessionForkErrors,
+  V2SessionForkResponses,
   V2SessionGetErrors,
   V2SessionGetResponses,
   V2SessionHistoryErrors,
@@ -7366,6 +7370,43 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
+   * Fork session
+   *
+   * Create a new top-level session with a copy of the source session history, optionally sliced strictly before messageID.
+   */
+  public fork<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID?: string
+      title?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "messageID" },
+            { in: "body", key: "title" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionForkResponses, V2SessionForkErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/fork",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
    * Inspect native command sandbox
    *
    * Read stored command policy, backend availability and latest confirmed execution. Does not launch a process or change policy.
@@ -9689,6 +9730,30 @@ export class Lsp2 extends HeyApiClient {
   }
 }
 
+export class Sandbox extends HeyApiClient {
+  /**
+   * Inspect available command sandbox profiles
+   *
+   * Read built-in and workspace custom command sandbox profiles and backend availability for the target Location.
+   */
+  public catalog<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2SandboxCatalogResponses, V2SandboxCatalogErrors, ThrowOnError>({
+      url: "/api/sandbox",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Workflow extends HeyApiClient {
   public related<ThrowOnError extends boolean = false>(
     parameters: {
@@ -11264,6 +11329,11 @@ export class V2 extends HeyApiClient {
   private _lsp?: Lsp2
   get lsp(): Lsp2 {
     return (this._lsp ??= new Lsp2({ client: this.client }))
+  }
+
+  private _sandbox?: Sandbox
+  get sandbox(): Sandbox {
+    return (this._sandbox ??= new Sandbox({ client: this.client }))
   }
 
   private _workflow?: Workflow

@@ -5,8 +5,17 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { parse } from "toml"
+import { Sandbox } from "@apexo/schema/sandbox"
 import { CommandSandboxNetworkProxy } from "./network-proxy"
 import { CommandSandboxPolicy } from "./policy"
+
+export const BUILTIN_PROFILES: ReadonlyArray<Sandbox.ProfileInfo> = [
+  { name: "off", builtin: true, network: "unrestricted", allowDomains: [], source: "builtin" },
+  { name: "workspace", builtin: true, base: "workspace", network: "off", allowDomains: [], source: "builtin" },
+  { name: "read-only", builtin: true, base: "read-only", network: "off", allowDomains: [], source: "builtin" },
+  { name: "strict", builtin: true, base: "strict", network: "off", allowDomains: [], source: "builtin" },
+  { name: "devbox", builtin: true, base: "devbox", network: "unrestricted", allowDomains: [], source: "builtin" },
+]
 
 const EXTENDABLE_PROFILES = new Set<CommandSandboxPolicy.BaseProfile>(["workspace", "read-only", "strict", "devbox"])
 const BUILTIN_NAMES = new Set(["off", "none", "workspace", "read-only", "strict", "devbox"])
@@ -160,6 +169,64 @@ export const resolve = (input: {
         : new CommandSandboxPolicy.Failure({
             code: "unsafe_path",
             message: "The command sandbox paths could not be safely resolved.",
+          }),
+  })
+
+export const listProfiles = (input: {
+  readonly workspace: string
+  readonly home?: string
+  readonly grokHome?: string
+}) =>
+  Effect.tryPromise({
+    try: async (): Promise<ReadonlyArray<Sandbox.ProfileInfo>> => {
+      if (!path.isAbsolute(input.workspace) || input.workspace.includes("\0"))
+        throw new CommandSandboxPolicy.Failure({
+          code: "unsafe_path",
+          message: "Workspace must be an absolute path.",
+        })
+      const original = await lstat(input.workspace).catch(() => {
+        throw new CommandSandboxPolicy.Failure({
+          code: "unsafe_path",
+          message: "Workspace must be an existing directory.",
+        })
+      })
+      if (!original.isDirectory() || original.isSymbolicLink())
+        throw new CommandSandboxPolicy.Failure({
+          code: "unsafe_path",
+          message: "Workspace must be a real directory.",
+        })
+      const workspace = await realpath(input.workspace)
+      const home = input.home ?? process.env.HOME ?? homedir()
+      const grokHome = input.grokHome ?? process.env.GROK_HOME ?? path.join(home, ".grok")
+      const userConfig = await loadSandboxToml(path.join(grokHome, "sandbox.toml"))
+      const projectGrokConfig = await loadSandboxToml(path.join(workspace, ".grok", "sandbox.toml"))
+      const projectApexoConfig = await loadSandboxToml(path.join(workspace, ".apexo", "sandbox.toml"))
+      const names = [
+        ...new Set([
+          ...userConfig.profiles.keys(),
+          ...projectGrokConfig.profiles.keys(),
+          ...projectApexoConfig.profiles.keys(),
+        ]),
+      ]
+      const custom = names.map((name): Sandbox.ProfileInfo => {
+        const resolved = resolveProfileSelection(name, userConfig, projectGrokConfig, projectApexoConfig)
+        return {
+          name,
+          builtin: false,
+          base: resolved.base,
+          network: resolved.network,
+          allowDomains: resolved.allowDomains,
+          source: userConfig.profiles.has(name) ? "user" : "project",
+        }
+      })
+      return [...BUILTIN_PROFILES, ...custom]
+    },
+    catch: (error) =>
+      error instanceof CommandSandboxPolicy.Failure
+        ? error
+        : new CommandSandboxPolicy.Failure({
+            code: "unsafe_path",
+            message: "The command sandbox profiles could not be resolved.",
           }),
   })
 

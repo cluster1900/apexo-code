@@ -268,7 +268,15 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
 
   const list = async (directory: string) => {
     if ((await input.sdk.protocol) === "v1") {
-      return (await input.sdk.client.permission.list({ directory })).data ?? []
+      const [legacyList, v2List] = await Promise.all([
+        input.sdk.client.permission.list({ directory }).then((res) => res.data ?? []),
+        input.sdk.api.permission.request
+          .list({ location: { directory } })
+          .then((result) => result.data.map(normalizePermissionRequest))
+          .catch(() => [] as PermissionRequest[]),
+      ])
+      const seen = new Set(legacyList.map((item) => item.id))
+      return [...legacyList, ...v2List.filter((item) => !seen.has(item.id))]
     }
     return input.sdk.api.permission.request
       .list({ location: { directory } })
