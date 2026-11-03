@@ -7,6 +7,7 @@ export interface Args {
   continue?: boolean
   sessionID?: string
   sessionProtocol?: "auto" | "native" | "compatibility"
+  sandbox?: string
   fork?: boolean
   auto?: boolean
 }

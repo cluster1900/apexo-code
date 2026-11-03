@@ -12,6 +12,29 @@ import type { Seatbelt } from "./seatbelt"
 export type Input = Seatbelt.Input
 
 const STRICT_SYSTEM_DIRS = ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt"]
+const CORE_PATH_ENTRIES = ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"]
+
+function buildSandboxPath(workspace: string, temporary: string): string {
+  const seen = new Set(CORE_PATH_ENTRIES)
+  const fromEnv = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(
+      (entry) =>
+        entry.length > 0 &&
+        path.isAbsolute(entry) &&
+        !entry.includes("\0") &&
+        !entry.includes("\n") &&
+        !entry.includes(path.delimiter) &&
+        entry !== workspace &&
+        !entry.startsWith(workspace + path.sep) &&
+        entry !== temporary &&
+        !entry.startsWith(temporary + path.sep) &&
+        !seen.has(entry) &&
+        (seen.add(entry), true),
+    )
+  return [...CORE_PATH_ENTRIES, ...fromEnv].join(path.delimiter)
+}
 
 export function prepare(input: Input) {
   const readOnly = input.readOnly ?? []
@@ -118,7 +141,7 @@ export function prepare(input: Input) {
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      PATH: buildSandboxPath(input.workspace, input.temporary),
       HOME: input.home,
       TMPDIR: input.temporary,
       LANG: "C.UTF-8",

@@ -3766,6 +3766,9 @@ export type SessionInputExecutionPolicy = {
   maxTokens?: number
   maxBudgetUsd?: number
   fallbackModel?: ModelRef
+  outputSchema?: {
+    [key: string]: unknown
+  }
 }
 
 export type SessionNextRetryError = {

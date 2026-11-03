@@ -511,11 +511,16 @@ function resolveProfileSelection(
   }
   const custom =
     user.profiles.get(profile) ?? projectGrok.profiles.get(profile) ?? projectApexo.profiles.get(profile)
-  if (!custom)
+  if (!custom) {
+    const available = [
+      ...BUILTIN_PROFILES.map((item) => item.name),
+      ...new Set([...user.profiles.keys(), ...projectGrok.profiles.keys(), ...projectApexo.profiles.keys()]),
+    ]
     throw new CommandSandboxPolicy.Failure({
       code: "invalid_policy",
-      message: `Unknown command sandbox profile: ${profile}`,
+      message: `Unknown command sandbox profile: ${profile}. Available profiles: ${available.join(", ")}`,
     })
+  }
   const base = custom.extends ?? "workspace"
   const network =
     custom.allow_domains.length > 0

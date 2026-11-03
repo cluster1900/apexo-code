@@ -562,6 +562,7 @@ export type SessionsPromptInput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     } | null
     readonly resume?: boolean | null
   }["id"]
@@ -588,6 +589,7 @@ export type SessionsPromptInput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     } | null
     readonly resume?: boolean | null
   }["prompt"]
@@ -614,6 +616,7 @@ export type SessionsPromptInput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     } | null
     readonly resume?: boolean | null
   }["delivery"]
@@ -640,6 +643,7 @@ export type SessionsPromptInput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     } | null
     readonly resume?: boolean | null
   }["executionPolicy"]
@@ -666,6 +670,7 @@ export type SessionsPromptInput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     } | null
     readonly resume?: boolean | null
   }["resume"]
@@ -698,6 +703,7 @@ export type SessionsPromptOutput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     }
     readonly timeCreated: number
     readonly promotedSeq?: number
@@ -721,6 +727,7 @@ export type SessionsInputExecutionOutput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     }
     readonly status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
     readonly admittedSeq: number
@@ -760,6 +767,7 @@ export type SessionsInputWaitOutput = {
         readonly maxTokens?: number
         readonly maxBudgetUsd?: number
         readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly outputSchema?: { readonly [x: string]: JsonValue }
       }
       readonly status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
       readonly admittedSeq: number
@@ -799,6 +807,7 @@ export type SessionsInputInterruptOutput = {
       readonly maxTokens?: number
       readonly maxBudgetUsd?: number
       readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
     }
     readonly status: "admitted" | "active" | "completed" | "failed" | "interrupted" | "superseded"
     readonly admittedSeq: number
@@ -1330,6 +1339,7 @@ export type SessionsHistoryOutput = {
             readonly maxTokens?: number
             readonly maxBudgetUsd?: number
             readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+            readonly outputSchema?: { readonly [x: string]: JsonValue }
           }
         }
       }
@@ -1365,6 +1375,7 @@ export type SessionsHistoryOutput = {
             readonly maxTokens?: number
             readonly maxBudgetUsd?: number
             readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+            readonly outputSchema?: { readonly [x: string]: JsonValue }
           }
         }
       }
@@ -2046,6 +2057,7 @@ export type SessionsEventsOutput =
           readonly maxTokens?: number
           readonly maxBudgetUsd?: number
           readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly outputSchema?: { readonly [x: string]: JsonValue }
         }
       }
     }
@@ -2081,6 +2093,7 @@ export type SessionsEventsOutput =
           readonly maxTokens?: number
           readonly maxBudgetUsd?: number
           readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly outputSchema?: { readonly [x: string]: JsonValue }
         }
       }
     }

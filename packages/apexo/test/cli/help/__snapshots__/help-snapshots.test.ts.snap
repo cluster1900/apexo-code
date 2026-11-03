@@ -100,6 +100,7 @@ Options:
                                  --session)                                                [boolean]
   -m, --model                    model to use in the format of provider/model               [string]
       --agent                    agent to use                                               [string]
+      --sandbox                  command sandbox profile for new native sessions            [string]
       --format                   format: default (formatted), json (completed events), or
                                  streaming-json (streaming event JSONL)
                         [string] [choices: "default", "json", "streaming-json"] [default: "default"]
@@ -247,6 +248,28 @@ Options:
       --dir           workspace directory to confine against                                [string]
       --timeout       execution timeout in milliseconds                   [number] [default: 120000]
       --json          emit structured JSON execution receipt              [boolean] [default: false]"
+`;
+
+exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo init --help 1`] = `
+"apexo init [dir]
+
+scaffold AGENTS.md and .apexo/sandbox.toml for a repository
+
+Positionals:
+  dir  target repository directory                                                          [string]
+
+Options:
+  -h, --help          show help                                                            [boolean]
+  -v, --version       show version number                                                  [boolean]
+      --print-logs    print logs to stderr                                                 [boolean]
+      --log-level     log level                 [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure          run without external plugins                                         [boolean]
+      --memory        enable memory; --no-memory force-disables it for this process        [boolean]
+  -f, --force         overwrite existing AGENTS.md and .apexo/sandbox.toml files
+                                                                          [boolean] [default: false]
+      --agents-only   generate only AGENTS.md                             [boolean] [default: false]
+      --sandbox-only  generate only .apexo/sandbox.toml                   [boolean] [default: false]
+      --json          output structured JSON report                       [boolean] [default: false]"
 `;
 
 exports[`apexo CLI help-text snapshots every documented command emits stable help text: apexo apply --help 1`] = `

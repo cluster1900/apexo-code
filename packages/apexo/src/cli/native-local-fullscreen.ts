@@ -13,6 +13,7 @@ export async function runNativeLocalFullscreen(input: {
   continue?: boolean
   agent?: string
   model?: string
+  sandbox?: string
 }) {
   if (!process.stdout.isTTY) throw new Error("Native fullscreen requires a TTY stdout")
   const directory = await nativeLocalDirectory(input.directory)
@@ -47,6 +48,18 @@ export async function runNativeLocalFullscreen(input: {
       directory,
       sessionProtocol: "native",
     })
+    if (input.sandbox && input.sandbox.trim() && input.sandbox.trim() !== "off") {
+      const { createApexoClient } = await import("@apexo/sdk/v2/client")
+      const sdk = createApexoClient({ baseUrl: transport.url, directory, headers: transport.headers })
+      const catalog = (await sdk.v2.sandbox.catalog(undefined, { throwOnError: true })).data
+      const names = catalog.profiles.map((item) => item.name)
+      const available = names.includes("off") ? names : ["off", ...names]
+      if (!available.includes(input.sandbox.trim())) {
+        throw new Error(
+          `Unknown command sandbox profile "${input.sandbox.trim()}". Available profiles: ${available.join(", ")}`,
+        )
+      }
+    }
     const { TuiConfig } = await import("@/config/tui")
     const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
     const { Effect } = await import("effect")
@@ -65,6 +78,7 @@ export async function runNativeLocalFullscreen(input: {
           agent: input.agent,
           model: input.model,
           prompt: input.prompt,
+          sandbox: input.sandbox,
         },
       }),
       { signal: lifetime.signal },

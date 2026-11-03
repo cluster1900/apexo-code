@@ -106,6 +106,8 @@ const GeminiGenerationConfig = Schema.Struct({
   topK: Schema.optional(Schema.Number),
   stopSequences: optionalArray(Schema.String),
   thinkingConfig: Schema.optional(GeminiThinkingConfig),
+  responseMimeType: Schema.optional(Schema.String),
+  responseSchema: Schema.optional(JsonObject),
 })
 
 const GeminiBodyFields = {
@@ -316,6 +318,14 @@ const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMReque
     topK: generation?.topK,
     stopSequences: generation?.stop,
     thinkingConfig: thinkingConfig(request),
+    ...(request.responseFormat?.type === "json"
+      ? {
+          responseMimeType: "application/json",
+          responseSchema: GeminiToolSchema.convert(
+            ToolSchemaProjection.modelCompatibility(request.responseFormat.schema, toolSchemaCompatibility),
+          ),
+        }
+      : {}),
   }
 
   return {

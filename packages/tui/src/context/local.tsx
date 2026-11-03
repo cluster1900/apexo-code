@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, createSignal } from "solid-js"
 import { useSync } from "./sync"
 import { useEvent } from "./event"
 import path from "path"
@@ -48,7 +48,7 @@ export function recentModels(
     .map((item) => ({ providerID: item.providerID, modelID: item.modelID }))
 }
 
-export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+export const { use: useLocal, provider: LocalProvider, context: LocalContext } = createSimpleContext({
   name: "Local",
   init: () => {
     const sync = useSync()
@@ -501,6 +501,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const session = createSession()
+    const [sandboxProfile, setSandboxProfile] = createSignal(args.sandbox ?? "off")
+    const sandbox = {
+      current() {
+        return sandboxProfile()
+      },
+      set(profile: string) {
+        setSandboxProfile(profile.trim() || "off")
+      },
+    }
 
     const mcp = {
       isEnabled(name: string) {
@@ -535,6 +544,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       mcp,
       session,
+      sandbox,
       permission,
     }
     return result

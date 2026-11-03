@@ -80,6 +80,8 @@ export type RunInput = {
   thinking: boolean
   backgroundSubagents: boolean
   demo?: boolean
+  sandboxProfile?: () => string
+  setSandboxProfile?: (profile: string) => void
 }
 
 // The semantic role of a scrollback entry. Maps 1:1 to theme colors.

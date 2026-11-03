@@ -70,6 +70,8 @@ type RunRuntimeInput = {
   replay?: boolean
   replayLimit?: number
   demo?: RunInput["demo"]
+  sandboxProfile?: () => string
+  setSandboxProfile?: (profile: string) => void
 }
 
 type RunLocalInput = {
@@ -88,6 +90,8 @@ type RunLocalInput = {
   replay?: boolean
   replayLimit?: number
   demo?: RunInput["demo"]
+  sandboxProfile?: () => string
+  setSandboxProfile?: (profile: string) => void
 }
 
 type StreamTransportModule = Pick<
@@ -486,6 +490,8 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       catalog: async (signal) =>
         (await ctx.sdk.v2.sandbox.catalog(undefined, { signal, throwOnError: true })).data,
       native: () => Boolean(ctx.native),
+      selected: input.sandboxProfile,
+      select: input.setSandboxProfile,
     },
     hooksActions: {
       trust: async (hostHooksRepositoryTrust, signal) => {
@@ -1232,6 +1238,8 @@ export async function runInteractiveMode(
       replay: input.replay,
       replayLimit: input.replayLimit,
       demo: input.demo,
+      sandboxProfile: input.sandboxProfile,
+      setSandboxProfile: input.setSandboxProfile,
       boot: async () => ({
         sdk: input.sdk,
         native: input.native,

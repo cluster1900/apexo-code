@@ -477,7 +477,12 @@ export class RunFooter implements FooterApi {
     const patch = eventPatch(next)
     if (patch) {
       if (typeof patch.status === "string") {
-        this.clearNoticeTimer()
+        if (this.noticeTimeout && patch.status === "" && next.type !== "turn.send") {
+          this.noticeRestoreStatus = ""
+          delete patch.status
+        } else {
+          this.clearNoticeTimer()
+        }
       }
       if (next.type === "turn.send") {
         this.clearInterruptTimer()
@@ -538,6 +543,9 @@ export class RunFooter implements FooterApi {
     }
 
     this.setState(state)
+    if ((prev.status !== state.status || prev.phase !== state.phase) && this.view().type === "prompt") {
+      this.applyHeight()
+    }
 
     if (prev.phase === "running" && state.phase === "idle") {
       this.flush()
@@ -756,6 +764,12 @@ export class RunFooter implements FooterApi {
   // get fixed extra rows; the prompt view scales with textarea line count.
   private applyHeight(): void {
     const type = this.view().type
+    const noticeText = this.state().phase !== "running" ? this.state().status.trim() : ""
+    const noticeWidth = Math.max(20, (this.renderer.width || 80) - 10)
+    const noticeExtraRows =
+      noticeText.length > 24 && noticeText.length > noticeWidth
+        ? Math.ceil(noticeText.length / noticeWidth) - 1
+        : 0
     const height =
       type === "permission"
         ? this.base + PERMISSION_ROWS
@@ -788,7 +802,9 @@ export class RunFooter implements FooterApi {
                         ? 1 + this.subagentMenuRows
                         : this.promptRoute.type === "subagent"
                           ? this.base + SUBAGENT_INSPECTOR_ROWS
-                          : this.base + Math.max(TEXTAREA_MIN_ROWS, Math.min(PROMPT_MAX_ROWS, this.rows))
+                          : this.base +
+                            Math.max(TEXTAREA_MIN_ROWS, Math.min(PROMPT_MAX_ROWS, this.rows)) +
+                            noticeExtraRows
 
     if (height !== this.renderer.footerHeight) {
       this.renderer.footerHeight = height

@@ -88,11 +88,23 @@ const OpenAIChatToolChoice = Schema.Union([
   }),
 ])
 
+const OpenAIChatResponseFormat = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("text") }),
+  Schema.Struct({
+    type: Schema.Literal("json_schema"),
+    json_schema: Schema.Struct({
+      name: Schema.String,
+      schema: JsonObject,
+    }),
+  }),
+])
+
 export const bodyFields = {
   model: Schema.String,
   messages: Schema.Array(OpenAIChatMessage),
   tools: optionalArray(OpenAIChatTool),
   tool_choice: Schema.optional(OpenAIChatToolChoice),
+  response_format: Schema.optional(OpenAIChatResponseFormat),
   stream: Schema.Literal(true),
   stream_options: Schema.optional(Schema.Struct({ include_usage: Schema.Boolean })),
   store: Schema.optional(Schema.Boolean),
@@ -358,6 +370,18 @@ const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMR
             lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
           ),
     tool_choice: request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
+    response_format:
+      request.responseFormat?.type === "json"
+        ? {
+            type: "json_schema" as const,
+            json_schema: {
+              name: "structured_output",
+              schema: ToolSchemaProjection.modelCompatibility(request.responseFormat.schema, toolSchemaCompatibility),
+            },
+          }
+        : request.responseFormat?.type === "text"
+          ? { type: "text" as const }
+          : undefined,
     stream: true as const,
     stream_options: { include_usage: true },
     max_tokens: generation?.maxTokens,

@@ -17,7 +17,9 @@ export async function runNativeInteractive(input: {
   backgroundSubagents: boolean
   replay?: boolean
   replayLimit?: number
+  sandbox?: string
 }) {
+  let preferredSandbox = input.sandbox?.trim() || "off"
   const owner = new AbortController()
   const abort = () => owner.abort()
   input.signal?.addEventListener("abort", abort, { once: true })
@@ -50,16 +52,27 @@ export async function runNativeInteractive(input: {
               variant: input.variant ?? configured?.variant ?? undefined,
             }
           : undefined,
+        ...(preferredSandbox !== "off" ? { commandSandbox: preferredSandbox } : {}),
       }))
     const { runInteractiveMode } = await import("./cmd/run/runtime")
     const located = nativeSessionTransport(input.sdk, next.location.directory, owner.signal)
     const active = existing ? await located.active() : undefined
-    const startupNotice = existing && !active?.[next.id]
-      ? await located
-          .restore(next.id)
-          .then(restorationNotice)
-          .catch(() => "Schedules could not be restored. Open Tasks to inspect them or retry restoration.")
-      : undefined
+    const restoreNotice =
+      existing && !active?.[next.id]
+        ? await located
+            .restore(next.id)
+            .then(restorationNotice)
+            .catch(() => "Schedules could not be restored. Open Tasks to inspect them or retry restoration.")
+        : undefined
+    const existingSandbox =
+      existing && input.sandbox?.trim() ? await located.sandbox(next.id).catch(() => undefined) : undefined
+    const actualProfile = existingSandbox?.profile ?? "off"
+    const requestedProfile = preferredSandbox === "none" ? "off" : preferredSandbox
+    const sandboxNotice =
+      existing && input.sandbox?.trim() && requestedProfile !== actualProfile
+        ? `Warning: --sandbox ${input.sandbox.trim()} did not take effect for existing Session ${next.id} (current sandbox remains "${actualProfile}"). Run /new to start a Session with "${preferredSandbox}".`
+        : undefined
+    const startupNotice = [restoreNotice, sandboxNotice].filter(Boolean).join("\n") || undefined
     return await runInteractiveMode({
       sdk: input.sdk,
       signal: input.signal,
@@ -78,6 +91,10 @@ export async function runNativeInteractive(input: {
       initialInput: input.initialInput,
       thinking: input.thinking,
       backgroundSubagents: input.backgroundSubagents,
+      sandboxProfile: () => preferredSandbox,
+      setSandboxProfile: (profile) => {
+        preferredSandbox = profile.trim() || "off"
+      },
       createSession: async (_sdk, selection) =>
         located.create({
           location: next.location,
@@ -85,6 +102,7 @@ export async function runNativeInteractive(input: {
           model: selection.model
             ? { providerID: selection.model.providerID, id: selection.model.modelID, variant: selection.variant }
             : undefined,
+          ...(preferredSandbox !== "off" ? { commandSandbox: preferredSandbox } : {}),
         }),
     })
   } finally {

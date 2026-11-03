@@ -484,6 +484,21 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       .catch(() =>
         toast.show({ message: "Could not restore schedules. Check the connection and try again.", variant: "error" }),
       )
+    if (args.sandbox?.trim() && sync.data.native) {
+      const requested = args.sandbox.trim() === "none" ? "off" : args.sandbox.trim()
+      void sdk.client.v2.session
+        .sandbox({ sessionID }, { throwOnError: true })
+        .then((res) => {
+          const actual = res.data.profile ?? "off"
+          if (actual !== requested) {
+            toast.show({
+              variant: "warning",
+              message: `--sandbox ${args.sandbox!.trim()} applies to new Sessions only. Current Session uses "${actual}" (run /new to switch).`,
+            })
+          }
+        })
+        .catch(() => {})
+    }
   }
   const args = useArgs()
   onMount(() => {
