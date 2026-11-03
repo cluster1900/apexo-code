@@ -112,6 +112,10 @@ export const TuiThreadCommand = cmd({
         type: "string",
         describe: "agent to use",
       })
+      .option("sandbox", {
+        type: "string",
+        describe: "command sandbox profile for new native sessions",
+      })
       .option("auto", {
         type: "boolean",
         describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
@@ -158,7 +162,12 @@ export const TuiThreadCommand = cmd({
       process.exitCode = 1
       return
     }
-    if (args["session-protocol"] === "native") {
+    if (args.sandbox && args["session-protocol"] === "compatibility") {
+      UI.error("--sandbox requires --session-protocol native or auto")
+      process.exitCode = 1
+      return
+    }
+    if (args["session-protocol"] === "native" || (args["session-protocol"] === "auto" && Boolean(args.sandbox))) {
       const { runNativeLocalMini, validateNativeLocal } = await import("../native-local")
       validateNativeLocal({ ...args, port: undefined })
       const network = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].find((option) =>
@@ -185,6 +194,7 @@ export const TuiThreadCommand = cmd({
         continue: args.continue,
         agent: args.agent,
         model: args.model,
+        sandbox: args.sandbox,
       })
     }
     if (args["session-protocol"] !== "auto") {

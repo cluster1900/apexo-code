@@ -21,6 +21,7 @@ export const ExecutionPolicy = Schema.Struct({
   maxTokens: PositiveInt.pipe(optional),
   maxBudgetUsd: PositiveFinite.pipe(optional),
   fallbackModel: Model.Ref.pipe(optional),
+  outputSchema: Schema.Record(Schema.String, Schema.Json).pipe(optional),
 }).annotate({ identifier: "SessionInput.ExecutionPolicy" })
 export type ExecutionPolicy = typeof ExecutionPolicy.Type
 

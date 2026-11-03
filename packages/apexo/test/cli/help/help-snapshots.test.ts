@@ -50,6 +50,7 @@ const TOP_LEVEL = [
   "review",
   "doctor",
   "sandbox",
+  "init",
   "apply",
   "debug",
   "providers", // aliased to `auth`

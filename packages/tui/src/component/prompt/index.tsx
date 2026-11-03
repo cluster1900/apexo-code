@@ -1179,6 +1179,49 @@ export function Prompt(props: PromptProps) {
         toast.show({ variant: "info", message: `Open a session first to use /${builtin.name}.` })
         return true
       }
+      if (builtin.name === "sandbox" && builtin.args.trim()) {
+        const requested = builtin.args.trim()
+        if (!sync.data.native) {
+          toast.show({
+            variant: "warning",
+            message: `Run with --sandbox ${requested}\nor --session-protocol native to select a sandbox.`,
+          })
+          return true
+        }
+        const catalog = await sdk.client.v2.sandbox
+          .catalog(undefined, { throwOnError: true })
+          .then((res) => res.data)
+          .catch(() => undefined)
+        const names = catalog?.profiles.map((item) => item.name) ?? [
+          "off",
+          "workspace",
+          "read-only",
+          "strict",
+          "devbox",
+        ]
+        const available = names.includes("off") ? names : ["off", ...names]
+        if (!available.includes(requested)) {
+          toast.show({
+            variant: "error",
+            message: `Unknown sandbox profile "${requested}". Available profiles: ${available.join(", ")}.`,
+          })
+          return true
+        }
+        const currentStatus = props.sessionID
+          ? await sdk.client.v2.session
+              .sandbox({ sessionID: props.sessionID }, { throwOnError: true })
+              .then((res) => res.data)
+              .catch(() => undefined)
+          : undefined
+        local.sandbox.set(requested)
+        toast.show({
+          variant: "info",
+          message: currentStatus
+            ? `New Session sandbox set to "${local.sandbox.current()}" (current Session still uses "${currentStatus.profile ?? "off"}"; run /new to apply).`
+            : `New Session sandbox profile set to "${local.sandbox.current()}".`,
+        })
+        return true
+      }
       builtin.entry.onSelect()
       if (builtin.args)
         toast.show({ variant: "info", message: `/${builtin.name} takes no arguments; "${builtin.args}" was ignored.` })
@@ -1219,16 +1262,18 @@ export function Prompt(props: PromptProps) {
       const selected = await sdk.transport()
       if (selected.kind === "native" && workspaceID)
         throw new Error("Native terminal remote workspace creation is not available")
+      const sandboxProfile = local.sandbox.current()
       const res =
         selected.kind === "native"
-          ? {
-              data: await selected.create({
+          ? await selected
+              .create({
+                ...(sandboxProfile && sandboxProfile !== "off" ? { commandSandbox: sandboxProfile } : {}),
                 location: { directory: directory ?? sync.path.directory },
                 agent: agent.name,
                 model: { providerID: selectedModel.providerID, id: selectedModel.modelID, variant },
-              }),
-              error: undefined,
-            }
+              })
+              .then((data) => ({ data, error: undefined }))
+              .catch((error: unknown) => ({ data: undefined, error }))
           : await sdk.client.session.create({
               directory,
               workspace: workspaceID,
@@ -1240,7 +1285,7 @@ export function Prompt(props: PromptProps) {
               },
             })
 
-      if (res.error) {
+      if (res.error || !res.data) {
         if (finishMoveProgress) move.finishSubmit()
         console.log("Creating a session failed:", res.error)
 

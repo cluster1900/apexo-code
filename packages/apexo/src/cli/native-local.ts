@@ -23,6 +23,7 @@ export interface NativeLocalOptions {
   port?: number
   format?: string
   mini?: boolean
+  interactive?: boolean
   dir?: string
   message?: string[]
   "--"?: string[]
@@ -37,6 +38,7 @@ export interface NativeLocalOptions {
   "max-tokens"?: number
   "max-budget-usd"?: number
   "fallback-model"?: string
+  sandbox?: string
 }
 
 export function validateNativeLocal(input: NativeLocalOptions) {
@@ -70,7 +72,7 @@ export async function nativeLocalDirectory(directory?: string) {
 }
 
 export async function runNativeLocalMini(input: NativeLocalOptions) {
-  if (!input.mini) {
+  if (!input.mini && !input.interactive) {
     const { runNativeHeadless, validateNativeInputID } = await import("./native-headless")
     const { loadOutputSchema, parseRunGuardrails, validateRunOutputOptions } = await import("./run-output-options")
     const rawLastMessage = input["output-last-message"] ?? input.o
@@ -167,6 +169,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
         outputLastMessage,
         ephemeral: input.ephemeral,
         guardrails,
+        sandbox: input.sandbox,
       })
     } finally {
       await host.close()
@@ -210,6 +213,7 @@ export async function runNativeLocalMini(input: NativeLocalOptions) {
       backgroundSubagents: flags.experimentalBackgroundSubagents,
       replay: input.replay,
       replayLimit: input["replay-limit"],
+      sandbox: input.sandbox,
     }).catch((error) => {
       if (!lifetime.signal.aborted) throw error
     })

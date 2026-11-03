@@ -120,6 +120,16 @@ const OpenAIResponsesToolChoice = Schema.Union([
   Schema.Struct({ type: Schema.tag("function"), name: Schema.String }),
 ])
 
+const OpenAIResponsesTextFormat = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("text") }),
+  Schema.Struct({
+    type: Schema.Literal("json_schema"),
+    name: Schema.String,
+    schema: JsonObject,
+    strict: Schema.optional(Schema.Boolean),
+  }),
+])
+
 // Fields shared between the HTTP body and the WebSocket `response.create`
 // message. The HTTP body adds `stream: true`; the WebSocket message adds
 // `type: "response.create"`. Defining the shared shape once keeps the two
@@ -143,6 +153,7 @@ const OpenAIResponsesCoreFields = {
   text: Schema.optional(
     Schema.Struct({
       verbosity: Schema.optional(OpenAIOptions.OpenAITextVerbosity),
+      format: Schema.optional(OpenAIResponsesTextFormat),
     }),
   ),
   max_output_tokens: Schema.optional(Schema.Number),
@@ -465,13 +476,31 @@ const lowerOptions = Effect.fn("OpenAIResponses.lowerOptions")(function* (reques
   const verbosity = OpenAIOptions.textVerbosity(request)
   const instructions = OpenAIOptions.instructions(request)
   const serviceTier = OpenAIOptions.serviceTier(request)
+  const toolSchemaCompatibility = request.model.compatibility?.toolSchema
+  const textFormat =
+    request.responseFormat?.type === "json"
+      ? {
+          type: "json_schema" as const,
+          name: "structured_output",
+          schema: ToolSchemaProjection.modelCompatibility(request.responseFormat.schema, toolSchemaCompatibility),
+        }
+      : request.responseFormat?.type === "text"
+        ? { type: "text" as const }
+        : undefined
   return {
     ...(instructions ? { instructions } : {}),
     ...(store !== undefined ? { store } : {}),
     ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
     ...(include ? { include } : {}),
     ...(effort || summary ? { reasoning: { effort, summary } } : {}),
-    ...(verbosity ? { text: { verbosity } } : {}),
+    ...(verbosity || textFormat
+      ? {
+          text: {
+            ...(verbosity ? { verbosity } : {}),
+            ...(textFormat ? { format: textFormat } : {}),
+          },
+        }
+      : {}),
     ...(serviceTier ? { service_tier: serviceTier } : {}),
   }
 })

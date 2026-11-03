@@ -34,6 +34,7 @@ export async function runNativeHeadless(input: {
   continue?: boolean
   fork?: boolean
   inputID?: string
+  sandbox?: string
   agent?: string
   model?: RunInput["model"]
   variant?: string
@@ -119,7 +120,14 @@ export async function runNativeHeadless(input: {
       ? input.fork
         ? await transport.fork({ sessionID: existing.id }, AbortSignal.timeout(10000))
         : existing
-      : await transport.create({ agent, model: selected }, AbortSignal.timeout(10000))
+      : await transport.create(
+          {
+            agent,
+            model: selected,
+            ...(input.sandbox && input.sandbox !== "off" ? { commandSandbox: input.sandbox } : {}),
+          },
+          AbortSignal.timeout(10000),
+        )
     if (!existing && input.ephemeral) state.ephemeralSessionID = session.id
     if (existing && input.agent && input.agent !== session.agent)
       await transport.switchAgent({ sessionID: session.id, agent: input.agent }, AbortSignal.timeout(10000))
@@ -140,6 +148,16 @@ export async function runNativeHeadless(input: {
         process.stderr.write(text)
       },
     })
+    if (existing && input.sandbox?.trim()) {
+      const requestedProfile = input.sandbox.trim() === "none" ? "off" : input.sandbox.trim()
+      const currentSandbox = await transport.sandbox(session.id, AbortSignal.timeout(10000)).catch(() => undefined)
+      const actualProfile = currentSandbox?.profile ?? "off"
+      if (requestedProfile !== actualProfile) {
+        process.stderr.write(
+          `Warning: --sandbox ${input.sandbox.trim()} did not take effect because existing Session ${session.id} uses immutable sandbox profile "${actualProfile}". Start a new Session without --session/--continue to use "${input.sandbox.trim()}".\n`,
+        )
+      }
+    }
     // Live fragments are advisory. Durable history is replayed in sequence before fragments,
     // so a reconnect never skips a terminal full-value event or consumes another input's output.
     // The SSE generator opens its HTTP request lazily; durable receipt/history reads
@@ -225,6 +243,9 @@ export async function runNativeHeadless(input: {
                 id: input.guardrails.fallbackModel.id,
               },
             }),
+        ...(input.outputSchema === undefined
+          ? {}
+          : { outputSchema: input.outputSchema.schema as Record<string, never> }),
       },
     }
     const decode = Schema.decodeUnknownSync(SessionInput.Execution)

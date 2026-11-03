@@ -50,6 +50,9 @@ export function nativeSessionTransport(client: ApexoClient, directory?: string, 
         )
       ).data.data
     },
+    async sandbox(sessionID: string, signal?: AbortSignal) {
+      return (await client.v2.session.sandbox({ sessionID }, requestOptions(signal, owner))).data
+    },
     async sandboxCatalog(signal?: AbortSignal) {
       return (await client.v2.sandbox.catalog({ location: { directory } }, requestOptions(signal, owner))).data
     },

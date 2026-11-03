@@ -48,6 +48,32 @@ const STRICT_READ_SUBPATHS = [
   "/Users/Shared",
 ]
 
+const CORE_PATH_ENTRIES = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+const FALLBACK_PATH_ENTRIES = ["/opt/homebrew/bin", "/usr/local/bin"]
+
+function buildSandboxPath(workspace: string, temporary: string): string {
+  const seen = new Set(CORE_PATH_ENTRIES)
+  const fromEnv = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(
+      (entry) =>
+        entry.length > 0 &&
+        path.isAbsolute(entry) &&
+        !entry.includes("\0") &&
+        !entry.includes("\n") &&
+        !entry.includes(path.delimiter) &&
+        entry !== workspace &&
+        !entry.startsWith(workspace + path.sep) &&
+        entry !== temporary &&
+        !entry.startsWith(temporary + path.sep) &&
+        !seen.has(entry) &&
+        (seen.add(entry), true),
+    )
+  const fallback = FALLBACK_PATH_ENTRIES.filter((entry) => !seen.has(entry) && (seen.add(entry), true))
+  return [...CORE_PATH_ENTRIES, ...fromEnv, ...fallback].join(path.delimiter)
+}
+
 /** Only constant syntax enters the profile. Filesystem names are opaque -D parameters. */
 export function prepare(input: Input) {
   const readOnly = input.readOnly ?? []
@@ -166,7 +192,7 @@ export function prepare(input: Input) {
       stdout: "pipe",
       stderr: "pipe",
       env: {
-        PATH: "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin",
+        PATH: buildSandboxPath(input.workspace, input.temporary),
         HOME: input.home,
         TMPDIR: input.temporary,
         LANG: "en_US.UTF-8",

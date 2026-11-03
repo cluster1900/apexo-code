@@ -820,6 +820,9 @@ const layer = Layer.effect(
               messages,
               tools: llmTools,
               toolChoice: isLastStep || summaryRole ? "none" : undefined,
+              ...(execution?.policy.outputSchema
+                ? { responseFormat: { type: "json" as const, schema: execution.policy.outputSchema } }
+                : {}),
             })
           const request = buildRequest(model, llmMessages)
           const fallbackMessages = fallbackModel

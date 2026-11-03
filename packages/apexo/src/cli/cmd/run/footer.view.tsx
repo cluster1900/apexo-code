@@ -562,8 +562,44 @@ export function RunFooterView(props: RunFooterViewProps) {
       if (
         props.commandSandboxActions &&
         input.mode !== "shell" &&
-        (input.text.trim() === "/sandbox" || input.command?.name === "sandbox")
+        (/^\/sandbox(?:\s|$)/u.test(input.text.trim()) || input.command?.name === "sandbox")
       ) {
+        const arg = (
+          input.command?.name === "sandbox"
+            ? input.command.arguments
+            : input.text.trim().replace(/^\/sandbox\b/u, "")
+        ).trim()
+        if (arg) {
+          if (!props.commandSandboxActions.select) {
+            props.onStatus(`Sandbox selection requires --sandbox ${arg} or --session-protocol native`)
+            return true
+          }
+          const actions = props.commandSandboxActions
+          const signal = new AbortController().signal
+          void Promise.all([
+            Promise.resolve(actions.catalog?.(signal)).catch(() => undefined),
+            Promise.resolve(actions.get?.(signal)).catch(() => undefined),
+          ]).then(([catalog, current]) => {
+            const names = catalog?.profiles.map((item) => item.name) ?? [
+              "off",
+              "workspace",
+              "read-only",
+              "strict",
+              "devbox",
+            ]
+            const available = names.includes("off") ? names : ["off", ...names]
+            if (!available.includes(arg)) {
+              props.onStatus(`Unknown sandbox "${arg}" (available: ${available.join(", ")})`)
+              return
+            }
+            const activeProfile = current?.profile ?? "off"
+            actions.select?.(arg)
+            props.onStatus(
+              `New session sandbox set to ${arg} (current session still uses ${activeProfile}; run /new to apply)`,
+            )
+          })
+          return true
+        }
         setRoute({ type: "command-sandbox" })
         return true
       }
@@ -672,6 +708,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   const shell = createMemo(() => prompt() && composer.shell())
   const menu = createMemo(() => prompt() && composer.visible())
   const stateStatus = createMemo(() => props.state().status.trim())
+  const hasLongNotice = createMemo(() => !busy() && !exiting() && stateStatus().length > 24)
   const modeLabel = createMemo(() => {
     if (exiting()) {
       return "EXIT"
@@ -706,7 +743,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     return shell() ? "Shell mode" : ""
   })
   const activityMeta = createMemo(() => {
-    if (!responsive().statusline.showActivityMeta || usage().length === 0) {
+    if (hasLongNotice() || !responsive().statusline.showActivityMeta || usage().length === 0) {
       return ""
     }
 
@@ -714,7 +751,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   })
   const modelStatus = createMemo(() => {
     const current = props.currentModel()
-    if (!prompt() || shell() || !current) {
+    if (hasLongNotice() || !prompt() || shell() || !current) {
       return
     }
 
@@ -744,7 +781,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   const hasActivityMeta = createMemo(() => activityMeta().length > 0)
   const hasModelStatus = createMemo(() => responsive().statusline.showModel && Boolean(modelStatus()))
   const contextHints = createMemo(() => {
-    if (!prompt() || shell() || !responsive().statusline.showContextHints) {
+    if (hasLongNotice() || !prompt() || shell() || !responsive().statusline.showContextHints) {
       return []
     }
 
@@ -774,7 +811,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   })
   const hasContextHints = createMemo(() => contextHints().length > 0)
   const commandHint = createMemo(() => {
-    if (!prompt() || !responsive().statusline.showCommandHint) {
+    if (hasLongNotice() || !prompt() || !responsive().statusline.showCommandHint) {
       return
     }
 
@@ -1269,7 +1306,7 @@ export function RunFooterView(props: RunFooterViewProps) {
             <Show when={!panel() && !menu()}>
               <box
                 width="100%"
-                height={1}
+                minHeight={1}
                 flexDirection="row"
                 gap={0}
                 flexShrink={0}
@@ -1297,14 +1334,23 @@ export function RunFooterView(props: RunFooterViewProps) {
                     </box>
                   </Show>
 
-                  <text fg={statusColor()} wrapMode="none" truncate flexGrow={1} flexShrink={1}>
-                    <Show when={busy() && !exiting()} fallback={statusText()}>
-                      <Show when={interruptLabel()}>
-                        {(label) => <span style={{ fg: armed() ? statusColor() : theme().muted }}>{label()} </span>}
-                      </Show>
+                  <Show
+                    when={hasLongNotice()}
+                    fallback={
+                      <text fg={statusColor()} wrapMode="none" truncate flexGrow={1} flexShrink={1}>
+                        <Show when={busy() && !exiting()} fallback={statusText()}>
+                          <Show when={interruptLabel()}>
+                            {(label) => <span style={{ fg: armed() ? statusColor() : theme().muted }}>{label()} </span>}
+                          </Show>
+                          {statusText()}
+                        </Show>
+                      </text>
+                    }
+                  >
+                    <text fg={statusColor()} wrapMode="word" flexGrow={1} flexShrink={1}>
                       {statusText()}
-                    </Show>
-                  </text>
+                    </text>
+                  </Show>
                 </box>
 
                 <Show when={activityMeta().length > 0}>

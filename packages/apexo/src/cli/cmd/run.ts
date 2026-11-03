@@ -269,6 +269,10 @@ const CompatibilityRunCommand = effectCmd({
         type: "string",
         describe: "agent to use",
       })
+      .option("sandbox", {
+        type: "string",
+        describe: "command sandbox profile for new native sessions",
+      })
       .option("format", {
         type: "string",
         choices: ["default", "json", "streaming-json"],
@@ -854,6 +858,7 @@ const CompatibilityRunCommand = effectCmd({
                 outputLastMessage: outputLastMessagePath,
                 ephemeral: args.ephemeral,
                 guardrails,
+                sandbox: args.sandbox,
               })
             }
             if (args.fork) throw new Error("Fork is not available on the native terminal transport")
@@ -873,7 +878,11 @@ const CompatibilityRunCommand = effectCmd({
               backgroundSubagents: flags.experimentalBackgroundSubagents,
               replay,
               replayLimit: args["replay-limit"],
+              sandbox: args.sandbox,
             })
+          }
+          if (args.sandbox) {
+            throw new Error("--sandbox requires a server supporting the native V2 session API")
           }
           if (hasRunGuardrailFlags(args)) {
             throw new Error(
@@ -1517,6 +1526,9 @@ export const RunCommand: typeof CompatibilityRunCommand = {
         mini: args.mini,
       })
     }
+    if (args.sandbox && args["session-protocol"] === "compatibility") {
+      throw new Error("--sandbox requires --session-protocol native or auto")
+    }
     const guardrailsRequested = hasRunGuardrailFlags(args)
     if (guardrailsRequested && args["session-protocol"] === "compatibility") {
       throw new Error(
@@ -1525,6 +1537,7 @@ export const RunCommand: typeof CompatibilityRunCommand = {
     }
     if (
       (args["session-protocol"] === "native" ||
+        Boolean(args.sandbox) ||
         (guardrailsRequested && !args.mini && !args.interactive && !args.command)) &&
       !args.attach
     ) {
@@ -1552,6 +1565,7 @@ function defaultRunArgs(subcommand: string): RunHandlerArgs {
     fork: undefined,
     model: undefined,
     agent: undefined,
+    sandbox: undefined,
     format: "default",
     "output-schema": undefined,
     outputSchema: undefined,
