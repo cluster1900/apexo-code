@@ -3,6 +3,10 @@ import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { copyResponse, resolveModelArgs, turnResponses, writeNewFile } from "@apexo/tui/util/slash-args"
 import { builtinSlashTarget } from "@apexo/tui/prompt/slash-guard"
+import {
+  createPromptInputV2InteractionState,
+  transitionPromptInputV2,
+} from "../../../../session-ui/src/v2/components/prompt-input/machine"
 import { tmpdir } from "../../fixture/fixture"
 
 describe("turnResponses", () => {
@@ -152,5 +156,34 @@ describe("builtinSlashTarget", () => {
       type: "session-only",
       name: "rename",
     })
+  })
+})
+
+describe("Desktop PromptInputV2 Tab vs Enter autocomplete", () => {
+  test("Tab marks suggestion.select as completion-only while Enter executes", () => {
+    const persisted = {
+      prompt: [{ type: "text" as const, content: "/mod", start: 0, end: 4 }],
+      cursor: 4,
+      context: { items: [] },
+    }
+    const opened = transitionPromptInputV2(
+      createPromptInputV2InteractionState(),
+      { type: "input.changed", value: "/mod" },
+      persisted,
+    ).state
+    const state = transitionPromptInputV2(opened, { type: "popover.results", ids: ["model.choose"] }, persisted).state
+
+    const tab = transitionPromptInputV2(
+      state,
+      { type: "key.down", key: "Tab", ctrl: false, composing: false, ids: ["model.choose"] },
+      persisted,
+    )
+    const enter = transitionPromptInputV2(
+      state,
+      { type: "key.down", key: "Enter", ctrl: false, composing: false, ids: ["model.choose"] },
+      persisted,
+    )
+    expect(tab.commands).toEqual([{ type: "suggestion.select", id: "model.choose", complete: true }])
+    expect(enter.commands).toEqual([{ type: "suggestion.select", id: "model.choose" }])
   })
 })

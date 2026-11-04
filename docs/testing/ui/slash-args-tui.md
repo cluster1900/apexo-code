@@ -115,6 +115,34 @@ Grok Build 1.0.61/1.0.62 parity defects in the fullscreen TUI (`packages/tui`) a
 - **Verification**: `test/cli/run/footer.slash.test.ts`; PTY check `minimal-builtin-notice` plus the shared copy and
   `/btw` checks in minimal mode.
 
+## BUG-20261104-001: Pressing Tab on a slash autocomplete item executed or submitted immediately instead of completing into the prompt
+
+- **Category**: UI
+- **Affected scope**: `packages/tui/src/component/prompt/autocomplete.tsx`, `packages/apexo/src/cli/cmd/run/footer.prompt.tsx`,
+  `packages/apexo/test/cli/run/footer.view.test.tsx`, `packages/apexo/script/grok-slash-args-tui.mjs`.
+- **Occurrences**: 1 confirmed defect.
+- **Observed**: pressing `Tab` (`prompt.autocomplete.complete`) while the `/` slash autocomplete menu was open called
+  the same `select()` path as `Enter` (`prompt.autocomplete.select`). In the fullscreen TUI, built-in slash commands
+  immediately dispatched their command action (clearing `/...` without echoing `/<command> ` or allowing arguments to be
+  typed) and zero-argument server commands immediately called `props.onSubmit()`. In the minimal (`--mini`) footer,
+  `select()` wrote `/${next.name} ` and immediately called `submitPrompt(clonePrompt(draft))` (or opened `/editor` /
+  `/skills` panels directly).
+- **Expected**: pressing `Tab` on a slash autocomplete entry echoes `/<command> ` (with a trailing space) into the
+  composer and closes the autocomplete menu without executing or submitting, waiting for the user to add arguments or
+  press `Enter` to send.
+- **Reproduction**: start `apexo` or `apexo --mini`, type `/rev` or `/ren`, and press `Tab`; the command executes or
+  submits immediately instead of remaining in the input buffer as `/review ` or `/rename `.
+- **Root cause**: `prompt.autocomplete.complete` only branched for `@` directory mentions and otherwise delegated to
+  `select()` in both `packages/tui/src/component/prompt/autocomplete.tsx` and
+  `packages/apexo/src/cli/cmd/run/footer.prompt.tsx`.
+- **Fix**: added `completeSlash` in `packages/tui/src/component/prompt/autocomplete.tsx` and
+  `packages/apexo/src/cli/cmd/run/footer.prompt.tsx` so `prompt.autocomplete.complete` (`Tab`) inserts `/<name> `,
+  places the cursor at the end, syncs the prompt draft, and closes the popup without invoking `onSelect` or
+  `submitPrompt`, and routed `/editor` in `submitPrompt` when submitted via `Enter` after `Tab` completion.
+- **Verification**: `bun test test/cli/run/footer.view.test.tsx test/cli/tui/slash-args.test.ts` and PTY checks
+  `tab-completes-slash-before-enter` (`--fullscreen`) and `mini-tab-completes-slash-before-enter` (minimal mode) in
+  `packages/apexo/script/grok-slash-args-tui.mjs`.
+
 ## Shared verification
 
 Run from `packages/apexo` unless noted:

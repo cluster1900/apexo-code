@@ -853,6 +853,30 @@ export function createPromptState(input: PromptInput): PromptState {
     }
   }
 
+  const completeSlash = (next: SlashOption) => {
+    if (!area || area.isDestroyed) {
+      return
+    }
+
+    const cursor = area.cursorOffset
+    const head = slashHead(area.plainText)
+    const separator = head && /\s/.test(area.plainText[head.end] ?? "") ? "" : " "
+    const text = `/${next.name}${separator}`
+
+    area.cursorOffset = 0
+    const start = area.logicalCursor
+    area.cursorOffset = !head ? cursor : Bun.stringWidth(area.plainText.slice(0, head.end))
+    const end = area.logicalCursor
+
+    area.deleteRange(start.row, start.col, end.row, end.col)
+    area.insertText(text)
+    area.cursorOffset = Bun.stringWidth(text)
+    hide()
+    syncDraft()
+    scheduleRows()
+    area.focus()
+  }
+
   const select = (item?: PromptOption) => {
     const next = item ?? options()[menu.selected()]
     if (!next || !area || area.isDestroyed) {
@@ -1169,6 +1193,10 @@ export function createPromptState(input: PromptInput): PromptState {
             expand()
             return
           }
+          if (item?.kind === "slash") {
+            completeSlash(item)
+            return
+          }
           select()
         },
       },
@@ -1210,6 +1238,12 @@ export function createPromptState(input: PromptInput): PromptState {
     const command = next.mode === "shell" ? undefined : selectedCommand(next.text, next.command)
     if (!command && next.mode !== "shell" && isExitCommand(next.text)) {
       input.onExit()
+      return
+    }
+    if (!command && next.mode !== "shell" && slashHead(next.text)?.name.toLowerCase() === "editor") {
+      void openEditor({
+        value: resolveEditorSlashValue(next.text),
+      })
       return
     }
 
