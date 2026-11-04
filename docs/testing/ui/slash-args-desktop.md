@@ -137,3 +137,28 @@ Grok Build 1.0.61/1.0.62 parity defects in the Desktop web and Electron applicat
 - **Verification**: browser checks `exact-alias-first` (`/m` → `model.choose`, `/t` → `theme.cycle`,
   `/ml` → `grok.multiline`, `/mem` → `session.memory`) and `agents-pick-switches-to-plan` in
   `packages/apexo/script/grok-slash-args-ui.mjs`.
+
+## BUG-20261104-002: Pressing Tab in the Desktop slash popover executed built-in commands immediately instead of completing `/<command> `
+
+- **Category**: UI
+- **Affected scope**: `packages/app/src/components/prompt-input.tsx`,
+  `packages/session-ui/src/v2/components/prompt-input/machine.ts`,
+  `packages/session-ui/src/v2/components/prompt-input/interaction.ts`,
+  `packages/apexo/test/cli/tui/slash-args.test.ts`.
+- **Occurrences**: 1 confirmed defect.
+- **Observed**: pressing `Tab` while the inline `/` slash popover was open behaved identically to `Enter` in both
+  `PromptInput` (V1) and `PromptInputV2` (V2): for any built-in slash command, it cleared the composer and immediately
+  invoked `command.trigger(cmd.id, "slash")` instead of echoing `/<trigger> ` into the editor and waiting for `Enter`.
+- **Expected**: pressing `Tab` in the slash popover completes `/<trigger> ` into the composer and closes the popover
+  without executing the command, while `Enter` continues to execute or submit.
+- **Reproduction**: open a Desktop session, type `/mod` or `/ren` in the composer, and press `Tab`; the command runs
+  immediately instead of completing `/model ` or `/rename ` in the input.
+- **Root cause**: `PromptInput` (`prompt-input.tsx`) called `selectPopoverActive()` → `handleSlashSelect()` on `Tab`,
+  and `PromptInputV2` (`machine.ts` / `interaction.ts`) emitted an identical `{ type: "suggestion.select" }` transition
+  for both `Tab` and `Enter` and short-circuited `popover.select` whenever `onSuggestionSelect` returned a callback.
+- **Fix**: passed `complete = true` from `Tab` into `selectPopoverActive(true)` → `completeSlashCommand` in
+  `packages/app/src/components/prompt-input.tsx`, and added `complete?: boolean` to `suggestion.select` /
+  `popover.select` in `packages/session-ui/src/v2/components/prompt-input/machine.ts` and `interaction.ts` so `Tab`
+  executes the `draft.setText` completion without invoking the immediate `onSuggestionSelect` action.
+- **Verification**: unit test `Desktop PromptInputV2 Tab vs Enter autocomplete` in
+  `packages/apexo/test/cli/tui/slash-args.test.ts` and `bun turbo typecheck --concurrency=2`.

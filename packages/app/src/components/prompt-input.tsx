@@ -780,26 +780,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return [...custom, ...builtin]
   })
 
-  const handleSlashSelect = (cmd: SlashCommand | undefined) => {
+  const completeSlashCommand = (cmd: SlashCommand | undefined) => {
     if (!cmd) return
     const menu = store.slashMenu
     closePopover()
     const images = imageAttachments()
-
-    if (cmd.type === "custom") {
-      const text = `/${cmd.trigger} `
-      if (menu) {
-        editorRef.focus()
-        setCursorPosition(editorRef, 0)
-        addPart({ type: "text", content: text, start: 0, end: text.length })
-        focusEditorEnd()
-        return
-      }
-      setEditorText(text)
-      prompt.set([{ type: "text", content: text, start: 0, end: text.length }, ...images], text.length)
+    const text = `/${cmd.trigger} `
+    if (menu) {
+      editorRef.focus()
+      setCursorPosition(editorRef, 0)
+      addPart({ type: "text", content: text, start: 0, end: text.length })
       focusEditorEnd()
       return
     }
+    setEditorText(text)
+    prompt.set([{ type: "text", content: text, start: 0, end: text.length }, ...images], text.length)
+    focusEditorEnd()
+  }
+
+  const handleSlashSelect = (cmd: SlashCommand | undefined) => {
+    if (!cmd) return
+    if (cmd.type === "custom") {
+      completeSlashCommand(cmd)
+      return
+    }
+    const menu = store.slashMenu
+    closePopover()
+    const images = imageAttachments()
 
     if (menu) {
       command.trigger(cmd.id, "slash")
@@ -895,7 +902,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
     })
   }
-  const selectPopoverActive = () => {
+  const selectPopoverActive = (complete = false) => {
     if (store.popover === "at") {
       const items = atFlat()
       if (items.length === 0) return
@@ -910,6 +917,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (items.length === 0) return
       const active = slashActive()
       const item = items.find((entry) => entry.id === active) ?? items[0]
+      if (complete) {
+        completeSlashCommand(item)
+        return
+      }
       handleSlashSelect(item)
     }
   }
@@ -1431,7 +1442,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     if (store.popover) {
       if (event.key === "Tab") {
-        selectPopoverActive()
+        selectPopoverActive(true)
         event.preventDefault()
         return
       }

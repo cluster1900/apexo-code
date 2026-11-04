@@ -568,6 +568,22 @@ export function Autocomplete(props: {
     selected.onSelect?.()
   }
 
+  function completeSlash() {
+    const selected = options()[store.selected]
+    if (!selected) return
+    const token = (selected.value ?? selected.display).trimEnd().replace(/:mcp$/, "")
+    const newText = (token.startsWith("/") ? token : "/" + token) + " "
+    const input = props.input()
+    const cursor = input.logicalCursor
+    input.deleteRange(0, 0, cursor.row, cursor.col)
+    input.insertText(newText)
+    input.cursorOffset = Bun.stringWidth(newText)
+    props.setPrompt((draft) => {
+      draft.input = input.plainText
+    })
+    setStore("visible", false)
+  }
+
   function expandDirectory() {
     const selected = options()[store.selected]
     if (!selected) return
@@ -635,6 +651,10 @@ export function Autocomplete(props: {
           const selected = options()[store.selected]
           if (selected?.isDirectory) {
             expandDirectory()
+            return
+          }
+          if (store.visible === "/") {
+            completeSlash()
             return
           }
 

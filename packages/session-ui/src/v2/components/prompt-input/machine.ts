@@ -22,7 +22,7 @@ export type PromptInputV2InteractionEvent =
   | { type: "popover.results"; ids: string[] }
   | { type: "popover.active"; id: string }
   | { type: "popover.close" }
-  | { type: "popover.select"; item: PromptInputV2Suggestion }
+  | { type: "popover.select"; item: PromptInputV2Suggestion; complete?: boolean }
   | { type: "key.down"; key: string; ctrl: boolean; composing: boolean; ids: string[]; empty?: boolean; alt?: boolean }
   | { type: "mode.shell" }
   | { type: "mode.normal" }
@@ -36,7 +36,7 @@ export type PromptInputV2InteractionCommand =
   | { type: "draft.setText"; value: string }
   | { type: "mention.add"; item: PromptInputV2Suggestion }
   | { type: "popover.filter"; popover: "command" | "context"; query: string }
-  | { type: "suggestion.select"; id: string }
+  | { type: "suggestion.select"; id: string; complete?: boolean }
   | { type: "focus.editor" }
   | { type: "focus.command-search" }
 
@@ -208,7 +208,13 @@ function keyDown(
   }
   if (event.key === "Tab" || (event.key === "Enter" && !event.composing && !event.alt)) {
     if (!state.popover.activeID) return unchanged(state, true)
-    return unchanged(state, true, [{ type: "suggestion.select", id: state.popover.activeID }])
+    return unchanged(state, true, [
+      {
+        type: "suggestion.select",
+        id: state.popover.activeID,
+        ...(event.key === "Tab" ? { complete: true } : {}),
+      },
+    ])
   }
   const direction =
     event.key === "ArrowDown" || (event.ctrl && event.key === "n")

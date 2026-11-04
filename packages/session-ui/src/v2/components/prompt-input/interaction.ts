@@ -158,7 +158,7 @@ export function createPromptInputV2Controller(input: {
     }
     if (command.type === "suggestion.select") {
       const item = suggestions().find((entry) => entry.id === command.id)
-      if (item) dispatch({ type: "popover.select", item })
+      if (item) dispatch({ type: "popover.select", item, complete: command.complete })
       return
     }
     if (command.type === "focus.editor")
@@ -171,7 +171,8 @@ export function createPromptInputV2Controller(input: {
   function dispatch(event: PromptInputV2InteractionEvent) {
     const mode = state.mode
     const result = transitionPromptInputV2(state, event, draft.state)
-    const action = event.type === "popover.select" ? input.onSuggestionSelect?.(event.item) : undefined
+    const action =
+      event.type === "popover.select" && !event.complete ? input.onSuggestionSelect?.(event.item) : undefined
     if (event.type === "popover.select") {
       if (!action || state.popover.type !== "command-menu") result.commands.forEach(execute)
       if (action && event.item.kind === "command" && state.popover.type !== "command-menu") {

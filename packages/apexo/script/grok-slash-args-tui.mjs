@@ -119,6 +119,17 @@ try {
   await poll(() => plain().includes(composer) && !plain().includes("Side questions"), "side-question panel closed")
 
   if (fullscreen) {
+    // Tab on a slash command echoes `/<command> ` into the prompt without executing until Enter is pressed.
+    child.terminal.write("\x1b[200~/ren\x1b[201~")
+    await poll(() => plain().includes("/ren"), "typed /ren")
+    child.terminal.write("\t")
+    await poll(() => plain().includes("/rename "), "Tab completed /rename in input")
+    assert.notEqual((await runtime.api(`/session/${session.id}`)).title, "Tab completed title")
+    child.terminal.write("\x1b[200~Tab completed title\x1b[201~\r")
+    await poll(async () => (await runtime.api(`/session/${session.id}`)).title === "Tab completed title", "Tab + Enter renamed")
+    await unchanged("/rename via Tab")
+    checks.push("tab-completes-slash-before-enter")
+
     // /rename <title> sets the title directly.
     await type("/rename Renamed by slash")
     await poll(async () => (await runtime.api(`/session/${session.id}`)).title === "Renamed by slash", "renamed")
@@ -178,6 +189,16 @@ try {
   }
 
   if (!fullscreen) {
+    // Tab on a slash command echoes `/<command> ` into the mini composer without opening/submitting until Enter.
+    child.terminal.write("\x1b[200~/tas\x1b[201~")
+    await poll(() => plain().includes("/tas"), "typed /tas")
+    child.terminal.write("\t")
+    await poll(() => plain().includes("/tasks "), "Tab completed /tasks in mini input")
+    child.terminal.write("\x03")
+    await poll(() => !plain().includes("/tasks"), "cleared /tasks draft")
+    await unchanged("/tasks via Tab")
+    checks.push("mini-tab-completes-slash-before-enter")
+
     // Fullscreen-only built-ins print a notice instead of prompting the model.
     await type("/compact now")
     await rendered("/compact isn't available in minimal mode")

@@ -862,6 +862,10 @@ test("direct footer submits slash autocomplete selections without dispatching sh
     await app.renderOnce()
     app.mockInput.pressKey("TAB")
     await app.renderOnce()
+    expect(submits).toHaveLength(1)
+    expect(app.captureCharFrame()).toContain("/review")
+    app.mockInput.pressEnter()
+    await app.renderOnce()
 
     "/re branch".split("").forEach((key) => app.mockInput.pressKey(key))
     Array.from({ length: 7 }).forEach(() => app.mockInput.pressKey("ARROW_LEFT"))
