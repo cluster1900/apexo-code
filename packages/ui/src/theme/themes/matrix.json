@@ -45,8 +45,8 @@
       "markdown-code-block": "#203022"
     },
     "v2Overrides": {
-      "v2-text-text-base": "#353535",
-      "v2-text-text-muted": "#748476",
+      "v2-text-text-base": "#203022",
+      "v2-text-text-muted": "#556457",
       "v2-text-text-faint": "#748476",
       "v2-background-bg-accent": "var(--v2-green-600)",
       "v2-text-text-accent": "var(--v2-green-600)",

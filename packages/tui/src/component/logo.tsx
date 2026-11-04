@@ -1,13 +1,21 @@
 import { RGBA, TextAttributes } from "@opentui/core"
 import { For, type JSX } from "solid-js"
-import { tint, useTheme } from "../context/theme"
+import { relativeLuminance, tint, useTheme } from "../context/theme"
 import { logo } from "../logo"
 
 export function Logo() {
   const { theme } = useTheme()
 
   const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
-    const shadow = tint(theme.background, fg, 0.25)
+    const baseBg =
+      theme.background.a > 0
+        ? theme.background
+        : theme.backgroundPanel.a > 0
+          ? theme.backgroundPanel
+          : relativeLuminance(theme.text) > 0.5
+            ? RGBA.fromHex("#0a0a0a")
+            : RGBA.fromHex("#ffffff")
+    const shadow = tint(baseBg, fg, 0.25)
     const attrs = bold ? TextAttributes.BOLD : undefined
     return Array.from(line).map((char) => {
       if (char === "_") {

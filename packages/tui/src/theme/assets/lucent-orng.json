@@ -11,18 +11,22 @@
     "darkBlue": "#6ba1e6",
     "darkCyan": "#56b6c2",
     "darkYellow": "#e5c07b",
-    "darkPanelBg": "#2a1a1599",
+    "darkPanelBg": "#14100e",
+    "darkElementBg": "#1f1714",
+    "darkMenuBg": "#2a1a15",
     "lightStep6": "#d4d4d4",
-    "lightStep11": "#8a8a8a",
+    "lightStep11": "#6b6562",
     "lightStep12": "#1a1a1a",
-    "lightSecondary": "#EE7948",
-    "lightAccent": "#c94d24",
-    "lightRed": "#d1383d",
-    "lightOrange": "#EC5B2B",
-    "lightBlue": "#0062d1",
-    "lightCyan": "#318795",
-    "lightYellow": "#b0851f",
-    "lightPanelBg": "#fff5f099"
+    "lightSecondary": "#d95f2b",
+    "lightAccent": "#b8431c",
+    "lightRed": "#c92a2a",
+    "lightOrange": "#d94e1f",
+    "lightBlue": "#005cc5",
+    "lightCyan": "#267480",
+    "lightYellow": "#946c00",
+    "lightPanelBg": "#faf3ef",
+    "lightElementBg": "#f2e7e1",
+    "lightMenuBg": "#fff5f0"
   },
   "theme": {
     "primary": {
@@ -70,16 +74,16 @@
       "light": "transparent"
     },
     "backgroundPanel": {
-      "dark": "transparent",
-      "light": "transparent"
-    },
-    "backgroundElement": {
-      "dark": "transparent",
-      "light": "transparent"
-    },
-    "backgroundMenu": {
       "dark": "darkPanelBg",
       "light": "lightPanelBg"
+    },
+    "backgroundElement": {
+      "dark": "darkElementBg",
+      "light": "lightElementBg"
+    },
+    "backgroundMenu": {
+      "dark": "darkMenuBg",
+      "light": "lightMenuBg"
     },
     "border": {
       "dark": "darkOrange",

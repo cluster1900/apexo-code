@@ -2,7 +2,9 @@
   "$schema": "https://raw.githubusercontent.com/cluster1900/apexo-grok/main/schemas/theme.json",
   "defs": {
     "vesperBg": "#101010",
-    "vesperFg": "#FFF",
+    "vesperPanel": "#161616",
+    "vesperElement": "#1e1e1e",
+    "vesperFg": "#FFFFFF",
     "vesperComment": "#8b8b8b",
     "vesperKeyword": "#A0A0A0",
     "vesperFunction": "#FFC799",
@@ -11,92 +13,100 @@
     "vesperError": "#FF8080",
     "vesperWarning": "#FFC799",
     "vesperSuccess": "#99FFE4",
-    "vesperMuted": "#A0A0A0"
+    "vesperMuted": "#A0A0A0",
+    "vesperLightBg": "#FAF8F5",
+    "vesperLightPanel": "#F2EFE9",
+    "vesperLightElement": "#E6E2DA",
+    "vesperLightFg": "#181818",
+    "vesperLightMuted": "#66625B",
+    "vesperLightPrimary": "#B85C00",
+    "vesperLightSecondary": "#0F766E",
+    "vesperLightError": "#C92A2A"
   },
   "theme": {
     "primary": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "secondary": {
       "dark": "#99FFE4",
-      "light": "#99FFE4"
+      "light": "vesperLightSecondary"
     },
     "accent": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "error": {
       "dark": "vesperError",
-      "light": "vesperError"
+      "light": "vesperLightError"
     },
     "warning": {
       "dark": "vesperWarning",
-      "light": "vesperWarning"
+      "light": "vesperLightPrimary"
     },
     "success": {
       "dark": "vesperSuccess",
-      "light": "vesperSuccess"
+      "light": "vesperLightSecondary"
     },
     "info": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "text": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "textMuted": {
       "dark": "vesperMuted",
-      "light": "vesperMuted"
+      "light": "vesperLightMuted"
     },
     "background": {
       "dark": "vesperBg",
-      "light": "#FFF"
+      "light": "vesperLightBg"
     },
     "backgroundPanel": {
-      "dark": "vesperBg",
-      "light": "#F0F0F0"
+      "dark": "vesperPanel",
+      "light": "vesperLightPanel"
     },
     "backgroundElement": {
-      "dark": "vesperBg",
-      "light": "#E0E0E0"
+      "dark": "vesperElement",
+      "light": "vesperLightElement"
     },
     "border": {
       "dark": "#282828",
-      "light": "#D0D0D0"
+      "light": "#D0CCC3"
     },
     "borderActive": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "borderSubtle": {
       "dark": "#1C1C1C",
-      "light": "#E8E8E8"
+      "light": "#E5E0D8"
     },
     "diffAdded": {
       "dark": "vesperSuccess",
-      "light": "vesperSuccess"
+      "light": "vesperLightSecondary"
     },
     "diffRemoved": {
       "dark": "vesperError",
-      "light": "vesperError"
+      "light": "vesperLightError"
     },
     "diffContext": {
       "dark": "vesperMuted",
-      "light": "vesperMuted"
+      "light": "vesperLightMuted"
     },
     "diffHunkHeader": {
       "dark": "vesperMuted",
-      "light": "vesperMuted"
+      "light": "vesperLightMuted"
     },
     "diffHighlightAdded": {
       "dark": "vesperSuccess",
-      "light": "vesperSuccess"
+      "light": "vesperLightSecondary"
     },
     "diffHighlightRemoved": {
       "dark": "vesperError",
-      "light": "vesperError"
+      "light": "vesperLightError"
     },
     "diffAddedBg": {
       "dark": "#0d2818",
@@ -107,8 +117,8 @@
       "light": "#f5e8e8"
     },
     "diffContextBg": {
-      "dark": "vesperBg",
-      "light": "#F8F8F8"
+      "dark": "vesperPanel",
+      "light": "vesperLightPanel"
     },
     "diffLineNumber": {
       "dark": "textMuted",
@@ -124,35 +134,35 @@
     },
     "markdownText": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "markdownHeading": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "markdownLink": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "markdownLinkText": {
       "dark": "vesperMuted",
-      "light": "vesperMuted"
+      "light": "vesperLightMuted"
     },
     "markdownCode": {
-      "dark": "vesperMuted",
-      "light": "vesperMuted"
+      "dark": "vesperString",
+      "light": "vesperLightSecondary"
     },
     "markdownBlockQuote": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "markdownEmph": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "markdownStrong": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "markdownHorizontalRule": {
       "dark": "#65737E",
@@ -160,59 +170,59 @@
     },
     "markdownListItem": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "markdownListEnumeration": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "markdownImage": {
       "dark": "#FFC799",
-      "light": "#FFC799"
+      "light": "vesperLightPrimary"
     },
     "markdownImageText": {
       "dark": "vesperMuted",
-      "light": "vesperMuted"
+      "light": "vesperLightMuted"
     },
     "markdownCodeBlock": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "syntaxComment": {
       "dark": "vesperComment",
-      "light": "vesperComment"
+      "light": "vesperLightMuted"
     },
     "syntaxKeyword": {
       "dark": "vesperKeyword",
-      "light": "vesperKeyword"
+      "light": "vesperLightMuted"
     },
     "syntaxFunction": {
       "dark": "vesperFunction",
-      "light": "vesperFunction"
+      "light": "vesperLightPrimary"
     },
     "syntaxVariable": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     },
     "syntaxString": {
       "dark": "vesperString",
-      "light": "vesperString"
+      "light": "vesperLightSecondary"
     },
     "syntaxNumber": {
       "dark": "vesperNumber",
-      "light": "vesperNumber"
+      "light": "vesperLightPrimary"
     },
     "syntaxType": {
       "dark": "vesperFunction",
-      "light": "vesperFunction"
+      "light": "vesperLightPrimary"
     },
     "syntaxOperator": {
       "dark": "vesperKeyword",
-      "light": "vesperKeyword"
+      "light": "vesperLightMuted"
     },
     "syntaxPunctuation": {
       "dark": "vesperFg",
-      "light": "vesperBg"
+      "light": "vesperLightFg"
     }
   }
 }

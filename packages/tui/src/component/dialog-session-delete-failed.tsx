@@ -1,5 +1,5 @@
 import { TextAttributes } from "@opentui/core"
-import { useTheme } from "../context/theme"
+import { selectedForeground, useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { createStore } from "solid-js/store"
 import { For } from "solid-js"
@@ -83,11 +83,11 @@ export function DialogSessionDeleteFailed(props: {
             >
               <text
                 attributes={TextAttributes.BOLD}
-                fg={item.id === store.active ? theme.selectedListItemText : theme.text}
+                fg={item.id === store.active ? selectedForeground(theme, theme.primary) : theme.text}
               >
                 {item.title}
               </text>
-              <text fg={item.id === store.active ? theme.selectedListItemText : theme.textMuted} wrapMode="word">
+              <text fg={item.id === store.active ? selectedForeground(theme, theme.primary) : theme.textMuted} wrapMode="word">
                 {item.description}
               </text>
             </box>

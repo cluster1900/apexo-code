@@ -17,7 +17,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@apexo/core/flag/flag"
-import { tint, useTheme } from "../../context/theme"
+import { selectedForeground, tint, useTheme } from "../../context/theme"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
@@ -1733,7 +1733,7 @@ export function Prompt(props: PromptProps) {
                 <For each={queued()}>
                   {(item) => (
                     <text fg={theme.textMuted}>
-                      <span style={{ bg: theme.warning, fg: theme.background, bold: true }}>
+                      <span style={{ bg: theme.warning, fg: selectedForeground(theme, theme.warning), bold: true }}>
                         {queue.paused(props.sessionID ?? "") ? " PAUSED " : " QUEUED "}
                       </span>{" "}
                       {Locale.truncateMiddle(item.historyPrompt.input.replaceAll("\n", " "), 72)}

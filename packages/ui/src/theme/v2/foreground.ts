@@ -28,6 +28,25 @@ function pickGrey(primitives: Record<string, V2ColorValue>, background: HexColor
   return matches.reduce((best, step) => (Math.abs(step - target) < Math.abs(best - target) ? step : best))
 }
 
+function ensureMinContrast(
+  color: HexColor,
+  bg: HexColor,
+  target: HexColor,
+  fallbackTarget: HexColor,
+  minRatio: number,
+): HexColor {
+  if (contrastRatio(color, bg) >= minRatio) return color
+  for (const step of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+    const candidate = blend(target, color, step)
+    if (contrastRatio(candidate, bg) >= minRatio) return candidate
+  }
+  for (const step of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+    const candidate = blend(fallbackTarget, target, step)
+    if (contrastRatio(candidate, bg) >= minRatio) return candidate
+  }
+  return fallbackTarget
+}
+
 export function mapV2Foreground(
   ink: HexColor,
   isDark: boolean,
@@ -46,10 +65,28 @@ export function mapV2Foreground(
   const bgInverse = resolveGreyRef(semantics["v2-background-bg-inverse"], primitives)
   const inverseTarget = hexToOklch(bgInverse).l > 0.55 ? 1100 : greyHex(primitives, 50) ? 50 : 100
 
+  const extreme = (isDark ? "#ffffff" : "#000000") as HexColor
+  const rawBase = isDark ? blend("#ffffff", body, 0.9) : shift(body, { l: -0.07, c: 1.04 })
+  const textBase = ensureMinContrast(rawBase, bgBase, extreme, extreme, 4.5)
+  const weakOverride = overrides["text-weak"]
+  const rawMuted =
+    typeof weakOverride === "string" && weakOverride.startsWith("#")
+      ? (weakOverride as HexColor)
+      : shift(body, { l: isDark ? -0.11 : 0.11, c: 0.9 })
+  const textMuted =
+    typeof rawMuted === "string" && rawMuted.startsWith("#")
+      ? ensureMinContrast(rawMuted, bgBase, textBase, extreme, 4.2)
+      : rawMuted
+  const shiftedFaint = shift(
+    typeof textMuted === "string" && textMuted.startsWith("#") ? textMuted : body,
+    { l: isDark ? -0.12 : 0.12, c: isDark ? 0.78 : 0.72 },
+  )
+  const textFaint = ensureMinContrast(shiftedFaint, bgBase, textBase, extreme, 2.8)
+
   return {
-    "v2-text-text-base": isDark ? blend("#ffffff", body, 0.9) : shift(body, { l: -0.07, c: 1.04 }),
-    "v2-text-text-muted": overrides["text-weak"] ?? shift(body, { l: isDark ? -0.11 : 0.11, c: 0.9 }),
-    "v2-text-text-faint": shift(body, { l: isDark ? -0.2 : 0.21, c: isDark ? 0.78 : 0.72 }),
+    "v2-text-text-base": textBase,
+    "v2-text-text-muted": weakOverride && !weakOverride.startsWith("#") ? weakOverride : textMuted,
+    "v2-text-text-faint": textFaint,
     "v2-icon-icon-base": greyRef(pickGrey(primitives, bgBase, 7, isDark ? 400 : 800)),
     "v2-icon-icon-muted": greyRef(pickGrey(primitives, bgBase, 3, 600)),
     "v2-icon-icon-inverse": greyRef(pickGrey(primitives, bgInverse, 7, inverseTarget)),

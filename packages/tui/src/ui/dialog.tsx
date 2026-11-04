@@ -1,6 +1,6 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
-import { useTheme } from "../context/theme"
+import { relativeLuminance, useTheme } from "../context/theme"
 import { MouseButton, Renderable, RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
@@ -23,6 +23,11 @@ export function Dialog(
     if (props.size === "xlarge") return 116
     if (props.size === "large") return 88
     return 60
+  }
+  const surfaceBg = () => {
+    if (theme.backgroundPanel.a >= 0.85) return theme.backgroundPanel
+    if (theme.backgroundMenu.a >= 0.85) return theme.backgroundMenu
+    return relativeLuminance(theme.text) > 0.5 ? RGBA.fromHex("#18181b") : RGBA.fromHex("#f4f4f5")
   }
 
   return (
@@ -57,7 +62,7 @@ export function Dialog(
         }}
         width={width()}
         maxWidth={dimensions().width - 2}
-        backgroundColor={theme.backgroundPanel}
+        backgroundColor={surfaceBg()}
         paddingTop={1}
       >
         {props.children}

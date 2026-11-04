@@ -380,11 +380,13 @@ function generateMutedTextColor(bg: RGBA, isDark: boolean, map: (rgba: RGBA) => 
 }
 
 export function generateSystem(colors: TerminalColors, pick: "dark" | "light"): ThemeJson {
-  const bg_snapshot = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!)
-  const fg_snapshot = RGBA.fromHex(colors.defaultForeground ?? colors.palette[7]!)
+  const isDark = pick === "dark"
+  const fallbackBg = isDark ? (colors.palette[0] ?? "#000000") : "#fafafa"
+  const fallbackFg = isDark ? (colors.palette[7] ?? "#e5e7eb") : "#1f2937"
+  const bg_snapshot = RGBA.fromHex(colors.defaultBackground ?? fallbackBg)
+  const fg_snapshot = RGBA.fromHex(colors.defaultForeground ?? fallbackFg)
   const bg = RGBA.defaultBackground(bg_snapshot)
   const fg = RGBA.defaultForeground(fg_snapshot)
-  const isDark = pick === "dark"
 
   const color = (index: number) => paletteColor(colors, index)
 
@@ -418,7 +420,7 @@ export function generateSystem(colors: TerminalColors, pick: "dark" | "light"): 
       info: ansi.cyan,
       text: fg,
       textMuted,
-      selectedListItemText: bg,
+      selectedListItemText: fg,
       background: alpha(bg, 0),
       backgroundPanel: grays[2],
       backgroundElement: grays[3],
@@ -524,7 +526,7 @@ function map(
     footer: {
       highlight: footerTheme.primary,
       selected: footerTheme.backgroundElement,
-      selectedText: footerTheme.selectedListItemText,
+      selectedText: footerTheme.text,
       warning: footerTheme.warning,
       success: footerTheme.success,
       error: footerTheme.error,
@@ -606,8 +608,8 @@ export const RUN_THEME_FALLBACK: RunTheme = {
   background: RGBA.fromValues(0, 0, 0, 0),
   footer: {
     highlight: seed.highlight,
-    selected: seed.text,
-    selectedText: seed.panel,
+    selected: tint(seed.panel, rgba("#ffffff"), 0.14),
+    selectedText: seed.text,
     warning: seed.warning,
     success: seed.success,
     error: seed.error,

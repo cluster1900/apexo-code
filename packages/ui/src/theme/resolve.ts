@@ -430,13 +430,31 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     tokens[key] = value
   }
 
+  const extremeText = (isDark ? "#ffffff" : "#000000") as HexColor
+  const ensureTextContrast = (color: ColorValue, target: HexColor, minRatio: number): ColorValue => {
+    const hex = getHex(color)
+    if (!hex) return color
+    if (hit(hex, background) >= minRatio) return hex
+    for (const step of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+      const candidate = blend(target, hex, step)
+      if (hit(candidate, background) >= minRatio) return candidate
+    }
+    for (const step of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+      const candidate = blend(extremeText, target, step)
+      if (hit(candidate, background) >= minRatio) return candidate
+    }
+    return extremeText
+  }
+
+  tokens["text-base"] = ensureTextContrast(tokens["text-base"], extremeText, 4.5)
+  const baseTextHex = getHex(tokens["text-base"]) ?? extremeText
+  tokens["text-weak"] = ensureTextContrast(tokens["text-weak"], baseTextHex, 3.5)
+
   if (colors.compact && "text-weak" in overrides && !("text-weaker" in overrides)) {
     const weak = tokens["text-weak"]
-    if (weak.startsWith("#")) {
-      tokens["text-weaker"] = shift(weak as HexColor, { l: isDark ? -0.12 : 0.12, c: 0.75 })
-    } else {
-      tokens["text-weaker"] = weak
-    }
+    tokens["text-weaker"] = weak.startsWith("#")
+      ? ensureTextContrast(shift(weak as HexColor, { l: isDark ? -0.12 : 0.12, c: 0.75 }), baseTextHex, 2.5)
+      : weak
   }
 
   if (colors.compact) {

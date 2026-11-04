@@ -1,5 +1,5 @@
 import { TextAttributes } from "@opentui/core"
-import { useTheme } from "../context/theme"
+import { selectedForeground, useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "./dialog"
 import { createStore } from "solid-js/store"
 import { For } from "solid-js"
@@ -85,7 +85,16 @@ export function DialogConfirm(props: DialogConfirmProps) {
                 dialog.clear()
               }}
             >
-              <text fg={key === store.active ? theme.selectedListItemText : theme.textMuted}>
+              <text
+                fg={
+                  key === store.active
+                    ? selectedForeground(
+                        theme,
+                        key === "confirm" && props.label?.toLowerCase() === "delete" ? theme.error : theme.primary,
+                      )
+                    : theme.textMuted
+                }
+              >
                 {Locale.titlecase(key === "confirm" ? (props.label ?? key) : key)}
               </text>
             </box>

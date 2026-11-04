@@ -93,22 +93,34 @@ export type Theme = {
 type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
 export type SyntaxStyleOverrides = Record<string, { italic?: boolean }>
 
+function channelLuminance(value: number): number {
+  if (value <= 0.03928) return value / 12.92
+  return ((value + 0.055) / 1.055) ** 2.4
+}
+
+export function relativeLuminance(color: RGBA): number {
+  return 0.2126 * channelLuminance(color.r) + 0.7152 * channelLuminance(color.g) + 0.0722 * channelLuminance(color.b)
+}
+
+export function contrastRatio(a: RGBA, b: RGBA): number {
+  const lumA = relativeLuminance(a)
+  const lumB = relativeLuminance(b)
+  const lighter = Math.max(lumA, lumB)
+  const darker = Math.min(lumA, lumB)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
 export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
-  // If theme explicitly defines selectedListItemText, use it
-  if (theme._hasSelectedListItemText) {
-    return theme.selectedListItemText
+  const target = bg && bg.a > 0 ? bg : theme.primary
+  if (theme._hasSelectedListItemText && theme.selectedListItemText.a > 0) {
+    if (contrastRatio(theme.selectedListItemText, target) >= 4.5) {
+      return theme.selectedListItemText
+    }
   }
-
-  // For transparent backgrounds, calculate contrast based on the actual bg (or fallback to primary)
-  if (theme.background.a === 0) {
-    const targetColor = bg ?? theme.primary
-    const { r, g, b } = targetColor
-    const luminance = 0.299 * r + 0.587 * g + 0.114 * b
-    return luminance > 0.5 ? RGBA.fromInts(0, 0, 0) : RGBA.fromInts(255, 255, 255)
+  if (theme.background.a > 0 && contrastRatio(theme.background, target) >= 4.5) {
+    return theme.background
   }
-
-  // Fall back to background color
-  return theme.background
+  return relativeLuminance(target) > 0.179 ? RGBA.fromInts(0, 0, 0) : RGBA.fromInts(255, 255, 255)
 }
 
 type HexColor = `#${string}`
@@ -240,6 +252,113 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
+const BODY_TOKENS: readonly ThemeColor[] = [
+  "text",
+  "markdownText",
+  "markdownHeading",
+  "markdownStrong",
+  "markdownCodeBlock",
+  "syntaxVariable",
+  "syntaxPunctuation",
+]
+
+const ACCENT_TOKENS: readonly ThemeColor[] = [
+  "primary",
+  "secondary",
+  "accent",
+  "error",
+  "warning",
+  "success",
+  "info",
+  "diffAdded",
+  "diffRemoved",
+  "diffHighlightAdded",
+  "diffHighlightRemoved",
+  "markdownLink",
+  "markdownLinkText",
+  "markdownCode",
+  "markdownBlockQuote",
+  "markdownEmph",
+  "markdownListItem",
+  "markdownListEnumeration",
+  "markdownImage",
+  "markdownImageText",
+  "syntaxKeyword",
+  "syntaxFunction",
+  "syntaxString",
+  "syntaxNumber",
+  "syntaxType",
+  "syntaxOperator",
+]
+
+const MUTED_TOKENS: readonly ThemeColor[] = [
+  "textMuted",
+  "syntaxComment",
+  "diffContext",
+  "diffHunkHeader",
+  "diffLineNumber",
+]
+
+function compositeOver(fg: RGBA, bg: RGBA): RGBA {
+  if (fg.a >= 1) return fg
+  if (fg.a <= 0) return bg
+  return tint(bg, fg, fg.a)
+}
+
+function minContrastAgainst(fg: RGBA, surfaces: readonly RGBA[]): number {
+  return Math.min(...surfaces.map((surface) => contrastRatio(fg, surface)))
+}
+
+function adjustTowardTarget(fg: RGBA, lighten: boolean, amount: number): RGBA {
+  if (lighten) {
+    return tint(fg, RGBA.fromInts(255, 255, 255), amount)
+  }
+  if (fg.r > 0.92 && fg.g > 0.92 && fg.b > 0.92) {
+    return tint(fg, RGBA.fromInts(20, 20, 20), amount)
+  }
+  const scale = 1 - amount
+  return RGBA.fromInts(Math.round(fg.r * scale * 255), Math.round(fg.g * scale * 255), Math.round(fg.b * scale * 255))
+}
+
+function searchContrast(
+  fg: RGBA,
+  surfaces: readonly RGBA[],
+  minRatio: number,
+  lighten: boolean,
+  low: number,
+  high: number,
+  depth: number,
+): RGBA {
+  const mid = (low + high) / 2
+  const candidate = adjustTowardTarget(fg, lighten, mid)
+  if (depth <= 0) return adjustTowardTarget(fg, lighten, high)
+  if (minContrastAgainst(candidate, surfaces) >= minRatio) {
+    return searchContrast(fg, surfaces, minRatio, lighten, low, mid, depth - 1)
+  }
+  return searchContrast(fg, surfaces, minRatio, lighten, mid, high, depth - 1)
+}
+
+function ensureReadableColor(fg: RGBA, surfaces: readonly RGBA[], minRatio: number, fallbackIsDark: boolean): RGBA {
+  const opaque =
+    fg.a === 0
+      ? fallbackIsDark
+        ? RGBA.fromInts(240, 240, 240)
+        : RGBA.fromInts(20, 20, 20)
+      : fg.a < 1
+        ? RGBA.fromValues(fg.r, fg.g, fg.b, 1)
+        : fg
+  if (minContrastAgainst(opaque, surfaces) >= minRatio) return opaque
+  const avgLum = surfaces.reduce((sum, s) => sum + relativeLuminance(s), 0) / surfaces.length
+  const lighten = avgLum <= 0.5
+  const extreme = adjustTowardTarget(opaque, lighten, 1)
+  if (minContrastAgainst(extreme, surfaces) < minRatio) {
+    const white = RGBA.fromInts(255, 255, 255)
+    const black = RGBA.fromInts(10, 10, 10)
+    return minContrastAgainst(white, surfaces) >= minContrastAgainst(black, surfaces) ? white : black
+  }
+  return searchContrast(opaque, surfaces, minRatio, lighten, 0, 1, 12)
+}
+
 export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   const defs = theme.defs ?? {}
   function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
@@ -271,26 +390,50 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
       .map(([key, value]) => {
         return [key, resolveColor(value as ColorValue)]
       }),
-  ) as Partial<Record<ThemeColor, RGBA>>
+  ) as Record<ThemeColor, RGBA>
 
-  // Handle selectedListItemText separately since it's optional
+  const isDark = mode === "dark"
+  const fallbackBg = isDark ? RGBA.fromHex("#0a0a0a") : RGBA.fromHex("#ffffff")
+  const rawBg = resolved.background
+  const canvasBg =
+    rawBg.a > 0
+      ? compositeOver(rawBg, fallbackBg)
+      : rawBg.r !== 0 || rawBg.g !== 0 || rawBg.b !== 0
+        ? RGBA.fromValues(rawBg.r, rawBg.g, rawBg.b, 1)
+        : fallbackBg
+  const surfaceIsDark = relativeLuminance(canvasBg) <= 0.5
+  const panelBg = compositeOver(resolved.backgroundPanel, canvasBg)
+  const elementBg = compositeOver(resolved.backgroundElement, panelBg)
+  const surfaces = [canvasBg, panelBg, elementBg]
+
+  for (const key of BODY_TOKENS) {
+    resolved[key] = ensureReadableColor(resolved[key], surfaces, 4.5, surfaceIsDark)
+  }
+  for (const key of ACCENT_TOKENS) {
+    resolved[key] = ensureReadableColor(resolved[key], surfaces, 3.2, surfaceIsDark)
+  }
+  for (const key of MUTED_TOKENS) {
+    resolved[key] = ensureReadableColor(resolved[key], surfaces, 2.8, surfaceIsDark)
+  }
+
   const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
-  if (hasSelectedListItemText) {
-    resolved.selectedListItemText = resolveColor(theme.theme.selectedListItemText!)
-  } else {
-    // Backward compatibility: if selectedListItemText is not defined, use background color
-    // This preserves the current behavior for all existing themes
-    resolved.selectedListItemText = resolved.background
-  }
+  const rawSelected = hasSelectedListItemText
+    ? resolveColor(theme.theme.selectedListItemText!)
+    : resolved.background
+  resolved.selectedListItemText =
+    rawSelected.a > 0 && contrastRatio(rawSelected, resolved.primary) >= 4.5
+      ? rawSelected
+      : resolved.background.a > 0 && contrastRatio(resolved.background, resolved.primary) >= 4.5
+        ? resolved.background
+        : relativeLuminance(resolved.primary) > 0.179
+          ? RGBA.fromInts(0, 0, 0)
+          : RGBA.fromInts(255, 255, 255)
 
-  // Handle backgroundMenu - optional with fallback to backgroundElement
-  if (theme.theme.backgroundMenu !== undefined) {
-    resolved.backgroundMenu = resolveColor(theme.theme.backgroundMenu)
-  } else {
-    resolved.backgroundMenu = resolved.backgroundElement
-  }
+  resolved.backgroundMenu =
+    theme.theme.backgroundMenu !== undefined
+      ? resolveColor(theme.theme.backgroundMenu)
+      : resolved.backgroundElement
 
-  // Handle thinkingOpacity - optional with default of 0.6
   const thinkingOpacity = theme.theme.thinkingOpacity ?? 0.6
 
   return {
@@ -360,10 +503,24 @@ export function terminalMode(colors: TerminalColors): "dark" | "light" | undefin
 }
 
 export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJson {
-  const bg = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!)
-  const fg = RGBA.fromHex(colors.defaultForeground ?? colors.palette[7]!)
-  const transparent = RGBA.fromValues(bg.r, bg.g, bg.b, 0)
-  const isDark = mode == "dark"
+  const isDark = mode === "dark"
+  const rawBg = colors.defaultBackground ? RGBA.fromHex(colors.defaultBackground) : undefined
+  const rawFg = colors.defaultForeground ? RGBA.fromHex(colors.defaultForeground) : undefined
+  const bgLum = rawBg ? 0.299 * rawBg.r + 0.587 * rawBg.g + 0.114 * rawBg.b : undefined
+  const bgMatchesMode = bgLum !== undefined ? (isDark ? bgLum <= 0.5 : bgLum > 0.5) : false
+  const bg =
+    bgMatchesMode && rawBg
+      ? rawBg
+      : isDark
+        ? RGBA.fromHex(colors.palette[0] ?? "#121212")
+        : RGBA.fromHex("#fafafa")
+  const fg =
+    bgMatchesMode && rawFg
+      ? rawFg
+      : isDark
+        ? RGBA.fromHex(colors.palette[7] ?? "#eeeeee")
+        : RGBA.fromHex("#1a1a1a")
+  const background = bgMatchesMode ? RGBA.fromValues(bg.r, bg.g, bg.b, 0) : bg
 
   const col = (i: number) => {
     const value = colors.palette[i]
@@ -415,8 +572,8 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       textMuted,
       selectedListItemText: bg,
 
-      // Background colors - use transparent to respect terminal transparency
-      background: transparent,
+      // Background colors - use transparent to respect terminal transparency when mode matches
+      background,
       backgroundPanel: grays[2],
       backgroundElement: grays[3],
       backgroundMenu: grays[3],
@@ -470,87 +627,54 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
   }
 }
 
+function colorChroma(color: RGBA): number {
+  return Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)
+}
+
 function generateGrayScale(bg: RGBA, isDark: boolean): Record<number, RGBA> {
-  const grays: Record<number, RGBA> = {}
+  const r = bg.r * 255
+  const g = bg.g * 255
+  const b = bg.b * 255
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b
+  const cast = 0.25 * (1 - colorChroma(bg)) ** 2
 
-  // RGBA stores floats in range 0-1, convert to 0-255
-  const bgR = bg.r * 255
-  const bgG = bg.g * 255
-  const bgB = bg.b * 255
-
-  const luminance = 0.299 * bgR + 0.587 * bgG + 0.114 * bgB
-
-  for (let i = 1; i <= 12; i++) {
-    const factor = i / 12.0
-
-    let grayValue: number
-    let newR: number
-    let newG: number
-    let newB: number
-
-    if (isDark) {
-      if (luminance < 10) {
-        grayValue = Math.floor(factor * 0.4 * 255)
-        newR = grayValue
-        newG = grayValue
-        newB = grayValue
-      } else {
-        const newLum = luminance + (255 - luminance) * factor * 0.4
-
-        const ratio = newLum / luminance
-        newR = Math.min(bgR * ratio, 255)
-        newG = Math.min(bgG * ratio, 255)
-        newB = Math.min(bgB * ratio, 255)
-      }
-    } else {
-      if (luminance > 245) {
-        grayValue = Math.floor(255 - factor * 0.4 * 255)
-        newR = grayValue
-        newG = grayValue
-        newB = grayValue
-      } else {
-        const newLum = luminance * (1 - factor * 0.4)
-
-        const ratio = newLum / luminance
-        newR = Math.max(bgR * ratio, 0)
-        newG = Math.max(bgG * ratio, 0)
-        newB = Math.max(bgB * ratio, 0)
-      }
+  const gray = (level: number) => {
+    const factor = level / 12
+    if (isDark && lum < 10) {
+      const value = Math.floor(factor * 0.4 * 255)
+      return RGBA.fromInts(value, value, value)
     }
-
-    grays[i] = RGBA.fromInts(Math.floor(newR), Math.floor(newG), Math.floor(newB))
+    if (!isDark && lum > 245) {
+      const value = Math.floor(255 - factor * 0.4 * 255)
+      return RGBA.fromInts(value, value, value)
+    }
+    const value = isDark ? lum + (255 - lum) * factor * 0.4 : lum * (1 - factor * 0.4)
+    const tone = RGBA.fromInts(Math.floor(value), Math.floor(value), Math.floor(value))
+    if (cast === 0) return tone
+    const ratio = lum === 0 ? 0 : value / lum
+    return tint(
+      tone,
+      RGBA.fromInts(
+        Math.floor(Math.max(0, Math.min(r * ratio, 255))),
+        Math.floor(Math.max(0, Math.min(g * ratio, 255))),
+        Math.floor(Math.max(0, Math.min(b * ratio, 255))),
+      ),
+      cast,
+    )
   }
 
-  return grays
+  return Object.fromEntries(Array.from({ length: 12 }, (_, index) => [index + 1, gray(index + 1)]))
 }
 
 function generateMutedTextColor(bg: RGBA, isDark: boolean): RGBA {
-  // RGBA stores floats in range 0-1, convert to 0-255
-  const bgR = bg.r * 255
-  const bgG = bg.g * 255
-  const bgB = bg.b * 255
-
-  const bgLum = 0.299 * bgR + 0.587 * bgG + 0.114 * bgB
-
-  let grayValue: number
-
-  if (isDark) {
-    if (bgLum < 10) {
-      // Very dark/black background
-      grayValue = 180 // #b4b4b4
-    } else {
-      // Scale up for lighter dark backgrounds
-      grayValue = Math.min(Math.floor(160 + bgLum * 0.3), 200)
-    }
-  } else {
-    if (bgLum > 245) {
-      // Very light/white background
-      grayValue = 75 // #4b4b4b
-    } else {
-      // Scale down for darker light backgrounds
-      grayValue = Math.max(Math.floor(100 - (255 - bgLum) * 0.2), 60)
-    }
-  }
+  const bgLum = 0.299 * bg.r * 255 + 0.587 * bg.g * 255 + 0.114 * bg.b * 255
+  const grayValue = isDark
+    ? bgLum < 10
+      ? 180
+      : Math.min(Math.floor(160 + bgLum * 0.3), 200)
+    : bgLum > 245
+      ? 75
+      : Math.max(Math.floor(100 - (255 - bgLum) * 0.2), 60)
 
   return RGBA.fromInts(grayValue, grayValue, grayValue)
 }
@@ -880,7 +1004,7 @@ function getSyntaxRules(theme: Theme) {
       scope: ["markup.raw.inline"],
       style: {
         foreground: theme.markdownCode,
-        background: theme.background,
+        background: theme.backgroundElement.a > 0 ? theme.backgroundElement : undefined,
       },
     },
     {

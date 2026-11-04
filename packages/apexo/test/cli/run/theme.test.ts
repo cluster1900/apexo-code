@@ -175,3 +175,36 @@ test("keeps light surfaces close to neutral on warm backgrounds", () => {
   expect(spread(theme.backgroundPanel)).toBeLessThan(60)
   expect(spread(theme.backgroundElement)).toBeLessThan(60)
 })
+
+test("keeps footer selected text high-contrast against selected row surface", async () => {
+  const darkTheme = await resolveRunTheme(renderer({ themeMode: "dark" }))
+  const lightTheme = await resolveRunTheme(
+    renderer({
+      themeMode: "light",
+      colors: terminalColors({
+        defaultBackground: "#fbf1c7",
+        defaultForeground: "#3c3836",
+      }),
+    }),
+  )
+
+  try {
+    expect(expectRgba(darkTheme.footer.selectedText).toInts()).not.toEqual(
+      expectRgba(darkTheme.footer.selected).toInts(),
+    )
+    expect(expectRgba(lightTheme.footer.selectedText).toInts()).not.toEqual(
+      expectRgba(lightTheme.footer.selected).toInts(),
+    )
+    expect(expectRgba(RUN_THEME_FALLBACK.footer.selectedText).toInts()).not.toEqual(
+      expectRgba(RUN_THEME_FALLBACK.footer.selected).toInts(),
+    )
+    expect(expectRgba(RUN_THEME_FALLBACK.footer.selectedText).toInts()).not.toEqual(
+      expectRgba(RUN_THEME_FALLBACK.footer.shade).toInts(),
+    )
+  } finally {
+    darkTheme.block.syntax?.destroy()
+    darkTheme.block.subtleSyntax?.destroy()
+    lightTheme.block.syntax?.destroy()
+    lightTheme.block.subtleSyntax?.destroy()
+  }
+})

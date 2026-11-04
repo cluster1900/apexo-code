@@ -1,7 +1,7 @@
 import { TextAttributes } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { For } from "solid-js"
-import { useTheme } from "../context/theme"
+import { selectedForeground, useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { useBindings } from "../keymap"
 
@@ -59,7 +59,7 @@ export function DialogWorkspaceUnavailable(props: { onRestore?: () => boolean | 
                 void confirm()
               }}
             >
-              <text fg={item === store.active ? theme.selectedListItemText : theme.textMuted}>{item}</text>
+              <text fg={item === store.active ? selectedForeground(theme, theme.primary) : theme.textMuted}>{item}</text>
             </box>
           )}
         </For>

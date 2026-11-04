@@ -4,7 +4,7 @@ import type { VcsFileStatus } from "@apexo/sdk/v2"
 import { createMemo, For } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Locale } from "../util/locale"
-import { useTheme } from "../context/theme"
+import { selectedForeground, useTheme } from "../context/theme"
 import { useTuiConfig } from "../config"
 import { useDialog, type DialogContext } from "../ui/dialog"
 import { getScrollAcceleration } from "../util/scroll"
@@ -121,7 +121,7 @@ export function DialogWorkspaceFileChanges(props: {
                 dialog.clear()
               }}
             >
-              <text fg={item === store.active ? theme.selectedListItemText : theme.textMuted}>{item}</text>
+              <text fg={item === store.active ? selectedForeground(theme, theme.primary) : theme.textMuted}>{item}</text>
             </box>
           )}
         </For>
