@@ -1,6 +1,6 @@
 import { MemoryManagement } from "@/session/memory-management"
 import { SessionMemoryWork } from "@/session/memory-work"
-import { Config as EffectConfig, Context, Effect, Layer } from "effect"
+import { Config as EffectConfig, Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
@@ -281,6 +281,46 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
   Layer.provide(authOnlyRouterLayer),
 )
 
+const LocalQwenActionSchema = Schema.fromJsonString(
+  Schema.Struct({
+    action: Schema.optional(Schema.String),
+  }),
+)
+
+const localQwenRoute = HttpRouter.use((router) =>
+  Effect.gen(function* () {
+    yield* router.add("GET", "/local-qwen", () =>
+      Effect.promise(async () => {
+        const { inspectLocalQwenStatus } = await import("@apexo/core/local-qwen")
+        const status = await inspectLocalQwenStatus({ ensureSidecar: false })
+        return HttpServerResponse.jsonUnsafe({ report: "", status })
+      }),
+    )
+    yield* router.add("POST", "/local-qwen", (request) =>
+      Effect.gen(function* () {
+        const raw = yield* request.text.pipe(Effect.catch(() => Effect.succeed("")))
+        const { inspectLocalQwenStatus, runLocalQwenCommand } = yield* Effect.promise(
+          () => import("@apexo/core/local-qwen"),
+        )
+        const decoded = raw.trim() ? Schema.decodeUnknownOption(LocalQwenActionSchema)(raw) : Option.none()
+        const action = Option.isSome(decoded) && decoded.value.action ? decoded.value.action : "status"
+        return yield* Effect.tryPromise({
+          try: async () => {
+            const report = await runLocalQwenCommand(action)
+            const status = await inspectLocalQwenStatus({ ensureSidecar: false })
+            return HttpServerResponse.jsonUnsafe({ ok: true, report, status })
+          },
+          catch: (error) => (error instanceof Error ? error.message : String(error)),
+        }).pipe(
+          Effect.catch((message) =>
+            Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: false, error: message }, { status: 500 })),
+          ),
+        )
+      }),
+    )
+  }),
+).pipe(Layer.provide(authOnlyRouterLayer))
+
 const uiRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
@@ -373,6 +413,7 @@ export function createRoutes(
     instanceRoutes,
     serverRoutes,
     docRoute,
+    localQwenRoute,
     uiRoute,
   ).pipe(
     Layer.provide([

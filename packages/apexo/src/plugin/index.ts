@@ -20,6 +20,7 @@ import { OpenAIPlugin } from "./openai/openai"
 import { Session } from "@/session/session"
 import { NamedError } from "@apexo/core/util/error"
 import { syncGrokCliAuth, XaiAuthPlugin } from "./xai"
+import { LocalQwenPlugin } from "./local-qwen"
 import { AntigravityPlugin } from "./antigravity"
 import { Antigravity } from "@apexo/core/antigravity"
 import { Auth } from "@/auth"
@@ -73,6 +74,7 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
         experimentalWebSockets: experimentalWebSocketsEnabled({ enabled: flags.experimentalWebSockets }),
       }),
     XaiAuthPlugin,
+    LocalQwenPlugin,
   ]
 }
 

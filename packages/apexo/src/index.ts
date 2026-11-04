@@ -39,6 +39,7 @@ import { GoalCommand } from "./cli/cmd/goal"
 import { UsageCommand } from "./cli/cmd/usage"
 import { TraceCommand } from "./cli/cmd/trace"
 import { CompletionCommand } from "./cli/cmd/completion"
+import { LocalQwenCommand } from "./cli/cmd/local-qwen"
 
 const args = grokPluginArgs(hideBin(process.argv))
 
@@ -148,6 +149,7 @@ const cli = yargs(args)
   .command(MemoryCommand)
   .command(GoalCommand)
   .command(PluginsCommand)
+  .command(LocalQwenCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||
