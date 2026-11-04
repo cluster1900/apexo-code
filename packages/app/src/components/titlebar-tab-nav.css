@@ -108,11 +108,6 @@
   --tab-title-fade-offset: 24px;
 }
 
-[data-titlebar-tab][data-title-overflow="true"]:not(:hover):not([data-active="true"]):not([data-editing="true"])
-  [data-slot="tab-link"] {
-  padding-inline-end: 0;
-}
-
 [data-titlebar-tab] [data-slot="tab-title"] {
   min-width: 0;
 }

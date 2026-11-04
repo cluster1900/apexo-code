@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import {
   contextUsage,
   contextWindowLabel,
@@ -760,16 +761,117 @@ export function useGrokCommands() {
       run: () => contextWindow(),
     },
     { name: "grok.logout", title: "Log out of a provider", category: "Provider", slashName: "logout", run: logout },
+    {
+      name: "grok.local-qwen",
+      title: "Manage local Qwen 0.8B edge accelerator",
+      category: "Provider",
+      slashName: "local-qwen",
+      slashAliases: ["qwen"],
+      run: () => void localQwen(),
+    },
   ]
+
+  const localQwen = async (args = "") => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const { formatMegabytes, formatProgressBar, inspectLocalQwenStatus, runLocalQwenCommand } =
+      await import("@apexo/core/local-qwen")
+    const trimmed = args.trim()
+    if (!trimmed) {
+      const status = await inspectLocalQwenStatus({ ensureSidecar: false })
+      const summary = status.enabled
+        ? `Enabled · ${status.downloaded ? formatMegabytes(status.sizeBytes) : "weights not downloaded"} · ${status.endpoint ? (status.healthy ? `${status.endpoint} (healthy)` : `${status.endpoint} (unreachable)`) : "no endpoint"}`
+        : `Disabled · ${status.downloaded ? `weights cached (${formatMegabytes(status.sizeBytes)})` : "not downloaded"}`
+      dialog.replace(() => (
+        <DialogSelect
+          title={`Local Qwen 0.8B (${summary})`}
+          options={[
+            { title: "Status", value: "status", description: "Inspect weights, runtime binary, and active endpoint" },
+            {
+              title: status.downloaded ? "Install / Activate Weights (Cached)" : "Install / Download Weights (~610 MB)",
+              value: "install",
+              description: "Install or activate Qwen 0.8B GGUF in global cache and enable auto-takeover",
+            },
+            {
+              title: "Enable Auto-Takeover",
+              value: "enable",
+              description: "Activate local Qwen 0.8B hooks and start sidecar",
+            },
+            {
+              title: "Disable Auto-Takeover",
+              value: "disable",
+              description: "Pause local Qwen 0.8B hooks and stop sidecar (keep weights)",
+            },
+            {
+              title: "Remove Cached Weights",
+              value: "remove",
+              description: "Stop sidecar, remove active GGUF file, and disable",
+            },
+          ]}
+          onSelect={(option) => {
+            void localQwen(option.value)
+          }}
+        />
+      ))
+      return
+    }
+
+    const isInstall = /^(?:install|download|reinstall)\b/i.test(trimmed)
+    const [progressText, setProgressText] = createSignal(
+      isInstall ? "Preparing Local Qwen 0.8B installation..." : `Running /local-qwen ${trimmed}...`,
+    )
+    dialog.replace(() => <DialogAlert title="Local Qwen 0.8B Edge Accelerator" message={progressText()} />)
+
+    if (isInstall) {
+      toast.show({
+        title: "Local Qwen 0.8B",
+        message: "Starting model installation...",
+        variant: "info",
+        duration: 3_000,
+      })
+    }
+
+    try {
+      const report = await runLocalQwenCommand(trimmed, {
+        onProgress: (progress) => {
+          const bar = formatProgressBar(progress)
+          setProgressText(`Downloading Qwen 0.8B GGUF weights...\n\n${bar}`)
+          toast.show({
+            title: "Downloading Local Qwen 0.8B",
+            message: bar,
+            variant: "info",
+            duration: 2_500,
+          })
+        },
+      })
+      const plain = report.replace(/^###\s+/gm, "").replace(/\*\*/g, "").replace(/`/g, "")
+      setProgressText(plain)
+      toast.show({
+        title: "Local Qwen 0.8B",
+        message: isInstall ? "Installation complete & auto-takeover enabled" : plain.split("\n")[0] ?? "Done",
+        variant: "success",
+        duration: 4_000,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setProgressText(`Failed: ${message}`)
+      toast.show({
+        title: "Local Qwen 0.8B failed",
+        message,
+        variant: "error",
+        duration: 5_000,
+      })
+    }
+  }
 
   /**
    * Handles built-ins typed with arguments: `/effort <level>`, `/context-window <size>`, `/docs <target>`,
    * `/plan <description>`, `/resume <id or title>`, `/rename <title>`, `/copy [N] [path]`, `/model <name> [effort]`,
-   * `/feedback <message>` and `/export <file>`.
+   * `/feedback <message>`, `/export <file>` and `/local-qwen <action>`.
    */
   const submit = (text: string): { handled: true } | { handled: false; text?: string } => {
     const input = parseSlashInput(text)
     if (!input?.args) return { handled: false }
+    if (["local-qwen", "qwen"].includes(input.name)) return (void localQwen(input.args), { handled: true })
     if (input.name === "effort") return (effort(input.args), { handled: true })
     if (input.name === "context-window") return (contextWindow(input.args), { handled: true })
     if (["docs", "howto", "guides"].includes(input.name)) return (docs(input.args), { handled: true })

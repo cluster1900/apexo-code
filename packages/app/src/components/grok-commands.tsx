@@ -1,4 +1,4 @@
-import { For, type Accessor } from "solid-js"
+import { createSignal, For, type Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@apexo/core/util/encode"
 import { Button } from "@apexo/ui/button"
@@ -27,8 +27,10 @@ import { useLocal } from "@/context/local"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
 import { useSync } from "@/context/sync"
 import { useProviders } from "@/hooks/use-providers"
+import { authTokenFromCredentials } from "@/utils/server"
 import { showToast } from "@/utils/toast"
 import { multiline, setMultiline } from "@apexo/session-ui/v2/prompt-input/multiline"
 import { setVimMode, vimMode } from "@/utils/vim-mode"
@@ -143,6 +145,7 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
   const platform = usePlatform()
   const prompt = usePrompt()
   const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const sync = useSync()
   const providers = useProviders(() => sdk().directory)
   const info = (description: string) => showToast({ title: description })
@@ -555,6 +558,106 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
     dialog.show(() => <DialogSessionInfo sessionID={id} />)
   }
 
+  type LocalQwenPayload = {
+    report: string
+    status: {
+      enabled: boolean
+      healthy: boolean
+      downloaded: boolean
+      endpoint?: string
+      progressText?: string
+    }
+  }
+
+  const callLocalQwen = async (method: "GET" | "POST", action = ""): Promise<LocalQwenPayload> => {
+    const http = serverSDK().server.http
+    const headers: Record<string, string> = {}
+    if (http.password) {
+      headers.Authorization = `Basic ${authTokenFromCredentials({ username: http.username, password: http.password })}`
+    }
+    if (method === "POST") {
+      headers["Content-Type"] = "application/json"
+    }
+    const fetcher = platform.fetch ?? fetch
+    const response = await fetcher(`${http.url}/local-qwen`, {
+      method,
+      headers,
+      body: method === "POST" ? JSON.stringify({ action }) : undefined,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return (await response.json()) as LocalQwenPayload
+  }
+
+  const localQwen = async (args = "") => {
+    const trimmed = args.trim()
+    const run = async (subcommand: string) => {
+      const action = subcommand.split(/\s+/)[0]?.toLowerCase() ?? "status"
+      const isInstall = action === "install" || action === "download"
+      const [lines, setLines] = createSignal<string[]>([
+        isInstall
+          ? "Starting Local Qwen 0.8B installation / activation..."
+          : `Running /local-qwen ${subcommand}...`,
+      ])
+      dialog.show(() => <DialogGrokText title="Local Qwen 0.8B Edge Accelerator" lines={lines()} />)
+      const poll = isInstall
+        ? setInterval(() => {
+            void callLocalQwen("GET")
+              .then((snapshot) => {
+                if (snapshot.status.progressText) {
+                  setLines([
+                    "Downloading Qwen3-0.6B-Q8_0.gguf (~610 MB)...",
+                    "",
+                    snapshot.status.progressText,
+                  ])
+                }
+              })
+              .catch(() => undefined)
+          }, 400)
+        : undefined
+      const result = await callLocalQwen("POST", subcommand).catch((error: unknown) => {
+        setLines([`Failed to run /local-qwen ${subcommand}:`, String(error)])
+        return undefined
+      })
+      if (poll) clearInterval(poll)
+      if (!result) return
+      if (action !== "status") {
+        await sdk()
+          .client.instance.dispose()
+          .catch(() => undefined)
+      }
+      const plain = result.report.replace(/^###\s+/gm, "").replace(/\*\*/g, "").replace(/`/g, "")
+      setLines(plain.split("\n"))
+      const badge = result.status.enabled
+        ? result.status.healthy
+          ? "Enabled · Healthy"
+          : "Enabled · Starting/Waiting"
+        : "Disabled"
+      info(`Local Qwen 0.8B: ${badge}`)
+    }
+    if (trimmed) return run(trimmed)
+    const initial = await callLocalQwen("GET").catch(() => undefined)
+    const statusBadge = initial?.status.enabled
+      ? initial.status.healthy
+        ? "ACTIVE"
+        : "ENABLED"
+      : initial?.status.downloaded
+        ? "CACHED"
+        : "OFF"
+    dialog.show(() => (
+      <DialogGrokList
+        title={`Local Qwen 0.8B Edge Accelerator (${statusBadge})`}
+        items={[
+          { title: "Status · Inspect weights, sidecar & active capabilities", value: "status", detail: statusBadge },
+          { title: "Install · Download (~610 MB) or activate local Qwen 0.8B weights", value: "install", detail: "install" },
+          { title: "Enable · Turn on automatic edge takeover", value: "enable", detail: "enable" },
+          { title: "Disable · Pause automatic edge takeover", value: "disable", detail: "disable" },
+          { title: "Remove · Stop sidecar and remove active weights", value: "remove", detail: "remove" },
+        ]}
+        onSelect={(item) => void run(item.value)}
+      />
+    ))
+  }
+
   const commands = (): CommandOption[] => [
     {
       id: "sessions.open",
@@ -606,6 +709,16 @@ export function useGrokCommands(sessionID: Accessor<string | undefined>) {
       slash: "effort",
       onSelect: () => effort(),
       onSlash: effort,
+    },
+    {
+      id: "grok.local-qwen",
+      title: "Local Qwen 0.8B Edge Accelerator",
+      description: "Status, download weights, or toggle local 0.8B model takeover",
+      category: "Agent",
+      slash: "local-qwen",
+      slashAliases: ["qwen"],
+      onSelect: () => void localQwen(),
+      onSlash: (args) => void localQwen(args),
     },
     {
       id: "grok.docs",
