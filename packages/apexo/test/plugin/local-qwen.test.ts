@@ -279,6 +279,19 @@ describe("LocalQwenPlugin lifecycle and auto-takeover", () => {
         const savedPath = String(afterOut.metadata.fullOutputPath)
         expect(await Bun.file(savedPath).text()).toBe(noisyLog)
 
+        // Non-shell tools such as read must never be summarized, even when the output is long
+        const readOut = {
+          title: "read",
+          output: noisyLog,
+          metadata: {} as Record<string, unknown>,
+        }
+        await hooks["tool.execute.after"]?.(
+          { tool: "read", sessionID: "ses_1", callID: "call_read_1", args: {} },
+          readOut,
+        )
+        expect(readOut.output).toBe(noisyLog)
+        expect(readOut.metadata.localQwenCompressed).toBeUndefined()
+
         // 4. Prompt Complexity & Effort Triage (chat.message + chat.params)
         const userMessage: UserMessage = {
           id: "msg_arch_1",
