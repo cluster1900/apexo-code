@@ -27,6 +27,8 @@ const DEFAULT_LOG_COMPRESS_THRESHOLD = 4_000
 const DANGEROUS_SHELL_PATTERN =
   /(?:^|[;&|]\s*)(?:rm|sudo|mv|cp|dd|mkfs|chmod|chown|kill|pkill|reboot|shutdown|curl\s+.*-X\s*(?:POST|PUT|DELETE|PATCH)|git\s+(?:push|reset|clean|checkout\s+--|branch\s+-[dD]))\b|[>`$()]/i
 
+const LOG_COMPRESS_TOOLS = new Set(["bash", "run_shell_command"])
+
 const STRING_ONLY_TOOLS = new Set([
   "write",
   "apply_patch",
@@ -344,6 +346,8 @@ export async function LocalQwenPlugin(
     },
 
     "tool.execute.after": async (toolInput, output) => {
+      // Only shell output is noise worth summarizing; file reads and search results must reach the agent verbatim.
+      if (!LOG_COMPRESS_TOOLS.has(toolInput.tool)) return
       const state = await readLocalQwenState(options)
       if (!state.enabled || state.features?.logCompress === false) return
       if (typeof output.output !== "string" || output.output.length <= threshold) return
