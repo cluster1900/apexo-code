@@ -13,6 +13,7 @@ export const SessionCodeReviewTable = sqliteTable(
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     data: text({ mode: "json" }).$type<unknown>().notNull(),
     time_created: integer().notNull(),
+    execution_owner: text(),
   },
   (table) => [index("session_code_review_parent_idx").on(table.parent_session_id, table.time_created)],
 )

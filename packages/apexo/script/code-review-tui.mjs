@@ -4,7 +4,10 @@ import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { startCodeReviewFixture } from "./code-review-ui-fixture.mjs"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
-const fixture = await startCodeReviewFixture()
+const fixture = await startCodeReviewFixture({
+  large: process.argv.includes("--large"),
+  mixed: process.argv.includes("--mixed"),
+})
 const { runtime, repo } = fixture
 const fullscreen = process.argv.includes("--fullscreen")
 const terminal = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
@@ -73,6 +76,17 @@ try {
   await open("reviews")
   assert.equal(fixture.calls.length, settled)
   checks.push("reopen-without-provider-work")
+  child.terminal.write("t")
+  await poll(() => plain().includes("uncommitted | base main"), "target editor")
+  child.terminal.write("\x7f".repeat("uncommitted".length))
+  child.terminal.write("\x1b[200~base main\x1b[201~")
+  await poll(() => plain().includes("base main"), "new target entered")
+  child.terminal.write("\x13")
+  await poll(
+    () => plain().includes("Target: base main ·") && plain().includes("Ready · n start"),
+    "cursor-at-end target replacement",
+  )
+  checks.push("target-editor-replaces-existing-value")
   child.terminal.write("f")
   await poll(() => plain().includes("Review focus · ctrl+s save"), "focus editor")
   child.terminal.write("\x1b[200~REVIEW_HOLD\x1b[201~")
@@ -84,9 +98,19 @@ try {
   )
   child.terminal.write("n")
   await poll(() => plain().includes("running") && plain().includes("Ready · n start"), "cancel action ready")
+  const running = (await runtime.api(`/api/session/${fixture.session.id}/review`)).data[0]
+  const releaseRefresh = await fixture.pauseRefresh()
+  assert.ok(plain().includes("Ready · n start"), "passive refresh leaves cancellation enabled")
   child.terminal.write("c")
+  await poll(
+    async () => (await runtime.api(`/api/session/${fixture.session.id}/review/${running.id}`)).status === "cancelled",
+    "cancel accepted while background refresh is held",
+  )
+  await releaseRefresh()
+  checks.push("cancel-during-held-passive-refresh")
   await poll(() => plain().includes("cancelled") && plain().includes("Ready · n start"), "cancelled review")
-  checks.push("focus-editor", "targeted-cancel")
+  assert.ok(!plain().includes("Review in progress"), "cancelled review has no progress copy")
+  checks.push("focus-editor", "targeted-cancel", "cancelled-status-copy")
   const messages = await runtime.api(`/api/session/${fixture.session.id}/message`)
   assert.deepEqual(messages.data ?? messages, [])
   checks.push("parent-transcript-untouched")

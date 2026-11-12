@@ -7,20 +7,22 @@ export function createSessionCodeReview(sessionID: () => string | undefined) {
   const dialog = useDialog()
   const command = useCommand()
   const language = useLanguage()
-  const open = async () => {
+  const open = async (focus = "") => {
     const id = sessionID()
     if (!id) return
     const { CodeReviewDialog } = await import("./code-review-dialog")
-    dialog.show(() => <CodeReviewDialog sessionID={id} currentSessionID={sessionID} />)
+    dialog.show(() => <CodeReviewDialog sessionID={id} currentSessionID={sessionID} focus={focus} />)
   }
   command.register("session-code-review", () => [
     {
       id: "session.code-review",
       title: language.t("codeReview.title"),
+      description: language.t("codeReview.description"),
       slash: "review",
       slashAliases: ["reviews"],
       disabled: !sessionID(),
       onSelect: () => void open(),
+      onSlash: (args) => void open(args),
     },
   ])
   return { available: () => !!sessionID(), open }

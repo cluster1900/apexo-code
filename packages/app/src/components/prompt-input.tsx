@@ -769,7 +769,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }))
 
     const custom = sync()
-      .data.command.filter((cmd) => !["memory", "remember", "flush", "dream"].includes(cmd.name) || !memory.available())
+      .data.command.filter(
+        (cmd) =>
+          cmd.name !== "review" &&
+          (!["memory", "remember", "flush", "dream"].includes(cmd.name) || !memory.available()),
+      )
       .map((cmd) => ({
         id: `custom.${cmd.name}`,
         trigger: cmd.name,

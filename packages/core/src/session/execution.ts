@@ -11,6 +11,10 @@ export interface Interface {
   readonly compact: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<void, SessionRunner.CompactError | SessionRunCoordinator.ControlCancelled>
+  /** Internal owned child capability; independent children need not enter the parent's serialized control lane. */
+  readonly children?: (
+    sessionID: SessionSchema.ID,
+  ) => Effect.Effect<SessionRunner.Children, import("./lifecycle").SessionLifecycle.Closed>
   /** Snapshots active execution owned by this process. */
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly wait: (sessionID: SessionSchema.ID) => Effect.Effect<void, SessionRunner.RunError>

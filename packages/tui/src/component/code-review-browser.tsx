@@ -9,7 +9,7 @@ import { useBindings } from "../keymap"
 export type CodeReviewActions = {
   available: () => Promise<boolean>
   list: (after: string | undefined, signal: AbortSignal) => Promise<{ data: CodeReviewRun[]; hasMore: boolean }>
-  get: (id: string, signal: AbortSignal) => Promise<CodeReviewRun>
+  get: (id: string, signal: AbortSignal, workspace?: boolean) => Promise<CodeReviewRun>
   start: (input: CodeReviewInput, signal: AbortSignal) => Promise<CodeReviewRun>
   cancel: (id: string, signal: AbortSignal) => Promise<CodeReviewRun>
 }
@@ -22,6 +22,7 @@ export function CodeReviewBrowser(props: {
 }) {
   const dimensions = useTerminalDimensions()
   const lifetime = new AbortController()
+  let refreshToken = 0
   let viewport: ScrollBoxRenderable | undefined
   let editor: TextareaRenderable | undefined
   const [state, setState] = createStore({
@@ -32,6 +33,7 @@ export function CodeReviewBrowser(props: {
     detail: undefined as CodeReviewRun | undefined,
     available: false,
     pending: true,
+    refreshing: false,
     error: "",
     editing: false as false | "target" | "focus",
     target: "uncommitted",
@@ -39,15 +41,18 @@ export function CodeReviewBrowser(props: {
     priority: "all",
   })
   const terminal = (item: CodeReviewRun) => !["admitted", "capturing", "running"].includes(item.status)
-  const loadDetail = async () => {
+  const loadDetail = async (compare = true, token = refreshToken) => {
     const id = state.items[state.selected]?.id
     if (!id) return
-    const detail = await props.actions.get(id, lifetime.signal)
-    if (!lifetime.signal.aborted && id === state.items[state.selected]?.id) setState("detail", detail)
+    const selected = state.items[state.selected]
+    const workspace = selected && terminal(selected) && (compare || !state.detail || !terminal(state.detail))
+    const detail = await props.actions.get(id, lifetime.signal, workspace)
+    if (!lifetime.signal.aborted && token === refreshToken && id === state.items[state.selected]?.id)
+      setState("detail", detail)
   }
-  const load = async (more = false) => {
+  const load = async (more = false, compare = true, token = refreshToken) => {
     const page = await props.actions.list(more ? state.items.at(-1)?.id : undefined, lifetime.signal)
-    if (lifetime.signal.aborted) return
+    if (lifetime.signal.aborted || token !== refreshToken) return
     const id = state.items[state.selected]?.id
     const items = more
       ? [...state.items, ...page.data]
@@ -60,10 +65,11 @@ export function CodeReviewBrowser(props: {
         items.findIndex((item) => item.id === id),
       ),
     })
-    await loadDetail()
+    await loadDetail(compare, token)
   }
   const run = async (work: () => Promise<void>) => {
     if (state.pending) return
+    refreshToken++
     setState({ pending: true, error: "" })
     await work()
       .catch(() => {
@@ -93,7 +99,24 @@ export function CodeReviewBrowser(props: {
     if (!lifetime.signal.aborted) setState("pending", false)
   })
   const timer = setInterval(() => {
-    if (!state.pending && state.available && state.items.some((item) => !terminal(item))) void run(() => load())
+    if (
+      state.pending ||
+      state.refreshing ||
+      state.editing ||
+      !state.available ||
+      !state.items.some((item) => !terminal(item))
+    )
+      return
+    const token = refreshToken
+    setState("refreshing", true)
+    void load(false, false, token)
+      .catch(() => {
+        if (!lifetime.signal.aborted && token === refreshToken)
+          setState("error", "Refresh failed. Your actions remain available.")
+      })
+      .finally(() => {
+        if (!lifetime.signal.aborted) setState("refreshing", false)
+      })
   }, 1500)
   onCleanup(() => {
     lifetime.abort()
@@ -198,12 +221,21 @@ export function CodeReviewBrowser(props: {
               {(entry) => (
                 <>
                   <text>
-                    {state.selected + 1}/{state.items.length} · {entry().id} · {entry().status} ·{" "}
-                    {entry().workspaceStatus === "stale"
-                      ? "STALE: workspace changed"
-                      : entry().workspaceStatus === "unavailable"
-                        ? "Workspace comparison unavailable"
-                        : "Captured workspace"}
+                    {state.selected + 1}/{state.items.length} · {entry().status} ·{" "}
+                    {entry().workspaceStatus === "not_applicable"
+                      ? "Frozen revision"
+                      : entry().workspaceStatus === "stale"
+                        ? "STALE: workspace changed"
+                        : entry().workspaceStatus === "unavailable"
+                          ? "Workspace comparison unavailable"
+                          : "Captured workspace"}
+                  </text>
+                  <text>
+                    {new Date(entry().createdAt).toISOString()} · {entry().input.target.type}{" "}
+                    {(() => {
+                      const target = entry().input.target
+                      return target.type === "uncommitted" ? "" : target.ref
+                    })()}
                   </text>
                   <scrollbox
                     ref={(value: ScrollBoxRenderable) => {
@@ -212,7 +244,9 @@ export function CodeReviewBrowser(props: {
                     flexGrow={1}
                   >
                     <text>
-                      {entry().result?.summary ?? entry().error ?? "Review in progress"}
+                      {entry().result?.summary ??
+                        entry().error ??
+                        (terminal(entry()) ? `Review ${entry().status}` : "Review in progress")}
                       {"\n"}
                       {entry().result?.assessment}
                       {entry().result
@@ -277,6 +311,9 @@ export function CodeReviewBrowser(props: {
         <textarea
           ref={(value: TextareaRenderable) => {
             editor = value
+            queueMicrotask(() => {
+              if (!value.isDestroyed) value.cursorOffset = Bun.stringWidth(value.plainText)
+            })
           }}
           focused
           initialValue={state.editing === "target" ? state.target : state.focus}

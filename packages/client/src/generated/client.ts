@@ -1808,6 +1808,7 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/review/${encodeURIComponent(input.reviewID)}`,
+            query: { compareWorkspace: input["compareWorkspace"] },
             successStatus: 200,
             declaredStatuses: [409, 400, 503, 404, 401],
             empty: false,

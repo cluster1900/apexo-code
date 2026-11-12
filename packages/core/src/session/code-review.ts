@@ -1,6 +1,6 @@
 export * as SessionCodeReview from "./code-review"
 
-import { and, desc, eq, lt, sql } from "drizzle-orm"
+import { and, desc, eq, lt, or, sql } from "drizzle-orm"
 import { CodeReview } from "@apexo/schema/code-review"
 import { Cause, Context, Deferred, Effect, Fiber, FiberSet, Layer, Option, Schema, Semaphore } from "effect"
 import { Database } from "../database/database"
@@ -11,6 +11,8 @@ import { LocationRuntimeGuard } from "../location-runtime-guard"
 import { InstallationVersion } from "../installation/version"
 import { Slug } from "../util/slug"
 import { SessionV1 } from "../v1/session"
+import { Catalog } from "../catalog"
+import { SessionInputExecutionOwner } from "./input-execution-owner"
 import { AgentV2 } from "../agent"
 import { SessionCodeReviewTable } from "./code-review.sql"
 import { CodeReviewCapture } from "./code-review-capture"
@@ -22,7 +24,6 @@ import { SessionCommandSandbox } from "./command-sandbox"
 import { SessionInput } from "./input"
 import { SessionInputExecution } from "./input-execution"
 import { SessionExecution } from "./execution"
-import { SessionRunner } from "./runner/index"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
@@ -87,6 +88,7 @@ const make = Effect.gen(function* () {
       .where(sql`json_extract(${SessionCodeReviewTable.data}, '$.status') IN ('admitted', 'capturing', 'running')`)
     yield* Effect.forEach(rows, (row) =>
       Effect.gen(function* () {
+        if (!SessionInputExecutionOwner.dead(row.execution_owner)) return
         const run = yield* Schema.decodeUnknownEffect(CodeReview.Run)(row.data)
         yield* write({
           ...run,
@@ -126,8 +128,8 @@ const make = Effect.gen(function* () {
         yield* update(parent.id, run.id, { status: "capturing" })
         const captured = yield* capture.capture(parent.location.directory, run.input.target)
         yield* update(parent.id, run.id, { captured })
-        // Obtain the existing coordinator's private child lane at a safe boundary; no parent prompt is admitted.
-        const children = yield* execution.control(parent.id, SessionRunner.CurrentChildren)
+        // Independent owned children use the same coordinator without waiting for the parent provider turn.
+        const children = execution.children ? yield* execution.children(parent.id) : undefined
         if (!children)
           return yield* new Failure({ code: "invalid", message: "Native owned review execution is unavailable" })
         const authority = yield* managed.capture(parent.id, { kind: "review", reviewID: run.id, attemptID: run.id })
@@ -274,6 +276,8 @@ const make = Effect.gen(function* () {
                 .where(eq(SessionCodeReviewTable.id, id))
                 .get()
               if (existing) {
+                if (existing.parent_session_id !== sessionID)
+                  return yield* new Failure({ code: "conflict", message: "Review ID belongs to another Session" })
                 const run = yield* get(sessionID, id)
                 if (JSON.stringify(run.input) !== JSON.stringify(normalized))
                   return yield* new Failure({
@@ -281,6 +285,19 @@ const make = Effect.gen(function* () {
                     message: "Review ID was already used with different options",
                   })
                 return run
+              }
+              for (const selected of [normalized.model, normalized.limits?.fallbackModel].filter(
+                (model) => model !== undefined,
+              )) {
+                yield* Effect.gen(function* () {
+                  const catalog = yield* Catalog.Service
+                  const models = yield* catalog.model.available()
+                  if (!models.some((model) => model.providerID === selected.providerID && model.id === selected.id))
+                    return yield* new Failure({
+                      code: "invalid",
+                      message: `Model unavailable: ${selected.providerID}/${selected.id}`,
+                    })
+                }).pipe(Effect.provide(locations.get(parent.location)))
               }
               const now = Date.now()
               const run = CodeReview.Run.make({
@@ -297,7 +314,13 @@ const make = Effect.gen(function* () {
               const claim = yield* lifecycle.capture(sessionID)
               yield* db
                 .insert(SessionCodeReviewTable)
-                .values({ id, parent_session_id: sessionID, data: run, time_created: now })
+                .values({
+                  id,
+                  parent_session_id: sessionID,
+                  data: run,
+                  time_created: now,
+                  execution_owner: SessionInputExecutionOwner.stamp,
+                })
                 .run()
               yield* events.publish(
                 CodeReview.Event.Started,
@@ -317,10 +340,7 @@ const make = Effect.gen(function* () {
                           const error = Cause.squash(cause)
                           return update(sessionID, id, {
                             status: Cause.hasInterrupts(cause) ? "interrupted" : "failed",
-                            error:
-                              error instanceof Failure || error instanceof CodeReviewCapture.Failure
-                                ? error.message
-                                : "Review execution failed",
+                            error: error instanceof Error ? error.message.slice(0, 2000) : "Review execution failed",
                           }).pipe(Effect.ignore)
                         }),
                         Effect.ensuring(
@@ -364,16 +384,32 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         if (!(yield* sessions.get(sessionID)))
           return yield* new Failure({ code: "missing", message: "Session not found" })
+        const cursor = after
+          ? yield* db
+              .select()
+              .from(SessionCodeReviewTable)
+              .where(and(eq(SessionCodeReviewTable.id, after), eq(SessionCodeReviewTable.parent_session_id, sessionID)))
+              .get()
+          : undefined
+        if (after && !cursor) return yield* new Failure({ code: "missing", message: "Review history cursor not found" })
         const rows = yield* db
           .select()
           .from(SessionCodeReviewTable)
           .where(
             and(
               eq(SessionCodeReviewTable.parent_session_id, sessionID),
-              after ? lt(SessionCodeReviewTable.id, after) : undefined,
+              cursor
+                ? or(
+                    lt(SessionCodeReviewTable.time_created, cursor.time_created),
+                    and(
+                      eq(SessionCodeReviewTable.time_created, cursor.time_created),
+                      lt(SessionCodeReviewTable.id, cursor.id),
+                    ),
+                  )
+                : undefined,
             ),
           )
-          .orderBy(desc(SessionCodeReviewTable.id))
+          .orderBy(desc(SessionCodeReviewTable.time_created), desc(SessionCodeReviewTable.id))
           .limit(limit + 1)
         const data = yield* Effect.forEach(rows.slice(0, limit), (row) =>
           Schema.decodeUnknownEffect(CodeReview.Run)(row.data),
@@ -381,12 +417,21 @@ const make = Effect.gen(function* () {
         return { data, hasMore: rows.length > limit }
       }),
     )
-  const detail = (sessionID: SessionSchema.ID, id: CodeReview.ID) =>
+  const detail = (sessionID: SessionSchema.ID, id: CodeReview.ID, workspace = false) =>
     Effect.gen(function* () {
       const run = yield* get(sessionID, id)
       return {
         ...run,
-        workspaceStatus: run.captured ? yield* capture.workspaceStatus(run.captured) : ("unavailable" as const),
+        ...(workspace
+          ? {
+              workspaceStatus:
+                run.input.target.type !== "uncommitted"
+                  ? ("not_applicable" as const)
+                  : run.captured
+                    ? yield* capture.workspaceStatus(run.captured)
+                    : ("unavailable" as const),
+            }
+          : {}),
       }
     })
   return { start, get, detail, list, cancel }

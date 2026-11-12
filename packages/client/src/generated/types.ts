@@ -6677,7 +6677,7 @@ export type ServerCodeReviewStartOutput = {
     readonly cost: number | "Infinity" | "-Infinity" | "NaN"
   }
   readonly error?: string
-  readonly workspaceStatus?: "current" | "stale" | "unavailable"
+  readonly workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
 
 export type ServerCodeReviewListInput = {
@@ -6763,7 +6763,7 @@ export type ServerCodeReviewListOutput = {
       readonly cost: number | "Infinity" | "-Infinity" | "NaN"
     }
     readonly error?: string
-    readonly workspaceStatus?: "current" | "stale" | "unavailable"
+    readonly workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
   }>
   readonly hasMore: boolean
 }
@@ -6771,6 +6771,7 @@ export type ServerCodeReviewListOutput = {
 export type ServerCodeReviewGetInput = {
   readonly sessionID: { readonly sessionID: string; readonly reviewID: string }["sessionID"]
   readonly reviewID: { readonly sessionID: string; readonly reviewID: string }["reviewID"]
+  readonly compareWorkspace?: { readonly compareWorkspace?: "true" | undefined }["compareWorkspace"]
 }
 
 export type ServerCodeReviewGetOutput = {
@@ -6849,7 +6850,7 @@ export type ServerCodeReviewGetOutput = {
     readonly cost: number | "Infinity" | "-Infinity" | "NaN"
   }
   readonly error?: string
-  readonly workspaceStatus?: "current" | "stale" | "unavailable"
+  readonly workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
 
 export type ServerCodeReviewDiffInput = {
@@ -6945,7 +6946,7 @@ export type ServerCodeReviewCancelOutput = {
     readonly cost: number | "Infinity" | "-Infinity" | "NaN"
   }
   readonly error?: string
-  readonly workspaceStatus?: "current" | "stale" | "unavailable"
+  readonly workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
 
 export type MessagesListInput = {

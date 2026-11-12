@@ -48,3 +48,13 @@
 - Root cause: Bun's direct JSX runtime import requests `jsxDEV`; the installed Solid runtime does not export it. The App's existing unit setup has no Solid JSX compiler preload. No historical recurrence or successful pre-feature baseline run is asserted here.
 - Status: unresolved supplementary runner limitation. No production or unit-runner fix is claimed. The actual Vite production App build and rebuilt Electron renderer pass the F01 browser/Desktop acceptance, each with twelve checks. This command is separate from the five required repository gates.
 - Initial sandbox-only listener failures were superseded by the permitted run above; they are not additional production failures.
+
+## Follow-up validation observations
+
+- New real-Git fixtures initially inherited global commit signing. All new/reused review Git setup commands now set `commit.gpgsign=false` per command; user/global Git configuration is not changed.
+- One combined domain/CLI run overlapped root typechecking and timed out on an attached CLI request. The standalone CLI rerun passed two tests / 19 assertions. The contention was not fully diagnosed, so the passing rerun is not claimed as a product timeout fix.
+- The provider-error fixture initially used the string `fixture` in its public error message, which also matched its dummy key and was correctly redacted. The fixture now uses a distinct diagnostic phrase and still asserts the safe HTTP status and explanation.
+- The first explicit workspace query used an absent Effect schema helper; it now uses the actual literal-string query contract. The SDK helper uses explicit `.js` ESM imports. Root typechecking then passed all 21 tasks.
+
+- The first own-sidecar Desktop attempts used the external-server connection key and omitted the legacy directory parameter when creating the initial Session. The fixture now uses the actual `sidecar` connection identity, authenticates with the owned sidecar credentials, and sends both native Location and legacy directory query keys. This was fixture routing correction, not evidence of a product backend failure.
+- The first held-refresh terminal script tried to fetch its active report through the list endpoint after holding that endpoint. The fixture now obtains the report identity before installing the hold. Later PTY checks establish the hold and send one cancellation key; no repeated shortcut or sleep is used as readiness evidence.

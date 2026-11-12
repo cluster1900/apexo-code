@@ -45,6 +45,7 @@ export default {
           \`parent_session_id\` text NOT NULL,
           \`data\` text NOT NULL,
           \`time_created\` integer NOT NULL,
+          \`execution_owner\` text,
           CONSTRAINT \`fk_session_code_review_parent_session_id_session_id_fk\` FOREIGN KEY (\`parent_session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)

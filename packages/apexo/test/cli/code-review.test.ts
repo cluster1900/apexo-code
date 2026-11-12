@@ -30,7 +30,11 @@ cliIt.live(
     Effect.gen(function* () {
       yield* Effect.promise(async () => {
         const run = async (...args: string[]) => {
-          const proc = Bun.spawn(["git", ...args], { cwd: home, stdout: "ignore", stderr: "pipe" })
+          const proc = Bun.spawn(["git", "-c", "commit.gpgsign=false", ...args], {
+            cwd: home,
+            stdout: "ignore",
+            stderr: "pipe",
+          })
           const error = await new Response(proc.stderr).text()
           if ((await proc.exited) !== 0) throw new Error(error)
         }
@@ -87,6 +91,18 @@ cliIt.live(
       )
       const out = path.join(home, "report.json")
       const env = { APEXO_CONFIG_CONTENT: "", APEXO_DISABLE_PROJECT_CONFIG: "", GROK_MEMORY: "0" }
+      const unavailable = yield* apexo.spawn(["review", "--model", "nope/nope", "--session-protocol", "native"], {
+        env,
+      })
+      apexo.expectExit(unavailable, 1)
+      expect(unavailable.stderr + unavailable.stdout).toContain("Model unavailable: nope/nope")
+      expect(yield* llm.calls).toBe(0)
+      const incompatible = yield* apexo.spawn(["review", "--session-protocol", "compatibility", "--fail-on", "P1"], {
+        env,
+      })
+      apexo.expectExit(incompatible, 1)
+      expect(incompatible.stderr + incompatible.stdout).toContain("--session-protocol compatibility")
+      expect(incompatible.stderr + incompatible.stdout).not.toContain("--output-schema")
       const result = yield* apexo.spawn(
         [
           "review",

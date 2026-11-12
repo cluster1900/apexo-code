@@ -26,7 +26,7 @@ import { TestLLMServer, reply } from "../lib/llm-server"
 
 const it = testEffect(Layer.mergeAll(AppNodeBuilder.build(CrossSpawnSpawner.node), TestLLMServer.layer))
 async function git(root: string, ...args: string[]) {
-  const proc = Bun.spawn(["git", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" })
+  const proc = Bun.spawn(["git", "-c", "commit.gpgsign=false", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" })
   const [text, error, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -41,9 +41,12 @@ it.live(
   () =>
     Effect.gen(function* () {
       const root = yield* tmpdirScoped({ git: true })
+      const outside = yield* tmpdirScoped()
       yield* Effect.promise(async () => {
+        await Bun.write(path.join(outside, "large"), new Uint8Array(2 * 1024 * 1024 + 1))
+        await symlink(path.join(outside, "large"), path.join(root, "large-link"))
         await Bun.write(path.join(root, "tracked.ts"), "before\n")
-        await git(root, "add", ".")
+        await git(root, "add", "tracked.ts")
         await git(root, "commit", "-m", "fixture")
         await Bun.write(path.join(root, "tracked.ts"), "staged\n")
         await git(root, "add", "tracked.ts")
@@ -60,6 +63,7 @@ it.live(
         expect(frozen.files.map((file) => file.path)).toContain("new.ts")
         expect(yield* capture.read(frozen, "new", "tracked.ts")).toBe("unstaged\n")
         expect(yield* capture.read(frozen, "new", "link")).toBe("/outside/review-must-not-follow")
+        expect(yield* capture.read(frozen, "new", "large-link")).toBe(path.join(outside, "large"))
         yield* Effect.promise(() => Bun.write(path.join(root, "new.ts"), "changed later\n"))
         expect(yield* capture.workspaceStatus(frozen)).toBe("stale")
         expect(yield* capture.read(frozen, "new", "new.ts")).toBe("captured untracked\n")
@@ -111,6 +115,86 @@ it.live(
         expect(result.findings[0].anchor).toMatchObject({ inHunk: false, snippet: { startLine: 17 } })
         expect(result.findings[1].anchor).toEqual({ type: "file" })
         expect(result.coverage.invalidLocations).toBe(1)
+      }).pipe(Effect.provide(AppNodeBuilder.build(CodeReviewCapture.node)))
+    }),
+  20000,
+)
+
+it.live(
+  "uncommitted capture keeps ignored tracked/forced files, staged deletions and renames without touching the real index",
+  () =>
+    Effect.gen(function* () {
+      const root = yield* tmpdirScoped({ git: true })
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(root, "tracked.ts"), "tracked\n")
+        await Bun.write(path.join(root, "delete.ts"), "delete me\n")
+        await Bun.write(path.join(root, "guide.md"), "rename source\n".repeat(40))
+        await Bun.write(path.join(root, ".gitignore"), "ignored/\n")
+        await Bun.write(path.join(root, "ignored/tracked.ts"), "tracked ignored\n")
+        await git(root, "add", ".")
+        await git(root, "add", "-f", "ignored/tracked.ts")
+        await git(root, "commit", "-m", "fixture")
+        await git(root, "rm", "delete.ts")
+        await git(root, "mv", "guide.md", "manual.md")
+        await Bun.write(path.join(root, "ignored/forced.ts"), "force staged\n")
+        await git(root, "add", "-f", "ignored/forced.ts")
+        await Bun.write(path.join(root, "ignored/forced.ts"), "force working\n")
+        await Bun.write(path.join(root, "ignored/tracked.ts"), "ignored changed\n")
+        await git(root, "update-index", "--split-index")
+      })
+      const original = yield* Effect.promise(() => Bun.file(path.join(root, ".git/index")).bytes())
+      yield* Effect.gen(function* () {
+        const capture = yield* CodeReviewCapture.Service
+        const frozen = yield* capture.capture(root, { type: "uncommitted" })
+        expect(frozen.files).toContainEqual(expect.objectContaining({ path: "delete.ts", status: "deleted" }))
+        expect(frozen.files).toContainEqual(
+          expect.objectContaining({ path: "manual.md", oldPath: "guide.md", status: "renamed" }),
+        )
+        expect(yield* capture.read(frozen, "new", "ignored/forced.ts")).toBe("force working\n")
+        expect(yield* capture.read(frozen, "new", "ignored/tracked.ts")).toBe("ignored changed\n")
+        expect(yield* capture.workspaceStatus(frozen)).toBe("current")
+        expect(yield* Effect.promise(() => Bun.file(path.join(root, ".git/index")).bytes())).toEqual(original)
+      }).pipe(Effect.provide(AppNodeBuilder.build(CodeReviewCapture.node)))
+    }),
+  20000,
+)
+
+it.live(
+  "invalid finding paths are isolated and expected absent sides do not mark coverage missing",
+  () =>
+    Effect.gen(function* () {
+      const root = yield* tmpdirScoped({ git: true })
+      yield* Effect.promise(() => Bun.write(path.join(root, "new.ts"), "added\n"))
+      yield* Effect.gen(function* () {
+        const capture = yield* CodeReviewCapture.Service
+        const frozen = yield* capture.capture(root, { type: "uncommitted" })
+        expect(yield* capture.read(frozen, "old", "new.ts")).toBe("")
+        const finding = {
+          priority: "P1" as const,
+          title: "finding",
+          explanation: "problem",
+          confidence: 0.9,
+          path: "./new.ts",
+          side: "new" as const,
+          startLine: 1,
+          endLine: 1,
+        }
+        const result = yield* CodeReviewResult.validate(frozen, {
+          summary: "review",
+          assessment: "issues_found",
+          findings: [
+            finding,
+            { ...finding, title: "absolute", path: path.join(root, "new.ts") },
+            { ...finding, path: "/outside/escape.ts" },
+          ],
+        })
+        expect(result.findings).toHaveLength(2)
+        expect(result.findings.every((item) => item.path === "new.ts")).toBe(true)
+        expect(result.coverage.invalidLocations).toBe(1)
+        expect(result.coverage.exclusions).toContainEqual({
+          path: "/outside/escape.ts",
+          reason: "invalid_finding_path",
+        })
       }).pipe(Effect.provide(AppNodeBuilder.build(CodeReviewCapture.node)))
     }),
   20000,
@@ -299,6 +383,124 @@ it.live(
 )
 
 it.live(
+  "review admission rejects unavailable models and ID reuse in another Session",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionV2.Service
+        const reviews = yield* SessionCodeReview.Service
+        const parent = yield* sessions.create(f.create)
+        const invalid = yield* reviews
+          .start(parent.id, {
+            target: { type: "uncommitted" },
+            model: { providerID: ProviderV2.ID.make("nope"), id: ModelV2.ID.make("nope") },
+          })
+          .pipe(Effect.result)
+        expect(invalid._tag).toBe("Failure")
+        if (invalid._tag === "Failure")
+          expect(invalid.failure).toMatchObject({ code: "invalid", message: "Model unavailable: nope/nope" })
+        expect((yield* reviews.list(parent.id)).data).toHaveLength(0)
+        expect(yield* f.llm.calls).toBe(0)
+        yield* f.llm.text(clean, { usage: { input: 2, output: 1 } })
+        const first = yield* reviews.start(parent.id, { target: { type: "uncommitted" } })
+        const other = yield* sessions.create(f.create)
+        const conflict = yield* reviews.start(other.id, { ...first.input, id: first.id }).pipe(Effect.result)
+        expect(conflict._tag).toBe("Failure")
+        if (conflict._tag === "Failure") expect(conflict.failure.code).toBe("conflict")
+        yield* pollWithTimeout(
+          reviews.get(parent.id, first.id).pipe(Effect.map((run) => (CodeReview.terminal(run) ? run : undefined))),
+          "review did not finish",
+          "15 seconds",
+        )
+      }).pipe(Effect.provide(f.app))
+    }),
+  25000,
+)
+
+it.live(
+  "a review runs while its parent provider turn is held, and provider failures retain their explanation",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup
+      const gate = Promise.withResolvers<void>()
+      yield* Effect.addFinalizer(() => Effect.sync(() => gate.resolve()))
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionV2.Service
+        const reviews = yield* SessionCodeReview.Service
+        const execution = yield* SessionExecution.Service
+        const parent = yield* sessions.create(f.create)
+        yield* f.llm.hold("parent held", gate.promise)
+        yield* sessions.prompt({ sessionID: parent.id, prompt: { text: "hold this parent turn" } })
+        yield* f.llm.wait(1)
+        yield* f.llm.text(clean, { usage: { input: 2, output: 1 } })
+        const admitted = yield* reviews.start(parent.id, { target: { type: "uncommitted" } })
+        const done = yield* pollWithTimeout(
+          reviews.get(parent.id, admitted.id).pipe(Effect.map((run) => (CodeReview.terminal(run) ? run : undefined))),
+          "review must not wait for the held parent",
+          "8 seconds",
+        )
+        expect(done.status).toBe("completed")
+        expect(yield* f.llm.calls).toBe(2)
+        expect((yield* execution.active).has(parent.id)).toBe(true)
+        gate.resolve()
+        yield* execution.wait(parent.id)
+        yield* f.llm.error(400, { error: { message: "review invalid model request" } })
+        const rejected = yield* reviews.start(parent.id, { target: { type: "uncommitted" } })
+        const failed = yield* pollWithTimeout(
+          reviews.get(parent.id, rejected.id).pipe(Effect.map((run) => (CodeReview.terminal(run) ? run : undefined))),
+          "provider failure did not settle",
+          "10 seconds",
+        )
+        expect(failed.status).toBe("failed")
+        expect(failed.error).toContain("400")
+        expect(failed.error).toContain("review invalid model request")
+      }).pipe(Effect.provide(f.app))
+    }),
+  30000,
+)
+
+it.live(
+  "review history uses admission time instead of caller-supplied IDs, and plain reads do not compare the workspace",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionV2.Service
+        const reviews = yield* SessionCodeReview.Service
+        const parent = yield* sessions.create(f.create)
+        yield* f.llm.text(clean, { usage: { input: 2, output: 1 } })
+        const older = yield* reviews.start(parent.id, {
+          id: CodeReview.ID.make("rev_zzzz"),
+          target: { type: "uncommitted" },
+        })
+        yield* pollWithTimeout(
+          reviews.get(parent.id, older.id).pipe(Effect.map((run) => (CodeReview.terminal(run) ? run : undefined))),
+          "first review did not finish",
+          "10 seconds",
+        )
+        yield* f.llm.text(clean, { usage: { input: 2, output: 1 } })
+        const newer = yield* reviews.start(parent.id, {
+          id: CodeReview.ID.make("rev_aaaa"),
+          target: { type: "commit", ref: "HEAD" },
+        })
+        yield* pollWithTimeout(
+          reviews.get(parent.id, newer.id).pipe(Effect.map((run) => (CodeReview.terminal(run) ? run : undefined))),
+          "second review did not finish",
+          "10 seconds",
+        )
+        const page = yield* reviews.list(parent.id, undefined, 1)
+        expect(page.data.map((run) => run.id)).toEqual([newer.id])
+        expect(page.hasMore).toBe(true)
+        expect((yield* reviews.list(parent.id, newer.id, 1)).data.map((run) => run.id)).toEqual([older.id])
+        expect((yield* reviews.detail(parent.id, older.id)).workspaceStatus).toBeUndefined()
+        expect((yield* reviews.detail(parent.id, newer.id, true)).workspaceStatus).toBe("not_applicable")
+      }).pipe(Effect.provide(f.app))
+    }),
+  30000,
+)
+
+it.live(
   "report reload preserves captured evidence and restart marks unfinished work interrupted without sampling",
   () =>
     Effect.gen(function* () {
@@ -317,19 +519,45 @@ it.live(
           "review did not finish",
           "15 seconds",
         )
+        const deadOwner = yield* Effect.promise(async () => {
+          const child = Bun.spawn(
+            [
+              process.execPath,
+              "-e",
+              "process.stdout.write(JSON.stringify({pid:process.pid,token:'exited-review-owner'}))",
+            ],
+            { stdout: "pipe" },
+          )
+          const owner = await new Response(child.stdout).text()
+          await child.exited
+          return owner
+        })
         yield* database.db
           .update(SessionCodeReviewTable)
-          .set({ data: { ...done, status: "running", result: undefined } })
+          .set({
+            data: { ...done, status: "running", result: undefined },
+            execution_owner: JSON.stringify({ pid: process.pid, token: "another-live-review-owner" }),
+          })
           .where(eq(SessionCodeReviewTable.id, done.id))
           .run()
-        return done
+        return { done, deadOwner }
       }).pipe(Effect.provide(f.app))
       yield* Effect.gen(function* () {
         const reviews = yield* SessionCodeReview.Service
-        const recovered = yield* reviews.get(run.sessionID, run.id)
+        const database = yield* Database.Service
+        expect((yield* reviews.get(run.done.sessionID, run.done.id)).status).toBe("running")
+        yield* database.db
+          .update(SessionCodeReviewTable)
+          .set({ execution_owner: run.deadOwner })
+          .where(eq(SessionCodeReviewTable.id, run.done.id))
+          .run()
+      }).pipe(Effect.provide(f.app))
+      yield* Effect.gen(function* () {
+        const reviews = yield* SessionCodeReview.Service
+        const recovered = yield* reviews.get(run.done.sessionID, run.done.id)
         expect(recovered.status).toBe("interrupted")
-        expect(recovered.captured).toEqual(run.captured)
-        expect((yield* reviews.start(run.sessionID, run.input)).status).toBe("interrupted")
+        expect(recovered.captured).toEqual(run.done.captured)
+        expect((yield* reviews.start(run.done.sessionID, run.done.input)).status).toBe("interrupted")
         expect(yield* f.llm.calls).toBe(1)
       }).pipe(Effect.provide(f.app))
     }),

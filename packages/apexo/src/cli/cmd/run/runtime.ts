@@ -1,3 +1,4 @@
+import { codeReviewAvailable } from "@apexo/sdk/v2/code-review"
 import { taskMessageDraft } from "@apexo/sdk/v2/task-message"
 import { nativeMemoryActions } from "@apexo/tui/util/session-memory"
 import { mcpActions } from "@apexo/tui/component/mcp-browser"
@@ -456,7 +457,10 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           : undefined,
     ),
     codeReviewActions: {
-      available: async () => !!ctx.native,
+      available: async () => {
+        await ensureSession()
+        return codeReviewAvailable(ctx.sdk, state.sessionID)
+      },
       list: async (after, signal) => {
         await ensureSession()
         return (
@@ -466,9 +470,13 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           )
         ).data
       },
-      get: async (reviewID, signal) =>
-        (await ctx.sdk.v2.codeReview.get({ sessionID: state.sessionID, reviewID }, { signal, throwOnError: true }))
-          .data,
+      get: async (reviewID, signal, workspace) =>
+        (
+          await ctx.sdk.v2.codeReview.get(
+            { sessionID: state.sessionID, reviewID, ...(workspace ? { compareWorkspace: "true" as const } : {}) },
+            { signal, throwOnError: true },
+          )
+        ).data,
       start: async (codeReviewInput, signal) => {
         await ensureSession()
         return (

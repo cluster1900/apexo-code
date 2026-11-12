@@ -410,7 +410,9 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   const slashCommands = createMemo(() => [
     ...sync()
       .data.command.filter(
-        (item) => !["memory", "remember", "flush", "dream"].includes(item.name) || !memory.available(),
+        (item) =>
+          item.name !== "review" &&
+          (!["memory", "remember", "flush", "dream"].includes(item.name) || !memory.available()),
       )
       .map((item) => ({
         id: `custom.${item.name}`,

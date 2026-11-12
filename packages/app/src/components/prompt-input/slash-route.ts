@@ -8,6 +8,7 @@ import { parseSlashInput, sideQuestionText } from "@apexo/sdk/v2/grok-commands"
 export function registeredSlash(text: string, serverCommands: string[]) {
   const slash = parseSlashInput(text)
   if (!slash) return
+  if (slash.name === "review" || slash.name === "reviews") return slash
   if (serverCommands.includes(slash.name)) return
   if (slash.name === "goal" || slash.name === "remember") return
   if ((slash.name === "flush" || slash.name === "dream") && !slash.args) return

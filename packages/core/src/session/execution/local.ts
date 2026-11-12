@@ -215,6 +215,14 @@ const layer = Layer.effect(
         Effect.catchTag("SessionLifecycle.Closed", () => Effect.fail(new SessionRunCoordinator.ControlCancelled())),
       )
     return SessionExecution.Service.of({
+      children: (sessionID) =>
+        lifecycle.read(
+          sessionID,
+          Effect.gen(function* () {
+            const claim = yield* lifecycle.capture(sessionID)
+            return children(claim)
+          }),
+        ),
       active: Effect.map(coordinator.active, (claims) => new Set([...claims].map((claim) => claim.sessionID))),
       wait: (sessionID) =>
         lifecycle.find(sessionID).pipe(Effect.flatMap((claim) => (claim ? coordinator.wait(claim) : Effect.void))),

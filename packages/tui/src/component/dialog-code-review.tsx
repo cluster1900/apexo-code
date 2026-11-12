@@ -1,3 +1,4 @@
+import { codeReviewAvailable } from "@apexo/sdk/v2/code-review"
 import { createEffect } from "solid-js"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
@@ -20,7 +21,7 @@ export function DialogCodeReview(props: { sessionID: string }) {
           highlight: theme.theme.primary,
         })}
         actions={{
-          available: async () => (await sdk.transport()).kind === "native",
+          available: () => codeReviewAvailable(sdk.client, props.sessionID),
           list: async (after, signal) =>
             (
               await sdk.client.v2.codeReview.list(
@@ -28,10 +29,10 @@ export function DialogCodeReview(props: { sessionID: string }) {
                 { signal, throwOnError: true },
               )
             ).data,
-          get: async (reviewID, signal) =>
+          get: async (reviewID, signal, workspace) =>
             (
               await sdk.client.v2.codeReview.get(
-                { sessionID: props.sessionID, reviewID },
+                { sessionID: props.sessionID, reviewID, ...(workspace ? { compareWorkspace: "true" as const } : {}) },
                 { signal, throwOnError: true },
               )
             ).data,

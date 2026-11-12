@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "cab3d066-455b-4aa3-9255-e1b67a1792d8",
+  "id": "3ba7fc1e-c6e8-414e-be0f-15413ac8dc8a",
   "prevIds": [
-    "d8c0805f-7c65-4794-8879-41e1bfcdc120"
+    "cab3d066-455b-4aa3-9255-e1b67a1792d8"
   ],
   "ddl": [
     {
@@ -439,6 +439,16 @@
       "default": null,
       "generated": null,
       "name": "time_created",
+      "entityType": "columns",
+      "table": "session_code_review"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "execution_owner",
       "entityType": "columns",
       "table": "session_code_review"
     },

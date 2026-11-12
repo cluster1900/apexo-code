@@ -23,13 +23,17 @@ export const validate = (captured: CodeReview.Captured, value: CodeReview.Output
     const seen = new Set<string>()
     const findings = yield* Effect.forEach(value.findings, (finding) =>
       Effect.gen(function* () {
-        if (!CodeReviewCapture.validPath(finding.path))
-          return yield* new CodeReviewCapture.Failure({ message: "Finding path is outside the repository" })
-        const key = JSON.stringify(finding)
+        const filePath = CodeReviewCapture.reviewPath(captured.root, finding.path)
+        if (!filePath) {
+          state.invalidLocations++
+          exclusions.push({ path: finding.path, reason: "invalid_finding_path" })
+          return
+        }
+        const key = JSON.stringify({ ...finding, path: filePath })
         if (seen.has(key)) return
         seen.add(key)
         const text = yield* capture
-          .read(captured, finding.side, finding.path)
+          .read(captured, finding.side, filePath)
           .pipe(Effect.catch(() => Effect.succeed(undefined)))
         const lines = text === undefined ? [] : text === "" ? [] : text.replace(/\n$/, "").split("\n")
         const valid =
@@ -39,10 +43,10 @@ export const validate = (captured: CodeReview.Captured, value: CodeReview.Output
           finding.startLine >= 1 &&
           finding.endLine >= finding.startLine &&
           finding.endLine <= lines.length
-        if (text === undefined) exclusions.push({ path: finding.path, reason: "captured_content_unavailable" })
+        if (text === undefined) exclusions.push({ path: filePath, reason: "captured_content_unavailable" })
         if (!valid) state.invalidLocations++
         const file = captured.files.find(
-          (file) => (finding.side === "old" ? (file.oldPath ?? file.path) : file.path) === finding.path,
+          (file) => (finding.side === "old" ? (file.oldPath ?? file.path) : file.path) === filePath,
         )
         const inHunk =
           valid &&
@@ -68,7 +72,7 @@ export const validate = (captured: CodeReview.Captured, value: CodeReview.Output
             : undefined
         if (included) state.bytes += Buffer.byteLength(included.text)
         if (snippet && !included) {
-          exclusions.push({ path: finding.path, reason: "snippet_capture_limit" })
+          exclusions.push({ path: filePath, reason: "snippet_capture_limit" })
           state.invalidLocations++
         }
         return CodeReview.Finding.make({
@@ -77,7 +81,7 @@ export const validate = (captured: CodeReview.Captured, value: CodeReview.Output
           title: finding.title,
           explanation: finding.explanation,
           confidence: finding.confidence,
-          path: finding.path,
+          path: filePath,
           anchor:
             valid && (!snippet || included)
               ? {

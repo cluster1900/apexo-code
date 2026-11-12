@@ -10143,6 +10143,7 @@ export class CodeReview extends HeyApiClient {
     parameters: {
       sessionID: string
       reviewID: string
+      compareWorkspace?: "true"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -10153,6 +10154,7 @@ export class CodeReview extends HeyApiClient {
           args: [
             { in: "path", key: "sessionID" },
             { in: "path", key: "reviewID" },
+            { in: "query", key: "compareWorkspace" },
           ],
         },
       ],

@@ -1306,11 +1306,13 @@ type Endpoint20_2Request = Parameters<RawClient["server.codeReview"]["codeReview
 type Endpoint20_2Input = {
   readonly sessionID: Endpoint20_2Request["params"]["sessionID"]
   readonly reviewID: Endpoint20_2Request["params"]["reviewID"]
+  readonly compareWorkspace?: Endpoint20_2Request["query"]["compareWorkspace"]
 }
 const Endpoint20_2 = (raw: RawClient["server.codeReview"]) => (input: Endpoint20_2Input) =>
-  raw["codeReview.get"]({ params: { sessionID: input["sessionID"], reviewID: input["reviewID"] } }).pipe(
-    Effect.mapError(mapClientError),
-  )
+  raw["codeReview.get"]({
+    params: { sessionID: input["sessionID"], reviewID: input["reviewID"] },
+    query: { compareWorkspace: input["compareWorkspace"] },
+  }).pipe(Effect.mapError(mapClientError))
 
 type Endpoint20_3Request = Parameters<RawClient["server.codeReview"]["codeReview.diff"]>[0]
 type Endpoint20_3Input = {

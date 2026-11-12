@@ -51,7 +51,11 @@ export function reviewApiSupports(document: unknown, fields: readonly string[] =
 export async function runNativeCodeReview(args: Options, input: ReviewPromptInput) {
   if (args["output-schema"] || args["session-protocol"] === "compatibility") {
     if (args["fail-on"])
-      throw new Error("--fail-on requires native structured review and cannot be combined with --output-schema")
+      throw new Error(
+        args["output-schema"]
+          ? "--fail-on requires native structured review and cannot be combined with --output-schema"
+          : "--fail-on requires native structured review and cannot be used with --session-protocol compatibility",
+      )
     return false
   }
   const limits = parseRunGuardrails({
@@ -143,6 +147,18 @@ export async function runNativeCodeReview(args: Options, input: ReviewPromptInpu
             ...(args.variant ? { variant: args.variant } : {}),
           }
         : undefined
+    for (const requested of [model, limits.fallbackModel].filter((value) => value !== undefined)) {
+      if (
+        !catalog.models.some(
+          (item) =>
+            item.enabled &&
+            item.providerID === requested.providerID &&
+            item.id === requested.id &&
+            catalog.providers.some((provider) => provider.id === item.providerID && !provider.disabled),
+        )
+      )
+        throw new Error(`Model unavailable: ${requested.providerID}/${requested.id}`)
+    }
     if (state.signal) {
       state.cleanupConfirmed = true
       return true

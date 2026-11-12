@@ -28,6 +28,7 @@ export const CodeReviewGroup = HttpApiGroup.make("server.codeReview")
     }).annotateMerge(OpenApi.annotations({ identifier: "v2.codeReview.list" })),
     HttpApiEndpoint.get("codeReview.get", `${root}/:reviewID`, {
       params,
+      query: Schema.Struct({ compareWorkspace: Schema.optional(Schema.Literal("true")) }),
       success: CodeReview.Run,
       error,
     }).annotateMerge(OpenApi.annotations({ identifier: "v2.codeReview.get" })),

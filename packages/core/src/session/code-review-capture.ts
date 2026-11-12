@@ -6,6 +6,8 @@ import { CodeReview } from "@apexo/schema/code-review"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "../process"
+import { AbsolutePath } from "../schema"
+import { Git } from "../git"
 import { FSUtil } from "../fs-util"
 import { makeGlobalNode } from "../effect/app-node"
 
@@ -14,6 +16,11 @@ export class Failure extends Schema.TaggedErrorClass<Failure>()("CodeReviewCaptu
 }) {}
 const maximumFile = 2 * 1024 * 1024
 export const maximumCapture = 5 * 1024 * 1024
+export const reviewPath = (root: string, value: string) => {
+  const relative = path.isAbsolute(value) ? path.relative(root, value) : value
+  const normalized = path.posix.normalize(relative.split(path.sep).join("/"))
+  return validPath(normalized) ? normalized : undefined
+}
 export const validPath = (value: string) =>
   !!value &&
   !value.includes("\0") &&
@@ -23,6 +30,7 @@ export const validPath = (value: string) =>
   value.split("/").every((part) => part !== ".." && part !== "." && !!part)
 
 const make = Effect.gen(function* () {
+  const gitService = yield* Git.Service
   const proc = yield* AppProcess.Service
   const fs = yield* FSUtil.Service
   const command = (cwd: string, args: string[], env?: Record<string, string>, limit = maximumCapture) =>
@@ -53,11 +61,21 @@ const make = Effect.gen(function* () {
     )
   const read = (captured: CodeReview.Captured, side: "old" | "new", file: string) =>
     Effect.gen(function* () {
-      if (!validPath(file)) return yield* new Failure({ message: "Invalid review path" })
+      const normalized = reviewPath(captured.root, file)
+      if (!normalized) return yield* new Failure({ message: "Invalid review path" })
       const tree = side === "old" ? captured.beforeTree : captured.afterTree
-      const entry = yield* git(captured.root, ["ls-tree", "-z", tree, "--", file])
+      const entry = yield* git(captured.root, ["--literal-pathspecs", "ls-tree", "-z", tree, "--", normalized])
+      if (
+        !entry &&
+        captured.files.some((item) =>
+          side === "old"
+            ? item.path === normalized && item.status === "added"
+            : item.path === normalized && item.status === "deleted",
+        )
+      )
+        return ""
       if (!entry || entry.startsWith("160000")) return yield* new Failure({ message: "Captured file is unavailable" })
-      const text = yield* git(captured.root, ["show", `${tree}:${file}`], undefined, maximumFile)
+      const text = yield* git(captured.root, ["show", `${tree}:${normalized}`], undefined, maximumFile)
       if (text.includes("\0")) return yield* new Failure({ message: "Captured file is binary" })
       return text
     })
@@ -91,58 +109,24 @@ const make = Effect.gen(function* () {
           Effect.gen(function* () {
             if (!ref.trim() || ref.startsWith("-") || ref.includes("\0"))
               return yield* new Failure({ message: "Invalid review ref" })
-            return (yield* safeGit(["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`])).trim()
+            return (yield* safeGit(["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`]).pipe(
+              Effect.mapError(() => new Failure({ message: `Review ref does not exist or is not a commit: ${ref}` })),
+            )).trim()
           })
         const head = yield* resolve("HEAD").pipe(Effect.catch(() => Effect.succeed("")))
         const empty = (yield* safeGit(["hash-object", "-w", "-t", "tree", "--stdin"], undefined)).trim()
         const refs = yield* Effect.gen(function* () {
           if (target.type === "uncommitted") {
-            const temporary = yield* Effect.acquireRelease(fs.makeTempDirectory(), (dir) =>
-              fs.remove(dir, { recursive: true }).pipe(Effect.ignore),
-            )
-            const env = { GIT_INDEX_FILE: path.join(temporary, "index") }
-            yield* safeGit(head ? ["read-tree", head] : ["read-tree", "--empty"], env)
-            const conflicts = (yield* safeGit([
-              "diff",
-              "--no-ext-diff",
-              "--no-textconv",
-              "--name-only",
-              "--diff-filter=U",
-              "-z",
-            ]))
-              .split("\0")
-              .filter(Boolean)
-            const untracked = (yield* safeGit(["ls-files", "--others", "--exclude-standard", "-z"]))
-              .split("\0")
-              .filter(Boolean)
-            const oversized = yield* Effect.filter(untracked, (file) =>
-              Effect.gen(function* () {
-                const link = yield* fs
-                  .readLink(path.join(root, file))
-                  .pipe(Effect.catch(() => Effect.succeed(undefined)))
-                if (link !== undefined) return false
-                return yield* fs.stat(path.join(root, file)).pipe(
-                  Effect.map((info) => Number(info.size) > maximumFile),
-                  Effect.catch(() => Effect.succeed(true)),
-                )
-              }),
-            )
-            const omitted = new Set([...conflicts, ...oversized])
-            conflicts.forEach((file) => exclusions.push({ path: file, reason: "conflict" }))
-            oversized.forEach((file) => exclusions.push({ path: file, reason: "oversized" }))
-            // Pathspecs are literal: filenames containing glob characters cannot widen capture.
-            const files = (yield* safeGit(["ls-files", "--cached", "-z"])).split("\0").filter(Boolean)
-            const paths = [...new Set([...files, ...untracked])].filter((file) => !omitted.has(file))
-            yield* Effect.forEach(
-              Array.from({ length: Math.ceil(paths.length / 100) }, (_, i) => paths.slice(i * 100, i * 100 + 100)),
-              (batch) => safeGit(["--literal-pathspecs", "add", "-A", "--", ...batch], env),
-              { discard: true },
-            )
+            const repository = yield* gitService.repo.discover(AbsolutePath.make(root))
+            if (!repository) return yield* new Failure({ message: "The review directory is not a Git repository" })
+            const snapshot = yield* gitService.index.capture({ repository, maximumUntrackedFileBytes: maximumFile })
+            snapshot.conflicts.forEach((file) => exclusions.push({ path: file, reason: "conflict" }))
+            snapshot.skipped.forEach((file) => exclusions.push({ path: file, reason: "oversized" }))
             return {
               base: head || empty,
               head: head || empty,
               before: head ? (yield* safeGit(["rev-parse", `${head}^{tree}`])).trim() : empty,
-              after: (yield* safeGit(["write-tree"], env)).trim(),
+              after: snapshot.tree,
             }
           }
           if (!head && target.type !== "pr") return yield* new Failure({ message: "The repository has no HEAD commit" })
@@ -356,5 +340,5 @@ export type Interface = Effect.Success<typeof make>
 export const node = makeGlobalNode({
   service: Service,
   layer: Layer.effect(Service, make),
-  deps: [AppProcess.node, FSUtil.node],
+  deps: [AppProcess.node, FSUtil.node, Git.node],
 })

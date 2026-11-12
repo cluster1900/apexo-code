@@ -8,7 +8,9 @@ import { promisify } from "node:util"
 import { poll, deadline } from "./grok-shell-fixture.mjs"
 import { startCodeReviewFixture } from "./code-review-ui-fixture.mjs"
 const kind = process.argv[2] ?? "browser"
-const fixture = await startCodeReviewFixture()
+const builtin = kind === "builtin"
+const nativeWindow = builtin || kind === "native"
+const fixture = await startCodeReviewFixture({ mixed: kind === "mixed", desktop: builtin })
 const { runtime, repo } = fixture
 const requests = []
 const server = createServer((incoming, response) => {
@@ -57,7 +59,7 @@ const browserSession = `code-review-${kind}-${basename(runtime.output)}`
 const history = []
 const native = { child: undefined, exited: undefined, port: undefined }
 const nativeLogs = []
-if (kind === "native") {
+if (nativeWindow) {
   const appData = join(runtime.output, "native-app-data")
   await mkdir(join(appData, "com.apexolab.desktop.dev"), { recursive: true })
   await writeFile(
@@ -74,6 +76,10 @@ if (kind === "native") {
   await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve))
   native.port = reservation.address().port
   await new Promise((resolve) => reservation.close(resolve))
+  const sidecarReservation = createServer()
+  await new Promise((resolve) => sidecarReservation.listen(0, "127.0.0.1", resolve))
+  native.sidecarPort = sidecarReservation.address().port
+  await new Promise((resolve) => sidecarReservation.close(resolve))
   native.child = spawn(
     join(
       desktop,
@@ -86,7 +92,7 @@ if (kind === "native") {
       env: {
         ...runtime.env,
         SHELL: "/bin/sh",
-        APEXO_PORT: "",
+        APEXO_PORT: String(native.sidecarPort),
         APEXO_TEST_ONBOARDING: "0",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -121,7 +127,7 @@ const command = async (...args) => {
       "agent-browser",
       "--session",
       browserSession,
-      ...(kind === "native"
+      ...(nativeWindow
         ? ["--cdp", String(native.port)]
         : [
             "--executable-path",
@@ -136,7 +142,7 @@ const command = async (...args) => {
 }
 const checks = []
 try {
-  if (kind === "native") {
+  if (nativeWindow) {
     await poll(
       () =>
         fetch(`http://127.0.0.1:${native.port}/json/list`)
@@ -146,17 +152,31 @@ try {
       "native Task window",
     )
     await command("wait", "--fn", "!!window.api?.awaitInitialization")
-    await command("eval", "window.api.awaitInitialization()")
-    await command("eval", `window.api.setDefaultServerUrl(${JSON.stringify(runtime.url)})`)
-    await command(
-      "eval",
-      `window.api.storeSet("apexo.global.dat","server",JSON.stringify({list:[{type:"http",http:{url:${JSON.stringify(runtime.url)}}}],projects:{},lastProject:{},recentlyClosed:{}}))`,
-    )
+    const ready = JSON.parse(await command("eval", "window.api.awaitInitialization()"))
+    if (builtin) {
+      runtime.url = ready.url
+      runtime.headers = {
+        Authorization: `Basic ${Buffer.from(`${ready.username ?? "apexo"}:${ready.password ?? ""}`).toString("base64")}`,
+      }
+      fixture.session = await runtime.api("/session", { title: "Built-in Desktop structured review" })
+      assert.equal((await runtime.api("/global/health")).healthy, true)
+      checks.push("desktop-owned-mixed-backend")
+    }
+    if (!builtin) await command("eval", `window.api.setDefaultServerUrl(${JSON.stringify(runtime.url)})`)
+    if (!builtin)
+      await command(
+        "eval",
+        `window.api.storeSet("apexo.global.dat","server",JSON.stringify({list:[{type:"http",http:{url:${JSON.stringify(runtime.url)}}}],projects:{},lastProject:{},recentlyClosed:{}}))`,
+      )
+  }
+  if (kind === "mixed") {
+    assert.equal((await runtime.api("/global/health")).healthy, true)
+    checks.push("default-serve-mixed-backend")
   }
   const before = fixture.calls.length
   const browserUrl = `http://127.0.0.1:${server.address().port}`
-  const route = `/server/${Buffer.from(kind === "native" ? runtime.url : browserUrl).toString("base64url")}/session/${fixture.session.id}`
-  if (kind === "native") {
+  const route = `/server/${Buffer.from(builtin ? "sidecar" : nativeWindow ? runtime.url : browserUrl).toString("base64url")}/session/${fixture.session.id}`
+  if (nativeWindow) {
     await command(
       "eval",
       `(async()=>{const id=await window.api.getWindowID();localStorage.setItem('apexo.desktop.window.'+id+'.last-active-url',${JSON.stringify(route)});return true})()`,
@@ -169,6 +189,23 @@ try {
     await command("click", '[data-action="session-code-review"]')
     await command("wait", panel)
   }
+  await command("wait", '[data-action="session-code-review"]')
+  await command("fill", '[contenteditable="true"]', "/review")
+  const reviewOption = '[data-suggestion-id="session.code-review"], [data-slash-id="session.code-review"]'
+  await command("wait", reviewOption)
+  assert.equal(Number((await command("get", "count", reviewOption)).trim()), 1)
+  assert.equal(
+    Number(
+      (await command("get", "count", '[data-suggestion-id="custom.review"], [data-slash-id="custom.review"]')).trim(),
+    ),
+    0,
+  )
+  assert.match(await command("get", "text", reviewOption), /Read-only review/)
+  await command("press", "Enter")
+  await command("wait", panel)
+  assert.equal(fixture.calls.length, before)
+  checks.push("one-structured-review-menu-entry", "typed-review-opens-read-only-ui")
+  await command("press", "Escape")
   await open()
   await command("wait", "--fn", 'document.querySelector("[data-action=review-start]")?.disabled===false')
   await command("click", '[data-action="review-start"]')
@@ -229,6 +266,7 @@ try {
   assert.deepEqual(admitted.input.target, { type: "base", ref: "main" })
   checks.push("base-target-selection", "new-review-clears-previous-report")
   await command("wait", "--fn", 'document.querySelector("[data-action=review-cancel]")?.disabled===false')
+  assert.equal((await command("get", "text", '[data-action="review-cancel"]')).trim(), "Cancel review")
   await command("click", '[data-action="review-cancel"]')
   await command("wait", '[data-status="cancelled"]')
   checks.push("targeted-cancel")
@@ -247,8 +285,8 @@ try {
       agent: "build",
     })
   ).data
-  const otherRoute = `/server/${Buffer.from(kind === "native" ? runtime.url : browserUrl).toString("base64url")}/session/${other.id}`
-  if (kind === "native") {
+  const otherRoute = `/server/${Buffer.from(builtin ? "sidecar" : nativeWindow ? runtime.url : browserUrl).toString("base64url")}/session/${other.id}`
+  if (nativeWindow) {
     await command(
       "eval",
       `(async()=>{const id=await window.api.getWindowID();localStorage.setItem('apexo.desktop.window.'+id+'.last-active-url',${JSON.stringify(otherRoute)});return true})()`,
@@ -280,7 +318,7 @@ try {
       await native.exited
     })
   }
-  if (kind === "native") await writeFile(join(runtime.output, "native.log"), Buffer.concat(nativeLogs))
+  if (nativeWindow) await writeFile(join(runtime.output, "native.log"), Buffer.concat(nativeLogs))
   server.closeAllConnections()
   await new Promise((resolve) => server.close(resolve))
   await fixture.close()

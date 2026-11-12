@@ -1,3 +1,4 @@
+import { codeReviewAvailable } from "@apexo/sdk/v2/code-review"
 import { createMemo, createEffect, For, Show, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { CodeReviewInput, CodeReviewRun } from "@apexo/sdk/v2/client"
@@ -11,7 +12,11 @@ import { createReviewPanelV2State } from "@/pages/session/v2/review-panel-v2-sta
 
 const fieldClass = "rounded border border-border-base bg-surface-inset-base px-2 py-1.5 text-13-regular text-text-base"
 
-export function CodeReviewDialog(props: { sessionID: string; currentSessionID: () => string | undefined }) {
+export function CodeReviewDialog(props: {
+  sessionID: string
+  currentSessionID: () => string | undefined
+  focus?: string
+}) {
   const language = useLanguage()
   const sdk = useSDK()()
   const dialog = useDialog()
@@ -24,7 +29,7 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
     hasMore: false,
     target: "uncommitted" as CodeReviewInput["target"]["type"],
     ref: "",
-    focus: "",
+    focus: props.focus ?? "",
     items: [] as CodeReviewRun[],
     selected: "",
     detail: undefined as CodeReviewRun | undefined,
@@ -35,11 +40,18 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
   const current = () => !lifetime.signal.aborted && props.currentSessionID() === props.sessionID
   const options = { signal: lifetime.signal, throwOnError: true as const }
   const terminal = (run: CodeReviewRun) => !["admitted", "capturing", "running"].includes(run.status)
-  const detail = async (id: string) => {
-    const result = (await sdk.client.v2.codeReview.get({ sessionID: props.sessionID, reviewID: id }, options)).data
+  const detail = async (id: string, compare = true) => {
+    const selected = state.items.find((item) => item.id === id)
+    const workspace = selected && terminal(selected) && (compare || !state.detail || !terminal(state.detail))
+    const result = (
+      await sdk.client.v2.codeReview.get(
+        { sessionID: props.sessionID, reviewID: id, ...(workspace ? { compareWorkspace: "true" as const } : {}) },
+        options,
+      )
+    ).data
     if (current() && state.selected === id) setState("detail", result)
   }
-  const refresh = async (more = false) => {
+  const refresh = async (more = false, compare = true) => {
     const page = (
       await sdk.client.v2.codeReview.list(
         { sessionID: props.sessionID, ...(more && state.items.length ? { after: state.items.at(-1)!.id } : {}) },
@@ -52,7 +64,7 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
       : [...page.data, ...state.items.filter((item) => !page.data.some((fresh) => fresh.id === item.id))]
     const selected = state.selected || items[0]?.id || ""
     setState({ items, selected, hasMore: page.hasMore })
-    if (selected) await detail(selected)
+    if (selected) await detail(selected, compare)
   }
   const run = async (work: () => Promise<void>) => {
     if (state.pending) return
@@ -116,11 +128,11 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
     }
   })
   onMount(async () => {
-    await sdk.protocol
-      .then(async (protocol) => {
+    await codeReviewAvailable(sdk.client, props.sessionID, lifetime.signal)
+      .then(async (available) => {
         if (!current()) return
-        setState("available", protocol === "v2")
-        if (protocol === "v2") await refresh()
+        setState("available", available)
+        if (available) await refresh()
       })
       .catch(() => {
         if (current()) setState("error", true)
@@ -135,7 +147,7 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
   })
   const timer = setInterval(() => {
     if (state.available && !state.pending && current() && state.items.some((item) => !terminal(item)))
-      void run(() => refresh())
+      void run(() => refresh(false, false))
   }, 3000)
   onCleanup(() => {
     lifetime.abort()
@@ -217,7 +229,10 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
               <For each={state.items}>
                 {(item) => (
                   <option value={item.id}>
-                    {item.id} · {language.t(`codeReview.status.${item.status}`)}
+                    {new Date(item.createdAt).toLocaleString(language.intl())} ·{" "}
+                    {language.t(`codeReview.target.${item.input.target.type}`)}{" "}
+                    {item.input.target.type === "uncommitted" ? "" : item.input.target.ref} ·{" "}
+                    {language.t(`codeReview.status.${item.status}`)}
                   </option>
                 )}
               </For>
@@ -251,7 +266,7 @@ export function CodeReviewDialog(props: { sessionID: string; currentSessionID: (
                       })
                     }
                   >
-                    {language.t("btw.cancel")}
+                    {language.t("codeReview.cancel")}
                   </Button>
                 </Show>
               </div>

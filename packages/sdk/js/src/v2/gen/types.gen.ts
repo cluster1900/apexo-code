@@ -6684,7 +6684,7 @@ export type CodeReviewRun = {
   captured?: CodeReviewCaptured
   result?: CodeReviewResult
   error?: string
-  workspaceStatus?: "current" | "stale" | "unavailable"
+  workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
 
 export type ModelApi =
@@ -19875,7 +19875,9 @@ export type V2CodeReviewGetData = {
     sessionID: string
     reviewID: string
   }
-  query?: never
+  query?: {
+    compareWorkspace?: "true"
+  }
   url: "/api/session/{sessionID}/review/{reviewID}"
 }
 

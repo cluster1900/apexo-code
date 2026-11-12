@@ -29,7 +29,7 @@ export async function startShellFixture(kind, options = {}) {
   const directory = await realpath(join(output, "workspace"))
   // options.git: make the workspace a git repo with one commit and a second worktree (for /move flows).
   if (options.git) {
-    const git = (...args) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: directory })
+    const git = (...args) => Bun.spawnSync(["git", "-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: directory })
     await writeFile(join(directory, "README.md"), "move fixture\n")
     git("init", "-q", "-b", "main")
     git("add", ".")
