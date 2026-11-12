@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d8c0805f-7c65-4794-8879-41e1bfcdc120",
+  "id": "cab3d066-455b-4aa3-9255-e1b67a1792d8",
   "prevIds": [
-    "1e1095ae-9900-413e-b55d-cf240a6d076a"
+    "d8c0805f-7c65-4794-8879-41e1bfcdc120"
   ],
   "ddl": [
     {
@@ -16,6 +16,10 @@
     },
     {
       "name": "data_migration",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_code_review",
       "entityType": "tables"
     },
     {
@@ -397,6 +401,46 @@
       "name": "time_completed",
       "entityType": "columns",
       "table": "data_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "session_code_review"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parent_session_id",
+      "entityType": "columns",
+      "table": "session_code_review"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "data",
+      "entityType": "columns",
+      "table": "session_code_review"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_code_review"
     },
     {
       "type": "text",
@@ -2975,6 +3019,21 @@
     },
     {
       "columns": [
+        "parent_session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_session_code_review_parent_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_code_review"
+    },
+    {
+      "columns": [
         "session_id"
       ],
       "tableTo": "session",
@@ -3617,6 +3676,15 @@
     },
     {
       "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "session_code_review_pk",
+      "table": "session_code_review",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "session_id"
       ],
       "nameExplicit": false,
@@ -3938,6 +4006,24 @@
       "name": "background_job_status_idx",
       "entityType": "indexes",
       "table": "background_job"
+    },
+    {
+      "columns": [
+        {
+          "value": "parent_session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_code_review_parent_idx",
+      "entityType": "indexes",
+      "table": "session_code_review"
     },
     {
       "columns": [

@@ -125,6 +125,10 @@ export const ReviewCommand = cmd({
         type: "string",
         describe: "path to a JSON Schema file constraining the final review output",
       })
+      .option("fail-on", {
+        choices: ["P0", "P1", "P2", "P3"] as const,
+        describe: "exit 2 when a structured finding meets this priority threshold",
+      })
       .option("output-last-message", {
         alias: ["o"],
         type: "string",
@@ -186,8 +190,27 @@ export const ReviewCommand = cmd({
       process.exit(1)
     })
 
+    const { runNativeCodeReview } = await import("../native-code-review")
+    if (
+      await runNativeCodeReview(args, {
+        uncommitted: args.uncommitted,
+        base: args.base,
+        commit: args.commit,
+        pr: args.pr,
+        title: args.title,
+        prompt,
+      })
+    )
+      return
+    // Local generic startup already uses compatibility under its auto selector.
+    const selection =
+      !args.attach && args["session-protocol"] === "compatibility" && !hasRunGuardrailFlags(args)
+        ? ("auto" as const)
+        : args["session-protocol"]
     await runHeadless({
       ...args,
+      "session-protocol": selection,
+      sessionProtocol: selection,
       _: ["review"],
       "--": [],
       message: [reviewPrompt],

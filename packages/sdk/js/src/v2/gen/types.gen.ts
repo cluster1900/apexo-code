@@ -56,6 +56,9 @@ export type Event =
   | EventMessagePartDelta
   | EventSessionDiff
   | EventSessionError
+  | EventCodeReviewStarted
+  | EventCodeReviewUpdated
+  | EventCodeReviewFinished
   | EventFileEdited
   | EventReferenceUpdated
   | EventPermissionV2Asked
@@ -1317,6 +1320,36 @@ export type GlobalEvent = {
             | ContextOverflowError
             | ContentFilterError
             | ApiError
+        }
+      }
+    | {
+        id: string
+        type: "code_review.started"
+        properties: {
+          sessionID: string
+          reviewID: string
+          revision: number
+          status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "code_review.updated"
+        properties: {
+          sessionID: string
+          reviewID: string
+          revision: number
+          status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "code_review.finished"
+        properties: {
+          sessionID: string
+          reviewID: string
+          revision: number
+          status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
         }
       }
     | {
@@ -3354,6 +3387,9 @@ export type V2Event =
   | MessagePartDelta
   | SessionDiff
   | SessionError
+  | CodeReviewStarted
+  | CodeReviewUpdated
+  | CodeReviewFinished
   | FileEdited
   | ReferenceUpdated
   | PermissionV2Asked
@@ -6548,6 +6584,108 @@ export type WorkflowStart = {
   concurrency?: number
 }
 
+export type CodeReviewTarget =
+  | {
+      type: "uncommitted"
+    }
+  | {
+      type: "base"
+      ref: string
+    }
+  | {
+      type: "commit"
+      ref: string
+    }
+  | {
+      type: "pr"
+      ref: string
+    }
+
+export type CodeReviewInput = {
+  id?: string
+  target: CodeReviewTarget
+  focus?: string
+  title?: string
+  model?: ModelRef
+  agent?: string
+  limits?: SessionInputExecutionPolicy
+}
+
+export type CodeReviewCaptured = {
+  root: string
+  baseSha: string
+  headSha: string
+  mergeBaseSha?: string
+  beforeTree: string
+  afterTree: string
+  files: Array<{
+    path: string
+    oldPath?: string
+    status: "added" | "modified" | "deleted" | "renamed"
+    patch: string
+  }>
+  exclusions: Array<{
+    path: string
+    reason: string
+  }>
+}
+
+export type CodeReviewFinding = {
+  id: string
+  priority: "P0" | "P1" | "P2" | "P3"
+  title: string
+  explanation: string
+  confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  path: string
+  anchor:
+    | {
+        type: "file"
+      }
+    | {
+        type: "line"
+        side: "old" | "new"
+        startLine: number
+        endLine: number
+        inHunk: boolean
+        snippet?: {
+          startLine: number
+          text: string
+        }
+      }
+}
+
+export type CodeReviewResult = {
+  schemaVersion: 1
+  summary: string
+  assessment: "issues_found" | "no_findings" | "inconclusive"
+  findings: Array<CodeReviewFinding>
+  coverage: {
+    exclusions: Array<{
+      path: string
+      reason: string
+    }>
+    invalidLocations: number
+  }
+  model?: ModelRef
+  tokens: number
+  cost: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type CodeReviewRun = {
+  id: string
+  sessionID: string
+  reviewSessionID: string
+  inputID: string
+  input: CodeReviewInput
+  revision: number
+  status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  captured?: CodeReviewCaptured
+  result?: CodeReviewResult
+  error?: string
+}
+
 export type ModelApi =
   | {
       id: string
@@ -7146,6 +7284,66 @@ export type SessionError = {
       | ContextOverflowError
       | ContentFilterError
       | ApiError
+  }
+}
+
+export type CodeReviewStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "code_review.started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    reviewID: string
+    revision: number
+    status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type CodeReviewUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "code_review.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    reviewID: string
+    revision: number
+    status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type CodeReviewFinished = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "code_review.finished"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    reviewID: string
+    revision: number
+    status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
   }
 }
 
@@ -8557,6 +8755,39 @@ export type EventSessionError = {
       | ContextOverflowError
       | ContentFilterError
       | ApiError
+  }
+}
+
+export type EventCodeReviewStarted = {
+  id: string
+  type: "code_review.started"
+  properties: {
+    sessionID: string
+    reviewID: string
+    revision: number
+    status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventCodeReviewUpdated = {
+  id: string
+  type: "code_review.updated"
+  properties: {
+    sessionID: string
+    reviewID: string
+    revision: number
+    status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventCodeReviewFinished = {
+  id: string
+  type: "code_review.finished"
+  properties: {
+    sessionID: string
+    reviewID: string
+    revision: number
+    status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
   }
 }
 
@@ -19544,6 +19775,235 @@ export type V2SideQuestionCancelResponses = {
 }
 
 export type V2SideQuestionCancelResponse = V2SideQuestionCancelResponses[keyof V2SideQuestionCancelResponses]
+
+export type V2CodeReviewListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    after?: string
+    limit?: string
+  }
+  url: "/api/session/{sessionID}/review"
+}
+
+export type V2CodeReviewListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2CodeReviewListError = V2CodeReviewListErrors[keyof V2CodeReviewListErrors]
+
+export type V2CodeReviewListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<CodeReviewRun>
+    hasMore: boolean
+  }
+}
+
+export type V2CodeReviewListResponse = V2CodeReviewListResponses[keyof V2CodeReviewListResponses]
+
+export type V2CodeReviewStartData = {
+  body: CodeReviewInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/review"
+}
+
+export type V2CodeReviewStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2CodeReviewStartError = V2CodeReviewStartErrors[keyof V2CodeReviewStartErrors]
+
+export type V2CodeReviewStartResponses = {
+  /**
+   * CodeReview.Run
+   */
+  200: CodeReviewRun
+}
+
+export type V2CodeReviewStartResponse = V2CodeReviewStartResponses[keyof V2CodeReviewStartResponses]
+
+export type V2CodeReviewGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    reviewID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/review/{reviewID}"
+}
+
+export type V2CodeReviewGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2CodeReviewGetError = V2CodeReviewGetErrors[keyof V2CodeReviewGetErrors]
+
+export type V2CodeReviewGetResponses = {
+  /**
+   * CodeReview.Run
+   */
+  200: CodeReviewRun
+}
+
+export type V2CodeReviewGetResponse = V2CodeReviewGetResponses[keyof V2CodeReviewGetResponses]
+
+export type V2CodeReviewDiffData = {
+  body?: never
+  path: {
+    sessionID: string
+    reviewID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/review/{reviewID}/diff"
+}
+
+export type V2CodeReviewDiffErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2CodeReviewDiffError = V2CodeReviewDiffErrors[keyof V2CodeReviewDiffErrors]
+
+export type V2CodeReviewDiffResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    path: string
+    oldPath?: string
+    status: "added" | "modified" | "deleted" | "renamed"
+    patch: string
+  }>
+}
+
+export type V2CodeReviewDiffResponse = V2CodeReviewDiffResponses[keyof V2CodeReviewDiffResponses]
+
+export type V2CodeReviewCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    reviewID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/review/{reviewID}/cancel"
+}
+
+export type V2CodeReviewCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2CodeReviewCancelError = V2CodeReviewCancelErrors[keyof V2CodeReviewCancelErrors]
+
+export type V2CodeReviewCancelResponses = {
+  /**
+   * CodeReview.Run
+   */
+  200: CodeReviewRun
+}
+
+export type V2CodeReviewCancelResponse = V2CodeReviewCancelResponses[keyof V2CodeReviewCancelResponses]
 
 export type V2SessionMessagesData = {
   body?: never

@@ -653,6 +653,19 @@ it.live(
                     )
                     return
                   }
+                  if (raw.includes("Perform a read-only code review of the frozen changes")) {
+                    writeSse(
+                      res,
+                      responsesTextEvents(
+                        JSON.stringify({
+                          summary: "LGTM: fallback review completed cleanly.",
+                          assessment: "no_findings",
+                          findings: [],
+                        }),
+                      ),
+                    )
+                    return
+                  }
                   if (raw.includes("Execution Scope & Guardrails")) {
                     writeSse(res, responsesTextEvents("LGTM: fallback review completed cleanly."))
                     return

@@ -6,13 +6,14 @@ import { Definitions, Durable, Latest } from "@/event-manifest"
 import { MemoryCaptureEvent } from "@apexo/schema/memory-capture-event"
 import { McpEvent } from "@apexo/schema/mcp-event"
 import { LspEvent } from "@apexo/schema/lsp-event"
+import { CodeReview } from "@apexo/schema/code-review"
 
 describe("public event manifest", () => {
   test("contains every latest public wire type once", () => {
     expect(Definitions).toBe(EventManifest.Definitions)
     expect(Latest).toBe(EventManifest.Latest)
     expect(Durable).toBe(EventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(93)
+    expect(EventManifest.Latest.size).toBe(96)
     expect(EventManifest.Latest.get("session.next.prompt.withdrawn")).toBe(SessionEvent.PromptWithdrawn)
     expect(EventManifest.ServerDefinitions).toContain(SessionEvent.PromptWithdrawn)
     expect(EventManifest.Latest.get("session.next.input.execution.settled")).toBe(SessionEvent.InputExecutionSettled)
@@ -39,6 +40,14 @@ describe("public event manifest", () => {
     expect(EventManifest.Durable.get("session.next.step.ended.2")).toBe(SessionEvent.Step.Ended)
   })
 
+  test("review progress events retain one canonical current identity and remain live-only", () => {
+    CodeReview.Event.Definitions.forEach((event) => {
+      expect(EventManifest.Latest.get(event.type)).toBe(event)
+      expect(EventManifest.ServerDefinitions.filter((definition) => definition.type === event.type)).toEqual([event])
+      expect(event.durable).toBeUndefined()
+    })
+  })
+
   test("history copies retain their canonical durable and public identities", () => {
     for (const event of [
       SessionEvent.HistoryCopy.Started,
@@ -47,9 +56,7 @@ describe("public event manifest", () => {
     ]) {
       expect(EventManifest.Latest.get(event.type)).toBe(event)
       expect(EventManifest.Durable.get(`${event.type}.1`)).toBe(event)
-      expect(EventManifest.ServerDefinitions.filter((definition) => definition.type === event.type)).toEqual([
-        event,
-      ])
+      expect(EventManifest.ServerDefinitions.filter((definition) => definition.type === event.type)).toEqual([event])
     }
   })
 

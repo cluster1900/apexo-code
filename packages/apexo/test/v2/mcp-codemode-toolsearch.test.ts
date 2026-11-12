@@ -38,9 +38,9 @@ const app = (root: string) =>
   )
 
 const multiToolServerSource = `
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Server } from ${JSON.stringify(import.meta.resolve("@modelcontextprotocol/sdk/server/index.js"))}
+import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve("@modelcontextprotocol/sdk/server/stdio.js"))}
+import { CallToolRequestSchema, ListToolsRequestSchema } from ${JSON.stringify(import.meta.resolve("@modelcontextprotocol/sdk/types.js"))}
 
 const server = new Server({ name: "math-mcp-fixture", version: "1.0.0" }, { capabilities: { tools: {} } })
 
@@ -299,7 +299,10 @@ it.live(
           expect(typeof searched.result.value).toBe("string")
           if (searched.result.type === "text" && typeof searched.result.value === "string") {
             const parsed = JSON.parse(searched.result.value) as {
-              results: Array<{ server: string; tools: Array<{ tool_name: string; input_schema: { required?: string[] } }> }>
+              results: Array<{
+                server: string
+                tools: Array<{ tool_name: string; input_schema: { required?: string[] } }>
+              }>
               total_hidden_tools: number
               status: string
             }

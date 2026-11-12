@@ -74,6 +74,7 @@ import { SessionTaskControl } from "@apexo/core/session/task-control"
 import { SessionGoalControl } from "@apexo/core/session/goal-control"
 import { WorkflowControl } from "@apexo/core/workflow/control"
 import { SessionSideQuestionNative } from "@apexo/core/session/side-question-native"
+import { SessionCodeReview } from "@apexo/core/session/code-review"
 import { SessionV2 } from "@apexo/core/session"
 import { SessionLifecycle } from "@apexo/core/session/lifecycle"
 import { SessionMcpAttachmentOperation } from "@apexo/core/session/mcp-attachment-operation"
@@ -448,6 +449,7 @@ export function createRoutes(
           SessionCommandSandbox.node,
           WorkflowControl.node,
           SessionSideQuestionNative.node,
+          SessionCodeReview.node,
         ]),
         [
           [LocationServiceMap.node, locationServiceMapV2],

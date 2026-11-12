@@ -19,6 +19,7 @@ import { LspGroup } from "./groups/lsp"
 import { SandboxGroup } from "./groups/sandbox"
 import { WorkflowGroup } from "./groups/workflow"
 import { SideQuestionGroup } from "./groups/side-question"
+import { CodeReviewGroup } from "./groups/code-review"
 import { makeSessionGroup } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
 import { FileSystemGroup } from "./groups/fs"
@@ -71,6 +72,7 @@ const makeApiFromGroup = <
     .add(SandboxGroup.middleware(locationMiddleware))
     .add(WorkflowGroup.middleware(sessionLocationMiddleware))
     .add(SideQuestionGroup.middleware(sessionLocationMiddleware))
+    .add(CodeReviewGroup.middleware(sessionLocationMiddleware))
     .add(MessageGroup.middleware(sessionLocationMiddleware))
     .add(ModelGroup.middleware(locationMiddleware))
     .add(ProviderGroup.middleware(locationMiddleware))

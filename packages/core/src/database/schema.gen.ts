@@ -40,6 +40,15 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_code_review\` (
+          \`id\` text PRIMARY KEY,
+          \`parent_session_id\` text NOT NULL,
+          \`data\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          CONSTRAINT \`fk_session_code_review_parent_session_id_session_id_fk\` FOREIGN KEY (\`parent_session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_command_sandbox\` (
           \`session_id\` text PRIMARY KEY,
           \`created_event_id\` text NOT NULL,
@@ -499,6 +508,9 @@ export default {
         );
       `)
       yield* tx.run(`CREATE INDEX \`background_job_status_idx\` ON \`background_job\` (\`status\`,\`time_updated\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`session_code_review_parent_idx\` ON \`session_code_review\` (\`parent_session_id\`,\`time_created\`);`,
+      )
       yield* tx.run(
         `CREATE INDEX \`session_execution_status_idx\` ON \`session_execution\` (\`status\`,\`heartbeat_at\`);`,
       )

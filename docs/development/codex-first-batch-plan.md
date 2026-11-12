@@ -1,6 +1,6 @@
 # Codex comparison: first-batch development plan
 
-Status: proposed design. No feature implementation is included in this document.
+Status: proposed design (revised to remove over-engineering). No feature implementation is included in this document.
 
 Prepared on 2026-11-12. Apexo baseline: `e4885b0378a0cd88b703133f435fd47383cff64a`. Codex source baseline: `c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee`. Codex references describe this source revision, not availability in every released CLI or account.
 
@@ -10,73 +10,77 @@ Reading map: [source comparison](#2-source-comparison), [F01](#4-f01-structured-
 
 Implement these three capabilities in order:
 
-1. **F01: structured code review.** Persist validated findings with priorities, precise locations, a stable review target and consistent CLI/TUI/App presentation.
-2. **F04: MCP form elicitation.** Collect typed user input and continue the original tool invocation, with explicit ownership, deadlines and cancellation.
-3. **F02: contextual automatic permission review.** Compare an exact pending action with trusted user intent and effective permissions; approve once only when the backend can prove the decision still belongs to that action.
+1. **F01: structured code review.** Persist validated findings with priorities, file/line locations, a frozen diff target and consistent CLI/TUI/App presentation.
+2. **F04: MCP form elicitation.** Collect typed user input and continue the original tool invocation on the existing server connection, with serialized call ownership, bounded wait timeouts and clean cancellation.
+3. **F02: contextual automatic permission review.** Compare an exact pending action with recent verified user intent and effective permissions; approve once in Core only when the decision still matches that pending request.
 
-F02 provenance and audit work can start earlier, but enabling automatic decisions comes last. F01 and F04 have clearer deterministic acceptance criteria. F02 needs evidence-quality evaluation in addition to working endpoints.
+This batch intentionally avoids speculative infrastructure:
 
-This batch excludes review auto-fixes, finding resolution workflows, peer-agent messaging, a new orchestration framework, replacement sandboxing, MCP sampling, URL-mode forms, biometric verification and a wholesale modern MCP protocol migration. Apexo owns all runtime behavior; none of these features depends on a Codex or Grok executable.
+- **Excluded product scope:** review auto-fixes, finding resolution workflows, peer-agent messaging, a new orchestration framework, replacement sandboxing, MCP sampling, URL-mode forms, biometric verification, a multi-forge PR REST client and a wholesale MCP SDK migration.
+- **Excluded over-design:** snapshot reference-pinning/GC tables, per-tool-call MCP process spawning, SQLite receipt tables for live MCP prompts, cross-compaction/cross-fork authorization provenance chains, `shadow` rollout state machines and paginated permission-audit subsystems.
 
-| Capability | User example                                                              | Completion criterion                                                                                                             |
-| ---------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| F01        | Review this branch against main and show P1 findings                      | A report survives reload, has validated locations and coverage, and supports JSON, terminals and the existing diff UI            |
-| F04        | An MCP tool asks for environment, quantity and confirmation               | Typed answers reach that exact call; decline, dismiss, timeout, interruption and reconnect are tested                            |
-| F02        | A user authorized a particular push, but it still needs permission review | The backend cites the authorization and checks repository/remote/ref before approving once; insufficient evidence remains manual |
+Apexo owns all runtime behavior; none of these features depends on a Codex or Grok executable.
 
-Apexo already has review CLI entry points, generic structured output, native Sessions, forks, goals, plans, MCP/OAuth/resources, command sandboxing, saved permissions and diff/comment presentation. These are foundations to reuse.
+| Capability | User example                                                              | Completion criterion                                                                                                              |
+| ---------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| F01        | Review this branch against main and show P1 findings                      | A report survives reload, has validated locations and coverage, and supports JSON, terminals and the existing diff UI             |
+| F04        | An MCP tool asks for environment, quantity and confirmation               | Typed answers reach that exact call on stateful and stateless servers; decline, dismiss, timeout, interruption and reconnect pass |
+| F02        | A user authorized a particular push, but it still needs permission review | The backend checks recent user intent and repository/remote/ref before approving once; insufficient evidence remains manual       |
+
+Apexo already has review CLI entry points, generic structured output, native Sessions, managed children, MCP/OAuth/resources, command sandboxing, saved permissions and diff/comment presentation. Reuse those directly.
 
 ## 2. Source comparison
 
 ### 2.1 F01: the review command exists; the domain contract is missing
 
-| Layer            | Codex evidence                                                                                                                          | Apexo evidence                                                                                                                      | Implication                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Entry/target     | [ReviewTarget and ReviewOutputEvent][c-review-protocol] define targets and findings                                                     | [review.ts][a-review-cli] constructs target instructions, including PR review, then calls generic headless execution                | Preserve selectors; resolve targets in Core before execution    |
-| Execution        | [review session][c-review-session] selects a review model; [ReviewTask][c-review-task] uses a rubric, delegate and feature restrictions | [native-headless.ts][a-headless] admits Session input; [runner/llm.ts][a-runner] supports JSON response formats                     | Reuse the runner with a private review owner/profile            |
-| Output           | Findings have title/body/priority/confidence/file/line                                                                                  | CLI permits optional `--output-schema`; no equivalent dedicated code-review finding contract was found in inspected Schema/Protocol | Make the result schema standard and host-validated              |
-| UI               | Dedicated review-mode protocol and formatting                                                                                           | [ReviewPanelV2][a-review-panel] already renders diffs, comments and focused locations                                               | Add findings to the current panel; keep human comments separate |
-| Public semantics | [App-server documentation][c-app-server] says `review/start` returns the supplied thread; detached callers create a thread first        | Apexo has its own managed-child architecture                                                                                        | Do not copy an obsolete detached API assumption                 |
+| Layer            | Codex evidence                                                                                                                          | Apexo evidence                                                                                                         | Implication                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Entry/target     | [ReviewTarget and ReviewOutputEvent][c-review-protocol] define targets and findings                                                     | [review.ts][a-review-cli] constructs target instructions, including PR review, then calls generic headless execution   | Preserve selectors; resolve targets in Core before execution    |
+| Execution        | [review session][c-review-session] selects a review model; [ReviewTask][c-review-task] uses a rubric, delegate and feature restrictions | [native-headless.ts][a-headless] admits Session input; [runner/llm.ts][a-runner] supports JSON response formats        | Reuse the runner with a private review owner/role               |
+| Output           | Findings have title/body/priority/confidence/file/line                                                                                  | CLI permits optional `--output-schema`; no equivalent dedicated code-review finding contract exists in Schema/Protocol | Make the result schema standard and host-validated              |
+| UI               | Dedicated review-mode protocol and formatting                                                                                           | [ReviewPanelV2][a-review-panel] already renders diffs, comments and focused locations                                  | Add findings to the current panel; keep human comments separate |
+| Public semantics | [App-server documentation][c-app-server] says `review/start` returns the supplied thread; detached callers create a thread first        | Apexo has its own [SessionManagedChild][a-managed-child] architecture                                                  | Do not copy an obsolete detached API assumption                 |
 
 The current CLI's review-specific read-only instruction is prompt text. Generic permission settings may restrict execution, but the command does not establish a dedicated review capability ceiling.
 
 ### 2.2 F04: form rendering is only one part of the gap
 
-| Layer        | Codex evidence                                                                                                                                                      | Apexo evidence                                                                                                  | Implication                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Registration | [logging_client_handler.rs][c-mcp-handler] accepts elicitation                                                                                                      | [mcp.ts][a-mcp] advertises roots and registers a roots handler; native form handling is absent                  | Negotiate form support and register a handler                           |
-| Routing      | [rmcp_client.rs][c-mcp-client], [elicitation_client_service.rs][c-mcp-service] and [request_input.rs][c-mcp-input] bind modern inputs and timeout pauses to callers | [mcp-tools.ts][a-mcp-tools] has Session/message/call context but calls a shared SDK Client without a form owner | Bind ownership before dispatch; never use the active window             |
-| Types        | Dedicated MCP form/response types                                                                                                                                   | [Question][a-question-schema] answers are arrays of strings                                                     | Reuse UX patterns, not the lossy question wire type                     |
-| Lifetime     | Pending responders, cancellation and interaction pauses                                                                                                             | [QuestionV2][a-question-core] has Deferred patterns; MCP calls currently have a fixed total timeout             | Add bounded interaction lifetime; never replay an uncertain remote call |
+| Layer        | Codex evidence                                                                                                                                                      | Apexo evidence                                                                                                  | Implication                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Registration | [logging_client_handler.rs][c-mcp-handler] accepts elicitation                                                                                                      | [mcp.ts][a-mcp] advertises roots and registers a roots handler; native form handling is absent                  | Negotiate `elicitation: { form: {} }` and register a handler                  |
+| Routing      | [rmcp_client.rs][c-mcp-client], [elicitation_client_service.rs][c-mcp-service] and [request_input.rs][c-mcp-input] bind modern inputs and timeout pauses to callers | [mcp-tools.ts][a-mcp-tools] has Session/message/call context but calls a shared SDK Client without a form owner | Serialize interactive `callTool` per server connection and bind active caller |
+| Types        | Dedicated MCP form/response types                                                                                                                                   | [Question][a-question-schema] answers are arrays of strings                                                     | Reuse UX patterns, not the lossy question wire type                           |
+| Lifetime     | Pending responders, cancellation and interaction pauses                                                                                                             | [QuestionV2][a-question-core] uses Location-scoped `Deferred` maps; MCP calls currently use a fixed timeout     | Mirror `QuestionV2` live `Deferred` state and pause active timeout on wait    |
 
-Apexo pins `@modelcontextprotocol/sdk` 1.29.0. Its installed `RequestHandlerExtra` exposes an inbound request ID, cancellation signal, metadata and transport session, but no general parent `tools/call` ID. The outgoing `relatedRequestId` option does not prove inbound parent-call correlation. Codex's newer continuation implementation cannot simply be transcribed into this SDK.
+Apexo pins `@modelcontextprotocol/sdk` 1.29.0. Its installed `RequestHandlerExtra` exposes an inbound request ID, cancellation signal, metadata and transport session, but no general inbound parent `tools/call` ID. Reuse the shared connection and serialize operations that can trigger forms through one gate. Local cancellation does not acknowledge remote completion: retire a cancelled or timed-out connection generation before admitting another call so late forms cannot reach its successor.
 
-The [MCP 2025-11-25 form specification][mcp-forms] is the first-batch interoperability target. [Current SDK documentation][mcp-sdk] distinguishes that server-request flow from the 2026-07-28 input-required flow. A full migration is outside this batch.
+The [MCP 2025-11-25 form specification][mcp-forms] is the first-batch interoperability target. [Current SDK documentation][mcp-sdk] distinguishes that server-request flow from the 2026-07-28 input-required flow. A full SDK migration is outside this batch.
 
 ### 2.3 F02: a classifier exists, but lacks authorization context and native ownership
 
-| Layer       | Codex evidence                                                                                                                           | Apexo evidence                                                                                                   | Implication                                              |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Evidence    | [guardian/prompt.rs][c-guardian-prompt] separates policy, transcript, exact action, root authorization, verified answers and permissions | [AutoReview.prompt][a-auto-review] sends tool/patterns/metadata; history is used to choose the model             | Build authoritative evidence, not merely a longer prompt |
-| Reviewer    | [guardian/review.rs][c-guardian-review] constrains reviewer powers; [request_budget.rs][c-guardian-budget] bounds evidence               | Legacy classifier streams once with a 20-second timeout and conservative parse/error fallback                    | Preserve bounded execution via the native LLM interface  |
-| API         | Backend approval routing                                                                                                                 | [Native permission API][a-permission-protocol] has create/list/get/reply/saved, but no review route              | Add native review/audit/mode contracts                   |
-| Application | Decisions belong to exact actions                                                                                                        | [App permission context][a-permission-app] and legacy [TUI sync][a-permission-tui] classify and reply separately | Move automatic application to Core                       |
-| Native TUI  | N/A                                                                                                                                      | Native events update pending state; the separate legacy event branch invokes automatic classification            | Legacy behavior is not native-parity evidence            |
-| Authority   | Review remains constrained by policy                                                                                                     | [PermissionV2][a-permission-core] already checks inherited/configured denies and rechecks authority at reply     | Preserve this and add request/evidence/version fencing   |
+| Layer       | Codex evidence                                                                                                                           | Apexo evidence                                                                                                   | Implication                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Evidence    | [guardian/prompt.rs][c-guardian-prompt] separates policy, transcript, exact action, root authorization, verified answers and permissions | [AutoReview.prompt][a-auto-review] sends tool/patterns/metadata; history is only used to pick the model          | Include recent verified user inputs and authoritative scope    |
+| Reviewer    | [guardian/review.rs][c-guardian-review] constrains reviewer powers; [request_budget.rs][c-guardian-budget] bounds evidence               | Legacy classifier streams once with a 20-second timeout; [local-qwen.ts][a-local-qwen] adds V1 plugin risk tags  | Run one bounded native LLM check in Core; keep V1 plugin split |
+| API         | Backend approval routing                                                                                                                 | [Native permission API][a-permission-protocol] has create/list/get/reply/saved, but no review mode               | Add native Session review mode and inline review status events |
+| Application | Decisions belong to exact actions                                                                                                        | [App permission context][a-permission-app] and legacy [TUI sync][a-permission-tui] classify and reply separately | Move automatic evaluation and settlement to Core               |
+| Native TUI  | N/A                                                                                                                                      | Native events update pending state; only the legacy V1 event branch invokes automatic classification             | Legacy behavior is not native-parity evidence                  |
+| Authority   | Review remains constrained by policy                                                                                                     | [PermissionV2][a-permission-core] already checks inherited/configured denies and rechecks authority at reply     | Preserve rule precedence and fence settlement per request      |
 
-The [bash approval parser][a-bash-approval], saved grants and `doctor --check-command` remain useful existing capabilities. Static command-policy evaluation should not be replaced by a model.
+The [bash approval parser][a-bash-approval], saved grants and `doctor --check-command` remain useful existing capabilities. Static command-policy evaluation must not be replaced by a model.
 
 ## 3. Shared architectural decisions
 
 1. Serializable contracts belong in Schema; runtime/persistence in Core; HTTP definitions in Protocol; handlers in Server; generated adapters in Client; UI in TUI/App/session-ui. Client runtime cannot import Core or Server.
-2. Name domains `CodeReview`, `McpElicitation` and `PermissionReview`. New canonical contracts are unversioned; evolving stored documents use `schemaVersion: 1`.
-3. Keep the domains separate. Reuse lifecycle/event/ID conventions without building a general interaction engine.
-4. Durable records are evidence, not authority to resume work. Reopening a report is safe; replaying tools or sampling after restart needs explicit admission.
+2. Name domains `CodeReview`, `McpElicitation` and `PermissionReview`. New canonical contracts are unversioned; persisted JSON documents that may evolve use `schemaVersion: 1`.
+3. Keep the domains separate. Reuse existing `QuestionV2` / `PermissionV2` / `SessionGoalRole` patterns rather than inventing a generic interaction engine.
+4. Durable records are evidence, not authority to resume external work. Reopening a report is safe; replaying tools or sampling after restart requires a new user action.
 5. Public metadata cannot mint managed-child ownership, tool invocation ownership or human authorization.
 6. Preserve durable prompt admission before advisory wake, process-global Session coordination and Location-scoped execution. Each provider turn has one explicit `llm.stream(request)`.
-7. Add canonical events and generated clients. Reconnect uses authoritative list/get plus revision/sequence; tolerate duplicate events.
+7. Add canonical events and generated clients. Reconnect uses authoritative `list` / `get` plus revision/sequence; tolerate duplicate events.
 8. Use Session lifecycle claims/incarnations and Location guards. Deletion, rewind, retirement and disposal invalidate pending work before stale application.
-9. Add typed domain failures to runner/server contracts and expose services in the correct AppNode public groups.
+9. Add typed domain failures to runner/server contracts where required (`RULE-20261015-022`) and expose services in the correct AppNode public groups (`RULE-20261015-011`).
+10. On Bun 1.3.14, endpoints with no request payload (such as `POST .../cancel`) must never be sent a body by clients or tests, avoiding `node:http` `server.close()` hangs.
 
 ## 4. F01: structured code review
 
@@ -84,84 +88,106 @@ The [bash approval parser][a-bash-approval], saved grants and `doctor --check-co
 
 Proposed contract: `packages/schema/src/code-review.ts`.
 
-| Record   | Fields/semantics                                                                                                                                                      |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Target   | Discriminated uncommitted/base/commit/pr/custom selector, optional focus, mutually exclusive concrete selectors                                                       |
-| Snapshot | Canonical repository identity, requested target, resolved base/head/merge-base, before/after tree references, changed-file manifest, capture time/hash                |
-| Finding  | Host-generated ID, P0–P3 priority, title, explanation, finite 0–1 confidence, repository-relative path, old/new side, positive inclusive start/end lines, snapshot ID |
-| Result   | Schema version, findings, assessment (`issues_found / no_findings / inconclusive`), summary, coverage/exclusions, model/usage                                         |
-| Run      | Review ID, parent/review Session IDs, admitted input ID, snapshot/target, attempt/revision, status/timestamps and optional result/error                               |
+| Record   | Fields/semantics                                                                                                                                                                                                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Target   | Discriminated `uncommitted / base / commit / pr / custom` selector, optional focus text, mutually exclusive concrete selectors                                                                                                                                                              |
+| Captured | Canonical repository root, requested target, resolved `baseSha` / `headSha` / `mergeBaseSha`, before/after Git `TreeID` (when local), changed-file manifest and bounded diff patches                                                                                                        |
+| Finding  | Host-generated ID, `P0–P3` priority, title, explanation, finite `0–1` confidence, repository-relative path; a line anchor (`old / new` side, positive inclusive `startLine` / `endLine`, `inHunk`) or explicit file-level anchor; bounded captured snippet for valid outside-hunk locations |
+| Result   | `schemaVersion: 1`, findings, assessment (`issues_found / no_findings / inconclusive`), summary, coverage/exclusions, model/usage                                                                                                                                                           |
+| Run      | Review ID, parent/review Session IDs, admitted input ID, target/captured metadata, revision, status/timestamps and optional result/error                                                                                                                                                    |
 
 Use `no_findings` instead of claiming a model has proved correctness. Empty findings with incomplete coverage or interrupted execution cannot silently become a clean review.
 
-Propose `session_code_review` in `core/src/session/code-review.sql.ts`, indexed by parent Session/time, with snake_case columns and a schema-validated JSON report. A separate finding table is unnecessary until finding resolution/assignment is implemented.
+Propose a single `session_code_review` table in `core/src/session/code-review.sql.ts`, indexed by `(parent_session_id, time_created)` with `ON DELETE CASCADE` from `session`, snake_case columns, schema-validated JSON report metadata, and bounded captured per-file patches and outside-hunk finding snippets. Do **not** add a separate finding table or a custom [Snapshot][a-snapshot] reference-pinning/GC subsystem: `Snapshot.capture()` is optional (`snapshots: false` returns `undefined`) and shares `.git/objects` via alternates. Persisting patches and snippets directly in `session_code_review` keeps historical finding context readable even if the workspace changes or Git objects are later pruned. Snippets count toward the existing capture size limit.
 
-Keep source blobs in content-addressed snapshot storage, not report JSON. Pin referenced trees so snapshot cleanup cannot break old reports. Session deletion cascades report records and releases snapshot references.
-
-Proposed starting limits: 500 changed files, 5 MiB diff text, 2 MiB per text file, 200 findings, 5,000 characters per explanation. These are proposed product limits, not Codex constants. Every exclusion is visible.
+Proposed limits: 500 changed files, 5 MiB total captured diff text, 2 MiB per text file read, 200 findings, 5,000 characters per explanation. Every excluded path (binary, submodule, conflict, oversized) is listed in `coverage`.
 
 ### 4.2 Resolve and freeze the target
 
-| Target      | Rule                                                                                                                            |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Uncommitted | Capture HEAD and a working-tree view including staged/unstaged/eligible untracked changes; retain index identity for provenance |
-| Base        | Resolve supplied ref and HEAD; capture their merge-base-to-HEAD diff                                                            |
-| Commit      | Resolve exact commit and first parent; empty tree for root commit; explicitly document first-parent merge semantics             |
-| PR          | Read PR metadata and pin base/head SHAs; retrieve exact content without changing the user's branch/worktree                     |
-| Custom      | Treat instructions as focus; default target to uncommitted changes unless a concrete selector is provided                       |
+| Target      | Rule                                                                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Uncommitted | Capture `HEAD` tree and a shadow-index tree of staged, unstaged and eligible untracked changes via [Git][a-git] without mutating the user's `.git/index` or worktree    |
+| Base        | Resolve supplied ref and `HEAD`; capture their `merge-base` to `HEAD` diff                                                                                              |
+| Commit      | Resolve exact commit and first parent (empty tree for root commit); document first-parent merge semantics                                                               |
+| PR          | On the host during `capturing`, resolve `baseRefOid` / `headRefOid` via `gh pr view --json` and `git fetch` into temporary shadow refs; fail clearly if `gh` is missing |
+| Custom      | Treat instructions as focus; default target to uncommitted changes unless combined with a concrete selector                                                             |
 
-Extend [Snapshot][a-snapshot] and [Git][a-git] narrowly for immutable reads/capture. Snapshot capture can return undefined and has size/ignore behavior; either establish a bounded review snapshot or report failure/incomplete coverage explicitly.
-
-Use argv-based Git calls, validated refs, path separation and disabled external diff/textconv. Never change the user's index/worktree. Detect mutations during capture, retry once, then return `target_changed` if consistency cannot be established; this is not a global filesystem lock.
-
-List binary files, submodule changes, unresolved conflicts, unsupported encodings, missing PR blobs and oversized/untracked exclusions in coverage. Review symlinks as links; never follow them outside the captured repository. Missing PR context must not be replaced by a different local revision.
+Use argv-based [Git][a-git] calls (`--no-ext-diff`, `--no-textconv`, validated refs and `--` path separation). Never modify the user's branch, index or worktree. `Git.tree.capture` already serializes shadow-index writes with `KeyedMutex`; no multi-pass filesystem mutation-retry loop is needed. Review symlinks as link entries and never follow them outside the repository root.
 
 ### 4.3 Execution ownership and read-only enforcement
 
-Use a managed child with proposed owner `{ kind: "review", reviewID, attemptID }`. Extend [SessionManagedChild][a-managed-child] and all owner checks explicitly; its existing union covers workflows/goals. A public metadata label is insufficient.
+Use a managed child with owner `{ kind: "review", reviewID, attemptID }`. Extend [SessionManagedChild][a-managed-child] (`Owner` union and `sameOwner`) explicitly rather than relying on public Session metadata.
 
-Publish progress/report references to the parent without interrupting or automatically continuing it. The worker receives a rubric, target manifest and focus, not a full parent transcript by default. Project text is evidence and cannot change its tool ceiling.
+Publish compact progress/report events to the parent Session without interrupting or waking the parent runner. The review child receives the review rubric, changed-file manifest, focus instructions and bounded diff context—not the full parent conversation transcript.
 
-Materialize only bounded snapshot list/search/read/diff capabilities. Enforce this at advertisement **and settlement**. Reject fabricated shell/edit/write/plugin/MCP/task/workflow/goal/scheduler/network calls. Existing generic read-only child policies include web capabilities and cannot be reused unchanged.
+Follow the [SessionGoalRole][a-goal-role] materialization pattern (`core/src/session/code-review-role.ts`) to advertise and settle **only two minimal read-only review tools**:
 
-Running tests inside the review worker is deferred. Host report/snapshot writes remain allowed; model tool execution cannot write project files. This keeps first-batch enforcement independently testable across platforms.
+1. `review_diff`: read captured unified diff hunks from the frozen manifest (all files or filtered by path).
+2. `review_read`: read bounded file lines from the captured `TreeID` / commit SHA via `git show <tree>:<path>`, including untracked files captured in the shadow tree. If captured content is unavailable, report the missing content and incomplete coverage; never fall back to the live workspace.
 
-Reuse native model resolution/streaming. JSON output is currently attached to headless execution policy; introduce a review-role result contract rather than relying on a frontend flag. Request the canonical schema when the model supports it and always validate on the host.
+Reject any fabricated `bash`, `edit`, `write`, `apply_patch`, web, MCP, plugin, task, workflow, goal or scheduler tool calls at settlement. Running tests inside the review worker is out of scope.
 
-Allow at most one format-repair turn, without tools, within the same target and turn/token/cost limits. Invalid output after repair is `invalid_output`, never an empty successful review.
+Reuse native model resolution and streaming. Request structured JSON matching the canonical review output schema when supported, and always validate on the host. Allow **at most one tool-free repair turn** only when the model's final text is malformed JSON or fails top-level schema decoding; if still invalid, record `failed` (`invalid_output`), never an empty clean report.
 
 ### 4.4 Lifecycle, locations and staleness
 
 Lifecycle: `admitted → capturing → running → completed | failed | cancelled | interrupted`.
 
-- Exact retry of a review ID and canonical request returns that run; conflicting reuse fails.
-- Use transactional admission patterns for the review record, ownership and input. Incomplete crash states remain detectable and cannot resume themselves.
-- Commit terminal status/result with a revision. Provider completion alone is not report completion.
-- Cancel only the owned child. Parent deletion terminates it and releases snapshots.
-- Reconcile unfinished runs as interrupted after restart; history reads never call the provider.
-- Findings must reference captured files, valid lines on their side and an overlap with changed lines. Reject traversal, reversed/out-of-range spans and invalid confidence; deduplicate exact duplicates.
-- Invalid locations trigger diagnostics/repair, not silent dropping into a clean result.
-- Staleness compares the report snapshot with the current workspace. Clicking a finding opens the captured diff. Current-file navigation is separate when the file changed.
+- Exact retry with the same review ID and canonical request (target, focus and effective execution options) returns the existing run; conflicting reuse fails.
+- Cancel targets only the owned review child Session. Parent Session deletion cascades the report and terminates any active child.
+- Reconcile unfinished `admitted / capturing / running` rows as `interrupted` on startup; reading reports never triggers provider calls.
+- Location validation: findings must reference a valid repository-relative path (no `..` traversal), with finite `0–1` confidence. Line anchors require positive inclusive lines (`1 <= startLine <= endLine`) within the captured file's line count on the referenced side. Deduplicate exact duplicate findings.
+- **Do not reject findings just because their lines fall outside changed diff hunks** (reviewers legitimately flag unchanged call sites or invariants broken by a diff). Set `inHunk: boolean` for valid line anchors. Persist a bounded snippet from the same captured file for outside-hunk locations, including its side and starting line. If an individual finding has an invalid or unverifiable line range, downgrade it to an explicit file-level anchor, omit its line range and record a diagnostic count. Never clamp a citation to unrelated lines.
+- Staleness compares captured `headSha` / tree hash with current workspace state. Clicking a line finding in `ReviewPanelV2` opens the captured diff patch or stored outside-hunk snippet; file-level findings show no precise line highlight. When the live workspace has diverged, display an explicit `stale` badge. Historical finding navigation must not load live file contents as captured evidence.
 
 ### 4.5 API and all presentation surfaces
 
 Proposed endpoints using Session placement middleware:
 
-| Endpoint                                               | Behavior                                                                 |
-| ------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `POST /api/session/:sessionID/review`                  | Admit with retry ID, target/focus and optional model; return immediately |
-| `GET /api/session/:sessionID/review`                   | Paginated report list                                                    |
-| `GET /api/session/:sessionID/review/:reviewID`         | Run/result/revision/coverage                                             |
-| `GET /api/session/:sessionID/review/:reviewID/diff`    | Bounded captured diff by manifest path                                   |
-| `POST /api/session/:sessionID/review/:reviewID/cancel` | Idempotent targeted cancellation                                         |
+| Endpoint                                               | Behavior                                                                                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/session/:sessionID/review`                  | Admit with retry ID, target/focus, model/variant/agent selection and optional execution limits/fallback; return immediately |
+| `GET /api/session/:sessionID/review`                   | Paginated report list for Session                                                                                           |
+| `GET /api/session/:sessionID/review/:reviewID`         | Run metadata, result, revision and coverage                                                                                 |
+| `GET /api/session/:sessionID/review/:reviewID/diff`    | Captured per-file diff patches from the stored report                                                                       |
+| `POST /api/session/:sessionID/review/:reviewID/cancel` | Idempotent targeted cancellation (**no request body**; callers must send empty POST)                                        |
 
-Proposed events: `code_review.started / updated / finished`, carrying IDs/revisions and compact status. Fetch full reports rather than broadcasting source blobs.
+Proposed events: `code_review.started / updated / finished` with IDs, revisions and compact status.
 
-CLI preserves selectors. Text shows priority/location/coverage; JSON emits a stable report envelope; streaming JSON emits progress and a final report. Exit 0 means completed, 1 execution/validation failure, 130 interruption. Proposed opt-in `--fail-on P1` returns 2 for findings at/above threshold.
+CLI preserves existing flags (`--uncommitted`, `--base`, `--commit`, `--pr`, `--title`, `[prompt..]`). Default text format renders priority, `path:line`, summary and coverage; `json` emits the validated report envelope; `streaming-json` emits progress events followed by the final report. Exit `0` on completion, `1` on execution/validation failure, `130` on `SIGINT`. Add opt-in `--fail-on <P0|P1|P2|P3>` returning exit `2` when findings meet or exceed the threshold. Explicit `--output-schema` keeps the existing generic headless path so custom caller schemas do not break.
 
-Existing custom `--output-schema` stays on the generic compatibility path during rollout, with a compatibility notice. It cannot silently redefine the new mandatory report schema. Explicit legacy Session selection remains legacy until migrated separately.
+Use the existing Session command/action menus for the complete interactive flow; no new standalone page is needed:
 
-Mini/fullscreen TUI need progress, keyboard navigation, readable findings and captured code/diff views. App/Desktop extend ReviewPanelV2 and session-ui focus primitives. Findings use distinct IDs/actions from human comments. Missing/stale locations show explicit states. A browser test does not prove a Desktop window works.
+| Action                  | Mini/fullscreen TUI                                                                                                                | App/Desktop                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Start and select target | Add a Code Review action opening the existing dialog container                                                                     | Add Review Changes to the Session action menu/review-panel toolbar                         |
+| Configure               | Small target selector: uncommitted (default), base ref, commit, PR or custom focus; show target-specific fields and optional focus | The same selector in an existing dialog/popover; validate before admission                 |
+| Follow progress         | Show the admitted review in the Session with a status row and Cancel action                                                        | Show status and Cancel in the existing review panel                                        |
+| View history            | Review History action lists this Session's reports; selecting one opens its findings                                               | Report selector/history list inside the review panel; selecting a report does not rerun it |
+| Inspect results         | Priority badges and keyboard finding navigation to captured context                                                                | Findings in [ReviewPanelV2][a-review-panel], distinct from human comments                  |
+
+Cancel calls the review cancellation endpoint with an empty body and affects only that review. Show failed/interrupted/empty states in the same surfaces. Disable unsupported actions on compatibility-only servers with a clear explanation. Both terminal modes must expose start, target selection, history and cancel, not just render reports launched from the CLI.
+
+**CLI compatibility decisions:** validate option combinations before admission, using existing [run output/guardrail helpers][a-run-options]. The dedicated review request carries model/variant/agent selection and the validated limits to the backend; accepting a flag without applying it is an error.
+
+| Existing option                                       | Dedicated native review behavior                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Target flags, positional/piped focus and `--title`    | Preserve target/focus semantics; title is review context, not a rename of an existing parent Session                                                                                                                                                                                                                                |
+| `--model`, `--variant`, `--agent`                     | Preserve selection through native resolution; the review role's capability ceiling still applies; reject unsupported selections explicitly                                                                                                                                                                                          |
+| `--attach`, `--dir`, `--username/-u`, `--password/-p` | Preserve transport/authentication. With attach, target capture, Git and `gh` run on the attached server and `--dir` denotes its directory; output paths remain client-local                                                                                                                                                         |
+| `--session-protocol`                                  | `native` requires the native review API; `compatibility` uses the existing generic path. `auto` selects native review when supported, otherwise the generic path with a notice. Never fall back after admission; `--fail-on` or execution guardrails cannot fall back to a path that lacks their semantics                          |
+| `--output-schema`                                     | Keep the generic structured headless path and its schema/output behavior. Reject combination with new `--fail-on`; preserve guardrails if supported or reject before admission                                                                                                                                                      |
+| `--ephemeral`                                         | Create a CLI-owned temporary parent/review pair, emit/write final output, then cancel any remaining owned work and delete both plus the report in `finally`. Never delete a pre-existing Session. Report cleanup failure and exit 1; this is cleanup on exit, not a guarantee of no durable writes or cleanup after a process crash |
+| `--output-last-message/-o`                            | Write the validated final report as JSON plus newline to the client-local path, independently of stdout format. On failed/interrupted review, leave the destination untouched; write errors exit 1. Export before ephemeral cleanup                                                                                                 |
+| `--max-turns`, `--max-tokens`, `--max-budget-usd`     | Reuse native execution accounting for the review child. Count repair turns and fallback-model usage toward the same limits; never reset limits on repair/fallback. Budget/turn exhaustion yields an incomplete/failed report and exit 1, never `no_findings`                                                                        |
+| `--fallback-model`                                    | Preserve the existing fallback eligibility before primary output; apply the same target, result schema, role restrictions and remaining budgets                                                                                                                                                                                     |
+| `--format`, `--thinking`                              | Keep the documented text/JSON/streaming report outputs. Show available reasoning blocks only where the renderer supports them; do not contaminate the final JSON envelope with progress text                                                                                                                                        |
+| `--auto`                                              | Preserve its permission-policy meaning where applicable, but it never expands review tools or answers forms; native CLI review remains headless                                                                                                                                                                                     |
+| `--wait-for-background`, `--background-wait-timeout`  | Native review cannot launch background work. Accept existing default values; reject non-default overrides as unsupported. The generic compatibility path retains its existing behavior                                                                                                                                              |
+
+For an attached server, check required API/option support before creating the review. If a requested budget, output contract or cleanup operation cannot be honored, fail clearly instead of ignoring the option. CLI exports are host operations authorized by these flags, outside the model's read-only tool set.
+
+Persist the effective execution options with the admitted review input and include them, focus and target in exact-retry comparison. A retry cannot change budgets or model selection on an existing run. Preserve native signal handling: confirmed `SIGTERM` cleanup exits 143, confirmed `SIGINT` cleanup exits 130, and unconfirmed cleanup exits 1 with the run identity.
 
 ### 4.6 File-level work
 
@@ -169,394 +195,322 @@ Mini/fullscreen TUI need progress, keyboard navigation, readable findings and ca
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | Schema/event manifests, Protocol/Server groups   | `schema/src/code-review.ts`, `protocol/src/groups/code-review.ts`, `server/src/handlers/code-review.ts` |
 | Managed-child ownership, lifecycle, runner roles | `core/src/session/code-review.ts`, `code-review-store.ts`, `code-review.sql.ts`, `code-review-role.ts`  |
-| Snapshot/Git                                     | Minimal immutable read/capture and retention APIs                                                       |
-| CLI review and native output                     | Native review adapter and deterministic formatter                                                       |
-| App review panel, session-ui, TUI                | Finding list/focus/filter and mini/fullscreen integration                                               |
-
-All new filenames are proposals. Follow package namespace exports; avoid unnecessary umbrella barrels.
+| Git service                                      | Minimal read-only tree/blob diff and `gh` PR ref capture helpers in `core/src/git.ts`                   |
+| CLI review and native output                     | Native review client path and deterministic formatter in `apexo/src/cli/cmd/review.ts`                  |
+| App review panel, session-ui, TUI                | Finding list/badges/focus in `ReviewPanelV2`, `session-ui`, and TUI review views                        |
 
 ## 5. F04: MCP form elicitation
 
 ### 5.1 Contract and supported fields
 
-Propose `schema/src/mcp-elicitation.ts`:
+Propose `packages/schema/src/mcp-elicitation.ts`:
 
-- Request ID, Session/message/tool-call IDs, server registration identity, connection generation, opaque invocation ID, message/schema, creation/deadline times, status/revision.
-- Discriminated reply: `accept` with typed content, or `decline / cancel` without content.
-- Internal terminal reasons: declined/dismissed, timeout, tool interruption, disconnect/disable, Session deletion, unavailable operator and restart.
+- Request ID, Session/message/tool-call IDs, server name, message, validated form schema, createdAt/deadlineAt timestamps and status.
+- Discriminated reply: `accept` with typed `Record<string, string | number | boolean | readonly string[]>`, or `decline` / `cancel` without content.
 
-Support the pinned SDK's form subset: strings with length/format constraints, finite numbers, integers, booleans, single-select string enums, multi-select string enums, required fields/defaults, titled enum representations and legacy enumNames. Defaults are visible and never auto-submitted.
+Support the MCP 2025-11-25 flat object form subset: strings (with `minLength`, `maxLength`, `format`), finite numbers/integers (`minimum`, `maximum`), booleans, single-select string enums (including `oneOf`/`enumNames` titles), multi-select string array enums (`minItems`, `maxItems`), `required` fields and `default` values. Defaults prefill UI controls visually and are **never** auto-submitted.
 
-Validate schema consistency and replies on the server: required-field names, bounds, formats, enum values, unknown keys, types and finite numbers. Reject unsupported nesting, arbitrary arrays/objects, remote references and constraints that cannot be honored. Validate before SDK normalization when it would silently strip unsupported keywords.
+Validate both inbound form schemas and outbound user replies in Core before passing data back to the SDK: reject nested objects, arbitrary arrays, `$ref`, unknown keys, non-finite numbers and out-of-range values. Proposed limits: 32 fields, 100 options per enum, 64 KiB schema/reply payload, and **at most one active form at a time per tool call** (if a server emits a second concurrent `elicitation/create` while one is still pending, reject the second request immediately rather than queuing).
 
-Proposed limits: 32 fields, 100 options per enum, 64 KiB schema/reply and one visible form per invocation. Queue additional forms with their original deadlines.
+Per the [MCP form specification][mcp-forms], forms must not collect secrets or credentials; display the requesting MCP server name clearly and treat field titles/descriptions as untrusted plain text.
 
-The [form specification][mcp-forms] excludes passwords, API keys, access tokens and payment credentials. Identify the server/destination; treat labels/descriptions as untrusted display content. A form answer is not a saved grant or authorization for unrelated tools.
+### 5.2 Shared-connection call gate and cancellation isolation
 
-### 5.2 Exact invocation ownership
+Keep the existing Location-scoped shared MCP connection in [mcp.ts][a-mcp]—do **not** spawn a new stdio process or HTTP session per `tools/call` (which breaks stateful MCP servers and adds multi-second startup latency).
 
-**Recommended first implementation:** when form support is enabled for a server, use an invocation-owned client/transport for its interactive `tools/call`. Keep the existing shared catalog/control connection non-eliciting.
+Because `@modelcontextprotocol/sdk` 1.29.0 does not provide general inbound parent-call correlation on `RequestHandlerExtra`, use a **per-server call gate** together with connection-generation isolation:
 
-This costs startup time, particularly for stdio, but SDK 1.29.0 has no general inbound parent-call correlation. Never reassign that transport generation to another invocation.
+1. When form elicitation is enabled for a server (defaulting to enabled for connected servers unless disabled in MCP config), advertise `capabilities: { roots: {}, elicitation: { form: {} } }` (never URL mode) and register the `ElicitRequestSchema` handler before `client.connect(...)`.
+2. Each connection holds a cancellable `Semaphore(1)` call gate, a connection-generation token, and a mutable `activeInvocation` slot (`{ sessionID, claim, assistantMessageID, toolCallID, token, abort }` or `undefined`).
+3. Route resource reads, catalog requests and other operations that can trigger forms through the same gate so they cannot overlap an armed tool call. These non-tool operations never arm `activeInvocation`; initialization completes before tools are admitted. Reject forms when unarmed or headless/unattended. Unsolicited background forms are unsupported; the gate does not add a parent-call ID to the protocol.
+4. In [mcp-tools.ts][a-mcp-tools], after sandbox network and `PermissionV2.assert` checks succeed, acquire the permit (interruptible by caller cancellation), verify the connection generation is still current, set `activeInvocation` for this `Tool.Context`, and run `client.callTool(...)`. On normal completion, clear the slot and settle any leftover pending form before releasing the permit.
+5. If an in-flight operation is locally cancelled or times out, mark that connection generation retired before releasing the gate, clear its owner and close its transport. Reject all late forms from the retired generation. Queued callers must revalidate the generation and cannot dispatch through the retired Client; admit new work only after reconnection. Never replay the cancelled operation automatically. Cancellation while merely waiting for the gate does not retire the connection.
+6. Normal calls reuse the same connection and preserve stateful server continuity. Exceptional reconnection may lose server session/process state; report that limitation explicitly. No per-tool-call process spawning is required.
 
-1. Mint a private owner from actual Tool.Context, Session lifecycle claim and server registration/config revision.
-2. Apply normal tool permissions and network policy before opening the invocation connection.
-3. Reuse transport/OAuth factory code. Register `elicitation: { form: {} }` and its handler before connect; do not advertise URL mode.
-4. Initialize and validate the tool definition against this connection. A changed schema requires refresh and a new model call, not silent execution under changed semantics.
-5. Arm the owner immediately before the single callTool. Reject initialization/listing/idle forms as unavailable.
-6. The handler captures extra.requestId/extra.signal, validates the form and creates pending state bound to both SDK cancellation and parent interruption.
-7. A UI reply resolves that exact handler once; the existing tool call continues. Do not submit tools/call again.
-8. Close/dispose on completion/cancellation/failure; late requests cannot reach another invocation.
+### 5.3 Live state, events and timeouts
 
-Share OAuth credentials and refresh coordination; do not duplicate secret stores or browser auth flows. Bound per-server concurrent invocation connections and make queued admission cancellable. Test both stdio and streamable HTTP.
+Follow the exact [QuestionV2][a-question-core] pattern in `core/src/mcp-elicitation.ts`:
 
-**Compatibility limit:** services requiring one long-lived session, catalog-connection state, or exclusive process ownership cannot use this first form path. Retain their existing non-interactive support and show an explicit unsupported mode.
+- Use a **Location-scoped in-memory service** holding `Map<ID, Pending>` (`Deferred` responders bound to both SDK `extra.signal` cancellation and Session/tool interruption) plus a small bounded in-memory LRU of recently settled request IDs so duplicate UI clicks return idempotently.
+- **No `mcp-elicitation.sql.ts` table or startup DB sweep is needed.** Publish `mcp.elicitation.requested` and `mcp.elicitation.settled` via `EventV2` (recording IDs, server name, action `accept | decline | cancel` and terminal reason, without logging raw user answer values). After a process restart, no live responder exists and stale replies return `NotFound`.
+- **Timeouts:** give each form a human wait deadline (default 5 minutes). Apexo owns the active execution budget, initialized from the configured MCP tool timeout; subtract elapsed active time, pause only while a validated form is pending, and resume the remaining budget rather than resetting it. Start a separate hard wall-clock cap (default 15 minutes) when dispatching the call; queueing for the gate does not consume its execution budget.
+- **SDK timer wiring:** [McpTools][a-mcp-tools] currently sets both SDK `timeout` and `maxTotalTimeout` to the tool timeout. For the elicitation path, set both to the remaining hard wall-clock cap, keep `resetTimeoutOnProgress: false`, and pass a combined signal for caller cancellation, Apexo active-budget expiry and the hard cap. Do not leave the SDK's shorter default/tool timer running during a form. Clear Apexo timers/listeners on every terminal path. This uses the current SDK API and does not require a dependency upgrade. The non-eliciting path keeps its existing timeouts.
 
-A shared-connection mutex is cheaper but lacks explicit delayed-request origin and can stall unrelated Sessions. It is not the default. Future negotiated correlation or modern request-local continuations can remove the extra connection without changing public form contracts.
-
-The first F04 PR must prove this design with concurrent Sessions and late/cancelled requests against real fixture servers. A product integration requiring connection continuity remains unsupported until a separately reviewed correlation design exists.
-
-### 5.3 Live state, receipts and clocks
-
-Use a Location-scoped McpElicitation service for live Deferred responders, plus Session-owned persisted receipts. Private owner objects are neither serialized nor accepted in HTTP requests.
-
-Separate startup time, active tool-execution time and human wait. Proposed initial waits: 5 minutes per form, 10 minutes cumulative per invocation. Show deadlines; pausing one invocation never extends another.
-
-McpTools currently supplies equal timeout/maxTotalTimeout. Add an Apexo active-time budget that pauses only for its pending forms, alongside an absolute wall-clock cap. Set the SDK timeout to the hard cap and use the invocation AbortSignal to enforce active time. Progress notifications must not reset unrelated/global deadlines.
-
-| Event                        | Outcome                                                               |
-| ---------------------------- | --------------------------------------------------------------------- |
-| Valid accept                 | Send typed content once and continue original call                    |
-| Invalid accept               | Return field errors; retain pending state/deadline                    |
-| Decline                      | Send action=decline without content                                   |
-| Escape/dismiss               | Send action=cancel without content                                    |
-| Deadline                     | Record timed_out; cancel if live, otherwise settle locally            |
-| Tool/Session interruption    | Settle forms and abort only the owned call                            |
-| Frontend disconnect          | Keep live form until deadline; another surface can reload it          |
-| MCP transport disconnect     | Mark interrupted/unavailable; fail the call without replay            |
-| Server disable/config change | Retire owned generations for that registration                        |
-| Process restart              | Historical pending receipts become interrupted; no responder survives |
-
-A submitted answer is not proof of successful tool completion. Network/process failure after submission can leave remote outcome unknown. Never claim exactly-once external execution.
-
-Persist minimal receipts: ownership IDs, schema digest, field names, action, reason and timestamps. Pending schema/message and values remain live by default. Do not put reply bodies in general logs, durable events, permission evidence or automatic exports. The server may include answers in its eventual tool result; clearly identify the destination.
+| Event                     | Outcome                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Valid accept              | Resolve `Deferred` with `{ action: "accept", content }` once                                         |
+| Invalid accept            | Return validation error to UI; keep form pending                                                     |
+| Decline                   | Resolve `{ action: "decline" }`                                                                      |
+| Escape/dismiss            | Resolve `{ action: "cancel" }`                                                                       |
+| Form deadline / hard cap  | Settle `timed_out`, abort the call and retire its connection generation before admitting new work    |
+| Tool/Session interruption | Settle the owned form, abort its active call and retire that connection generation; do not replay it |
+| Frontend disconnect       | Keep live `Pending` until deadline; `list` restores UI on reload                                     |
+| Server disconnect/disable | Finalizer settles pending form and fails `callTool` without retry                                    |
 
 ### 5.4 API, UI and unattended policy
 
-Propose list/get/reply routes under `/api/session/:sessionID/mcp/elicitation`. Replies include expected revision/idempotency key. Exact retry returns the existing receipt; conflicting responses fail. If comparing retries requires a content digest, use a process-local keyed digest rather than persisting brute-forceable value hashes.
+Propose routes under `/api/session/:sessionID/mcp/elicitation`:
 
-Events: `mcp.elicitation.requested / settled` with IDs/revisions/safe status. Live list/get is authoritative on frontend reconnect.
+- `GET /api/session/:sessionID/mcp/elicitation` — list live pending forms for the Session.
+- `POST /api/session/:sessionID/mcp/elicitation/:requestID/reply` — submit `{ action: "accept", content } | { action: "decline" | "cancel" }`.
 
-Reuse question-dock layout/focus, but implement typed controls. Both terminal modes need field navigation, optional blanks, enums/multi-select, validation, decline and cancel. App/Desktop need equivalent keyboard/accessibility behavior. Opening a form never submits defaults.
+Reuse the existing question dock container and focus management in both TUI (mini + fullscreen, respecting `RULE-20261014-001` stable dialog/box roots) and App/Desktop, adding typed field inputs (text, number, boolean toggle, single/multi-select enum), inline validation errors, server attribution, countdown/deadline display, Decline and Cancel.
 
-Headless/scheduled/unattended calls fail clearly when input is needed. `SessionExecutionPolicy.unsupported` already names mcp_elicitation, but this inbound request bypasses model-tool selection; enforce policy in the handler too. Generic auto mode and F02 cannot fabricate answers.
+**Backend interaction eligibility:** compute a private `allowInteraction` value in the owning runner/tool Effect and capture it in `activeInvocation` before dispatch. The SDK callback reads that captured value; it must not attempt to recover Effect execution policy from callback-local context or infer operator presence from a focused window.
 
-This batch supports forms during model-visible tools/call. Resource browsing/attachments, initialization and connection-level operations stay non-eliciting and reject unsupported input explicitly.
+| Execution source                                                                   | Authoritative backend input                                                                                                                        | Form behavior                                                                                   |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Native headless CLI, including `--auto`                                            | [SessionExecutionPolicy][a-execution-policy] for the admitted input (`mode: headless`, regardless of `reject / approve_once`)                      | Reject immediately without opening a prompt                                                     |
+| Scheduled work and its descendants                                                 | Verified scheduled launch/Task origin and inherited headless restriction, using [SessionTaskRole][a-task-role] and existing owner records          | Reject immediately; a child cannot remove the restriction                                       |
+| Explicit fully unattended execution                                                | Admit through the existing headless execution policy (`approve_once` for full-auto, still subject to hard denies), including when launched by a UI | Reject immediately; no new global mode or table                                                 |
+| Interactive TUI/App with manual permissions, F02 review, or permission auto-accept | Native interactive runner ownership with no headless/scheduled restriction                                                                         | Show the form and wait within its deadline; none of these permission modes fabricates an answer |
+| Missing/stale invocation owner or indeterminate execution policy                   | No valid private invocation evidence                                                                                                               | Reject immediately                                                                              |
+
+The existing App auto-accept preference and TUI `/auto` review toggle control permissions, not operator availability. They must not silently mark execution unattended. A UI offering a true unattended launch must submit the headless policy through the existing native admission API before execution; a browser-local preference alone is insufficient. A temporary frontend disconnect retains an eligible live form until its deadline, as above.
 
 ### 5.5 File-level work
 
-| Existing points                                               | Proposed changes                                              |
-| ------------------------------------------------------------- | ------------------------------------------------------------- |
-| Core mcp.ts/mcp-tools.ts/mcp-oauth.ts/mcp-stdio.ts            | Shared transport factory and invocation-owned connection path |
-| Question Deferred pattern, Location guards, Session lifecycle | `core/src/mcp-elicitation.ts` and `mcp-elicitation.sql.ts`    |
-| MCP/Session Protocol and Server groups                        | Typed endpoints, events, manifests and generated clients      |
-| TUI native adapters, question routes, mini flow               | Typed form component and reconnect state                      |
-| App question dock and MCP manager                             | Form dock and per-server capability/compatibility display     |
+| Existing points                                             | Proposed changes                                                                                                                |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Core `mcp.ts` and `mcp-tools.ts`                            | Capability advertisement, connection gate, captured interaction eligibility, Apexo active timer and aligned SDK hard-cap timers |
+| `QuestionV2` `Deferred` pattern, Location guards, lifecycle | `schema/src/mcp-elicitation.ts` and `core/src/mcp-elicitation.ts`                                                               |
+| Protocol and Server groups                                  | `protocol/src/groups/mcp-elicitation.ts`, handlers, generated client                                                            |
+| TUI native adapters, question dock, mini/fullscreen flows   | Typed MCP form dock component and reconnect hydration                                                                           |
+| App question dock                                           | Typed SolidJS MCP form dock in App/Desktop                                                                                      |
 
 ## 6. F02: contextual automatic permission review
 
 ### 6.1 Place authority in the backend
 
-The feature is a new native Core service, not an extra frontend call to the legacy classifier. Keep existing configured/saved/inherited rule semantics and manual permission replies.
+Implement contextual permission review as a native Core service (`PermissionReview`), replacing frontend-driven classifier calls on native V2 Sessions while preserving existing configured rules, saved grants, inherited child restrictions and manual replies.
 
-Use explicit modes: `manual / review`. Existing full-auto behavior remains a separate explicit product mode and must not be silently reinterpreted. During rollout, F02 has `off / shadow / enforce` policy states: shadow records decisions but never auto-replies.
+Keep product modes simple: **`manual | review`** per Session (with full-auto remaining a separate explicit user toggle). **Do not add a `off / shadow / enforce` rollout state machine**—Apexo is a local-first CLI/Desktop tool, so enabling `review` (`/auto`) must take effect directly, and `manual` disables model review completely. Keep V1 `LocalQwenPlugin` (`permissionAssist` / `autoAllowReadonly` in [local-qwen.ts][a-local-qwen]) scoped to legacy V1 hooks so native V2 requests have a single Core authority.
 
-Propose `PermissionReview` contracts for evidence summaries, decisions and audit records. Model decisions are `allow_once / ask`. Hard denial comes from authoritative policy, not a model inventing permanent rules. The service never emits an automatic always/save grant.
+Model decisions are strictly **`allow_once | ask`**. Hard denials come only from configured/inherited policy, never from the model, and the reviewer never creates `always` / saved grants.
 
-Normal execution:
+Execution flow inside native permission handling:
 
-1. Evaluate hard policy and effective authority.
-2. Existing allow proceeds without unnecessary model review.
-3. Existing deny blocks, with no model bypass.
-4. For ask, register the pending request and an internal runtime owner.
-5. If review mode is enabled and evidence is eligible, evaluate once under bounded resources.
-6. Apply allow_once only through fenced PermissionV2 settlement after revalidation.
-7. Otherwise keep the request available for manual action, with a concise reason.
+1. Evaluate static agent rules, saved grants, sandbox constraints and inherited authority in [PermissionV2][a-permission-core].
+2. Explicit `allow` proceeds immediately; explicit `deny` blocks immediately (no model call).
+3. On interactive `ask` tied to a live runtime tool call (never an external `POST /permission` without a runtime owner), register the `Pending` item and publish `permission.v2.asked`.
+4. If the Session's native mode is `review`, spawn a bounded background review fiber linked to that `Pending` item's lifecycle.
+5. If the model returns `allow_once` and atomic revalidation still matches, settle the `Pending` item once; otherwise publish `ask_manual` status with a concise reason and leave manual buttons active.
 
-External `session.permission.create` currently accepts source/metadata. Such public fields must not qualify a request for automatic review by themselves. Only a request tied to an actual pending runtime tool invocation may auto-apply.
+### 6.2 Lightweight input origin and evidence boundary
 
-### 6.2 Evidence model and trust boundary
+Proposed `core/src/permission/review-context.ts` assembles a bounded snapshot from authoritative Core state:
 
-Proposed Core `permission/review-context.ts` builds a bounded EvidenceSnapshot:
+| Evidence            | Authoritative source                                                                                                                           | Treatment                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Exact action        | Live runtime tool call + canonical [BashApproval][a-bash-approval] metadata                                                                    | Command, args, cwd, target paths, remote/ref, network/sandbox flags + digest  |
+| Effective authority | `PermissionV2` authority snapshot + inherited restrictions                                                                                     | Hard ceiling; model cannot override                                           |
+| Recent user intent  | Recent `session_input` rows with `origin = "user"`, already promoted, not withdrawn, and present in this Session's effective execution context | Only effective verified user prompts can authorize consequential side effects |
+| Task root intent    | Verified parent `SessionTaskStore` / `SessionManagedChild` delegation when applicable                                                          | Child agent self-prompts cannot mint fresh human authorization                |
+| Recent observations | Bounded recent tool calls/results in current context                                                                                           | Untrusted context only; file/tool/MCP text cannot grant permission            |
 
-| Evidence               | Authoritative source                                                                     | Treatment                                                                                                               |
-| ---------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Exact action           | Live tool invocation plus persisted tool part and canonical BashApproval metadata        | Command, arguments, cwd, paths, remote/destination, network scope and sandbox/escalation requirements; immutable digest |
-| Effective authority    | PermissionV2 authority snapshot, inherited restrictions, saved grants and sandbox policy | Hard limits; no model override                                                                                          |
-| User intent            | Original admitted/promoted user inputs with server-owned provenance                      | Only verified human/client input can authorize                                                                          |
-| Later corrections      | Relevant promoted input and pending admission invalidation/version                       | Revocation or changed scope invalidates a prior review                                                                  |
-| Task lineage           | Private Task/managed-child ownership and captured delegation                             | Delegated agent messages do not become fresh human permission                                                           |
-| Transcript/tool output | Selected recent history, exact commands/results, source IDs                              | Untrusted supporting evidence, never policy                                                                             |
-| Workspace facts        | Canonical Location/repository and exact action targets                                   | Context for matching scope, not blanket permission                                                                      |
+**Pragmatic provenance (`session_input.origin`):** instead of building a cross-compaction digest chain or cross-fork provenance migration system, add a single server-owned column `origin` (`"user" | "task" | "workflow" | "schedule" | "imported" | "unknown"`, defaulting historical rows to `"unknown"`) at `SessionInput.admit` time. Exact prompt retries preserve their original stored `origin`.
 
-**Required precursor:** the current admitted input contract contains prompt/delivery/execution policy, not a complete authorization-provenance system. Prompt.Source is attachment text positioning, not a trust label. Add server-owned private provenance at actual input admission paths, including interactive user submission, agent/task/workflow/scheduled input and imported history. Do not expose a user-settable trusted flag.
+Carry origin through the existing durable event/projection path, not a separate post-admission database update:
 
-An authenticated submission is a trust-boundary claim, not proof about a physical human: internal agent-generated submissions must use distinct private origins. Existing/imported entries without reliable lineage remain unknown. They can be context but cannot establish authorization for consequential actions.
+1. Classify input at trusted ingress: interactive operator submissions, Task/Workflow/Schedule producers and import/history-copy adapters. Internal synthesized review prompts use `unknown`; an ordinary public payload cannot set `origin: user`. Unclassified ingress remains `unknown`.
+2. Pass the private value into [SessionInput.admit][a-input] and the canonical input/event schemas. New `PromptAdmitted` events carry origin; promotion carries the stored origin into `Prompted`, never inferring it from a message role or the current caller.
+3. Wire [SessionProjector][a-projector] into both `projectAdmitted` and `projectPrompted`, including the latter's historical row-synthesis path, and expose the stored value in internal input reads. Existing rows retain their original origin on retries/promotion.
+4. Decode old events with absent origin as `unknown`, using backward-compatible event schema evolution. Rebuilding projections must reproduce the same origin as live admission. Import/fork paths in this batch use `imported`/`unknown` for copied inputs rather than upgrading copied user-role messages into fresh human authorization; exact retries cannot change that classification.
 
-An exact prompt retry must preserve its original private provenance. Reusing a message ID through another ingress cannot upgrade unknown/agent input to human input. Extend admission reconciliation tests without weakening the existing Session/prompt/delivery equality contract.
+This adds one column and threads a field through existing producers, events and projections; no provenance-chain service is required.
 
-Retain original input IDs/digests across compaction. Compaction summaries and quoted transcripts cannot upgrade to human authorization. Fork/history copy retains source identity and provenance. A task's delegated prompt is not equivalent to the original user's instruction; root evidence must come through verified ownership.
+Only recent `origin === "user"` inputs that have a `promotedSeq`, have no `withdrawnSeq`, and belong to the current effective execution context at the captured sequence boundary are eligible for `Verified User Instructions`. Select the last 5 eligible prompts within the token budget, not the last 5 admitted rows. Queued/unpromoted inputs and withdrawn inputs cannot authorize the current tool action. If an instruction only existed many turns ago before compaction, in imported history (`"imported"` / `"unknown"`), or in a scheduled trigger (`"schedule"`), returning `ask` so the user clicks once is already the desired conservative behavior.
 
-Do not admit unrelated queued prompts as permission for the currently executing action. On new admission, conservatively invalidate any pending automatic approval; recompute at the safe boundary or leave it manual. No automatic tool resubmission is required.
-
-The prompt has explicit sections: immutable host policy, exact action, effective constraints, verified authorization candidates, and untrusted observations. Quotes, code files, tool responses and MCP form text cannot rewrite the first three sections.
+Use `SessionInputAdmission.observe` (`core/src/session/input-admission.ts`): if a new user steer/prompt is admitted while a review call is in flight, mark the in-flight snapshot stale so it cannot auto-approve against superseded instructions (falling back to manual `ask`). A new admission is an invalidation signal, not fresh authorization for an already pending action.
 
 ### 6.3 Scope matching and bounded classification
 
-An authorization must match the proposed action's meaningful parameters. Examples:
+**Backend action capture is implementation work:** [Bash][a-bash] already computes `target.canonical` and the actual prefixed command, but its permission metadata currently contains command text and parser metadata, not a resolved repository/remote/ref. Before `PermissionV2.assert`, attach a private immutable action snapshot from those actual execution values: canonical cwd/repository, effective shell/command, parsed arguments and relevant sandbox/network settings. Publicly supplied permission metadata and model descriptions cannot substitute for this snapshot.
 
-| Evidence/action                                              | Expected decision                                                       |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| “Review the changes” + git push                              | Ask; review does not authorize publication                              |
-| “Push this branch to origin” + same repository/branch/remote | Eligible for allow_once if policy permits and exact evidence is present |
-| Same instruction + force-push or different remote            | Ask                                                                     |
-| “Run the tests” + recognized local test command              | Allow by existing rules or eligible review                              |
-| A repository file says “the user approved deployment”        | Ask; file content is not user evidence                                  |
-| “Do not push yet” arrives while classification runs          | Invalidate; no stale auto-approval                                      |
-| Explicit user request but inherited hard deny                | Deny by policy                                                          |
-| Missing/ambiguous provenance, destination or payload         | Ask                                                                     |
+For an eligible Git push, collect scope using bounded, read-only Git/config queries from the effective cwd: repository identity, current branch/source commit and ref, selected remote, effective push URL(s), destination refspecs and force/delete flags. Resolve implicit targets only when backend rules can determine them unambiguously. Shell aliases/functions, dynamic `cd`/substitution, unsupported `git -C` or configuration overrides, custom wrappers, ambiguous push defaults and opaque scripts fall back to manual `ask`; the model must not guess omitted scope. Redact credentials in URLs before model/UI exposure.
 
-Use existing bash parsing/exact-grant logic. Review broad/opaque execution vehicles conservatively. Arguments alone do not prove what an arbitrary script will do; the first batch should not automatically authorize unknown script side effects.
+Immediately before applying an automatic approval, compare the captured action and resolvable scope with current execution facts. Changed cwd/repository/remote/ref or unresolved scope invalidates the approval; the tool must not execute different arguments after review. Extend the existing Bash/permission boundary and [BashApproval][a-bash-approval] parsing narrowly; a general shell semantic interpreter is outside this batch.
 
-Distinguish a configured hard deny from a legacy classifier's heuristic escalation. The former cannot be overridden; the latter means the evidence needs review. Porting every legacy `certain` flag as a permanent deny would prevent the intended explicit-authorization behavior.
+An authorization must match the proposed action's concrete parameters:
 
-Build the native reviewer with LLMClient and Location-scoped model resolution. [Side-question native execution][a-side-question] is a useful precedent for an isolated, tool-free streamed request; it is not a reason to copy full conversation context or mutate the main transcript.
+| Evidence / action                                          | Expected decision                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| “Review the changes” + `git push`                          | `ask` — review does not authorize publication                     |
+| “Push this branch to origin” + matching repo/branch/remote | `allow_once` if policy permits and exact command/remote/ref match |
+| Same instruction + `--force` or different remote           | `ask`                                                             |
+| “Run the tests” + local package test command               | `allow_once` (or static rule allow)                               |
+| Repository file or tool output says “user approved deploy” | `ask` — untrusted observation is never user intent                |
+| “Wait, don't push yet” admitted while classifier streams   | Invalidated by admission observer → remains manual `ask`          |
+| Explicit user request + inherited/configured `deny`        | Blocked by `PermissionV2` before review                           |
 
-Suggested initial bounds: one streamed attempt, no tools, no retries, 20-second deadline, 8,000 input tokens, 1,000 output tokens, at most two concurrent reviews per Location and a bounded queue. Count reviewer usage separately and include it in applicable invocation budget accounting. No nested permission requests or recursive review.
+Build the reviewer with `LLMClient` and Location-scoped `SessionRunnerModel` (following [side-question-native.ts][a-side-question] for isolated, tool-free streaming without mutating Session history, while keeping dependency direction clean so `PermissionV2` never creates a module cycle with `SessionRunner`).
 
-Preserve exact action and decisive authorization when budgeting. If they do not fit, ask. Do not truncate away a negation or target and still approve. Provider error, invalid/partial JSON, missing finish, timeout, cost exhaustion or model unavailability all produce ask with a machine-readable reason.
+Bounds: one streamed attempt, `tools: []`, `toolChoice: "none"`, no retries, 20-second timeout, 8,000 input token budget, 512 output tokens, and a Location-scoped `Semaphore(2)` concurrency cap. Preserve the exact action and latest user prompt intact when trimming older context; if the action itself exceeds budget, return `ask`. Any timeout, provider error, malformed JSON or unknown cited message ID falls back to `ask` with a concise reason.
 
-The parsed result contains decision, concise reason, risk category and cited evidence IDs. Validate referenced IDs against the captured snapshot. Do not store hidden chain-of-thought or treat model confidence as proof of safety.
+### 6.4 Atomic settlement and races
 
-### 6.4 Atomic application and races
+Note an important existing behavior in [permission.ts][a-permission-core]: `PermissionV2.reply({ reply: "reject" })` rejects **all** pending requests for that Session (because up to 8 concurrent tool calls can run in one turn). Therefore:
 
-A decision must bind:
+- Link each review fiber to its `Pending` item so manual approval, manual rejection (including cascade rejection from a sibling tool call), Session interruption or Location disposal interrupts the review fiber immediately.
+- Make manual `reply`, internal `applyReviewed`, sibling cascade rejection and cancellation use one short Session-scoped settlement critical section (for example, `Semaphore(1)`). `Effect.uninterruptible` may protect cleanup but does not serialize fibers and is not a substitute for this gate.
+- Before the atomic pending-to-settled transition, verify the `Pending` reference is still live, `SessionLifecycle.Claim` is available, review mode/revision is unchanged, input admission sequence has not advanced, and current `authority` is not `deny`. Coordinate input/mode invalidation with this final check and transition, using the existing admission fence where applicable, so they cannot interleave after validation and before settlement.
+- If a human already replied or cancelled, that settlement wins and the late model result is ignored (`superseded`). Never hold the settlement gate across `llm.stream`, and do not wait for review fibers to terminate while holding the gate they may need for cleanup.
 
-- Permission request ID and private pending-object identity.
-- Session incarnation and owned tool call.
-- Canonical action digest.
-- Relevant authority/mode revision.
-- Input/provenance evidence revision.
+### 6.5 Minimal API, events and frontend migration
 
-Current PermissionV2.reply already rechecks deny rules, but list/get followed by a model call and a separate reply is not enough.
+Do **not** create a separate `permission_review` SQLite audit table, paginated `/permission-review` history endpoints, or a client-triggered `POST /permission/:requestID/review` endpoint: the backend triggers review automatically when an `ask` is created in `review` mode, and neither TUI nor Desktop needs a historical audit table UI.
 
-Add an internal `applyReviewed` operation (proposed name), guarded by a short per-request claim/CAS or semaphore. Manual replies, automatic application, cancellation and finalizers use the same settlement path. Uninterruptible execution alone does not serialize fibers.
+| Surface / Contract                                        | Purpose                                                                                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `GET / PUT /api/session/:sessionID/permission-review`     | Read or update Session native review mode (`"manual" \| "review"`) with monotonic revision                                       |
+| `permission.review.started` / `permission.review.settled` | `EventV2` notifications carrying `requestID`, outcome (`allowed_once \| ask_manual \| superseded`), concise `reason` and `model` |
+| `Permission.Request` inline review state                  | Optional live `review?: { status, reason? }` returned by `permission.list / get` on reconnect                                    |
 
-At apply time recheck the request, action, Session/tool owner, current policy, mode and input revision. Human settlement or cancellation wins if it already committed. Any mismatch discards the model approval and either leaves the request manual or reports it already settled.
-
-Persist the audit/applied receipt before releasing the Deferred. Do not hold a database transaction or request lock during the model call. A crash between audit commit and tool resumption records interrupted/unknown completion; it must not replay the tool automatically.
-
-Subscribe to Session input-admission invalidation and relevant policy/mode changes. An approval based on a superseded snapshot is not reused. Do not cache approvals across different requests in this batch.
-
-### 6.5 Audit, API and frontend migration
-
-Propose `permission_review` storage with review/request/Session/tool IDs, action digest, policy/evidence revision, provenance references, decision/source/reason, reviewer model, latency/usage, and application status:
-
-`pending / evaluated / applied / superseded / cancelled / failed`.
-
-Separate the model's recommendation from what actually happened. A model allow overtaken by a manual rejection is recorded as superseded, not approved.
-
-Retain bounded redacted action/evidence summaries and source digests, not a second full transcript. User text and tool metadata can contain secrets. Follow Session deletion/retention; do not ship audit data to unrelated telemetry.
-
-Proposed native endpoints:
-
-| Endpoint                                                    | Purpose                                                                           |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `GET/PUT /api/session/:sessionID/permission-review/mode`    | Read/set effective native review mode, including revision                         |
-| `POST /api/session/:sessionID/permission/:requestID/review` | Trigger or join the same backend evaluation; clients never supply evidence/policy |
-| `GET /api/session/:sessionID/permission-review`             | Paginated audit history                                                           |
-| `GET /api/session/:sessionID/permission-review/:reviewID`   | Decision and application receipt                                                  |
-
-The backend starts review for eligible pending runtime requests even if no frontend is open. The explicit POST is an idempotent join/retry entry under policy, not a second decision authority.
-
-Proposed events: `permission.review.started / finished` plus existing permission settlement events. UIs show reviewing, allowed once, manual review needed, superseded, and the concise reason. A user can manually decide while the reviewer runs.
-
-Move App/TUI native mode into backend state. Do not let two clients run classifiers or independently auto-reply. Old browser-local review preference may be offered as a user-visible migration, but must not silently enable global server approval. Keep legacy Session review behavior explicitly separate until migrated.
-
-Headless reject/approve_once policy remains explicit. Do not silently turn headless reject into contextual review. An opt-in headless contextual mode can be added later after unattended failure semantics are agreed.
+Migrate App (`packages/app/src/context/permission.tsx`) and TUI (`packages/tui`) native V2 Sessions to read/toggle backend review mode via the endpoint above instead of running client-side classifiers or racing multiple windows. Existing browser-local preference is not silently promoted to backend auto-approval without user toggle/confirmation. Headless `reject` / `approve_once` execution policy remains unchanged.
 
 ### 6.6 File-level work
 
-| Existing points                                       | Proposed changes                                                                         |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| PermissionV2, authority/saved, BashApproval           | Shared settlement gate and internal automatic-application method                         |
-| Session input admission, history copy, task ownership | Server-owned provenance and evidence invalidation                                        |
-| Native model/LLM interface                            | `core/src/permission/review.ts`, `review-context.ts`, `review-store.ts`, `review.sql.ts` |
-| Schema/Protocol/Server permission groups              | `schema/src/permission-review.ts`, native mode/review/audit routes and events            |
-| App permission context, TUI sync/native adapters      | Server-owned modes/status and removal of native client-side decisions                    |
-| Legacy auto-review.ts                                 | Compatibility adapter only; no new native runtime dependency on legacy Provider/Session  |
+| Existing points                                                                    | Proposed changes                                                                                                                     |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Input producers, `session-event.ts`, `session/input.ts` and `session/projector.ts` | Carry server-owned origin through admission/promotion events, live projection and replay into the new column; preserve exact retries |
+| `core/src/tool/bash.ts` and BashApproval                                           | Capture canonical execution cwd/command and bounded backend-resolved Git scope; unresolved or changed scope stays manual             |
+| `PermissionV2` (`core/src/permission.ts`)                                          | Shared Session settlement gate, internal `applyReviewed` hook and sibling-cancel fiber interruption                                  |
+| Native LLM reviewer                                                                | `core/src/permission/review.ts` and `core/src/permission/review-context.ts`                                                          |
+| Schema / Protocol / Server permission groups                                       | `schema/src/permission-review.ts`, Session mode route and `EventV2` definitions                                                      |
+| App `permission.tsx` and TUI native adapters                                       | Backend-owned mode toggle, inline reviewing/reason badge, remove V2 client calls                                                     |
+| Legacy `auto-review.ts` and `local-qwen.ts`                                        | Keep scoped to V1 compatibility path only                                                                                            |
 
 ## 7. Integration, migration and rollout
 
-### 7.1 Schema and service integration
+### 7.1 Schema, database and generated clients
 
-- Add canonical public contracts/events once, with unique brands and schema identifiers. Keep private runtime capabilities out of Schema.
-- Register Core services in the appropriate global/Location nodes and expose them in the relevant application public groups. Preserve package dependency direction.
-- Add database migrations under Core. Use additive tables/columns initially, FK deletion behavior and schema-version validation. Opening an old database must not start background review/tool work.
-- Add Protocol groups/errors/event manifests and Server handlers before generation. Native routes use Session-owned placement; a caller's directory override must not redirect another Session.
-- Generate Client from `packages/client` after public API changes. Generate the legacy SDK only when its API changes. Never edit generated trees by hand.
-- Update current App/TUI transport adapters explicitly. Presentation compatibility events must not acquire runtime authority.
+- Add canonical public contracts and `EventV2` definitions in `packages/schema` with unique brands/identifiers. Keep private capabilities/claims in `packages/core`.
+- Register new Core services in the appropriate global/Location nodes and export externally consumed services in public AppNode groups (`RULE-20261015-001`, `RULE-20261015-011`).
+- Keep SQLite migrations minimal and additive: **only two DB schema additions** across the whole batch—`session_code_review` (for F01 reports) and `session_input.origin` (nullable/defaulted column for F02).
+- Add Protocol endpoints/events and Server handlers, then run `bun run generate` from `packages/client` (and `./packages/sdk/js/script/build.ts` only if V1 surfaces change). Never hand-edit generated files, and finish generation before running `typecheck` or tests (`RULE-20261015-018`).
+- Keep new App/session-ui i18n strings concise and reuse existing `common.*` / `permission.*` / `session.*` keys wherever possible across the 62 locale dictionaries.
 
 ### 7.2 Backward compatibility
 
-| Area                                | Migration                                                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Old review conversations            | Remain ordinary transcript text; do not manufacture validated historical findings                                        |
-| Existing custom CLI output schema   | Retain the generic compatibility path during rollout                                                                     |
-| Existing MCP servers                | Keep existing tool/OAuth/resource behavior; form support is explicit per server and connection compatibility             |
-| Historical pending forms            | Do not synthesize live responders from receipts                                                                          |
-| Existing permission rules/grants    | Preserve precedence and scope; model review never lifts denies                                                           |
-| Historical user inputs              | Unknown provenance remains unknown; no automatic trust backfill from role labels                                         |
-| Existing frontend review preference | User-visible migration to native backend mode; no silent expansion of authority                                          |
-| Fork/rewind/delete                  | Preserve evidence lineage where valid; never copy pending responders, private owners or reusable auto-approval authority |
+| Area                                | Behavior                                                                                                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Old review conversations            | Remain ordinary transcript messages; no retroactive report synthesis                                                                                                     |
+| CLI `--output-schema`               | Continues using the generic structured headless path                                                                                                                     |
+| Existing MCP servers                | Normal calls preserve shared connections, OAuth and stateful continuity; cancellation/timeout retires the connection, and exceptional reconnection may lose server state |
+| Existing permission rules/grants    | Preserve rule precedence; model review never overrides `deny` or writes permanent grants                                                                                 |
+| Historical `session_input` rows     | `origin` defaults to `"unknown"`, never treated as verified human authorization                                                                                          |
+| Existing frontend review preference | Native Sessions use backend `manual` by default until user enables native `review` mode                                                                                  |
 
 ### 7.3 Rollout and rollback
 
-1. F01 opt-in native structured review, then default for supported selectors after UI/JSON acceptance.
-2. F04 per-server opt-in, validated separately for stdio/HTTP and documented incompatible stateful servers.
-3. F02 off by default, then shadow, then opt-in enforce. Keep a server-side switch that immediately stops new model approvals and invalidates in-flight approvals.
-4. Rollback disables entry/application paths without deleting historical records. Keep readers capable of displaying existing reports and audits. Reverting a flag must not replay tools, auto-submit forms or widen permissions.
-
-All App/session-ui visible strings use existing i18n APIs. Preserve English source copy when adapting existing UI. Verify translations through the repository's required localization sources; a passing English window is not evidence for every locale.
+1. **F01:** land native structured review behind native Session execution, validate CLI formats + TUI/Desktop panels, keep `--output-schema` compatibility intact.
+2. **F04:** enable `elicitation.form` handler on native MCP connections, with per-server config opt-out (`elicitation: false`) if a defective server misbehaves.
+3. **F02:** default every Session to `manual`; users explicitly opt in via `/auto` / Review Mode toggle, and switching back to `manual` immediately invalidates any in-flight review fiber.
 
 ## 8. Verification plan
 
-These are planned acceptance requirements, not claims that the features already pass.
-
 ### 8.1 F01 acceptance
 
-| ID  | Scenario                                                          | Required evidence                                                               |
-| --- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| R01 | Staged/unstaged/untracked, base, root/merge commit and PR targets | Captured SHAs/trees and manifest match the requested target                     |
-| R02 | Rename/deletion/addition/symlink/binary/oversized file            | Correct side/line semantics or explicit exclusion; no outside-root reads        |
-| R03 | Model emits write/bash/plugin/MCP/task calls                      | Settlement rejects them; project/index/HEAD remain unchanged                    |
-| R04 | Invalid JSON, invalid path/line/confidence, duplicate finding     | Bounded repair/diagnostics; never fabricated clean success                      |
-| R05 | Workspace changes during capture and after review                 | Capture conflict detected; historical diff remains stable and marked stale      |
-| R06 | Cancel, parent delete, restart, duplicate admission               | No orphan execution or automatic resampling; report lifecycle is truthful       |
-| R07 | Text/JSON/streaming JSON and optional threshold exit              | Deterministic schema and exit semantics; no progress contamination in JSON      |
-| R08 | Mini/fullscreen, browser and actual Desktop                       | Finding navigation reaches captured code; comments remain editable and distinct |
+| ID  | Scenario                                                                                             | Required evidence                                                                                                                                         |
+| --- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R01 | Staged/unstaged/untracked, base, root/merge commit and PR targets                                    | Captured SHAs/patches and manifest match target without mutating user index                                                                               |
+| R02 | Rename/deletion/addition/symlink/binary/oversized file                                               | Correct side/line semantics or explicit coverage exclusion; no outside reads                                                                              |
+| R03 | Model emits bash/write/edit/MCP/task calls                                                           | Role settlement rejects them; repository worktree/index/HEAD remain untouched                                                                             |
+| R04 | Malformed JSON, invalid line range, outside-hunk line, duplicate                                     | Repair works; invalid ranges become file-level anchors without clamping; valid outside-hunk snippets survive reload                                       |
+| R05 | Snapshots disabled, captured untracked file edited later, or captured blob unavailable               | Review reads the captured version or reports missing coverage; no live fallback; later edits show `stale`                                                 |
+| R06 | Cancel (empty POST), parent delete, restart, exact retry                                             | Child stops cleanly, no hang on `server.close()`, unfinished runs `interrupted`                                                                           |
+| R07 | Text/JSON/streaming output, threshold, budgets, repair/fallback and signals                          | Deterministic output; limits include all provider usage and cannot silently disappear; exits 0/1/2/130/143 follow the specified outcome                   |
+| R08 | Mini/fullscreen TUI, browser App and rebuilt Desktop window                                          | Start, target selection, history and cancellation work from existing menus; finding navigation uses captured context and preserves human comments         |
+| R09 | Attach/auth/remote directory, model options, output export, ephemeral and compatibility combinations | Remote capture stays remote; export stays local and precedes owned cleanup; unsupported flags fail before admission; generic schema behavior is preserved |
 
-Start from actual tests such as `test/cli/run-review-options.test.ts`, `test/v2/headless-runner.test.ts` and `test/snapshot/snapshot.test.ts` in packages/apexo. Add real native review integration tests rather than copying the output formatter into tests.
+Start from `test/cli/run-review-options.test.ts`, `test/v2/headless-runner.test.ts` and native session fixtures in `packages/apexo`.
 
 ### 8.2 F04 acceptance
 
-| ID  | Scenario                                                        | Required evidence                                                   |
-| --- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| E01 | Each field kind/default/enum/optional value                     | The real MCP fixture receives exact JSON types and values           |
-| E02 | Required/bounds/formats/unknown fields/unsupported schema       | Core rejects invalid input before it reaches the server             |
-| E03 | Two Sessions on one server; multiple tool calls/code-mode calls | No form or answer crosses invocation ownership                      |
-| E04 | Decline/cancel/server cancellation/parent interruption          | Original Deferred/call terminates appropriately; no hidden retry    |
-| E05 | Human wait and tool timeout                                     | Waiting pauses only its active budget, hard cap still terminates    |
-| E06 | Frontend reconnect versus transport/process reconnect           | Frontend recovers live state; dead external operations never resume |
-| E07 | Late old-generation request or duplicate/conflicting UI reply   | Cannot settle a new invocation; one terminal receipt                |
-| E08 | OAuth refresh/server disable/definition change                  | Existing auth/retirement semantics hold; changed tools fail safely  |
-| E09 | Headless/scheduled/no operator                                  | Immediate explicit outcome rather than an indefinite prompt         |
-| E10 | Native mini/fullscreen/App/Desktop                              | Keyboard flow, typed controls, deadlines and dismissal work         |
+| ID  | Scenario                                                                                    | Required evidence                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E01 | String/number/integer/boolean/single & multi enum + defaults                                | Real stdio and StreamableHTTP MCP fixtures receive exact JSON types/values                                                                                 |
+| E02 | Bounds/required/unknown keys/nested or unsupported schema                                   | Core rejects invalid schema/input before forwarding                                                                                                        |
+| E03 | Stateful server across normal calls + 2 Sessions + concurrent resource read                 | Normal calls preserve server state; shared gate prevents a resource form from reaching an active tool's Session                                            |
+| E04 | Decline, Escape cancel, server cancel, Session interrupt and late form                      | Forms settle cleanly; local call cancellation retires the generation and late forms cannot reach the next caller                                           |
+| E05 | Real SDK call with short active timeout, longer human wait, repeated forms and hard cap     | Human wait outlives the old SDK tool timeout; active budget resumes without replenishment; SDK and Apexo hard caps terminate; no leaked timers             |
+| E06 | Frontend reload vs disconnect/restart/timeout with queued callers                           | Reload restores live forms; retired Clients reject queued dispatch; reconnect does not replay old calls and reports possible server-state loss             |
+| E07 | Idle/init/second concurrent elicitation or duplicate UI click                               | Non-tool or concurrent second form rejected; duplicate UI reply idempotent                                                                                 |
+| E08 | Headless/scheduled descendants/explicit unattended vs interactive manual/review/auto-accept | Backend-owned policy rejects unattended forms; interactive permission modes still prompt; SDK callback uses captured eligibility and never invents answers |
+| E09 | Mini/fullscreen TUI, browser App and rebuilt Desktop window                                 | Stable dialog root, keyboard navigation, validation, Decline and Cancel work                                                                               |
 
-Extend actual native stdio/HTTP fixtures around `test/v2/mcp-native.test.ts`, `mcp-oauth-transports.test.ts`, `mcp-codemode-toolsearch.test.ts` and `test/fixture/mcp-native-stdio.ts`. Upstream MCP/Codex tests are references, not Apexo verification.
+Extend `test/v2/mcp-native.test.ts`, `mcp-oauth-transports.test.ts` and `test/fixture/mcp-native-stdio.ts`.
 
 ### 8.3 F02 acceptance
 
-| ID  | Scenario                                                       | Required evidence                                               |
-| --- | -------------------------------------------------------------- | --------------------------------------------------------------- |
-| A01 | Explicit allow, configured/inherited deny, ordinary ask        | Existing rule precedence preserved                              |
-| A02 | Same action with authorized/unauthorized user intent           | Correct evidence selected and cited; consequential unknowns ask |
-| A03 | Injection in tool output/repository/MCP form/delegated message | No elevation to human authority                                 |
-| A04 | Compaction, fork, imported history and scheduled input         | Provenance retained or explicitly unknown                       |
-| A05 | New correction/revocation while model is delayed               | Stale allow is never applied                                    |
-| A06 | Manual reply vs two clients vs auto-result vs cancellation     | One settlement; losing recommendations recorded truthfully      |
-| A07 | Same command, different cwd/remote/ref/network/payload         | No approval reused across changed action digests                |
-| A08 | Timeout, invalid/partial JSON, provider error or budget cap    | Manual ask with reason; no recursion or retries                 |
-| A09 | Crash/deletion/rewind during review or application             | No surviving authority and no tool replay                       |
-| A10 | UI disconnected, frontend reload, mini/fullscreen/Desktop      | Backend decision unchanged; consistent status/audit             |
-| A11 | Explicit headless reject/approve_once                          | Existing unattended semantics preserved                         |
-| A12 | Secret-bearing metadata and audit export                       | No raw secret or hidden reasoning in audit/event logs           |
+| ID  | Scenario                                                                                       | Required evidence                                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| A01 | Static allow, configured/inherited deny, manual ask                                            | Existing `PermissionV2` precedence unchanged; denies never hit LLM                                                                          |
+| A02 | Authorized push vs unauthorized push / `--force` / wrong remote                                | Matching scope approves once; mismatched/ambiguous scope stays manual                                                                       |
+| A03 | Prompt injection in file/tool output/MCP form/task child                                       | Untrusted or non-`"user"` origin never authorizes consequential action                                                                      |
+| A04 | Historical unknown/imported/scheduled inputs; queued or withdrawn user inputs                  | None supplies effective user authorization; fall back to `ask` when eligible evidence is absent                                             |
+| A05 | User input admitted or mode switched during review/final settlement                            | Invalidation cannot race past the final transition; new admission never authorizes the old pending action                                   |
+| A06 | Manual reply/reject, sibling cascade and auto-result interleave at authority/event awaits      | Shared settlement gate allows one outcome; completed human settlement cannot be overwritten; fiber cleanup does not deadlock                |
+| A07 | Timeout, provider error, malformed JSON or oversized action                                    | Falls back to manual `ask` with concise reason; no retries/recursion                                                                        |
+| A08 | Two connected clients + frontend reload + TUI/App/Desktop                                      | Single backend evaluation; consistent live status and manual fallback                                                                       |
+| A09 | Each input ingress, new/old admission and promotion events, exact retry and projection rebuild | Origin is preserved through the whole event chain; absent origin stays unknown; import/copy never upgrades trust; replay matches live state |
+| A10 | Canonical cwd/prefix, Git remote/ref defaults and overrides, opaque command, changed scope     | Backend supplies actual action scope; unresolved/dynamic or changed targets remain manual without model guesses                             |
 
-Extend `test/permission/auto-review.test.ts`, `test/permission/next.test.ts` and native runtime/HTTP fixtures. Use a local streaming-provider fixture to control timing/errors, real database/services and actual permission settlement. A deterministic fixture proves plumbing, not model judgment.
-
-Before enabling enforce, run a separately labeled live-model evaluation corpus: initially at least 60 reviewed scenarios covering authorized actions, ambiguous scope, revocations, injections and inherited denials. Require zero unauthorized automatic approvals on that fixed corpus; report false asks, latency and usage too. This is a bounded release gate, not a statistical safety guarantee. Retain scenario IDs, policy/prompt version and model identity without private user data.
+Extend `test/permission/auto-review.test.ts`, `test/permission/next.test.ts` and native V2 runtime/HTTP fixtures using deterministic local streaming-provider fixtures for CI. Optionally provide an on-demand evaluation script (`packages/apexo/script/eval-permission-review.ts`) with ~30–60 curated adversarial/authorized cases for manual model benchmarking outside CI.
 
 ### 8.4 Cross-surface evidence matrix
 
-| Surface                | F01                                 | F04                                      | F02                                         |
-| ---------------------- | ----------------------------------- | ---------------------------------------- | ------------------------------------------- |
-| Core + native HTTP     | Admission/report/snapshot lifecycle | Exact live invocation and typed response | Evidence, policy and atomic settlement      |
-| Headless CLI           | All formats/targets/cancel/exit     | Explicit unattended behavior             | Preserve explicit execution policy          |
-| Mini terminal          | Compact review navigation           | Complete form interaction                | Native review status/manual fallback        |
-| Fullscreen TUI         | Review list/diff/focus              | Complete form interaction                | Native mode/status/audit                    |
-| Browser App            | Existing diff panel integration     | Typed form dock                          | Backend-owned review UI                     |
-| Rebuilt Desktop window | Real window navigation/reload       | Real window input/cancel/reconnect       | Real window preference/status/manual action |
+| Surface               | F01                             | F04                                  | F02                                        |
+| --------------------- | ------------------------------- | ------------------------------------ | ------------------------------------------ |
+| Core + native HTTP    | Capture/report/cancel lifecycle | Shared-connection gate + typed reply | Origin check, LLM review, atomic settle    |
+| Headless CLI          | Targets, formats, `--fail-on`   | Immediate unattended rejection       | Preserve explicit `reject / approve_once`  |
+| Mini & fullscreen TUI | Finding list and diff view      | Typed form dock                      | Mode toggle, reviewing badge, manual reply |
+| Browser & Desktop App | `ReviewPanelV2` findings        | Typed form dock                      | Backend mode toggle and inline status      |
 
-Record each surface as passed, failed or not run. Backend fixtures and packaged sidecar tests do not substitute for window interaction. Run against known build/source identities and dispose only fixture-owned processes.
+### 8.5 Repository gates
 
-### 8.5 Repository gates and relevant constraints
+Before implementation, reread [the constraint index][rules] and `AGENTS.md`. Run focused tests and `bun typecheck` from package directories during development (never `bun test` from root or `tsc` directly).
 
-Before implementation, reread [the constraint index][rules] and applicable package instructions. Key constraints include canonical IDs/paths, explicit production service outputs, truthful fixture evidence, typed runner failures and stable terminal dialog roots. Record a production benchmark baseline before changing Session/timeline code.
+Before pushing each PR, run sequentially:
 
-For feature implementation, run focused tests from packages/apexo and `bun typecheck` from affected package directories. Use canonical constructors and real service composition; avoid global mocks. No direct root bun test or direct tsc.
+1. Root: `bun turbo typecheck --concurrency=2`
+2. Root: `GITHUB_ACTIONS=false bun turbo test --concurrency=2`
+3. `packages/client`: `bun run check:generated`
+4. `packages/sdk/js`: `bun run check:generated`
+5. `packages/apexo`: `bun run test:httpapi`
 
-Before every push, run the repository-required gates sequentially:
-
-1. Root: `bun turbo typecheck --concurrency=2`.
-2. Root: `GITHUB_ACTIONS=false bun turbo test --concurrency=2`.
-3. packages/client: `bun run check:generated`.
-4. packages/sdk/js: `bun run check:generated`.
-5. packages/apexo: `bun run test:httpapi`.
-
-Finish generated-source writers before readers; Turbo tests may invoke generation/build prerequisites. After intentional API generation, verify the generated diff and use the canonical check scripts. Do not mask drift with manual edits.
-
-When fixing any implementation/test failure, write the required English bug record with observed behavior, cause, fix and actual verification. Do not invent historical occurrences or treat a passing rerun as a proven fix.
+Record any implementation/test bug fixes in English under `docs/testing/` per `AGENTS.md`.
 
 ## 9. Delivery breakdown and effort
 
-Each row is an independently reviewable PR to main; none should claim its entire feature is complete prematurely.
+Consolidate delivery into **4 vertical, end-to-end PRs** (instead of 9 micro-PRs) to minimize full-suite CI gate overhead and avoid shipping dead intermediate plumbing:
 
-| PR  | Scope                                                           | Dependency               | Exit condition                                                                   |
-| --- | --------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
-| 1   | F01 contracts, target capture, report storage/read API          | None                     | Canonical snapshot/result validation and migration tests                         |
-| 2   | F01 managed execution, capability ceiling and CLI               | PR 1                     | Real native review succeeds; mutation attempts/cancel/restart covered            |
-| 3   | F01 mini/fullscreen/App/Desktop findings                        | PR 2                     | Captured-location navigation, history and formats accepted                       |
-| 4   | F04 invocation ownership/transport spike and Core protocol      | None; reuse existing MCP | Real concurrent stdio/HTTP routing proven; unsupported stateful cases documented |
-| 5   | F04 typed forms, deadlines, lifecycle and all UI                | PR 4                     | Full E01–E10 and generated client acceptance                                     |
-| 6   | F02 provenance, action snapshot and settlement/audit foundation | None                     | Human-vs-agent boundaries and race tests pass without model auto-apply           |
-| 7   | F02 native reviewer and shadow mode                             | PR 6                     | Bounded provider execution and evaluation evidence                               |
-| 8   | F02 opt-in enforcement and frontend migration                   | PR 7                     | A01–A12 plus live-model corpus; no competing client decisions                    |
-| 9   | Cross-feature integration, packaging and release documentation  | PRs 3, 5, 8              | Matrix complete, regressions resolved and CI green                               |
+| PR  | Scope                                                                              | Dependency | Exit condition                                                                                              |
+| --- | ---------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 1   | **F01 Core + CLI:** contracts, `session_code_review`, Git/PR capture, role & CLI   | None       | R01–R07 and R09 pass, including CLI compatibility, budgets and cleanup                                      |
+| 2   | **F01 UI:** mini/fullscreen TUI + App/Desktop `ReviewPanelV2` findings integration | PR 1       | R08 accepted across TUI, browser and rebuilt Desktop                                                        |
+| 3   | **F04 End-to-End:** shared-connection gate, `McpElicitation`, API/client & all UI  | None       | E01–E09 accepted on stateful/stateless stdio & HTTP fixtures plus TUI/Desktop                               |
+| 4   | **F02 End-to-End:** `session_input.origin`, Core `PermissionReview`, API & all UI  | None       | A01–A10 accepted, including event replay and backend action capture; native App/TUI use backend review mode |
 
-Default implementation sequence: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9. If staffing permits independent work, PR 6 can start earlier; PR 8 still waits for evidence. This is a dependency description, not authorization to start additional agents.
+Default sequence: **PR 1 → PR 2 → PR 3 → PR 4** (PRs 3 and 4 have no code dependency on F01 if parallelized on separate worktrees, though merging sequentially keeps generated `packages/client` diffs conflict-free).
 
 Planning estimate for an engineer familiar with this repository:
 
-| Workstream                                      | Engineering days |
-| ----------------------------------------------- | ---------------- |
-| F01                                             | 6–9              |
-| F04, including transport compatibility proof    | 5–8              |
-| F02, including provenance and evaluation        | 8–12             |
-| Cross-surface integration and regression buffer | 3–5              |
-| Total                                           | 22–34            |
-
-These are estimates, not a delivery promise. Stateful MCP compatibility, reviewer provenance and native UI regressions are the main uncertainties. If the first delivery must be smaller, ship PRs 1–3 as a complete F01 slice and keep F04/F02 gated. Do not cut ownership, host validation or cancellation to make a date.
+| Workstream        | Engineering days |
+| ----------------- | ---------------- |
+| F01 (PR 1 + PR 2) | 4–6              |
+| F04 (PR 3)        | 3–4              |
+| F02 (PR 4)        | 3–5              |
+| Total             | **10–15**        |
 
 ## 10. Decisions to preserve during implementation
 
-- Snapshot-bound findings take priority over auto-fixing.
-- MCP answers continue one live invocation; receipts cannot resurrect it.
-- Use invocation-owned transport for initial generic form support; do not guess caller identity.
-- Permission review is a backend decision with exact evidence and one-time authority.
-- Missing provenance or insufficient evidence produces a manual request.
-- Model recommendations and applied actions are separate audit facts.
-- All three surfaces need their own evidence; “native backend works” is not “Desktop is done”.
-- Stay within Apexo's runtime and dependency architecture.
+- Store bounded diff patches and outside-hunk finding snippets with `session_code_review`; no snapshot reference-pinning/GC subsystem or live-file fallback is needed.
+- Preserve valid outside-hunk findings (`inHunk: false`); downgrade invalid line ranges to explicit file-level anchors without clamping.
+- Reuse shared MCP connections under one gate for operations that can trigger forms. Retire cancelled/timed-out generations before new calls; exceptional reconnection may lose server state. Live forms remain in memory.
+- Permission review is a backend decision (`allow_once | ask`) grounded in recent, promoted, non-withdrawn `origin = "user"` inputs in the effective context. New admissions invalidate existing reviews rather than authorizing pending actions.
+- Manual and automatic permission decisions share a short Session settlement gate; `Effect.uninterruptible` alone is not mutual exclusion.
+- Keep all three presentation surfaces verified on real builds (“native backend passes” is not “Desktop is done”).
 
 ## 11. Source index
 
@@ -564,6 +518,7 @@ Local links refer to inspected existing files. Filenames labeled proposed elsewh
 
 [a-review-cli]: ../../packages/apexo/src/cli/cmd/review.ts
 [a-headless]: ../../packages/apexo/src/cli/native-headless.ts
+[a-run-options]: ../../packages/apexo/src/cli/run-output-options.ts
 [a-runner]: ../../packages/core/src/session/runner/llm.ts
 [a-review-panel]: ../../packages/app/src/pages/session/v2/review-panel-v2.tsx
 [a-mcp]: ../../packages/core/src/mcp.ts
@@ -571,14 +526,21 @@ Local links refer to inspected existing files. Filenames labeled proposed elsewh
 [a-question-schema]: ../../packages/schema/src/question.ts
 [a-question-core]: ../../packages/core/src/question.ts
 [a-auto-review]: ../../packages/apexo/src/permission/auto-review.ts
+[a-local-qwen]: ../../packages/apexo/src/plugin/local-qwen.ts
 [a-permission-protocol]: ../../packages/protocol/src/groups/permission.ts
 [a-permission-core]: ../../packages/core/src/permission.ts
 [a-permission-app]: ../../packages/app/src/context/permission.tsx
 [a-permission-tui]: ../../packages/tui/src/context/sync.tsx
 [a-bash-approval]: ../../packages/core/src/tool/bash-approval.ts
+[a-bash]: ../../packages/core/src/tool/bash.ts
+[a-input]: ../../packages/core/src/session/input.ts
+[a-projector]: ../../packages/core/src/session/projector.ts
+[a-execution-policy]: ../../packages/core/src/session/execution-policy.ts
+[a-task-role]: ../../packages/core/src/session/task-role.ts
 [a-snapshot]: ../../packages/core/src/snapshot.ts
 [a-git]: ../../packages/core/src/git.ts
 [a-managed-child]: ../../packages/core/src/session/managed-child.ts
+[a-goal-role]: ../../packages/core/src/session/goal-role.ts
 [a-side-question]: ../../packages/core/src/session/side-question-native.ts
 [rules]: ../rules/README.md
 [c-review-protocol]: https://github.com/openai/codex/blob/c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee/codex-rs/protocol/src/protocol.rs

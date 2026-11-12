@@ -6450,6 +6450,500 @@ export type ServerSideQuestionCancelOutput = {
   readonly updatedAt: number
 }
 
+export type ServerCodeReviewStartInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly id?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["id"]
+  readonly target: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["target"]
+  readonly focus?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["focus"]
+  readonly title?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["title"]
+  readonly model?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["model"]
+  readonly agent?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["agent"]
+  readonly limits?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["limits"]
+}
+
+export type ServerCodeReviewStartOutput = {
+  readonly id: string
+  readonly sessionID: string
+  readonly reviewSessionID: string
+  readonly inputID: string
+  readonly input: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }
+  readonly revision: number
+  readonly status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  readonly createdAt: number | "Infinity" | "-Infinity" | "NaN"
+  readonly updatedAt: number | "Infinity" | "-Infinity" | "NaN"
+  readonly captured?: {
+    readonly root: string
+    readonly baseSha: string
+    readonly headSha: string
+    readonly mergeBaseSha?: string
+    readonly beforeTree: string
+    readonly afterTree: string
+    readonly files: ReadonlyArray<{
+      readonly path: string
+      readonly oldPath?: string
+      readonly status: "added" | "modified" | "deleted" | "renamed"
+      readonly patch: string
+    }>
+    readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+  }
+  readonly result?: {
+    readonly schemaVersion: 1
+    readonly summary: string
+    readonly assessment: "issues_found" | "no_findings" | "inconclusive"
+    readonly findings: ReadonlyArray<{
+      readonly id: string
+      readonly priority: "P0" | "P1" | "P2" | "P3"
+      readonly title: string
+      readonly explanation: string
+      readonly confidence: number | "Infinity" | "-Infinity" | "NaN"
+      readonly path: string
+      readonly anchor:
+        | { readonly type: "file" }
+        | {
+            readonly type: "line"
+            readonly side: "old" | "new"
+            readonly startLine: number
+            readonly endLine: number
+            readonly inHunk: boolean
+            readonly snippet?: { readonly startLine: number; readonly text: string }
+          }
+    }>
+    readonly coverage: {
+      readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+      readonly invalidLocations: number
+    }
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly tokens: number
+    readonly cost: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  readonly error?: string
+}
+
+export type ServerCodeReviewListInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly after?: { readonly after?: string | undefined; readonly limit?: number | undefined }["after"]
+  readonly limit?: { readonly after?: string | undefined; readonly limit?: number | undefined }["limit"]
+}
+
+export type ServerCodeReviewListOutput = {
+  readonly data: ReadonlyArray<{
+    readonly id: string
+    readonly sessionID: string
+    readonly reviewSessionID: string
+    readonly inputID: string
+    readonly input: {
+      readonly id?: string
+      readonly target:
+        | { readonly type: "uncommitted" }
+        | { readonly type: "base"; readonly ref: string }
+        | { readonly type: "commit"; readonly ref: string }
+        | { readonly type: "pr"; readonly ref: string }
+      readonly focus?: string
+      readonly title?: string
+      readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly agent?: string
+      readonly limits?: {
+        readonly mode: "headless"
+        readonly permissions: "reject" | "approve_once"
+        readonly maxTurns?: number
+        readonly maxTokens?: number
+        readonly maxBudgetUsd?: number
+        readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly outputSchema?: { readonly [x: string]: JsonValue }
+      }
+    }
+    readonly revision: number
+    readonly status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+    readonly createdAt: number | "Infinity" | "-Infinity" | "NaN"
+    readonly updatedAt: number | "Infinity" | "-Infinity" | "NaN"
+    readonly captured?: {
+      readonly root: string
+      readonly baseSha: string
+      readonly headSha: string
+      readonly mergeBaseSha?: string
+      readonly beforeTree: string
+      readonly afterTree: string
+      readonly files: ReadonlyArray<{
+        readonly path: string
+        readonly oldPath?: string
+        readonly status: "added" | "modified" | "deleted" | "renamed"
+        readonly patch: string
+      }>
+      readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+    }
+    readonly result?: {
+      readonly schemaVersion: 1
+      readonly summary: string
+      readonly assessment: "issues_found" | "no_findings" | "inconclusive"
+      readonly findings: ReadonlyArray<{
+        readonly id: string
+        readonly priority: "P0" | "P1" | "P2" | "P3"
+        readonly title: string
+        readonly explanation: string
+        readonly confidence: number | "Infinity" | "-Infinity" | "NaN"
+        readonly path: string
+        readonly anchor:
+          | { readonly type: "file" }
+          | {
+              readonly type: "line"
+              readonly side: "old" | "new"
+              readonly startLine: number
+              readonly endLine: number
+              readonly inHunk: boolean
+              readonly snippet?: { readonly startLine: number; readonly text: string }
+            }
+      }>
+      readonly coverage: {
+        readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+        readonly invalidLocations: number
+      }
+      readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly tokens: number
+      readonly cost: number | "Infinity" | "-Infinity" | "NaN"
+    }
+    readonly error?: string
+  }>
+  readonly hasMore: boolean
+}
+
+export type ServerCodeReviewGetInput = {
+  readonly sessionID: { readonly sessionID: string; readonly reviewID: string }["sessionID"]
+  readonly reviewID: { readonly sessionID: string; readonly reviewID: string }["reviewID"]
+}
+
+export type ServerCodeReviewGetOutput = {
+  readonly id: string
+  readonly sessionID: string
+  readonly reviewSessionID: string
+  readonly inputID: string
+  readonly input: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }
+  readonly revision: number
+  readonly status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  readonly createdAt: number | "Infinity" | "-Infinity" | "NaN"
+  readonly updatedAt: number | "Infinity" | "-Infinity" | "NaN"
+  readonly captured?: {
+    readonly root: string
+    readonly baseSha: string
+    readonly headSha: string
+    readonly mergeBaseSha?: string
+    readonly beforeTree: string
+    readonly afterTree: string
+    readonly files: ReadonlyArray<{
+      readonly path: string
+      readonly oldPath?: string
+      readonly status: "added" | "modified" | "deleted" | "renamed"
+      readonly patch: string
+    }>
+    readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+  }
+  readonly result?: {
+    readonly schemaVersion: 1
+    readonly summary: string
+    readonly assessment: "issues_found" | "no_findings" | "inconclusive"
+    readonly findings: ReadonlyArray<{
+      readonly id: string
+      readonly priority: "P0" | "P1" | "P2" | "P3"
+      readonly title: string
+      readonly explanation: string
+      readonly confidence: number | "Infinity" | "-Infinity" | "NaN"
+      readonly path: string
+      readonly anchor:
+        | { readonly type: "file" }
+        | {
+            readonly type: "line"
+            readonly side: "old" | "new"
+            readonly startLine: number
+            readonly endLine: number
+            readonly inHunk: boolean
+            readonly snippet?: { readonly startLine: number; readonly text: string }
+          }
+    }>
+    readonly coverage: {
+      readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+      readonly invalidLocations: number
+    }
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly tokens: number
+    readonly cost: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  readonly error?: string
+}
+
+export type ServerCodeReviewDiffInput = {
+  readonly sessionID: { readonly sessionID: string; readonly reviewID: string }["sessionID"]
+  readonly reviewID: { readonly sessionID: string; readonly reviewID: string }["reviewID"]
+}
+
+export type ServerCodeReviewDiffOutput = ReadonlyArray<{
+  readonly path: string
+  readonly oldPath?: string
+  readonly status: "added" | "modified" | "deleted" | "renamed"
+  readonly patch: string
+}>
+
+export type ServerCodeReviewCancelInput = {
+  readonly sessionID: { readonly sessionID: string; readonly reviewID: string }["sessionID"]
+  readonly reviewID: { readonly sessionID: string; readonly reviewID: string }["reviewID"]
+}
+
+export type ServerCodeReviewCancelOutput = {
+  readonly id: string
+  readonly sessionID: string
+  readonly reviewSessionID: string
+  readonly inputID: string
+  readonly input: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }
+  readonly revision: number
+  readonly status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  readonly createdAt: number | "Infinity" | "-Infinity" | "NaN"
+  readonly updatedAt: number | "Infinity" | "-Infinity" | "NaN"
+  readonly captured?: {
+    readonly root: string
+    readonly baseSha: string
+    readonly headSha: string
+    readonly mergeBaseSha?: string
+    readonly beforeTree: string
+    readonly afterTree: string
+    readonly files: ReadonlyArray<{
+      readonly path: string
+      readonly oldPath?: string
+      readonly status: "added" | "modified" | "deleted" | "renamed"
+      readonly patch: string
+    }>
+    readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+  }
+  readonly result?: {
+    readonly schemaVersion: 1
+    readonly summary: string
+    readonly assessment: "issues_found" | "no_findings" | "inconclusive"
+    readonly findings: ReadonlyArray<{
+      readonly id: string
+      readonly priority: "P0" | "P1" | "P2" | "P3"
+      readonly title: string
+      readonly explanation: string
+      readonly confidence: number | "Infinity" | "-Infinity" | "NaN"
+      readonly path: string
+      readonly anchor:
+        | { readonly type: "file" }
+        | {
+            readonly type: "line"
+            readonly side: "old" | "new"
+            readonly startLine: number
+            readonly endLine: number
+            readonly inHunk: boolean
+            readonly snippet?: { readonly startLine: number; readonly text: string }
+          }
+    }>
+    readonly coverage: {
+      readonly exclusions: ReadonlyArray<{ readonly path: string; readonly reason: string }>
+      readonly invalidLocations: number
+    }
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly tokens: number
+    readonly cost: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  readonly error?: string
+}
+
 export type MessagesListInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly limit?: {

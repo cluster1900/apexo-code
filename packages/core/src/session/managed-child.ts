@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Workflow } from "@apexo/schema/workflow"
 import { Goal } from "@apexo/schema/goal"
+import { CodeReview } from "@apexo/schema/code-review"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -21,6 +22,7 @@ export class Failure extends Schema.TaggedErrorClass<Failure>()("SessionManagedC
   message: Schema.String,
 }) {}
 export const Owner = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("review"), reviewID: CodeReview.ID, attemptID: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("workflow"), runID: Workflow.ID, key: Schema.String }),
   Schema.Struct({
     kind: Schema.Literal("goal"),
@@ -57,12 +59,14 @@ export const same = (left: Record, right: Record) =>
   left.childCreated === right.childCreated &&
   sameOwner(left.owner, right.owner)
 const sameOwner = (left: Owner, right: Owner) =>
-  left.kind === "workflow"
-    ? right.kind === "workflow" && left.runID === right.runID && left.key === right.key
-    : right.kind === "goal" &&
-      left.goalID === right.goalID &&
-      left.attemptID === right.attemptID &&
-      left.role === right.role
+  left.kind === "review"
+    ? right.kind === "review" && left.reviewID === right.reviewID && left.attemptID === right.attemptID
+    : left.kind === "workflow"
+      ? right.kind === "workflow" && left.runID === right.runID && left.key === right.key
+      : right.kind === "goal" &&
+        left.goalID === right.goalID &&
+        left.attemptID === right.attemptID &&
+        left.role === right.role
 
 /** Only absence means ordinary; stale or malformed private evidence always fails closed. */
 export const read = (db: Database.Interface["db"], sessionID: SessionSchema.ID) =>
