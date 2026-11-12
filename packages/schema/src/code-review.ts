@@ -116,6 +116,8 @@ export const Run = Schema.Struct({
   captured: Captured.pipe(optional),
   result: Result.pipe(optional),
   error: Schema.String.pipe(optional),
+  // Computed on detail reads; never used as persisted execution state.
+  workspaceStatus: Schema.Literals(["current", "stale", "unavailable"]).pipe(optional),
 }).annotate({ identifier: "CodeReview.Run" })
 export interface Run extends Schema.Schema.Type<typeof Run> {}
 const progress = { sessionID: SessionID, reviewID: ID, revision: NonNegativeInt, status: Run.fields.status }

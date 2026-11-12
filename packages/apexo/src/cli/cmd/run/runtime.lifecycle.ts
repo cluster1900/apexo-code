@@ -79,6 +79,7 @@ export type LifecycleInput = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
   commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
@@ -270,6 +271,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       mcpActions: input.mcpActions,
       memoryActions: input.memoryActions,
       workflowActions: input.workflowActions,
+      codeReviewActions: input.codeReviewActions,
       sideQuestionActions: input.sideQuestionActions,
       feedbackActions: input.feedbackActions,
       hooksActions: input.hooksActions,

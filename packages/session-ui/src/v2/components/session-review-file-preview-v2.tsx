@@ -35,6 +35,7 @@ export type SessionReviewFilePreviewV2Props = {
   diff: ReviewDiff
   diffStyle: SessionReviewDiffStyle
   expandMode?: SessionReviewExpandMode
+  focusedLines?: SelectedLineRange | null
   readFile?: (path: string) => Promise<FileContent | undefined>
   onLineComment?: (comment: SessionReviewLineComment) => void
   onLineCommentUpdate?: (comment: SessionReviewCommentUpdate) => void
@@ -221,10 +222,13 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
       preloadedDiff={view().preloaded}
       diffStyle={props.diffStyle}
       expandUnchanged={expandUnchanged()}
-      virtualize={shouldVirtualizeReviewDiff({
-        additionLines: view().fileDiff.additionLines.length,
-        deletionLines: view().fileDiff.deletionLines.length,
-      })}
+      virtualize={
+        !props.focusedLines &&
+        shouldVirtualizeReviewDiff({
+          additionLines: view().fileDiff.additionLines.length,
+          deletionLines: view().fileDiff.deletionLines.length,
+        })
+      }
       hunkSeparators={view().fileDiff.isPartial ? "simple" : "line-info-basic"}
       enableLineSelection={lineCommentsEnabled()}
       enableGutterUtility={lineCommentsEnabled()}
@@ -240,7 +244,17 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
       annotations={commentsUi.annotations()}
       renderAnnotation={commentsUi.renderAnnotation}
       renderGutterUtility={lineCommentsEnabled() ? commentsUi.renderGutterUtility : undefined}
-      selectedLines={store.selection}
+      selectedLines={props.focusedLines ?? store.selection}
+      onRendered={() => {
+        if (!props.focusedLines) return
+        const line = props.focusedLines.start
+        requestAnimationFrame(() => {
+          scrollRef
+            ?.querySelector("diffs-container")
+            ?.shadowRoot?.querySelector(`[data-line="${line}"]`)
+            ?.scrollIntoView({ block: "center" })
+        })
+      }}
       commentedLines={commentedLines()}
       media={{
         mode: "auto",

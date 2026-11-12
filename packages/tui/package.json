@@ -53,6 +53,7 @@
     "./component/mcp-browser": "./src/component/mcp-browser.tsx",
     "./component/plugins-browser": "./src/component/plugins-browser.tsx",
     "./component/workflow-browser": "./src/component/workflow-browser.tsx",
+    "./component/code-review-browser": "./src/component/code-review-browser.tsx",
     "./component/side-question-browser": "./src/component/side-question-browser.tsx",
     "./component/command-sandbox-browser": "./src/component/command-sandbox-browser.tsx",
     "./component/hooks-browser": "./src/component/hooks-browser.tsx",

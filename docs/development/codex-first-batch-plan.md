@@ -1,6 +1,6 @@
 # Codex comparison: first-batch development plan
 
-Status: proposed design (revised to remove over-engineering). No feature implementation is included in this document.
+Status: F01 implemented on `structured-review`; final verification is recorded in [the implementation checkpoint](first-batch-implementation.md). F04 and F02 remain planned. This document retains the agreed scope and acceptance criteria.
 
 Prepared on 2026-11-12. Apexo baseline: `e4885b0378a0cd88b703133f435fd47383cff64a`. Codex source baseline: `c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee`. Codex references describe this source revision, not availability in every released CLI or account.
 

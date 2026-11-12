@@ -32,7 +32,7 @@ export const CodeReviewHandler = HttpApiBuilder.group(Api, "server.codeReview", 
         boundary(ctx.params.sessionID, reviews.list(ctx.params.sessionID, ctx.query.after, ctx.query.limit)),
       )
       .handle("codeReview.get", (ctx) =>
-        boundary(ctx.params.sessionID, reviews.get(ctx.params.sessionID, ctx.params.reviewID)),
+        boundary(ctx.params.sessionID, reviews.detail(ctx.params.sessionID, ctx.params.reviewID)),
       )
       .handle("codeReview.diff", (ctx) =>
         boundary(

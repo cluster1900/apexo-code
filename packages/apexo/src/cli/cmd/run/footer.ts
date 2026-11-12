@@ -102,6 +102,7 @@ type RunFooterOptions = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
   commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
@@ -353,6 +354,7 @@ export class RunFooter implements FooterApi {
               mcpActions: options.mcpActions,
               memoryActions: options.memoryActions,
               workflowActions: options.workflowActions,
+              codeReviewActions: options.codeReviewActions,
               sideQuestionActions: options.sideQuestionActions,
               feedbackActions: options.feedbackActions,
               hooksActions: options.hooksActions,
@@ -767,9 +769,7 @@ export class RunFooter implements FooterApi {
     const noticeText = this.state().phase !== "running" ? this.state().status.trim() : ""
     const noticeWidth = Math.max(20, (this.renderer.width || 80) - 10)
     const noticeExtraRows =
-      noticeText.length > 24 && noticeText.length > noticeWidth
-        ? Math.ceil(noticeText.length / noticeWidth) - 1
-        : 0
+      noticeText.length > 24 && noticeText.length > noticeWidth ? Math.ceil(noticeText.length / noticeWidth) - 1 : 0
     const height =
       type === "permission"
         ? this.base + PERMISSION_ROWS
@@ -780,6 +780,7 @@ export class RunFooter implements FooterApi {
               this.promptRoute.type === "memory" ||
               this.promptRoute.type === "remember" ||
               this.promptRoute.type === "workflow" ||
+              this.promptRoute.type === "review" ||
               this.promptRoute.type === "btw" ||
               this.promptRoute.type === "feedback" ||
               this.promptRoute.type === "hooks" ||

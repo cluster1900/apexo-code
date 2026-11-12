@@ -6684,6 +6684,7 @@ export type CodeReviewRun = {
   captured?: CodeReviewCaptured
   result?: CodeReviewResult
   error?: string
+  workspaceStatus?: "current" | "stale" | "unavailable"
 }
 
 export type ModelApi =

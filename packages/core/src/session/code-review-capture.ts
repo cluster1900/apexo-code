@@ -312,7 +312,44 @@ const make = Effect.gen(function* () {
         })
       }),
     )
-  return { capture, read }
+  const workspaceStatus = (captured: CodeReview.Captured) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const head = (yield* git(captured.root, ["rev-parse", "HEAD"])).trim()
+        if (head !== captured.headSha) return "stale" as const
+        const temporary = yield* Effect.acquireRelease(fs.makeTempDirectory(), (dir) =>
+          fs.remove(dir, { recursive: true }).pipe(Effect.ignore),
+        )
+        const env = { GIT_INDEX_FILE: path.join(temporary, "index") }
+        yield* git(captured.root, ["read-tree", captured.afterTree], env)
+        const configured = yield* command(captured.root, [
+          "config",
+          "--null",
+          "--name-only",
+          "--get-regexp",
+          "^filter[.].*[.](clean|process|required)$",
+        ])
+        if (![0, 1].includes(configured.exitCode) || configured.stdoutTruncated) return "unavailable" as const
+        const filters = [
+          ...new Set(
+            configured.stdout
+              .toString("utf8")
+              .split("\0")
+              .filter(Boolean)
+              .map((key) => key.slice(0, key.lastIndexOf("."))),
+          ),
+        ].flatMap((driver) => ["-c", `${driver}.clean=`, "-c", `${driver}.process=`, "-c", `${driver}.required=false`])
+        const changed = yield* command(
+          captured.root,
+          [...filters, "diff", "--no-ext-diff", "--no-textconv", "--quiet", captured.afterTree, "--"],
+          env,
+        )
+        if (![0, 1].includes(changed.exitCode)) return "unavailable" as const
+        const untracked = yield* git(captured.root, ["ls-files", "--others", "--exclude-standard", "-z"], env)
+        return changed.exitCode === 1 || !!untracked ? ("stale" as const) : ("current" as const)
+      }),
+    ).pipe(Effect.catch(() => Effect.succeed("unavailable" as const)))
+  return { capture, read, workspaceStatus }
 })
 export class Service extends Context.Service<Service, Effect.Success<typeof make>>()("@apexo/CodeReviewCapture") {}
 export type Interface = Effect.Success<typeof make>

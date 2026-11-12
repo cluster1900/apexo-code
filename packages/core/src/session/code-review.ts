@@ -381,7 +381,15 @@ const make = Effect.gen(function* () {
         return { data, hasMore: rows.length > limit }
       }),
     )
-  return { start, get, list, cancel }
+  const detail = (sessionID: SessionSchema.ID, id: CodeReview.ID) =>
+    Effect.gen(function* () {
+      const run = yield* get(sessionID, id)
+      return {
+        ...run,
+        workspaceStatus: run.captured ? yield* capture.workspaceStatus(run.captured) : ("unavailable" as const),
+      }
+    })
+  return { start, get, detail, list, cancel }
 })
 export class Service extends Context.Service<Service, Effect.Success<typeof make>>()("@apexo/SessionCodeReview") {}
 export const node = makeGlobalNode({

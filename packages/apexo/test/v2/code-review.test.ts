@@ -56,10 +56,12 @@ it.live(
       yield* Effect.gen(function* () {
         const capture = yield* CodeReviewCapture.Service
         const frozen = yield* capture.capture(root, { type: "uncommitted" })
+        expect(yield* capture.workspaceStatus(frozen)).toBe("current")
         expect(frozen.files.map((file) => file.path)).toContain("new.ts")
         expect(yield* capture.read(frozen, "new", "tracked.ts")).toBe("unstaged\n")
         expect(yield* capture.read(frozen, "new", "link")).toBe("/outside/review-must-not-follow")
         yield* Effect.promise(() => Bun.write(path.join(root, "new.ts"), "changed later\n"))
+        expect(yield* capture.workspaceStatus(frozen)).toBe("stale")
         expect(yield* capture.read(frozen, "new", "new.ts")).toBe("captured untracked\n")
         expect((yield* Effect.exit(capture.read(frozen, "new", "../escape")))._tag).toBe("Failure")
         expect(yield* Effect.promise(() => git(root, "diff", "--cached"))).toBe(before)
@@ -187,6 +189,8 @@ it.live(
       yield* Effect.gen(function* () {
         const capture = yield* CodeReviewCapture.Service
         const frozen = yield* capture.capture(root, { type: "uncommitted" })
+        expect(yield* Effect.promise(() => Bun.file(path.join(root, "FILTER_EXECUTED")).exists())).toBe(false)
+        expect(yield* capture.workspaceStatus(frozen)).toBe("current")
         expect(yield* Effect.promise(() => Bun.file(path.join(root, "FILTER_EXECUTED")).exists())).toBe(false)
         expect(yield* capture.read(frozen, "new", "code.ts")).toBe("after\n")
       }).pipe(Effect.provide(AppNodeBuilder.build(CodeReviewCapture.node)))
@@ -356,7 +360,7 @@ it.live(
         expect(yield* Effect.promise(() => Bun.file(path.join(f.root, "MUTATED")).exists())).toBe(false)
         const inputs = JSON.stringify(yield* f.llm.inputs)
         expect(inputs).toContain("review_diff")
-      expect(inputs).toContain('"$defs"')
+        expect(inputs).toContain('"$defs"')
         expect(inputs).toContain("Only review_diff and review_read")
         expect((yield* reviews.start(parent.id, run.input)).id).toBe(run.id)
         expect((yield* Effect.exit(reviews.start(parent.id, { ...run.input, focus: "changed" })))._tag).toBe("Failure")

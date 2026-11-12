@@ -1015,6 +1015,7 @@ export function createPromptState(input: PromptInput): PromptState {
       current === "memory" ||
       current === "remember" ||
       current === "workflow" ||
+      current === "review" ||
       current === "btw" ||
       current === "feedback" ||
       current === "hooks" ||

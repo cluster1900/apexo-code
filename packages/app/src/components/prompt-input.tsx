@@ -1,3 +1,4 @@
+import { CodeReviewButton, createSessionCodeReview } from "./session-code-review"
 import { enterAction, multiline } from "@apexo/session-ui/v2/prompt-input/multiline"
 import { McpAttachmentsButton, createSessionMcpAttachments } from "./session-mcp-attachments"
 import { appendMcpAttachments } from "./prompt-input/mcp-attachments"
@@ -268,6 +269,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
   const background = createForegroundShellBackground(() => props.controls.session.id)
   const tasks = props.tasks ?? createSessionTasks(() => props.controls.session.id)
+  const codeReview = createSessionCodeReview(() => props.controls.session.id)
   const sideQuestion = createSessionSideQuestion(() => props.controls.session.id)
   const workflow = createSessionWorkflow(
     () => props.controls.session.id,
@@ -1719,6 +1721,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <div class="flex items-center gap-1 pointer-events-auto">
               <GoalButton goal={goal} />
               <MemoryButton memory={memory} />
+              <CodeReviewButton review={codeReview} />
               <SideQuestionButton sideQuestion={sideQuestion} />
               <WorkflowButton workflow={workflow} />
               <FeedbackButton feedback={feedback} />

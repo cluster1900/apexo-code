@@ -22,3 +22,29 @@
 
 - The sandbox denied the local fixture listener and surfaced `EADDRINUSE` for port zero. The approved local-listener test run reached the actual fixtures; no application networking fix is claimed.
 - One aggregate run exhausted the default five-second deadline in the real Git fixture. These OS/subprocess tests now explicitly use a twenty-second deadline. The precise resource delay was not diagnosed; this is not evidence of a fixed Git hang. The later native/headless run passed without changing production logic to accommodate a timeout.
+
+## BUG-20261112-012: UI fixture inherited an incompatible built-in provider model
+
+- Scope: the F01 real browser/terminal/Desktop provider fixture.
+- Observed: the first acceptance run reached the official XAI endpoint with its local dummy key instead of the owned local provider.
+- Expected: every fixture model turn reaches only its local server.
+- Reproduction: override a built-in provider endpoint while retaining a model whose own built-in API configuration wins model resolution.
+- Root cause: the initial fixture combined an inherited legacy configuration and a native provider using a built-in model identity.
+- Fix: use one native configuration and an independent `reviewfixture/review-model` identity. The live PR script explicitly selects the user's existing gh configuration directory; ordinary isolated fixtures keep credentials isolated.
+- Verification: the repaired mini/fullscreen fixture each passed eleven checks; the browser and rebuilt Desktop initially passed ten checks, and the signal fixture passed SIGINT and SIGTERM cleanup. Initial line-highlighting assertions exposed a separate production defect recorded in the interface regression record.
+
+## UI automation observations
+
+- Finding navigation scrolls the report body. Before clicking a toolbar action, the automation now scrolls that actual action into view and checks stable enabled geometry. This changes the fixture interaction, not application click semantics.
+- Terminal assertions now wait for the complete report marker and enabled action state, rather than reading partially consumed PTY rendering output.
+- The first Desktop build could not resolve the remote models catalog. The subsequent production build used the build script's supported `MODELS_DEV_API_JSON` input with an existing local catalog; no runtime fallback or product change was introduced.
+
+## BUG-20261112-015: The optional App unit runner cannot import Solid JSX
+
+- Scope: the supplementary `packages/app` `bun run test:unit` command under Bun 1.4.4.
+- Observed: after granting its required local-listener access, the command reports 85 passing tests and three import errors: `jsxDEV` is not exported from Solid's runtime. The failing entry paths are `context/sync.test.ts`, `utils/message-part-text.test.ts` and `components/prompt-input/slash-route.test.ts`.
+- Expected: the App unit runner transforms Solid JSX with a compatible compiler before importing component-bearing modules.
+- Reproduction: run the unmodified `test:unit` package script with Bun 1.4.4 and local listener permission.
+- Root cause: Bun's direct JSX runtime import requests `jsxDEV`; the installed Solid runtime does not export it. The App's existing unit setup has no Solid JSX compiler preload. No historical recurrence or successful pre-feature baseline run is asserted here.
+- Status: unresolved supplementary runner limitation. No production or unit-runner fix is claimed. The actual Vite production App build and rebuilt Electron renderer pass the F01 browser/Desktop acceptance, each with twelve checks. This command is separate from the five required repository gates.
+- Initial sandbox-only listener failures were superseded by the permitted run above; they are not additional production failures.

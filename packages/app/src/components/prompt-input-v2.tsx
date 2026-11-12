@@ -1,3 +1,4 @@
+import { CodeReviewButton, createSessionCodeReview } from "./session-code-review"
 import { McpAttachmentsButton, createSessionMcpAttachments } from "./session-mcp-attachments"
 import { appendMcpAttachments } from "./prompt-input/mcp-attachments"
 import { CommandSandboxButton, createSessionCommandSandbox } from "./session-command-sandbox"
@@ -58,6 +59,7 @@ export type PromptInputV2ComposerController = PromptInputV2Interaction & {
   readonly tasks: ReturnType<typeof createSessionTasks>
   readonly goal: ReturnType<typeof createSessionGoal>
   readonly workflow: ReturnType<typeof createSessionWorkflow>
+  readonly codeReview: ReturnType<typeof createSessionCodeReview>
   readonly sideQuestion: ReturnType<typeof createSessionSideQuestion>
   readonly feedback: ReturnType<typeof createSessionFeedback>
   readonly sandbox: ReturnType<typeof createSessionCommandSandbox>
@@ -126,6 +128,7 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
       >
         <GoalButton goal={props.controller.goal} />
         <MemoryButton memory={props.controller.memory} />
+        <CodeReviewButton review={props.controller.codeReview} />
         <SideQuestionButton sideQuestion={props.controller.sideQuestion} />
         <WorkflowButton workflow={props.controller.workflow} />
         <FeedbackButton feedback={props.controller.feedback} />
@@ -152,6 +155,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   const prompt = props.state ?? usePrompt()
   const background = createForegroundShellBackground(() => props.controls.session.id)
   const tasks = props.tasks ?? createSessionTasks(() => props.controls.session.id)
+  const codeReview = createSessionCodeReview(() => props.controls.session.id)
   const sideQuestion = createSessionSideQuestion(() => props.controls.session.id)
   const workflow = createSessionWorkflow(
     () => props.controls.session.id,
@@ -536,6 +540,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   Object.defineProperty(controller, "model", { get: () => props.controls.model })
   Object.defineProperty(controller, "background", { value: background })
   Object.defineProperty(controller, "tasks", { value: tasks })
+  Object.defineProperty(controller, "codeReview", { value: codeReview })
   Object.defineProperty(controller, "sideQuestion", { value: sideQuestion })
   Object.defineProperty(controller, "workflow", { value: workflow })
   Object.defineProperty(controller, "feedback", { value: feedback })
