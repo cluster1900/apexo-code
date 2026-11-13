@@ -1,3 +1,4 @@
+import { PermissionReview } from "@apexo/schema/permission-review"
 import { SessionEvent } from "@apexo/core/session/event"
 import type { NativeSessionTransport } from "@apexo/tui/transport/native-session"
 import { terminalPermission, terminalQuestion, terminalRequestEvent } from "@apexo/tui/transport/native-session-events"
@@ -9,6 +10,7 @@ import { writeSessionOutput } from "./stream"
 import type { SessionTransport, StreamInput } from "./stream.transport"
 
 const decode = Schema.decodeUnknownOption(SessionEvent.All)
+const reviewEvent = Schema.decodeUnknownOption(Schema.Union([PermissionReview.Event.Started, PermissionReview.Event.Settled]))
 
 export async function createNativeSessionTransport(
   input: StreamInput,
@@ -119,6 +121,11 @@ export async function createNativeSessionTransport(
             session.value.type === "session.next.model.switched"
           )
             input.onSelection?.(await native.get(input.sessionID, abort.signal))
+          continue
+        }
+        const review = reviewEvent(event)
+        if (Option.isSome(review) && review.value.data.sessionID === input.sessionID) {
+          await blockers()
           continue
         }
         const request = terminalRequestEvent(event)

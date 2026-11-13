@@ -125,6 +125,7 @@ type RunFooterViewProps = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  onTogglePermissionReview?: () => Promise<boolean>
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
@@ -468,6 +469,17 @@ export function RunFooterView(props: RunFooterViewProps) {
             source: "command" as const,
           }))
         : []),
+      ...(props.onTogglePermissionReview
+        ? [
+            {
+              name: "auto",
+              description: "Toggle automatic permission review",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
       ...(props.codeReviewActions
         ? ["review", "reviews"].map((name) => ({
             name,
@@ -571,6 +583,13 @@ export function RunFooterView(props: RunFooterViewProps) {
     theme,
     history: props.history,
     onSubmit: (input) => {
+      if (props.onTogglePermissionReview && input.mode !== "shell" && input.text.trim() === "/auto") {
+        void props
+          .onTogglePermissionReview()
+          .then((active) => props.onStatus(active ? "Auto-review on" : "Auto-review off"))
+          .catch(() => props.onStatus("Could not change permission review mode"))
+        return true
+      }
       if (props.codeReviewActions && input.mode !== "shell" && /^\/(?:review|reviews)$/.test(input.text.trim())) {
         setRoute({ type: "review" })
         return true

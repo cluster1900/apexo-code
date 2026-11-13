@@ -132,6 +132,7 @@ it.live("headless canonical inputs preserve policy identity, withdrawal, superse
       const historical = yield* sessions.create({ location: session.location })
       const historicalID = SessionMessage.ID.create()
       yield* events.publish(SessionEvent.Prompted, {
+          origin: "unknown",
         sessionID: historical.id,
         messageID: historicalID,
         prompt: { text: "historical ordinary" },
@@ -159,6 +160,7 @@ it.live("headless canonical inputs preserve policy identity, withdrawal, superse
       ).toBe("Failure")
       const replayID = SessionMessage.ID.create()
       yield* events.publish(SessionEvent.Prompted, {
+          origin: "unknown",
         sessionID: historical.id,
         messageID: replayID,
         prompt: { text: "historical headless" },

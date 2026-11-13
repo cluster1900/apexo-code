@@ -4,7 +4,7 @@ import { SessionHookSnapshot } from "./session/hook-snapshot"
 export * as PermissionV2 from "./permission"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Context, Deferred, Effect as EffectRuntime, Layer, Schema, Scope } from "effect"
+import { Context, Deferred, Effect as EffectRuntime, Fiber, Layer, Schema, Scope } from "effect"
 import { Permission } from "@apexo/schema/permission"
 import { EventV2 } from "./event"
 import { Location } from "./location"
@@ -12,6 +12,11 @@ import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
+import { Database } from "./database/database"
+import { PermissionReview } from "./permission/review"
+import { PermissionReviewState } from "./permission/review-state"
+import { PermissionReviewContext } from "./permission/review-context"
+import { SessionLifecycle } from "./session/lifecycle"
 import { PermissionSaved } from "./permission/saved"
 import { BashApproval } from "./tool/bash-approval"
 import { HookObserver } from "./hook-observer"
@@ -159,6 +164,14 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/Permission") {}
 
 interface Pending {
+  readonly claim: SessionLifecycle.Claim
+  review?: NonNullable<Request["review"]>
+  work?: {
+    stale: boolean
+    finished: boolean
+    release?: () => void
+    fiber?: Fiber.Fiber<void>
+  }
   readonly inherited: readonly Authority[]
   readonly hook?: HookObserver.Invocation
   readonly request: Request
@@ -175,20 +188,12 @@ const layer = Layer.effect(
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
+    const lifecycle = yield* SessionLifecycle.Service
+    const reviewState = yield* PermissionReviewState.Service
+    const reviewer = yield* PermissionReview.Service
+    const database = yield* Database.Service
     const pending = new Map<ID, Pending>()
     const scope = yield* Scope.Scope
-
-    yield* EffectRuntime.addFinalizer(() =>
-      EffectRuntime.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new DeclinedError()), {
-        discard: true,
-      }).pipe(
-        EffectRuntime.ensuring(
-          EffectRuntime.sync(() => {
-            pending.clear()
-          }),
-        ),
-      ),
-    )
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
@@ -310,19 +315,197 @@ const layer = Layer.effect(
       }
     }
 
+    const view = (item: Pending): Request => ({ ...item.request, ...(item.review ? { review: item.review } : {}) })
+    const finishReview = (
+      item: Pending,
+      outcome: "allowed_once" | "ask_manual" | "superseded",
+      reason: string,
+      model?: string,
+    ) =>
+      EffectRuntime.gen(function* () {
+        if (!item.work || item.work.finished) return
+        item.work.finished = true
+        item.work.release?.()
+        if (outcome !== "allowed_once") item.review = { status: "ask_manual", reason }
+        yield* events.publish(PermissionReview.Event.Settled, {
+          sessionID: item.request.sessionID,
+          requestID: item.request.id,
+          outcome,
+          reason,
+          ...(model ? { model } : {}),
+        })
+      })
+    const stopReview = (item: Pending) =>
+      EffectRuntime.gen(function* () {
+        if (!item.work) return
+        item.work.stale = true
+        yield* finishReview(item, "superseded", "Permission was settled or cancelled")
+      })
+    const joinReview = (item: Pending) =>
+      item.work?.fiber ? Fiber.interrupt(item.work.fiber).pipe(EffectRuntime.asVoid) : EffectRuntime.void
+    const cancel = (item: Pending) =>
+      reviewState
+        .settle(
+          item.claim,
+          EffectRuntime.gen(function* () {
+            if (pending.get(item.request.id) !== item) return
+            yield* stopReview(item)
+            pending.delete(item.request.id)
+            yield* Deferred.fail(item.deferred, new DeclinedError())
+            yield* events.publish(Event.Replied, {
+              sessionID: item.request.sessionID,
+              requestID: item.request.id,
+              reply: "reject",
+            })
+          }),
+        )
+        .pipe(
+          EffectRuntime.catchTag("SessionLifecycle.Closed", () => EffectRuntime.void),
+          EffectRuntime.andThen(joinReview(item)),
+        )
+
+    yield* EffectRuntime.addFinalizer(() => EffectRuntime.forEach([...pending.values()], cancel, { discard: true }))
+
+    const review = (
+      item: Pending,
+      action: PermissionReviewContext.Action,
+      state: PermissionReview.State,
+      admittedSeq: number,
+    ) =>
+      EffectRuntime.gen(function* () {
+        const evidence = yield* PermissionReviewContext.instructions(database.db, item.request.sessionID)
+        const captured = yield* action.capture
+        if (item.work?.stale || pending.get(item.request.id) !== item) return
+        const result = yield* reviewer.review(item.request.sessionID, captured.facts, evidence)
+        yield* reviewState.settle(
+          item.claim,
+          EffectRuntime.gen(function* () {
+            if (pending.get(item.request.id) !== item || item.work?.finished) return
+            const mode = yield* reviewState.get(item.request.sessionID)
+            const sequence = yield* PermissionReviewContext.admissionSequence(database.db, item.request.sessionID)
+            if (
+              item.work?.stale ||
+              !lifecycle.available(item.claim) ||
+              mode.mode !== "review" ||
+              mode.revision !== state.revision ||
+              sequence !== admittedSeq
+            ) {
+              yield* finishReview(item, "superseded", "Instructions or review mode changed", result.model)
+              return
+            }
+            if (result.decision !== "allow_once") {
+              yield* finishReview(item, "ask_manual", result.reason, result.model)
+              return
+            }
+            const current = yield* authority(item.request.sessionID, item.agent)
+            if (assess(item.request, { ...current, inherited: item.inherited }).effect === "deny") {
+              yield* finishReview(item, "ask_manual", "Current permission policy blocks this action", result.model)
+              return
+            }
+            const fresh = yield* action.capture
+            const instructions = yield* PermissionReviewContext.instructions(database.db, item.request.sessionID)
+            if (
+              captured.fingerprint !== fresh.fingerprint ||
+              JSON.stringify(instructions) !== JSON.stringify(evidence)
+            ) {
+              yield* finishReview(item, "superseded", "Execution scope or effective instructions changed", result.model)
+              return
+            }
+            yield* finishReview(item, "allowed_once", result.reason, result.model)
+            yield* events.publish(Event.Replied, {
+              sessionID: item.request.sessionID,
+              requestID: item.request.id,
+              reply: "once",
+            })
+            pending.delete(item.request.id)
+            yield* Deferred.succeed(item.deferred, undefined)
+          }),
+        )
+      }).pipe(
+        EffectRuntime.catch((error) =>
+          reviewState
+            .settle(
+              item.claim,
+              EffectRuntime.gen(function* () {
+                if (pending.get(item.request.id) !== item) return
+                yield* finishReview(
+                  item,
+                  item.work?.stale ? "superseded" : "ask_manual",
+                  error instanceof Error ? error.message : "Review unavailable; manual approval required",
+                )
+              }),
+            )
+            .pipe(EffectRuntime.catchTag("SessionLifecycle.Closed", () => EffectRuntime.void)),
+        ),
+      )
+
     const create = (request: Request, agent?: AgentV2.ID) =>
       EffectRuntime.uninterruptible(
         EffectRuntime.gen(function* () {
-          const deferred = yield* Deferred.make<void, DeclinedError | CorrectedError>()
+          const claim = yield* lifecycle.capture(request.sessionID).pipe(EffectRuntime.orDie)
           const current = yield* HookObserver.CurrentTool
           const hook =
             current?.sessionID === request.sessionID && current.callID === request.source?.callID ? current : undefined
-          const item = { request, agent, deferred, hook, inherited: (yield* Inherited).get(request.sessionID) ?? [] }
-          if (pending.has(request.id)) return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
-          pending.set(request.id, item)
-          yield* events
-            .publish(Event.Asked, request)
-            .pipe(EffectRuntime.onError(() => EffectRuntime.sync(() => pending.delete(request.id))))
+          const action = yield* PermissionReviewContext.CurrentAction
+          const eligible = (yield* PermissionReviewContext.Interactive) && !!hook
+          const created = yield* reviewState
+            .settle(
+              claim,
+              EffectRuntime.gen(function* () {
+                const state = yield* reviewState.get(request.sessionID)
+                const item: Pending = {
+                  request,
+                  agent,
+                  claim,
+                  deferred: yield* Deferred.make<void, DeclinedError | CorrectedError>(),
+                  hook,
+                  inherited: (yield* Inherited).get(request.sessionID) ?? [],
+                }
+                if (pending.has(request.id))
+                  return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
+                const reviewing = eligible && state.mode === "review"
+                if (reviewing) {
+                  item.review = { status: "reviewing" }
+                  item.work = { stale: false, finished: false }
+                  item.work.release = yield* reviewState.watch(claim, item, () => {
+                    if (item.work) item.work.stale = true
+                    return reviewState
+                      .settle(claim, finishReview(item, "superseded", "Instructions or review mode changed"))
+                      .pipe(
+                        EffectRuntime.catchTag("SessionLifecycle.Closed", () => EffectRuntime.void),
+                        EffectRuntime.andThen(joinReview(item)),
+                      )
+                  })
+                }
+                pending.set(request.id, item)
+                yield* events
+                  .publish(Event.Asked, view(item))
+                  .pipe(EffectRuntime.onError(() => EffectRuntime.sync(() => pending.delete(request.id))))
+                if (reviewing)
+                  yield* events.publish(PermissionReview.Event.Started, {
+                    sessionID: request.sessionID,
+                    requestID: request.id,
+                  })
+                return {
+                  item,
+                  state,
+                  admittedSeq: yield* PermissionReviewContext.admissionSequence(database.db, request.sessionID),
+                }
+              }),
+            )
+            .pipe(EffectRuntime.orDie)
+          if (created.item.work) {
+            const work =
+              action?.sessionID === request.sessionID && action.callID === hook?.callID
+                ? review(created.item, action, created.state, created.admittedSeq)
+                : reviewState
+                    .settle(
+                      claim,
+                      finishReview(created.item, "ask_manual", "No verified execution scope; manual approval required"),
+                    )
+                    .pipe(EffectRuntime.orDie)
+            created.item.work.fiber = yield* work.pipe(EffectRuntime.forkIn(scope))
+          }
           const snapshot = yield* hookSnapshots.get(request.sessionID)
           yield* HookObserver.observe({
             registry: snapshot?.registry,
@@ -339,7 +522,7 @@ const layer = Layer.effect(
               level: "info",
             },
           }).pipe(EffectRuntime.forkIn(scope))
-          return item
+          return created.item
         }),
       )
 
@@ -380,11 +563,7 @@ const layer = Layer.effect(
           const item = yield* create(request(input), input.agent)
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.catchTag("PermissionV2.DeclinedError", (error) => EffectRuntime.die(error)),
-            EffectRuntime.ensuring(
-              EffectRuntime.sync(() => {
-                pending.delete(item.request.id)
-              }),
-            ),
+            EffectRuntime.ensuring(cancel(item)),
           )
         }),
       ),
@@ -395,106 +574,121 @@ const layer = Layer.effect(
         EffectRuntime.gen(function* () {
           const existing = pending.get(input.requestID)
           if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
-          if (input.reply !== "reject") {
-            const current = yield* authority(existing.request.sessionID, existing.agent).pipe(
-              EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
+          const settled = yield* reviewState
+            .settle(
+              existing.claim,
+              EffectRuntime.gen(function* () {
+                if (pending.get(input.requestID) !== existing)
+                  return yield* new NotFoundError({ requestID: input.requestID })
+                const current =
+                  input.reply === "reject"
+                    ? undefined
+                    : yield* authority(existing.request.sessionID, existing.agent).pipe(
+                        EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
+                      )
+                const rejected =
+                  input.reply === "reject" ||
+                  !lifecycle.available(existing.claim) ||
+                  !current ||
+                  assess(existing.request, { ...current, inherited: existing.inherited }).effect === "deny"
+                const chosen =
+                  input.save && BashApproval.offered(existing.request.metadata, input.save)
+                    ? input.save
+                    : existing.request.save
+                const affected = rejected
+                  ? [...pending.values()].filter((item) => item.request.sessionID === existing.request.sessionID)
+                  : [existing]
+                if (!rejected && input.reply === "always" && chosen?.length) {
+                  yield* sessions.setPermissions({
+                    sessionID: existing.request.sessionID,
+                    permissions: [
+                      ...((yield* sessions.permissions(existing.request.sessionID)) ?? []),
+                      ...chosen.map((resource) => ({
+                        permission: existing.request.action,
+                        pattern: resource,
+                        action: "allow" as const,
+                      })),
+                    ],
+                  })
+                  if (!existing.inherited.length)
+                    yield* saved.add({
+                      projectID: location.project.id,
+                      action: existing.request.action,
+                      resources: chosen,
+                    })
+                }
+                for (const item of affected) {
+                  yield* stopReview(item)
+                  yield* events.publish(Event.Replied, {
+                    sessionID: item.request.sessionID,
+                    requestID: item.request.id,
+                    reply: rejected ? "reject" : input.reply,
+                  })
+                  pending.delete(item.request.id)
+                  if (rejected) {
+                    yield* reportDenied(item.request, item.hook)
+                    yield* Deferred.fail(
+                      item.deferred,
+                      item === existing && input.message
+                        ? new CorrectedError({ feedback: input.message })
+                        : new DeclinedError(),
+                    )
+                    continue
+                  }
+                  yield* Deferred.succeed(item.deferred, undefined)
+                }
+                return { affected, saved: !rejected && input.reply === "always" && !!chosen?.length }
+              }),
             )
-            if (!current || assess(existing.request, { ...current, inherited: existing.inherited }).effect === "deny") {
-              yield* events.publish(Event.Replied, {
-                sessionID: existing.request.sessionID,
-                requestID: existing.request.id,
-                reply: "reject",
-              })
-              yield* reportDenied(existing.request, existing.hook)
-              yield* Deferred.fail(existing.deferred, new DeclinedError())
-              pending.delete(existing.request.id)
-              return
-            }
-          }
-          yield* events.publish(Event.Replied, {
-            sessionID: existing.request.sessionID,
-            requestID: existing.request.id,
-            reply: input.reply,
-          })
-
-          if (input.reply === "reject") {
-            yield* reportDenied(existing.request, existing.hook)
-            yield* Deferred.fail(
-              existing.deferred,
-              input.message ? new CorrectedError({ feedback: input.message }) : new DeclinedError(),
+            .pipe(
+              EffectRuntime.catchTag(
+                "SessionLifecycle.Closed",
+                () => new NotFoundError({ requestID: input.requestID }),
+              ),
             )
-            pending.delete(input.requestID)
-            for (const [id, item] of pending) {
-              if (item.request.sessionID !== existing.request.sessionID) continue
-              yield* events.publish(Event.Replied, {
-                sessionID: item.request.sessionID,
-                requestID: item.request.id,
-                reply: "reject",
-              })
-              yield* reportDenied(item.request, item.hook)
-              yield* Deferred.fail(item.deferred, new DeclinedError())
-              pending.delete(id)
-            }
-            return
-          }
-
-          const chosen =
-            input.save && BashApproval.offered(existing.request.metadata, input.save)
-              ? input.save
-              : existing.request.save
-          if (input.reply === "always" && chosen?.length) {
-            const current = (yield* sessions.permissions(existing.request.sessionID)) ?? []
-            yield* sessions.setPermissions({
-              sessionID: existing.request.sessionID,
-              permissions: [
-                ...current,
-                ...chosen.map((resource) => ({
-                  permission: existing.request.action,
-                  pattern: resource,
-                  action: "allow" as const,
-                })),
-              ],
-            })
-            // Inherited Task consent belongs to this child, never unrelated project tasks.
-            if (!existing.inherited.length)
-              yield* saved.add({
-                projectID: location.project.id,
-                action: existing.request.action,
-                resources: chosen,
-              })
-          }
-          yield* Deferred.succeed(existing.deferred, undefined)
-          pending.delete(input.requestID)
-          if (input.reply !== "always" || !chosen?.length) return
-
-          for (const [id, item] of pending) {
+          yield* EffectRuntime.forEach(settled.affected, joinReview, { discard: true })
+          if (!settled.saved) return
+          // Project-wide grants may settle other Sessions. Acquire one Session gate at a time.
+          for (const item of [...pending.values()]) {
             if (existing.inherited.length && item.request.sessionID !== existing.request.sessionID) continue
-            const current = yield* authority(item.request.sessionID, item.agent).pipe(
-              EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
-            )
-            if (!current || assess(item.request, { ...current, inherited: item.inherited }).effect !== "allow") continue
-            yield* events.publish(Event.Replied, {
-              sessionID: item.request.sessionID,
-              requestID: item.request.id,
-              reply: "always",
-            })
-            yield* Deferred.succeed(item.deferred, undefined)
-            pending.delete(id)
+            yield* reviewState
+              .settle(
+                item.claim,
+                EffectRuntime.gen(function* () {
+                  if (pending.get(item.request.id) !== item || !lifecycle.available(item.claim)) return
+                  const current = yield* authority(item.request.sessionID, item.agent).pipe(
+                    EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
+                  )
+                  if (!current || assess(item.request, { ...current, inherited: item.inherited }).effect !== "allow")
+                    return
+                  yield* stopReview(item)
+                  yield* events.publish(Event.Replied, {
+                    sessionID: item.request.sessionID,
+                    requestID: item.request.id,
+                    reply: "always",
+                  })
+                  pending.delete(item.request.id)
+                  yield* Deferred.succeed(item.deferred, undefined)
+                }),
+              )
+              .pipe(EffectRuntime.catchTag("SessionLifecycle.Closed", () => EffectRuntime.void))
+            if (!pending.has(item.request.id)) yield* joinReview(item)
           }
         }),
       ),
     )
 
     const list = EffectRuntime.fn("PermissionV2.list")(function* () {
-      return Array.from(pending.values(), (item) => item.request)
+      return Array.from(pending.values(), view)
     })
 
     const get = EffectRuntime.fn("PermissionV2.get")(function* (id: ID) {
-      return pending.get(id)?.request
+      const item = pending.get(id)
+      return item ? view(item) : undefined
     })
 
     const forSession = EffectRuntime.fn("PermissionV2.forSession")(function* (sessionID: SessionV2.ID) {
-      return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
+      return Array.from(pending.values(), view).filter((request) => request.sessionID === sessionID)
     })
 
     const evaluateOffline = EffectRuntime.fn("PermissionV2.evaluateOffline")(function* (input: {
@@ -567,5 +761,16 @@ export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [SessionHookSnapshot.node, EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
+  deps: [
+    SessionHookSnapshot.node,
+    EventV2.node,
+    Location.node,
+    AgentV2.node,
+    SessionStore.node,
+    PermissionSaved.node,
+    PermissionReviewState.node,
+    PermissionReview.node,
+    SessionLifecycle.node,
+    Database.node,
+  ],
 })

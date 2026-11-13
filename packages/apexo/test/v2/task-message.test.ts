@@ -83,9 +83,11 @@ it.live(
           (yield* messages.send(parent.id, child.id, staleOperator, { agent: capturedAgent }).pipe(Effect.result))._tag,
         ).toBe("Failure")
         expect(yield* SessionInput.find(database.db, staleOperator.inputID)).toBeUndefined()
-        const admitted = yield* messages.send(parent.id, child.id, steer)
+        const admitted = yield* messages.send(parent.id, child.id, steer, { source: "operator" })
         expect(admitted.status).toBe("admitted")
+        expect((yield* SessionInput.find(database.db, steer.inputID))?.origin).toBe("user")
         expect(yield* messages.send(parent.id, child.id, steer)).toEqual(admitted)
+        expect((yield* SessionInput.find(database.db, steer.inputID))?.origin).toBe("user")
         expect(
           (yield* messages.send(parent.id, child.id, { ...steer, text: "conflict" }).pipe(Effect.result))._tag,
         ).toBe("Failure")
@@ -178,13 +180,16 @@ it.live(
           take: () => true,
         })
         yield* messages.open("grandchild-launch")
-        const fromChild = { inputID: SessionMessage.ID.create(), text: "from direct parent task", delivery: "steer" as const }
+        const fromChild = {
+          inputID: SessionMessage.ID.create(),
+          text: "from direct parent task",
+          delivery: "steer" as const,
+        }
         const childReceipt = yield* messages.send(child.id, grandchild.id, fromChild, { source: "tool" })
         expect(childReceipt.status).toBe("admitted")
+        expect((yield* SessionInput.find(database.db, fromChild.inputID))?.origin).toBe("task")
         // Cross-sender reuse of the same inputID must fail with conflict.
-        expect(
-          (yield* messages.send(parent.id, grandchild.id, fromChild).pipe(Effect.result))._tag,
-        ).toBe("Failure")
+        expect((yield* messages.send(parent.id, grandchild.id, fromChild).pipe(Effect.result))._tag).toBe("Failure")
         // An inactive Task child (with no live SessionTaskRole) cannot send messages.
         const inactiveChild = yield* sessions.create({ location: parent.location, parentID: parent.id })
         yield* tasks.create({
@@ -194,7 +199,12 @@ it.live(
         })
         expect(
           (yield* messages
-            .send(inactiveChild.id, grandchild.id, { inputID: SessionMessage.ID.create(), text: "inactive child sender" }, { source: "tool" })
+            .send(
+              inactiveChild.id,
+              grandchild.id,
+              { inputID: SessionMessage.ID.create(), text: "inactive child sender" },
+              { source: "tool" },
+            )
             .pipe(Effect.result))._tag,
         ).toBe("Failure")
         // Non-Task managed child sessions cannot act as Task message senders.
@@ -215,9 +225,9 @@ it.live(
         }))
         yield* Effect.forEach(ancestorMessages, (entry) => messages.send(parent.id, grandchild.id, entry))
         const ancestorOverflow = { inputID: SessionMessage.ID.create(), text: "ancestor-17-overflow" }
-        expect(
-          (yield* messages.send(parent.id, grandchild.id, ancestorOverflow).pipe(Effect.result))._tag,
-        ).toBe("Failure")
+        expect((yield* messages.send(parent.id, grandchild.id, ancestorOverflow).pipe(Effect.result))._tag).toBe(
+          "Failure",
+        )
         expect(yield* SessionInput.find(database.db, ancestorOverflow.inputID)).toBeUndefined()
         yield* messages.close("grandchild-launch", "cancelled")
 

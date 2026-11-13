@@ -24,7 +24,7 @@ export function terminalPermission(request: NativePermission): PermissionRequest
     approvalLifetime: "saved",
     patterns: [...request.resources],
     always: [...(request.save ?? [])],
-    metadata: request.metadata ?? {},
+    metadata: { ...request.metadata, nativePermission: true, ...(request.review ? { nativeReview: request.review } : {}) },
     tool: request.source ? { messageID: request.source.messageID, callID: request.source.callID } : undefined,
   }
 }

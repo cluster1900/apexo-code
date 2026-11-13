@@ -12,6 +12,7 @@ import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { CommandSandbox } from "../command-sandbox"
 import { Config } from "../config"
+import { PermissionReviewContext } from "../permission/review-context"
 import { ShellEnvironment } from "../shell-environment"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
@@ -243,16 +244,59 @@ const layer = Layer.effectDiscard(
                   check(name, parsed.resources) !== "deny" &&
                   (yield* permission.exact(context.sessionID, name, whole))
                 const approval = wholeDenied ? { resources: [rawCommand], save: [rawCommand] } : parsed
+                const executionEnv = yield* Effect.cached(
+                  shellEnvironment
+                    .resolve({
+                      cwd: target.canonical,
+                      sessionID: context.sessionID,
+                      callID: context.toolCallID,
+                    })
+                    .pipe(
+                      Effect.map((env) =>
+                        ShellEnvironment.subprocessEnv(env, {
+                          scrub: settings?.scrub_env,
+                          allow: settings?.env_allow,
+                        }),
+                      ),
+                    ),
+                )
                 if (!wholeGranted)
-                  yield* permission.assert({
-                    action: name,
-                    resources: [...approval.resources],
-                    save: [...approval.save],
-                    metadata: { command: rawCommand, ...(wholeDenied ? {} : BashApproval.metadata(parsed)) },
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source,
-                  })
+                  yield* permission
+                    .assert({
+                      action: name,
+                      resources: [...approval.resources],
+                      save: [...approval.save],
+                      metadata: { command: rawCommand, ...(wholeDenied ? {} : BashApproval.metadata(parsed)) },
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source,
+                    })
+                    .pipe(
+                      Effect.provideService(
+                        PermissionReviewContext.CurrentAction,
+                        PermissionReviewContext.bash({
+                          sessionID: context.sessionID,
+                          callID: context.toolCallID,
+                          command: rawCommand,
+                          shell,
+                          cwd: target.canonical,
+                          env: executionEnv,
+                          background: !!checkpoint || !!input.background,
+                          policy: sandbox.status(context.sessionID).pipe(
+                            Effect.map((status) => ({
+                              profile: status.profile,
+                              revision: status.revision,
+                              network: status.network,
+                              ...(status.base ? { base: status.base } : {}),
+                              ...(status.allowDomains ? { allowDomains: status.allowDomains } : {}),
+                            })),
+                            Effect.mapError(() => new Error("Sandbox policy is unavailable")),
+                          ),
+                          proc: appProcess,
+                          fs,
+                        }),
+                      ),
+                    )
 
                 if ((yield* fs.stat(target.canonical)).type !== "Directory")
                   return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
@@ -292,22 +336,7 @@ const layer = Layer.effectDiscard(
                   cwd: target.canonical,
                 })
                 // Plugin shell.env variables extend the scrubbed host environment; sandboxed commands keep their fixed environment.
-                const env = confined
-                  ? {}
-                  : yield* shellEnvironment.resolve({
-                      cwd: target.canonical,
-                      sessionID: context.sessionID,
-                      callID: context.toolCallID,
-                    })
-                const extraEnv = confined
-                  ? {}
-                  : {
-                      env: ShellEnvironment.subprocessEnv(env, {
-                        scrub: settings?.scrub_env,
-                        allow: settings?.env_allow,
-                      }),
-                      extendEnv: false,
-                    }
+                const extraEnv = confined ? {} : { env: yield* executionEnv, extendEnv: false }
                 const powershell = kind === "powershell"
                 const invocation = BashApproval.invocation(shell, rawCommand)
                 const command =

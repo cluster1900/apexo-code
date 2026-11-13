@@ -377,6 +377,7 @@ export default {
           \`session_id\` text NOT NULL,
           \`prompt\` text NOT NULL,
           \`delivery\` text NOT NULL,
+          \`origin\` text DEFAULT 'unknown' NOT NULL,
           \`execution_policy\` text,
           \`execution_status\` text,
           \`execution_owner\` text,

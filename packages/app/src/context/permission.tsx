@@ -1,3 +1,6 @@
+import { PermissionReview } from "@apexo/schema/permission-review"
+import { Option, Schema } from "effect"
+import { isNativeSession, markNativeSession } from "@/utils/server-compat"
 import { createEffect, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@apexo/ui/context"
@@ -172,7 +175,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
         return selected().toggleReview(sessionID, directory)
       },
       toggleAutoAccept(sessionID: string, directory: string) {
-        selected().toggleAutoAccept(sessionID, directory)
+        return selected().toggleAutoAccept(sessionID, directory)
       },
       toggleAutoAcceptDirectory(directory: string) {
         selected().toggleAutoAcceptDirectory(directory)
@@ -215,7 +218,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     },
     createStore({
       autoAccept: {} as Record<string, boolean>,
-      // Grok Build Auto-review (`/auto`), per session like autoAccept; mutually exclusive with it.
+      // Compatibility-only review preference; native mode is read from the backend.
       review: {} as Record<string, boolean>,
     }),
   )
@@ -330,7 +333,38 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return shouldAutoRespond(permission, directory)
   }
 
+  const [nativeModes, setNativeModes] = createStore<
+    Record<string, { mode: "manual" | "review"; revision: number } | undefined>
+  >({})
+  const modeReads = new Map<string, Promise<{ mode: "manual" | "review"; revision: number } | undefined>>()
+  const nativeSession = (sessionID: string) => input.sdk.protocolKind() === "v2" || isNativeSession(sessionID)
+  const updateMode = (sessionID: string, value: { mode: "manual" | "review"; revision: number }) => {
+    if (meta.disposed || (nativeModes[sessionID]?.revision ?? -1) > value.revision) return
+    setNativeModes(sessionID, value)
+  }
+  const loadMode = (sessionID: string) => {
+    const existing = modeReads.get(sessionID)
+    if (existing) return existing
+    const reading = (async () => {
+      // Compatibility and native Sessions share storage; a mode endpoint alone is not native identity.
+      if (!nativeSession(sessionID)) {
+        const history = await input.sdk.client.v2.session.history({ sessionID, limit: 1 }, { throwOnError: true })
+        if (!history.data.data.length) return
+        markNativeSession(sessionID)
+      }
+      const result = await input.sdk.client.v2.session.permissionReview.get({ sessionID }, { throwOnError: true })
+      updateMode(sessionID, result.data.data)
+      return result.data.data
+    })().catch(() => undefined)
+    modeReads.set(sessionID, reading)
+    return reading
+  }
+  const decodeMode = Schema.decodeUnknownOption(PermissionReview.Event.ModeChanged)
+
   function isReviewing(sessionID: string, directory?: string) {
+    const mode = nativeModes[sessionID]
+    void loadMode(sessionID)
+    if (nativeSession(sessionID)) return mode?.mode === "review"
     const ids = sessions(directory)
     const lineage = [sessionID]
     for (const id of lineage) {
@@ -363,7 +397,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     current: () => boolean = () => true,
   ) {
     if (!current() || !isPending(permission)) return
-    const reviewed = isReviewing(permission.sessionID, directory) && (await classify(permission, directory))
+    await loadMode(permission.sessionID)
+    const native = nativeSession(permission.sessionID) || permission.metadata?.nativePermission === true
+    const reviewed = !native && isReviewing(permission.sessionID, directory) && (await classify(permission, directory))
     if (!reviewed && !(await shouldAutoRespondResolved(permission, directory))) return
     if (meta.disposed || !current() || !isPending(permission)) return
     respondOnce(permission, directory)
@@ -378,6 +414,18 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
 
   const handlePermission = (e: PermissionEvent) => {
     const event = e.details
+    const mode = decodeMode(event.current)
+    if (Option.isSome(mode)) {
+      updateMode(mode.value.data.sessionID, mode.value.data)
+      return
+    }
+    if (event.type === "server.connected") {
+      const ids = Object.keys(nativeModes)
+      modeReads.clear()
+      ids.forEach((id) => setNativeModes(id, undefined))
+      ids.forEach((id) => void loadMode(id))
+      return
+    }
     if (event?.type !== "permission.asked") return
     void respondPending(event.properties, e.name)
   }
@@ -490,7 +538,17 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     }
   }
 
-  function setReview(sessionID: string, directory: string, value: boolean) {
+  async function setReview(sessionID: string, directory: string, value: boolean) {
+    await loadMode(sessionID)
+    if (nativeSession(sessionID)) {
+      const result = await input.sdk.client.v2.session.permissionReview.set(
+        { sessionID, mode: value ? "review" : "manual" },
+        { throwOnError: true },
+      )
+      updateMode(sessionID, result.data.data)
+      if (value && isAutoAccepting(sessionID, directory)) disable(sessionID, directory)
+      return
+    }
     if (value && isAutoAccepting(sessionID, directory)) disable(sessionID, directory)
     setStore(
       produce((draft) => {
@@ -509,10 +567,11 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       if (meta.disposed) return false
       return isReviewing(sessionID, directory)
     },
-    toggleReview(sessionID: string, directory: string) {
+    async toggleReview(sessionID: string, directory: string) {
       if (meta.disposed) return false
+      await loadMode(sessionID)
       const next = !isReviewing(sessionID, directory)
-      setReview(sessionID, directory, next)
+      await setReview(sessionID, directory, next)
       return next
     },
     respond,
@@ -528,13 +587,14 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       if (meta.disposed) return false
       return isAutoAcceptingDirectory(directory)
     },
-    toggleAutoAccept(sessionID: string, directory: string) {
+    async toggleAutoAccept(sessionID: string, directory: string) {
       if (meta.disposed) return
+      await loadMode(sessionID)
       if (isAutoAccepting(sessionID, directory)) {
         disable(sessionID, directory)
         return
       }
-      if (isReviewing(sessionID, directory)) setReview(sessionID, directory, false)
+      if (isReviewing(sessionID, directory)) await setReview(sessionID, directory, false)
 
       enable(sessionID, directory)
     },

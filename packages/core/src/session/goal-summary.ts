@@ -155,6 +155,7 @@ const make = Effect.gen(function* () {
                       const childClaim = yield* lifecycle.capture(childID)
                       yield* Effect.addFinalizer(() => lifecycle.owned(childClaim, children.interrupt(childID)))
                       yield* SessionInput.admit(database.db, events, {
+                        origin: "unknown",
                         id: inputID,
                         sessionID: childID,
                         prompt: {

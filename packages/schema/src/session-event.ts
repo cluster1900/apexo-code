@@ -1,6 +1,6 @@
 export * as SessionEvent from "./session-event"
 
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { optional } from "./schema"
 import { Event } from "./event"
 import { ProviderMetadata, ToolContent } from "./llm"
@@ -35,6 +35,7 @@ const PromptFields = {
   messageID: SessionMessage.ID,
   prompt: Prompt,
   delivery: Delivery,
+  origin: SessionInput.Origin.pipe(Schema.withDecodingDefault(Effect.succeed("unknown" as const))),
   executionPolicy: SessionInput.ExecutionPolicy.pipe(optional),
 }
 

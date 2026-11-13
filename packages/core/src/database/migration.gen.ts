@@ -62,5 +62,6 @@ export const migrations = (
     import("./migration/20261029001958_durable-session-execution"),
     import("./migration/20261112084409_code-review"),
     import("./migration/20261112130620_review-owner"),
+    import("./migration/20261113112329_session-input-origin"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

@@ -1,3 +1,4 @@
+import { permissionReviewStatus } from "@apexo/sdk/v2/permission-review"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import type { PermissionRequest } from "@apexo/sdk/v2"
 import { Button } from "@apexo/ui/button"
@@ -11,6 +12,7 @@ export function SessionPermissionDock(props: {
   onDecide: (response: "once" | "always" | "reject", save?: readonly string[]) => void
 }) {
   const language = useLanguage()
+  const review = createMemo(() => permissionReviewStatus(props.request.metadata))
   // Grok Build "Always allow" scope picker (same choices as the CLI: ← narrower, wider →).
   const choices = createMemo(() => {
     const value = props.request.metadata?.alwaysChoices
@@ -80,6 +82,16 @@ export function SessionPermissionDock(props: {
         </>
       }
     >
+      <Show when={review()}>
+        {(status) => (
+          <div data-slot="permission-review" role="status" class="text-12-regular text-text-weak">
+            {status().status === "reviewing"
+              ? language.t("permission.review.reviewing")
+              : language.t("permission.review.manual")}
+            <Show when={status().reason}>{(reason) => <span> {reason()}</span>}</Show>
+          </div>
+        )}
+      </Show>
       <Show when={toolDescription()}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />

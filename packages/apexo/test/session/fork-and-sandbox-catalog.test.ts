@@ -124,6 +124,7 @@ describe("SessionV2.fork and CommandSandbox.catalog", () => {
             const now = yield* DateTime.now
 
             yield* events.publish(SessionEvent.Prompted, {
+          origin: "unknown",
               sessionID: source.id,
               messageID: m1,
               prompt: { text: "First user message" },
@@ -171,6 +172,7 @@ describe("SessionV2.fork and CommandSandbox.catalog", () => {
               timestamp: now,
             })
             yield* events.publish(SessionEvent.Prompted, {
+          origin: "unknown",
               sessionID: source.id,
               messageID: m3,
               prompt: { text: "Second user message" },

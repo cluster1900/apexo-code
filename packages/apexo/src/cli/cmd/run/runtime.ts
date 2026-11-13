@@ -457,6 +457,12 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           : undefined,
     ),
     mcpElicitation: { api: ctx.sdk.v2.mcpElicitation, sessions: () => (state.sessionID ? [state.sessionID] : []) },
+    onTogglePermissionReview: ctx.native ? async () => {
+      await ensureSession()
+      const current = await ctx.sdk.v2.session.permissionReview.get({ sessionID: state.sessionID }, { throwOnError: true })
+      const result = await ctx.sdk.v2.session.permissionReview.set({ sessionID: state.sessionID, mode: current.data.data.mode === "review" ? "manual" : "review" }, { throwOnError: true })
+      return result.data.data.mode === "review"
+    } : undefined,
     codeReviewActions: {
       available: async () => {
         await ensureSession()

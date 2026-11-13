@@ -11,6 +11,11 @@ import { SessionMessage } from "./session-message"
 export const Delivery = SessionDelivery.Delivery
 export type Delivery = SessionDelivery.Delivery
 
+export const Origin = Schema.Literals(["user", "task", "workflow", "schedule", "imported", "unknown"]).annotate({
+  identifier: "SessionInput.Origin",
+})
+export type Origin = typeof Origin.Type
+
 const PositiveFinite = Schema.Finite.check(Schema.isGreaterThan(0))
 
 /** Invocation policy belongs to one canonical admitted input, never the mutable Session. */
@@ -75,6 +80,7 @@ export const Admitted = Schema.Struct({
   sessionID: SessionID,
   prompt: Prompt,
   delivery: Delivery,
+  origin: Origin,
   executionPolicy: ExecutionPolicy.pipe(optional),
   timeCreated: DateTimeUtcFromMillis,
   promotedSeq: NonNegativeInt.pipe(optional),

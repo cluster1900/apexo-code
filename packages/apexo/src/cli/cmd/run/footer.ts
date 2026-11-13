@@ -102,6 +102,7 @@ type RunFooterOptions = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  onTogglePermissionReview?: () => Promise<boolean>
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
@@ -356,6 +357,7 @@ export class RunFooter implements FooterApi {
               memoryActions: options.memoryActions,
               workflowActions: options.workflowActions,
               codeReviewActions: options.codeReviewActions,
+              onTogglePermissionReview: options.onTogglePermissionReview,
               mcpElicitation: options.mcpElicitation,
               sideQuestionActions: options.sideQuestionActions,
               feedbackActions: options.feedbackActions,

@@ -347,9 +347,9 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
-  const toggleAutoAccept = () => {
+  const toggleAutoAccept = async () => {
     const sessionID = params.id
-    if (sessionID) permission.toggleAutoAccept(sessionID, sdk().directory)
+    if (sessionID) await permission.toggleAutoAccept(sessionID, sdk().directory)
     else permission.toggleAutoAcceptDirectory(sdk().directory)
 
     const active = sessionID
@@ -365,10 +365,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
-  const toggleReview = () => {
+  const toggleReview = async () => {
     const sessionID = params.id
     if (!sessionID) return showToast({ title: language.t("grok.auto.noSession") })
-    const active = permission.toggleReview(sessionID, sdk().directory)
+    const active = await permission.toggleReview(sessionID, sdk().directory)
     showToast({
       title: active ? language.t("grok.auto.on.title") : language.t("grok.auto.off.title"),
       description: active ? language.t("grok.auto.on.description") : language.t("grok.auto.off.description"),
@@ -377,7 +377,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   // Grok Build Shift+Tab: Normal → Plan → Auto → Always-approve. Plan is the plan agent; the others are permission modes.
   let modeCycleAgent = "build"
-  const cycleSessionMode = () => {
+  const cycleSessionMode = async () => {
     const sessionID = params.id
     if (!sessionID) return
     const directory = sdk().directory
@@ -395,10 +395,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       if (agent && agent !== "plan") modeCycleAgent = agent
       local.agent.set("plan")
     } else if (agent === "plan") local.agent.set(modeCycleAgent)
-    if (next === "auto") permission.toggleReview(sessionID, directory)
-    if (next === "always-approve") permission.toggleAutoAccept(sessionID, directory)
+    if (next === "auto") await permission.toggleReview(sessionID, directory)
+    if (next === "always-approve") await permission.toggleAutoAccept(sessionID, directory)
     if (next === "normal" || next === "plan") {
-      if (permission.isReviewing(sessionID, directory)) permission.toggleReview(sessionID, directory)
+      if (permission.isReviewing(sessionID, directory)) await permission.toggleReview(sessionID, directory)
       if (permission.isAutoAccepting(sessionID, directory)) permission.disableAutoAccept(sessionID, directory)
     }
     showToast({ title: language.t(`grok.mode.${next}` as never) })

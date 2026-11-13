@@ -1,6 +1,6 @@
 # Codex comparison: first-batch development plan
 
-Status: F01 implemented on `structured-review`; final verification is recorded in [the implementation checkpoint](first-batch-implementation.md). F04 and F02 remain planned. This document retains the agreed scope and acceptance criteria.
+Status: F01 implementation and verification are recorded in [the implementation checkpoint](first-batch-implementation.md); F04 has a separate [implementation report](f04-implementation.md). F02 is implemented on `permission-review`, pending PR review, with verification in [its implementation report](f02-implementation.md). This document retains the agreed scope and acceptance criteria.
 
 Prepared on 2026-11-12. Apexo baseline: `e4885b0378a0cd88b703133f435fd47383cff64a`. Codex source baseline: `c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee`. Codex references describe this source revision, not availability in every released CLI or account.
 

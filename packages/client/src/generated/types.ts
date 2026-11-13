@@ -704,6 +704,7 @@ export type SessionsPromptOutput = {
       }>
     }
     readonly delivery: "steer" | "queue"
+    readonly origin: "user" | "task" | "workflow" | "schedule" | "imported" | "unknown"
     readonly executionPolicy?: {
       readonly mode: "headless"
       readonly permissions: "reject" | "approve_once"
@@ -1340,6 +1341,7 @@ export type SessionsHistoryOutput = {
             }>
           }
           readonly delivery: "steer" | "queue"
+          readonly origin?: ("user" | "task" | "workflow" | "schedule" | "imported" | "unknown") | null
           readonly executionPolicy?: {
             readonly mode: "headless"
             readonly permissions: "reject" | "approve_once"
@@ -1376,6 +1378,7 @@ export type SessionsHistoryOutput = {
             }>
           }
           readonly delivery: "steer" | "queue"
+          readonly origin?: ("user" | "task" | "workflow" | "schedule" | "imported" | "unknown") | null
           readonly executionPolicy?: {
             readonly mode: "headless"
             readonly permissions: "reject" | "approve_once"
@@ -2058,6 +2061,7 @@ export type SessionsEventsOutput =
           }>
         }
         readonly delivery: "steer" | "queue"
+        readonly origin?: ("user" | "task" | "workflow" | "schedule" | "imported" | "unknown") | undefined
         readonly executionPolicy?: {
           readonly mode: "headless"
           readonly permissions: "reject" | "approve_once"
@@ -2094,6 +2098,7 @@ export type SessionsEventsOutput =
           }>
         }
         readonly delivery: "steer" | "queue"
+        readonly origin?: ("user" | "task" | "workflow" | "schedule" | "imported" | "unknown") | undefined
         readonly executionPolicy?: {
           readonly mode: "headless"
           readonly permissions: "reject" | "approve_once"
@@ -7659,6 +7664,7 @@ export type PermissionsListRequestsOutput = {
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly review?: { readonly status: "reviewing" | "ask_manual"; readonly reason?: string }
   }>
 }
 
@@ -7678,6 +7684,21 @@ export type PermissionsListSavedOutput = {
 export type PermissionsRemoveSavedInput = { readonly id: { readonly id: string }["id"] }
 
 export type PermissionsRemoveSavedOutput = void
+
+export type PermissionsGetReviewInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type PermissionsGetReviewOutput = {
+  readonly data: { readonly mode: "manual" | "review"; readonly revision: number }
+}["data"]
+
+export type PermissionsSetReviewInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly mode: { readonly mode: "manual" | "review" }["mode"]
+}
+
+export type PermissionsSetReviewOutput = {
+  readonly data: { readonly mode: "manual" | "review"; readonly revision: number }
+}["data"]
 
 export type PermissionsCreateInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
@@ -7761,6 +7782,7 @@ export type PermissionsListOutput = {
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly review?: { readonly status: "reviewing" | "ask_manual"; readonly reason?: string }
   }>
 }["data"]
 
@@ -7778,6 +7800,7 @@ export type PermissionsGetOutput = {
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+    readonly review?: { readonly status: "reviewing" | "ask_manual"; readonly reason?: string }
   }
 }["data"]
 
