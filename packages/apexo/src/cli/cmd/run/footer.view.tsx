@@ -1,3 +1,4 @@
+import { CodeReviewBrowser } from "@apexo/tui/component/code-review-browser"
 import { CommandSandboxBrowser } from "@apexo/tui/component/command-sandbox-browser"
 import { WorkflowBrowser } from "@apexo/tui/component/workflow-browser"
 import { SideQuestionBrowser, sideQuestionImages } from "@apexo/tui/component/side-question-browser"
@@ -120,6 +121,7 @@ type RunFooterViewProps = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
   commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
@@ -445,6 +447,15 @@ export function RunFooterView(props: RunFooterViewProps) {
             source: "command" as const,
           }))
         : []),
+      ...(props.codeReviewActions
+        ? ["review", "reviews"].map((name) => ({
+            name,
+            description: "Structured code review",
+            template: "",
+            hints: [],
+            source: "command" as const,
+          }))
+        : []),
       ...(props.sideQuestionActions
         ? [
             {
@@ -539,6 +550,10 @@ export function RunFooterView(props: RunFooterViewProps) {
     theme,
     history: props.history,
     onSubmit: (input) => {
+      if (props.codeReviewActions && input.mode !== "shell" && /^\/(?:review|reviews)$/.test(input.text.trim())) {
+        setRoute({ type: "review" })
+        return true
+      }
       if (
         props.workflowActions &&
         input.mode !== "shell" &&
@@ -565,9 +580,7 @@ export function RunFooterView(props: RunFooterViewProps) {
         (/^\/sandbox(?:\s|$)/u.test(input.text.trim()) || input.command?.name === "sandbox")
       ) {
         const arg = (
-          input.command?.name === "sandbox"
-            ? input.command.arguments
-            : input.text.trim().replace(/^\/sandbox\b/u, "")
+          input.command?.name === "sandbox" ? input.command.arguments : input.text.trim().replace(/^\/sandbox\b/u, "")
         ).trim()
         if (arg) {
           if (!props.commandSandboxActions.select) {
@@ -945,6 +958,7 @@ export function RunFooterView(props: RunFooterViewProps) {
       current.type !== "memory" &&
       current.type !== "remember" &&
       current.type !== "workflow" &&
+      current.type !== "review" &&
       current.type !== "btw" &&
       current.type !== "feedback" &&
       current.type !== "hooks" &&
@@ -1061,6 +1075,14 @@ export function RunFooterView(props: RunFooterViewProps) {
                               const current = route()
                               return current.type === "workflow" ? current.command : ""
                             })()}
+                            theme={theme}
+                            height={19}
+                            onClose={() => setRoute({ type: "composer" })}
+                          />
+                        </Match>
+                        <Match when={route().type === "review" && props.codeReviewActions}>
+                          <CodeReviewBrowser
+                            actions={props.codeReviewActions!}
                             theme={theme}
                             height={19}
                             onClose={() => setRoute({ type: "composer" })}

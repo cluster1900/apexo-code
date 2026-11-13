@@ -10,7 +10,7 @@ describe("registeredSlash", () => {
   })
 
   test("server commands keep their own route", () => {
-    expect(registeredSlash("/review src/app.ts", ["review"])).toBeUndefined()
+    expect(registeredSlash("/custom-review src/app.ts", ["custom-review"])).toBeUndefined()
   })
 
   test("commands the submit path routes after creating a session are left alone", () => {
@@ -59,7 +59,13 @@ describe("registered slash dispatch", () => {
       onSlash: (args) => calls.push(`rename:${args}`),
     },
     { id: "status.old", title: "Old", slash: "status", disabled: true, onSelect: () => calls.push("old") },
-    { id: "session.info", title: "Info", slash: "session-info", slashAliases: ["status"], onSelect: () => calls.push("info") },
+    {
+      id: "session.info",
+      title: "Info",
+      slash: "session-info",
+      slashAliases: ["status"],
+      onSelect: () => calls.push("info"),
+    },
     { id: "theme.cycle", title: "Theme", slash: "themes", slashAliases: ["t"], onSelect: () => calls.push("theme") },
   ]
 

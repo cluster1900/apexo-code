@@ -972,6 +972,8 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, findDiffLineNumber, diffMouseSide)
 
   const setSelectedLines = (range: SelectedLineRange | null, preserve?: { root: ShadowRoot; text: Range }) => {
+    // Selection can arrive before the asynchronous diff instance is ready.
+    viewer.lastSelection = range
     const active = instance
     if (!active) return
 
@@ -1095,7 +1097,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       settleFrames: 1,
       onReady: () => {
         done?.()
-        setSelectedLines(viewer.lastSelection)
+        setSelectedLines(local.selectedLines === undefined ? viewer.lastSelection : local.selectedLines)
         viewer.find.refresh({ reset: true })
         local.onRendered?.()
       },

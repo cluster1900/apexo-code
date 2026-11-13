@@ -60,5 +60,7 @@ export const migrations = (
     import("./migration/20261015103000_managed-child-ownership"),
     import("./migration/20261029001431_durable-background-jobs"),
     import("./migration/20261029001958_durable-session-execution"),
+    import("./migration/20261112084409_code-review"),
+    import("./migration/20261112130620_review-owner"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

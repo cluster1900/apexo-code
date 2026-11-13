@@ -25,6 +25,9 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "../sql"
 import { SessionGoal } from "../goal"
 import { SessionGoalRole } from "../goal-role"
+import { SessionCodeReviewRole } from "../code-review-role"
+import { CodeReviewCapture } from "../code-review-capture"
+import { CodeReview } from "@apexo/schema/code-review"
 import { SessionGoalSummaryRole } from "../goal-summary-role"
 import { SessionGoalRunner } from "../goal-runner"
 import { SessionGoalUsage } from "../goal-usage"
@@ -32,7 +35,7 @@ import { SessionGoalCleanup } from "../goal-cleanup"
 import { SessionHookStop } from "../hook-stop"
 import { WorkflowRole } from "../../workflow/role"
 import { WorkflowRuntime } from "../../workflow/runtime"
-import { Cause, Context, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, Context, DateTime, Effect, FiberSet, Layer, Option, Schema, Semaphore, Stream } from "effect"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Database } from "../../database/database"
@@ -71,6 +74,8 @@ import { MAX_STEPS_PROMPT } from "./max-steps"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
+
+const reviewOutputSchema = Schema.toJsonSchemaDocument(CodeReview.Output)
 
 /**
  * Runs one durable coding-agent Session until it settles.
@@ -312,6 +317,8 @@ const layer = Layer.effect(
     const goalRunner = yield* SessionGoalRunner.Service
     const goalRoles = yield* SessionGoalRole.Service
     const summaryRoles = yield* SessionGoalSummaryRole.Service
+    const reviewRoles = yield* SessionCodeReviewRole.Service
+    const reviewCapture = yield* CodeReviewCapture.Service
     const goalCleanup = yield* SessionGoalCleanup.Service
     const workflowRoles = yield* WorkflowRole.Service
     const workflows = yield* WorkflowRuntime.Service
@@ -474,6 +481,7 @@ const layer = Layer.effect(
       const session = yield* getSession(sessionID)
       const role = goalRoles.get(sessionID)
       const summaryRole = summaryRoles.get(sessionID)
+      const reviewRole = reviewRoles.get(sessionID)
       const workflowRole = workflowRoles.get(sessionID)
       const attempt = role?.attempt ?? taskRoles.get(sessionID)?.attempt ?? (yield* SessionGoalUsage.Current)
       if (summaryRole) yield* goals.checkSummary(summaryRole.attempt)
@@ -487,7 +495,7 @@ const layer = Layer.effect(
       let currentStep = step
       let promoted = 0
       const taskRole = taskRoles.get(sessionID)
-      const ownedRole = taskRole ?? role ?? summaryRole ?? workflowRole
+      const ownedRole = taskRole ?? role ?? summaryRole ?? reviewRole ?? workflowRole
       const plan = agent.id === "plan" && !ownedRole && !attempt ? yield* plans.context(sessionID) : undefined
       const inherited = yield* PermissionV2.Inherited
       const authority = plan
@@ -733,8 +741,9 @@ const layer = Layer.effect(
             .map((part) => ({ name: part.name, key: canonicalToolInput(part.state.input) }))
           let doomLoopHalted = false
           const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
-          const baseTools =
-            isLastStep || summaryRole
+          const baseTools = reviewRole
+            ? SessionCodeReviewRole.materialize(reviewRole, reviewCapture)
+            : isLastStep || summaryRole
               ? undefined
               : yield* tools
                   .materialize(agent.info?.permissions)
@@ -759,7 +768,13 @@ const layer = Layer.effect(
             agent.info?.system,
             system.baseline,
             plan?.system,
-            summaryRole?.system ?? role?.system ?? (goal ? SessionGoalRunner.system(goal) : undefined),
+            reviewRole?.system ??
+              summaryRole?.system ??
+              role?.system ??
+              (goal ? SessionGoalRunner.system(goal) : undefined),
+            reviewRole?.repairing()
+              ? "Repair your previous response into the required JSON schema. Return only valid JSON. No further tool calls are allowed."
+              : undefined,
           ]
             .filter((part): part is string => part !== undefined && part.length > 0)
             .map(SystemPart.make)
@@ -819,10 +834,17 @@ const layer = Layer.effect(
               system: systemParts,
               messages,
               tools: llmTools,
-              toolChoice: isLastStep || summaryRole ? "none" : undefined,
-              ...(execution?.policy.outputSchema
-                ? { responseFormat: { type: "json" as const, schema: execution.policy.outputSchema } }
-                : {}),
+              toolChoice: isLastStep || summaryRole || reviewRole?.repairing() ? "none" : undefined,
+              ...(reviewRole
+                ? {
+                    responseFormat: {
+                      type: "json" as const,
+                      schema: { ...reviewOutputSchema.schema, $defs: reviewOutputSchema.definitions },
+                    },
+                  }
+                : execution?.policy.outputSchema
+                  ? { responseFormat: { type: "json" as const, schema: execution.policy.outputSchema } }
+                  : {}),
             })
           const request = buildRequest(model, llmMessages)
           const fallbackMessages = fallbackModel
@@ -833,7 +855,11 @@ const layer = Layer.effect(
             : undefined
           const fallbackRequest =
             fallbackModel && fallbackMessages ? buildRequest(fallbackModel, fallbackMessages) : undefined
-          if (!summaryRole && (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request })))
+          if (
+            !summaryRole &&
+            !reviewRole &&
+            (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request }))
+          )
             return yield* Effect.die(continueAfterCompaction(currentStep))
           yield* SessionExecutionStore.Current
           const startSnapshot = yield* snapshots.capture()
@@ -1201,12 +1227,15 @@ const layer = Layer.effect(
         const summaryRole = summaryRoles.get(input.sessionID)
         const goalRole = goalRoles.get(input.sessionID)
         const workflowRole = workflowRoles.get(input.sessionID)
+        const reviewRole = reviewRoles.get(input.sessionID)
         const managedRole =
-          record?.owner.kind === "workflow"
-            ? workflowRole
-            : record?.owner.kind === "goal" && record.owner.role === "summary"
-              ? summaryRole
-              : goalRole
+          record?.owner.kind === "review"
+            ? reviewRole
+            : record?.owner.kind === "workflow"
+              ? workflowRole
+              : record?.owner.kind === "goal" && record.owner.role === "summary"
+                ? summaryRole
+                : goalRole
         if (record) {
           if (!managedRole || !SessionManagedChild.same(record, managedRole.owner))
             return yield* new SessionManagedChild.Failure({
@@ -1218,6 +1247,7 @@ const layer = Layer.effect(
           goalRole ||
           summaryRole ||
           workflowRole ||
+          reviewRole ||
           (yield* SessionManagedChild.historical(db, input.sessionID))
         ) {
           return yield* new SessionManagedChild.Failure({
@@ -1356,6 +1386,17 @@ const layer = Layer.effect(
               )
             }
             needsContinuation = result.needsContinuation
+            if (reviewRole && !needsContinuation && result.normalStop) {
+              const last = (yield* store.context(input.sessionID)).findLast((message) => message.type === "assistant")
+              const text =
+                last?.type === "assistant"
+                  ? last.content
+                      .filter((part) => part.type === "text")
+                      .map((part) => part.text)
+                      .join("")
+                  : ""
+              needsContinuation = reviewRole.repair(text)
+            }
             step = result.step + 1
             promotion = "steer"
             if (!needsContinuation && !ownedRole)
@@ -1372,7 +1413,12 @@ const layer = Layer.effect(
             }
             if (!needsContinuation && result.normalStop && process.env.APEXO_RUNTIME_PROFILE === "grok-build") {
               const session = yield* getSession(input.sessionID)
-              if ((!session.parentID || taskRole) && !goalRoles.get(session.id) && !workflowRoles.get(session.id)) {
+              if (
+                (!session.parentID || taskRole) &&
+                !reviewRole &&
+                !goalRoles.get(session.id) &&
+                !workflowRoles.get(session.id)
+              ) {
                 const currentAttempt = taskRole?.attempt ?? attempt
                 const current = currentAttempt ? yield* goals.check(currentAttempt) : undefined
                 if (!current || current.status === "active") {
@@ -1571,6 +1617,8 @@ export const node = makeLocationNode({
     SessionPlanReceipt.node,
     SessionGoal.node,
     SessionGoalRole.node,
+    SessionCodeReviewRole.node,
+    CodeReviewCapture.node,
     SessionTaskRole.node,
     SessionTaskMessage.node,
     SessionTaskStore.node,

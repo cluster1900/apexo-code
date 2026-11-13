@@ -213,6 +213,16 @@ import type {
   ServerSideQuestionAskOutput,
   ServerSideQuestionCancelInput,
   ServerSideQuestionCancelOutput,
+  ServerCodeReviewStartInput,
+  ServerCodeReviewStartOutput,
+  ServerCodeReviewListInput,
+  ServerCodeReviewListOutput,
+  ServerCodeReviewGetInput,
+  ServerCodeReviewGetOutput,
+  ServerCodeReviewDiffInput,
+  ServerCodeReviewDiffOutput,
+  ServerCodeReviewCancelInput,
+  ServerCodeReviewCancelOutput,
   MessagesListInput,
   MessagesListOutput,
   ModelsListInput,
@@ -1753,6 +1763,75 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/side-question/${encodeURIComponent(input.questionID)}/cancel`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.codeReview": {
+      start: (input: ServerCodeReviewStartInput, requestOptions?: RequestOptions) =>
+        request<ServerCodeReviewStartOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/review`,
+            body: {
+              id: input["id"],
+              target: input["target"],
+              focus: input["focus"],
+              title: input["title"],
+              model: input["model"],
+              variant: input["variant"],
+              agent: input["agent"],
+              limits: input["limits"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      list: (input: ServerCodeReviewListInput, requestOptions?: RequestOptions) =>
+        request<ServerCodeReviewListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/review`,
+            query: { after: input["after"], limit: input["limit"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      get: (input: ServerCodeReviewGetInput, requestOptions?: RequestOptions) =>
+        request<ServerCodeReviewGetOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/review/${encodeURIComponent(input.reviewID)}`,
+            query: { compareWorkspace: input["compareWorkspace"] },
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      diff: (input: ServerCodeReviewDiffInput, requestOptions?: RequestOptions) =>
+        request<ServerCodeReviewDiffOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/review/${encodeURIComponent(input.reviewID)}/diff`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 503, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      cancel: (input: ServerCodeReviewCancelInput, requestOptions?: RequestOptions) =>
+        request<ServerCodeReviewCancelOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/review/${encodeURIComponent(input.reviewID)}/cancel`,
             successStatus: 200,
             declaredStatuses: [409, 400, 503, 404, 401],
             empty: false,

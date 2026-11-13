@@ -183,6 +183,8 @@ Options:
                         [string] [choices: "default", "json", "streaming-json"] [default: "default"]
       --output-schema            path to a JSON Schema file constraining the final review output
                                                                                             [string]
+      --fail-on                  exit 2 when a structured finding meets this priority threshold
+                                                                   [choices: "P0", "P1", "P2", "P3"]
   -o, --output-last-message      write the final review message to a file                   [string]
       --ephemeral                run in a temporary session and delete it on exit without persisting
                                  session history                          [boolean] [default: false]

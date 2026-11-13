@@ -1,6 +1,44 @@
 import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 
 export const dict = {
+  "codeReview.refresh": "Refresh reports",
+  "codeReview.details": "Review details",
+  "codeReview.capturedHead": "Captured HEAD",
+  "codeReview.description": "Read-only review of captured changes and saved findings",
+  "codeReview.cancel": "Cancel review",
+  "codeReview.workspace.not_applicable": "Frozen revision; workspace comparison does not apply",
+  "codeReview.title": "Code review",
+  "codeReview.unsupported": "Structured code review requires a native server.",
+  "codeReview.target": "Target",
+  "codeReview.target.uncommitted": "Uncommitted changes",
+  "codeReview.target.base": "Compare with base branch",
+  "codeReview.target.commit": "Commit",
+  "codeReview.target.pr": "Pull request",
+  "codeReview.ref": "Branch, commit, or pull request reference",
+  "codeReview.focus": "Focus (optional)",
+  "codeReview.start": "Start review",
+  "codeReview.history": "Reports",
+  "codeReview.empty": "No reports yet",
+  "codeReview.more": "Load older reports",
+  "codeReview.error": "Could not complete the request. Refresh before retrying.",
+  "codeReview.workspace.current": "Captured workspace is current",
+  "codeReview.workspace.stale": "Stale report: workspace has changed",
+  "codeReview.workspace.unavailable": "Workspace comparison unavailable",
+  "codeReview.priority": "Priority",
+  "codeReview.all": "All priorities",
+  "codeReview.coverage": "Coverage exclusions: {{count}} \u00b7 Invalid locations: {{invalid}}",
+  "codeReview.fileAnchor": "File-level finding",
+  "codeReview.snippet": "Captured context outside the diff",
+  "codeReview.assessment.issues_found": "Issues found",
+  "codeReview.assessment.no_findings": "No findings",
+  "codeReview.assessment.inconclusive": "Inconclusive",
+  "codeReview.status.admitted": "Admitted",
+  "codeReview.status.capturing": "Capturing changes",
+  "codeReview.status.running": "Reviewing",
+  "codeReview.status.completed": "Completed",
+  "codeReview.status.failed": "Failed",
+  "codeReview.status.cancelled": "Cancelled",
+  "codeReview.status.interrupted": "Interrupted",
   "hooks.repository.title": "Repository hook trust",
   "hooks.repository.hint":
     "Allow hooks from the repository root to run in sessions inside this repository. Reload hooks after allowing. Revoking prevents new hook invocations.",
@@ -122,7 +160,8 @@ export const dict = {
   "session.plan.approveDescription": "Switch to build mode and implement the reviewed plan",
   "session.plan.keepPlanningDescription": "Stay in Plan mode and revise the plan",
   "commandSandbox.title": "Command sandbox",
-  "commandSandbox.scope": "Applies to native commands on macOS (seatbelt) and Linux (bubblewrap). It does not cover all agent activity.",
+  "commandSandbox.scope":
+    "Applies to native commands on macOS (seatbelt) and Linux (bubblewrap). It does not cover all agent activity.",
   "commandSandbox.limits": "Existing hard links and changes made by other processes are outside this protection.",
   "commandSandbox.immutable":
     "This session’s stored profile cannot be changed. Create a new session to choose another profile.",
@@ -875,7 +914,7 @@ export const dict = {
   "provider.custom.headers.add": "Add header",
   "provider.custom.error.providerID.required": "Provider ID is required",
   "provider.custom.error.providerID.format": "Use lowercase letters, numbers, hyphens, or underscores",
-  "provider.custom.error.providerID.exists": "That provider ID already exists (try \"{{id}}\")",
+  "provider.custom.error.providerID.exists": 'That provider ID already exists (try "{{id}}")',
   "provider.custom.error.name.required": "Display name is required",
   "provider.custom.error.baseURL.required": "Base URL is required",
   "provider.custom.error.baseURL.format": "Must start with http:// or https://",
@@ -1317,7 +1356,8 @@ export const dict = {
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.older": "Older",
-  "home.providerTip": "Connect a provider or custom OpenAI-compatible endpoint to use Claude, GPT, Grok, Gemini, and more",
+  "home.providerTip":
+    "Connect a provider or custom OpenAI-compatible endpoint to use Claude, GPT, Grok, Gemini, and more",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",
@@ -1910,7 +1950,8 @@ export const dict = {
   "command.slash.unavailable": "/{{name}} is not available here",
   "grok.copy.done": "Response {{index}} copied",
   "grok.copy.missing": "No response {{index}} to copy",
-  "grok.copy.file": "Writing /copy to a file is only available in the terminal. Run /copy {{index}} to use the clipboard.",
+  "grok.copy.file":
+    "Writing /copy to a file is only available in the terminal. Run /copy {{index}} to use the clipboard.",
   "grok.rename.auto": "/rename --auto is only available in the terminal",
   "grok.agents": "Agents",
   "grok.agents.current": "current",
@@ -2016,8 +2057,7 @@ export const dict = {
   "grok.tutorial.1.body":
     "Describe the change you want in plain language. Apexo reads the code, proposes edits and runs tools; you approve anything risky.",
   "grok.tutorial.2.title": "Attaching context",
-  "grok.tutorial.2.body":
-    "Type @ to attach files or folders, paste images, or use /resources to attach MCP resources.",
+  "grok.tutorial.2.body": "Type @ to attach files or folders, paste images, or use /resources to attach MCP resources.",
   "grok.tutorial.3.title": "Navigation",
   "grok.tutorial.3.body":
     "Use /sessions to switch sessions, /timeline to jump to a message, and /history to reuse an earlier prompt.",

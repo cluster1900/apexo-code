@@ -7,7 +7,10 @@ import {
   SessionReviewV2,
   SessionReviewV2Sidebar,
 } from "@apexo/session-ui/v2/session-review-v2"
-import { SessionReviewFilePreviewV2 } from "@apexo/session-ui/v2/session-review-file-preview-v2"
+import {
+  SessionReviewFilePreviewV2,
+  type SessionReviewFilePreviewV2Props,
+} from "@apexo/session-ui/v2/session-review-file-preview-v2"
 import { DiffChanges } from "@apexo/ui/v2/diff-changes-v2"
 import type {
   SessionReviewComment,
@@ -34,6 +37,8 @@ import { applyFileListKeyDown, SessionFileListV2 } from "@/pages/session/v2/sess
 type ReviewDiff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
 
 export type ReviewPanelV2Props = {
+  frozen?: boolean
+  focusedLines?: { file: string; range: NonNullable<SessionReviewFilePreviewV2Props["focusedLines"]> } | null
   title?: JSX.Element
   empty?: JSX.Element
   diffs: () => ReviewDiff[]
@@ -150,7 +155,8 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
                   diff={diff()}
                   diffStyle={props.diffStyle}
                   expandMode={props.state.expandMode()}
-                  readFile={readFile}
+                  readFile={props.frozen ? undefined : readFile}
+                  focusedLines={props.focusedLines?.file === file ? props.focusedLines.range : null}
                   onLineComment={props.onLineComment}
                   onLineCommentUpdate={props.onLineCommentUpdate}
                   onLineCommentDelete={props.onLineCommentDelete}

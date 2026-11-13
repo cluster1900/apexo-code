@@ -15,6 +15,7 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  CodeReviewInput,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -377,6 +378,16 @@ import type {
   TuiSubmitPromptResponses,
   V2AgentListErrors,
   V2AgentListResponses,
+  V2CodeReviewCancelErrors,
+  V2CodeReviewCancelResponses,
+  V2CodeReviewDiffErrors,
+  V2CodeReviewDiffResponses,
+  V2CodeReviewGetErrors,
+  V2CodeReviewGetResponses,
+  V2CodeReviewListErrors,
+  V2CodeReviewListResponses,
+  V2CodeReviewStartErrors,
+  V2CodeReviewStartResponses,
   V2CommandListErrors,
   V2CommandListResponses,
   V2CredentialRemoveErrors,
@@ -10070,6 +10081,142 @@ export class SideQuestion2 extends HeyApiClient {
   }
 }
 
+export class CodeReview extends HeyApiClient {
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      after?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "after" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2CodeReviewListResponses, V2CodeReviewListErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/review",
+      ...options,
+      ...params,
+    })
+  }
+
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      codeReviewInput: CodeReviewInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "codeReviewInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2CodeReviewStartResponses, V2CodeReviewStartErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/review",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      reviewID: string
+      compareWorkspace?: "true"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "reviewID" },
+            { in: "query", key: "compareWorkspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2CodeReviewGetResponses, V2CodeReviewGetErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/review/{reviewID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  public diff<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      reviewID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "reviewID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2CodeReviewDiffResponses, V2CodeReviewDiffErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/review/{reviewID}/diff",
+      ...options,
+      ...params,
+    })
+  }
+
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      reviewID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "reviewID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2CodeReviewCancelResponses, V2CodeReviewCancelErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/review/{reviewID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Model extends HeyApiClient {
   /**
    * List models
@@ -11344,6 +11491,11 @@ export class V2 extends HeyApiClient {
   private _sideQuestion?: SideQuestion2
   get sideQuestion(): SideQuestion2 {
     return (this._sideQuestion ??= new SideQuestion2({ client: this.client }))
+  }
+
+  private _codeReview?: CodeReview
+  get codeReview(): CodeReview {
+    return (this._codeReview ??= new CodeReview({ client: this.client }))
   }
 
   private _model?: Model

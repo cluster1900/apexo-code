@@ -1,3 +1,4 @@
+import { codeReviewAvailable } from "@apexo/sdk/v2/code-review"
 import { taskMessageDraft } from "@apexo/sdk/v2/task-message"
 import { nativeMemoryActions } from "@apexo/tui/util/session-memory"
 import { mcpActions } from "@apexo/tui/component/mcp-browser"
@@ -455,6 +456,40 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
             }
           : undefined,
     ),
+    codeReviewActions: {
+      available: async () => {
+        await ensureSession()
+        return codeReviewAvailable(ctx.sdk, state.sessionID)
+      },
+      list: async (after, signal) => {
+        await ensureSession()
+        return (
+          await ctx.sdk.v2.codeReview.list(
+            { sessionID: state.sessionID, ...(after ? { after } : {}) },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      get: async (reviewID, signal, workspace) =>
+        (
+          await ctx.sdk.v2.codeReview.get(
+            { sessionID: state.sessionID, reviewID, ...(workspace ? { compareWorkspace: "true" as const } : {}) },
+            { signal, throwOnError: true },
+          )
+        ).data,
+      start: async (codeReviewInput, signal) => {
+        await ensureSession()
+        return (
+          await ctx.sdk.v2.codeReview.start(
+            { sessionID: state.sessionID, codeReviewInput },
+            { signal, throwOnError: true },
+          )
+        ).data
+      },
+      cancel: async (reviewID, signal) =>
+        (await ctx.sdk.v2.codeReview.cancel({ sessionID: state.sessionID, reviewID }, { signal, throwOnError: true }))
+          .data,
+    },
     sideQuestionActions: {
       list: async (signal) => {
         await ensureSession()
@@ -487,8 +522,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
         state.sessionID
           ? (await ctx.sdk.v2.session.sandbox({ sessionID: state.sessionID }, { signal, throwOnError: true })).data
           : undefined,
-      catalog: async (signal) =>
-        (await ctx.sdk.v2.sandbox.catalog(undefined, { signal, throwOnError: true })).data,
+      catalog: async (signal) => (await ctx.sdk.v2.sandbox.catalog(undefined, { signal, throwOnError: true })).data,
       native: () => Boolean(ctx.native),
       selected: input.sandboxProfile,
       select: input.setSandboxProfile,

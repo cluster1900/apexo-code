@@ -221,6 +221,7 @@ export type FooterPromptRoute =
   | { type: "memory" }
   | { type: "remember"; content: string }
   | { type: "workflow"; command: string }
+  | { type: "review" }
   | { type: "btw"; question: string; images: import("@apexo/sdk/v2/client").SideQuestionInput["images"] }
   | { type: "feedback" }
   | { type: "hooks" }

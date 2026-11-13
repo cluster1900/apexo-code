@@ -1,3 +1,4 @@
+import { DialogCodeReview } from "../../component/dialog-code-review"
 import { DialogWorkflow } from "../../component/dialog-workflow"
 import { canonicalToolInput, canonicalToolName } from "@apexo/core/util/grok-tool-display"
 import { DialogSideQuestion } from "../../component/dialog-side-question"
@@ -509,6 +510,13 @@ export function Session() {
       category: "Session",
       slash: { name: "deep-research" },
       run: () => dialog.replace(() => <DialogWorkflow sessionID={route.sessionID} command="/deep-research" />),
+    },
+    {
+      title: "Code review",
+      value: "session.code-review",
+      category: "Session",
+      slash: { name: "review", aliases: ["reviews"] },
+      run: () => dialog.replace(() => <DialogCodeReview sessionID={route.sessionID} />),
     },
     {
       title: "Side question",

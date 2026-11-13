@@ -1620,6 +1620,39 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: `/api/session/${ctx.state.id}/side-question`, headers: ctx.headers() }))
     .json(200, array),
   http.protected
+    .get("/api/session/{sessionID}/review", "v2.codeReview.list")
+    .seeded((ctx) => ctx.session({ title: "Code review owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/review`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      array(body.data)
+      check(body.hasMore === false, "new Session has no review history")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/review", "v2.codeReview.start.invalid")
+    .seeded((ctx) => ctx.session({ title: "Code review owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/review`,
+      headers: ctx.headers(),
+      body: { target: { type: "base", ref: "" } },
+    }))
+    .status(400),
+  http.protected
+    .get("/api/session/{sessionID}/review/{reviewID}", "v2.codeReview.get.missing")
+    .seeded((ctx) => ctx.session({ title: "Code review owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/review/rev_missing`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .get("/api/session/{sessionID}/review/{reviewID}/diff", "v2.codeReview.diff.missing")
+    .seeded((ctx) => ctx.session({ title: "Code review owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/review/rev_missing/diff`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/review/{reviewID}/cancel", "v2.codeReview.cancel.missing")
+    .seeded((ctx) => ctx.session({ title: "Code review owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/review/rev_missing/cancel`, headers: ctx.headers() }))
+    .status(404),
+  http.protected
     .post("/api/session/{sessionID}/side-question", "v2.sideQuestion.ask.invalid")
     .seeded((ctx) => ctx.session({ title: "Side question owner" }))
     .at((ctx) => ({

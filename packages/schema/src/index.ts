@@ -1,5 +1,6 @@
 export { Agent } from "./agent"
 export { Command } from "./command"
+export { CodeReview } from "./code-review"
 export { Connection } from "./connection"
 export { Credential } from "./credential"
 export { Event } from "./event"

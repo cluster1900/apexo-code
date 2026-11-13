@@ -256,7 +256,7 @@ describe("apexo run and apexo review CLI subprocess integration", () => {
   )
 
   cliIt.live(
-    "top-level apexo review runs non-interactively with target flags, writes -o report, and honors --ephemeral",
+    "compatibility apexo review preserves target prompts, plain-text export and ephemeral cleanup",
     ({ llm, apexo, home }) =>
       Effect.gen(function* () {
         const reportPath = path.join(home, "review-report.md")
@@ -266,6 +266,8 @@ describe("apexo run and apexo review CLI subprocess integration", () => {
         const result = yield* apexo.spawn(
           [
             "review",
+            "--session-protocol",
+            "compatibility",
             "--model",
             testModelID,
             "--base",

@@ -125,6 +125,14 @@ export interface Interface {
     readonly list: (repository: Repository) => Effect.Effect<readonly Worktree[], WorktreeError>
   }
   readonly index: {
+    /** Snapshot the real index plus working changes without changing the user's index or running filters. */
+    readonly capture: (input: {
+      repository: Repository
+      maximumUntrackedFileBytes: number
+    }) => Effect.Effect<
+      { tree: TreeID; skipped: readonly RelativePath[]; conflicts: readonly RelativePath[] },
+      OperationError
+    >
     /** Refresh only the requested project-relative scope, preserving all other entries. */
     readonly refresh: (input: {
       repository: Repository
@@ -339,11 +347,11 @@ const layer = Layer.effect(
       operationName: OperationError["operation"],
       repository: Repository,
       args: string[],
-      options?: { stdin?: string; env?: Record<string, string> },
+      options?: { stdin?: string; env?: Record<string, string>; config?: string[] },
     ) {
       const result = yield* proc
         .run(
-          ChildProcess.make("git", repositoryArgs(repository, args), {
+          ChildProcess.make("git", repositoryArgs(repository, [...(options?.config ?? []), ...args]), {
             cwd: repository.worktree,
             env: options?.env,
             extendEnv: true,
@@ -440,14 +448,17 @@ const layer = Layer.effect(
       return repository
     })
 
-    const refresh = Effect.fn("Git.index.refresh")(function* (input: {
-      repository: Repository
-      scope: RelativePath
-      ignores?: Repository
-      maximumUntrackedFileBytes?: number
-    }) {
+    const refresh = Effect.fn("Git.index.refresh")(function* (
+      input: {
+        repository: Repository
+        scope: RelativePath
+        ignores?: Repository
+        maximumUntrackedFileBytes?: number
+      },
+      options?: { env: Record<string, string>; config: string[]; excluded: ReadonlySet<string> },
+    ) {
       const list = (args: string[]) =>
-        repositoryOperation("refresh", input.repository, args).pipe(
+        repositoryOperation("refresh", input.repository, args, options).pipe(
           Effect.map((result) => result.text.split("\0").filter(Boolean)),
         )
       const [tracked, untracked] = yield* Effect.all(
@@ -468,18 +479,23 @@ const layer = Layer.effect(
               .filter(Boolean),
           )
         : new Set<string>()
-      const allowed = candidates.filter((item) => !ignored.has(item))
+      const allowed = candidates.filter((item) => !ignored.has(item) && !options?.excluded.has(item))
       const maximum = input.maximumUntrackedFileBytes
       const skipped = maximum
         ? (yield* Effect.forEach(
             untracked.filter((item) => allowed.includes(item)),
             (item) =>
-              fs.stat(path.join(input.repository.worktree, item)).pipe(
-                Effect.map((info) =>
-                  info.type === "File" && Number(info.size) > maximum ? RelativePath.make(item) : undefined,
-                ),
-                Effect.catch(() => Effect.succeed(undefined)),
-              ),
+              Effect.gen(function* () {
+                const file = path.join(input.repository.worktree, item)
+                const link = yield* fs.readLink(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                if (link !== undefined) return
+                return yield* fs.stat(file).pipe(
+                  Effect.map((info) =>
+                    info.type === "File" && Number(info.size) > maximum ? RelativePath.make(item) : undefined,
+                  ),
+                  Effect.catch(() => Effect.succeed(undefined)),
+                )
+              }),
             { concurrency: 8 },
           )).filter((item): item is RelativePath => item !== undefined)
         : []
@@ -490,17 +506,109 @@ const layer = Layer.effect(
           "refresh",
           input.repository,
           ["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"],
-          { stdin: remove.join("\0") + "\0" },
+          { ...options, stdin: remove.join("\0") + "\0" },
         )
       if (stage.length)
         yield* repositoryOperation(
           "refresh",
           input.repository,
-          ["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"],
-          { stdin: stage.join("\0") + "\0" },
+          [
+            "add",
+            "--all",
+            "--sparse",
+            ...(options ? ["--force"] : []),
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
+          ],
+          { ...options, stdin: stage.join("\0") + "\0" },
         )
       return { skipped }
     })
+
+    const captureIndex = Effect.fn("Git.index.capture")(
+      (input: { repository: Repository; maximumUntrackedFileBytes: number }) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const temporary = yield* fs.makeTempDirectory().pipe(Effect.orDie)
+            yield* Effect.addFinalizer(() => fs.remove(temporary, { recursive: true }).pipe(Effect.ignore))
+            const env = { GIT_INDEX_FILE: path.join(temporary, "index") }
+            const names = (yield* repositoryOperation("refresh", input.repository, [
+              "config",
+              "--null",
+              "--name-only",
+              "--list",
+            ])).text.split("\0")
+            const config = [
+              "--literal-pathspecs",
+              "--no-optional-locks",
+              "-c",
+              "core.fsmonitor=false",
+              ...[
+                ...new Set(
+                  names
+                    .filter((key) => /^filter[.].*[.](clean|process|required)$/.test(key))
+                    .map((key) => key.slice(0, key.lastIndexOf("."))),
+                ),
+              ].flatMap((driver) => [
+                "-c",
+                `${driver}.clean=`,
+                "-c",
+                `${driver}.process=`,
+                "-c",
+                `${driver}.required=false`,
+              ]),
+            ]
+            const options = { env, config, excluded: new Set<string>() }
+            const source = resolvePath(
+              input.repository.worktree,
+              (yield* repositoryOperation("refresh", input.repository, ["rev-parse", "--git-path", "index"])).text,
+            )
+            if (yield* fs.exists(source).pipe(Effect.orDie)) {
+              yield* fs.copyFile(source, env.GIT_INDEX_FILE).pipe(Effect.orDie)
+              // Resolve split indexes while retaining the source repository's shared-index directory.
+              yield* repositoryOperation("refresh", input.repository, ["update-index", "--no-split-index"], options)
+            } else {
+              yield* repositoryOperation("refresh", input.repository, ["read-tree", "--empty"], options)
+            }
+            const conflicts = [
+              ...new Set(
+                (yield* repositoryOperation(
+                  "refresh",
+                  input.repository,
+                  ["ls-files", "--unmerged", "-z"],
+                  options,
+                )).text
+                  .split("\0")
+                  .filter(Boolean)
+                  .map((entry) => RelativePath.make(entry.slice(entry.indexOf("\t") + 1))),
+              ),
+            ]
+            conflicts.forEach((file) => options.excluded.add(file))
+            if (conflicts.length) {
+              const revision = yield* head(input.repository)
+              if (revision)
+                yield* repositoryOperation(
+                  "refresh",
+                  input.repository,
+                  ["--literal-pathspecs", "reset", "--quiet", revision, "--", ...conflicts],
+                  options,
+                )
+              else
+                yield* repositoryOperation(
+                  "refresh",
+                  input.repository,
+                  ["update-index", "--force-remove", "--", ...conflicts],
+                  options,
+                )
+            }
+            const refreshed = yield* refresh({ ...input, scope: RelativePath.make(".") }, options)
+            const tree = TreeID.make(
+              (yield* repositoryOperation("write_tree", input.repository, ["write-tree"], options)).text.trim(),
+            )
+            return { tree, skipped: refreshed.skipped, conflicts }
+          }),
+        ),
+    )
 
     const ignored = Effect.fn("Git.index.ignored")(function* (input: {
       repository: Repository
@@ -944,7 +1052,7 @@ const layer = Layer.effect(
       sync: { fetchRemotes: fetch, fetchBranch, checkoutRemoteBranch: checkout, resetHard: reset },
       change: { capture, apply, discard },
       worktree: { create: worktreeCreate, remove: worktreeRemove, list: worktreeList },
-      index: { refresh, ignored },
+      index: { capture: captureIndex, refresh, ignored },
       tree: {
         capture: captureTree,
         write: writeTree,
