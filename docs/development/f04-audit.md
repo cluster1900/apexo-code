@@ -1,5 +1,7 @@
 # F04 document conformance audit
 
+Current branch re-audit: [f04-mcp-forms-audit.md](f04-mcp-forms-audit.md) (`mcp-forms`, `f26259af`).
+
 ## Audit repair status (2026-11-13)
 
 The three findings below are retained as the original audit evidence. The repair adds authoritative descendant discovery to the existing pending-list endpoint and routes all four UI surfaces through the shared Client watcher. It also uses one own-key draft reader for submission and rendering, including first-edit reactivity for fields without defaults.

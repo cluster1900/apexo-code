@@ -25,3 +25,14 @@ A fresh production baseline was recorded before changing Session/composer code f
 | After repair  | 287, 195, 189, 172, 289, 885, 162, 167, 186, 525  | 187.5 ms             | 885 ms       |
 
 The median changed by -1.5 ms (about -0.8%). This fixture shows no observed regression; the variable tail and single comparison do not establish a general improvement. Hydration now queries the viewed root once per polling cycle and discovers descendants through existing live Location scopes and authoritative Session ancestry. No user app or backend was restarted for measurement.
+
+## O1–O3 interaction follow-up (2026-11-13)
+
+The pre-edit production build and baseline completed before changing the shared Session form. The post-edit comparison used the same script after production builds, real browser/Desktop acceptance and all five local gates finished.
+
+| Build              | All ten samples (ms)                             | Median after warmups | Reported p95 |
+| ------------------ | ------------------------------------------------ | -------------------- | ------------ |
+| Before O1–O3 fixes | 187, 186, 176, 172, 181, 169, 172, 165, 166, 168 | 170.5 ms             | 181 ms       |
+| After O1–O3 fixes  | 196, 178, 182, 177, 179, 214, 201, 177, 173, 174 | 178 ms               | 214 ms       |
+
+The measured median increased by 7.5 ms (about 4.4%); the reported tail increased by 33 ms. These are retained observations, not a general speedup or slowdown claim from one paired run. The new focus lookup runs only on input Enter, and the change adds no startup network requests or polling. No user app or server was restarted for either measurement.

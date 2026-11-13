@@ -214,6 +214,52 @@ try {
     assert.equal((await runtime.api(`/api/session/${fixture.session.id}/mcp/elicitation`))[0].id, pending.id)
     checks.push(`${action}-prefilled-without-submission`)
     if (action === "accept") {
+      await command("focus", control("name"))
+      await command(
+        "eval",
+        `document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter", bubbles:true, isComposing:true}))`,
+      )
+      assert.equal(
+        JSON.parse(
+          await command(
+            "eval",
+            `document.activeElement === document.querySelector(${JSON.stringify(control("name"))})`,
+          ),
+        ),
+        true,
+      )
+      checks.push("ime-enter-keeps-field-focus")
+      for (const [from, to] of [
+        ["name", "quantity"],
+        ["quantity", "ratio"],
+        ["ratio", "confirm"],
+      ]) {
+        await command("focus", control(from))
+        await command("press", "Enter")
+        await command(
+          "wait",
+          "--fn",
+          `document.activeElement === document.querySelector(${JSON.stringify(control(to))})`,
+        )
+        assert.equal((await runtime.api(`/api/session/${fixture.session.id}/mcp/elicitation`))[0]?.id, pending.id)
+      }
+      checks.push("enter-advances-input-without-submitting")
+      const order = JSON.parse(
+        await command(
+          "eval",
+          `Array.from(document.querySelectorAll('${dock} [data-elicitation-field]')).filter(field => field.querySelector(':scope > p')).map(field => {const label=field.querySelector(':scope > label').getBoundingClientRect();return {name:field.dataset.elicitationField,belowLabel:Array.from(field.querySelectorAll(':scope > p')).every(hint => hint.getBoundingClientRect().top >= label.bottom)}})`,
+        ),
+      )
+      assert.deepEqual(
+        order.map((field) => field.name),
+        ["name", "quantity", "ratio", "regions"],
+      )
+      assert.ok(
+        order.every((field) => field.belowLabel),
+        JSON.stringify(order),
+      )
+      checks.push("constraints-follow-field-labels")
+      await command("focus", control("name"))
       await command("screenshot", join(runtime.output, "forms-visible.png"))
       await command("fill", control("name"), "")
       await command("click", '[data-action="elicitation-accept"]')
@@ -230,7 +276,17 @@ try {
       await command("check", control("confirm"))
       await command("select", control("environment", "select"), "1")
       await command("check", `${dock} [data-elicitation-field="regions"] [role="group"] label:last-child input`)
-      await command("click", '[data-action="elicitation-accept"]')
+      await command("focus", `${dock} [data-elicitation-field="regions"] [role="group"] label:last-child input`)
+      await command("press", "Enter")
+      await command(
+        "wait",
+        "--fn",
+        `document.activeElement === document.querySelector('[data-action="elicitation-accept"]')`,
+      )
+      assert.equal((await runtime.api(`/api/session/${fixture.session.id}/mcp/elicitation`))[0]?.id, pending.id)
+      checks.push("last-input-enter-focuses-submit")
+      await command("press", "Enter")
+      checks.push("focused-submit-enter-explicitly-accepts")
     }
     if (action === "decline") await command("click", '[data-action="elicitation-decline"]')
     if (action === "cancel") {
@@ -263,6 +319,9 @@ try {
     await command("wait", "--fn", `!document.querySelector(${JSON.stringify(dock)})`)
     checks.push(`${action}-settles-owned-call`)
   }
+  // Session interruption retires the MCP generation; child Tasks capture the live tool catalog at launch.
+  await runtime.api("/api/mcp/forms/connect", undefined, "POST")
+  checks.push("reconnect-after-interrupt-before-child-launch")
   for (const scenario of ["F04_DIRECT", "F04_NESTED", "F04_SPECIAL", "F04_SPECIAL_EDIT"]) {
     await fixture.prompt(fixture.session.id, undefined, scenario)
     const pending = await fixture.pending(fixture.session.id)

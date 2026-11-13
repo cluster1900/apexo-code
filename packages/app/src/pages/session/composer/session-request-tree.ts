@@ -1,6 +1,6 @@
 import type { PermissionRequest, QuestionRequest, Session } from "@apexo/sdk/v2/client"
 
-export function sessionTreeIDs(session: Session[], sessionID?: string) {
+function sessionTreeIDs(session: Session[], sessionID?: string) {
   if (!sessionID) return []
 
   const map = session.reduce((acc, item) => {

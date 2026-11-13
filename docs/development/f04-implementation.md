@@ -87,3 +87,9 @@ bun script/mcp-forms-ui.mjs builtin
 ```
 
 Build App and Desktop before their production acceptance scripts. All processes in these checks are fixture-owned.
+
+## Follow-up audit interaction fixes
+
+The [branch re-audit](f04-mcp-forms-audit.md) confirmed F04's documented functionality and identified three small follow-ups. App/Desktop now advance focus on non-composing Enter in an input rather than implicitly accepting defaults; the last input focuses Submit for explicit activation. Constraints follow their own label, and the unused `sessionTreeIDs` export is removed without changing internal permission/question traversal. No Core or public API contract changes are needed.
+
+The expanded browser regression failed against the pre-fix production build. A fresh production benchmark was recorded before these Session/composer edits. Production App/Desktop builds passed, as did expanded browser acceptance (20 checks), rebuilt Desktop acceptance (21 checks), and all 21 root typecheck tasks. The full 522-file unit gate passed all 18 batches (six tasks), as did Client and SDK generated consistency checks. HTTP coverage, auth and Effect modes each passed 358 scenarios with zero failures, skips, missing or extra routes. All five local gates passed. The production composer comparison measured medians of 170.5 ms before and 178 ms after (+7.5 ms); reported tails were 181/214 ms. This single paired measurement does not establish a general performance trend. Full samples are in [the comparison record](../testing/performance/mcp-form-composer.md). PR #207 remains a draft for review and is not merged. See [the bug record](../testing/ui/mcp-form-interactions.md).

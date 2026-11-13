@@ -80,7 +80,27 @@ export function SessionMcpElicitationDock(props: { request: McpElicitationReques
           event.preventDefault()
           event.stopPropagation()
           void submit("cancel")
+          return
         }
+        if (
+          event.key !== "Enter" ||
+          event.isComposing ||
+          event.keyCode === 229 ||
+          !(event.target instanceof HTMLInputElement)
+        )
+          return
+        event.preventDefault()
+        event.stopPropagation()
+        if (state.pending || event.repeat) return
+        const inputs = Array.from(
+          event.currentTarget.querySelectorAll<HTMLElement>(
+            "[data-elicitation-field] input:enabled, [data-elicitation-field] select:enabled",
+          ),
+        )
+        const next =
+          inputs[inputs.indexOf(event.target) + 1] ??
+          event.currentTarget.querySelector<HTMLElement>('[data-action="elicitation-accept"]')
+        next?.focus()
       }}
     >
       <DockPrompt
@@ -127,15 +147,15 @@ export function SessionMcpElicitationDock(props: { request: McpElicitationReques
               const id = `${props.request.id}-${field.name}`
               return (
                 <div class="space-y-1" data-elicitation-field={field.name}>
+                  <label for={id}>
+                    {field.title}
+                    {field.required ? " *" : ""}
+                  </label>
                   <For each={elicitationConstraints(field)}>
                     {(hint) => (
                       <p class="text-12-regular">{language.t(`mcpElicitation.${hint.kind}`, { value: hint.value })}</p>
                     )}
                   </For>
-                  <label for={id}>
-                    {field.title}
-                    {field.required ? " *" : ""}
-                  </label>
                   <Show when={field.description}>
                     <p class="text-12-regular whitespace-pre-wrap">{field.description}</p>
                   </Show>
