@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile, spawn } from "node:child_process"
+import { existsSync, writeFileSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer, request } from "node:http"
 import { basename, join } from "node:path"
@@ -13,7 +14,13 @@ const nativeWindow = builtin || kind === "native"
 const fixture = await startCodeReviewFixture({ mixed: kind === "mixed", desktop: builtin })
 const { runtime, repo } = fixture
 const requests = []
-const server = createServer((incoming, response) => {
+const refreshHold = join(runtime.output, "ui-hold-list")
+const refreshHeld = join(runtime.output, "ui-list-held")
+const releaseRefresh = () =>
+  Bun.file(refreshHold)
+    .delete()
+    .catch(() => {})
+const server = createServer(async (incoming, response) => {
   response.on("finish", () => requests.push({ path: incoming.url, status: response.statusCode }))
   const url = new URL(incoming.url, "http://localhost")
   const document = incoming.headers.accept?.includes("text/html")
@@ -32,6 +39,15 @@ const server = createServer((incoming, response) => {
     return
   }
   const target = new URL(runtime.url)
+  if (
+    incoming.method === "GET" &&
+    url.pathname.endsWith("/review") &&
+    existsSync(refreshHold) &&
+    !existsSync(refreshHeld)
+  ) {
+    writeFileSync(refreshHeld, "held")
+    while (existsSync(refreshHold)) await Bun.sleep(10)
+  }
   const upstream = request(
     {
       hostname: target.hostname,
@@ -70,7 +86,7 @@ if (nativeWindow) {
   const wrapper = join(runtime.output, "native.cjs")
   await writeFile(
     wrapper,
-    `const {app}=require('electron');console.log('Task fixture initial app path:',app.getAppPath());if(!${JSON.stringify(process.argv.includes("--probe-original"))})app.setAppPath(${JSON.stringify(desktop)});console.log('Task fixture corrected app path:',app.getAppPath());app.setPath('appData',${JSON.stringify(appData)});import(${JSON.stringify(pathToFileURL(join(desktop, "out/main/index.js")).href)});`,
+    `const {app,session}=require('electron');const fs=require('node:fs');app.whenReady().then(()=>session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*']},(details,callback)=>{if(details.method==='GET'&&new URL(details.url).pathname.endsWith('/review')&&fs.existsSync(${JSON.stringify(refreshHold)})&&!fs.existsSync(${JSON.stringify(refreshHeld)})){fs.writeFileSync(${JSON.stringify(refreshHeld)},'held');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(refreshHold)}))return;clearInterval(timer);callback({})},10);return}callback({})}));console.log('Task fixture initial app path:',app.getAppPath());if(!${JSON.stringify(process.argv.includes("--probe-original"))})app.setAppPath(${JSON.stringify(desktop)});console.log('Task fixture corrected app path:',app.getAppPath());app.setPath('appData',${JSON.stringify(appData)});import(${JSON.stringify(pathToFileURL(join(desktop, "out/main/index.js")).href)});`,
   )
   const reservation = createServer()
   await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve))
@@ -265,17 +281,52 @@ try {
   const admitted = (await runtime.api(`/api/session/${fixture.session.id}/review`)).data[0]
   assert.deepEqual(admitted.input.target, { type: "base", ref: "main" })
   checks.push("base-target-selection", "new-review-clears-previous-report")
+  const previous = (await runtime.api(`/api/session/${fixture.session.id}/review`)).data.find(
+    (run) => run.status === "completed",
+  )
+  assert.ok(previous)
+  await writeFile(refreshHold, "hold")
+  await poll(() => Bun.file(refreshHeld).exists(), "passive App list request held")
+  assert.equal(
+    (
+      await command(
+        "eval",
+        `Array.from(document.querySelectorAll('[data-action="review-start"], [data-action="review-cancel"], [data-action="review-refresh"], [data-field="review-history"]')).every(element=>!element.disabled)`,
+      )
+    ).trim(),
+    "true",
+  )
   await command("wait", "--fn", 'document.querySelector("[data-action=review-cancel]")?.disabled===false')
   assert.equal((await command("get", "text", '[data-action="review-cancel"]')).trim(), "Cancel review")
   await command("click", '[data-action="review-cancel"]')
   await command("wait", '[data-status="cancelled"]')
   checks.push("targeted-cancel")
+  checks.push("cancel-during-held-passive-refresh")
+  await command("select", '[data-field="review-history"]', previous.id)
+  await command("wait", '[data-status="completed"]')
+  checks.push("history-during-held-passive-refresh")
+  await command("fill", '[data-field="review-focus"]', "")
+  await command("click", '[data-action="review-start"]')
+  const latest = await poll(async () => {
+    const run = (await runtime.api(`/api/session/${fixture.session.id}/review`)).data[0]
+    return run.id !== admitted.id && run.id !== previous.id && run.status === "completed" ? run : undefined
+  }, "new review completes while passive refresh is held")
+  await command(
+    "wait",
+    "--fn",
+    `document.querySelector('[data-field="review-history"]')?.value===${JSON.stringify(latest.id)} && document.querySelector('[data-action="review-start"]')?.disabled===false`,
+  )
+  checks.push("start-during-held-passive-refresh")
+  await releaseRefresh()
+  await command("wait", "--fn", 'document.querySelector("[data-component=code-review]")?.dataset.refreshing==="false"')
+  assert.equal((await command("get", "value", '[data-field="review-history"]')).trim(), latest.id)
+  checks.push("late-refresh-does-not-replace-selection")
   const afterCancel = fixture.calls.length
   await command("press", "Escape")
   await command("fill", '[contenteditable="true"]', "/reviews")
   await command("press", "Enter")
   await command("wait", panel)
-  await command("wait", '[data-status="cancelled"]')
+  await command("wait", '[data-status="completed"]')
   assert.equal(fixture.calls.length, afterCancel)
   checks.push("review-history-slash-alias")
   const other = (
@@ -310,6 +361,7 @@ try {
   await command("screenshot", join(runtime.output, "failure.png")).catch(() => {})
   throw error
 } finally {
+  await releaseRefresh()
   await command("close").catch(() => {})
   if (native.child && native.child.exitCode === null) {
     native.child.kill("SIGTERM")

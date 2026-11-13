@@ -80,6 +80,16 @@
 - Fix: require explicit `compareWorkspace=true` for comparison; UI requests it when inspecting completed evidence or at completion, while CLI/active polling uses plain reads. TUI passive refresh has separate state and an identity token so mutation/navigation invalidates stale refresh results. Immutable targets use a frozen-revision label rather than comparing an unrelated working tree.
 - Verification: native tests assert that plain detail reads omit comparison and immutable targets return `not_applicable`. The final large-repository mini PTY passes fourteen checks, including a single cancellation key while its passive list response is held; the final fullscreen PTY passes the same fourteen checks. Twenty ordinary detail polls in a 6279-file fixture measured 0.623 ms median and 0.902 ms p95; explicit comparison took 1018 ms and detected a subsequent edit.
 
+### 2026-11-13 audit follow-up to BUG-20261112-024: App/Desktop still block actions
+
+- Priority: P2. Status at `adfce4ec`: terminal remediation verified, App/Desktop open. Corrected by the remediation below.
+- Observed: in both the rebuilt production browser and an actual rebuilt Electron window, holding the passive review-list GET made Cancel review, Start review, Refresh reports and report history disabled while the selected review remained `running`. Releasing only that GET restored the actions, after which normal cancellation succeeded.
+- Expected: background status reads must not prevent cancellation or history navigation. A held GET must not turn the review UI into an indefinite action lock.
+- Reproduction: start a held second review with `startCodeReviewFixture`, obtain its ID before installing the hold, then call `fixture.pauseRefresh()` and inspect the real controls' `disabled` properties. Use the production UI flow from `code-review-ui.mjs`; the native reproduction uses its `native` mode with the controlled backend. Normal Desktop-own-sidecar acceptance is a separate passing check.
+- Root cause: `CodeReviewDialog` still runs its three-second passive timer through `run`, which sets the mutation `pending` flag. That same flag disables all of these controls, and the request has only the dialog-lifetime abort signal. This is the same action-lock root cause as the terminal issue recorded above, not a new historical recurrence count.
+- Fix: not applied during the audit. Reuse the already implemented terminal distinction between passive refresh and user actions, including stale-response fencing.
+- Verification: one controlled browser run and one native-window run each observed all four controls disabled and then recovered by releasing the GET. [Native screenshot](assets/f01-refresh-disabled.png); [normalized evidence](../../development/f01-audit-evidence.json). This proves the lock without relying on a generic timeout or repeated clicks.
+
 ## BUG-20261112-025: Review UI reused side-question copy and retained a competing unrestricted command
 
 - Scope: review action labels, terminal-state copy, command menus and target editing.
@@ -89,3 +99,21 @@
 - Root cause: borrowed side-question localization, a status-independent fallback, unchanged server-command filtering and the editor's default initial cursor position.
 - Fix: add review-specific typed copy; route review/reviews to the registered structured action before generic server commands; filter the competing server entry from both composer menus; show terminal statuses and report target/time; move the target cursor to the end after mount.
 - Verification: the final mixed-host browser acceptance confirms one read-only menu entry and correct cancellation copy. The final large-repository mini PTY confirms target replacement and cancelled-status copy. Final fullscreen PTY and own-sidecar Desktop checks confirm the same behavior.
+
+## BUG-20261113-005: Fullscreen review PageDown dismisses the dialog
+
+- Priority: P2. Status at the audited `adfce4ec` revision: open. Corrected by the remediation below.
+- Scope: fullscreen review captured-evidence scrolling, especially visible in an 80-by-24 terminal.
+- Observed: selecting an outside-hunk finding in an 80-by-24 PTY left its snippet below the viewport. Pressing the advertised PageDown control dismissed the entire review instead of revealing the snippet. A separate normal 120-by-40 PTY reproduced dismissal with one PageDown after the completed report and ready actions were observed; provider call count stayed at one.
+- Expected: PageUp/PageDown scroll the review's own evidence and preserve the dialog. The underlying Session must not receive those shortcuts while the dialog owns interaction.
+- Reproduction: run the real fullscreen PTY flow from `script/code-review-tui.mjs`, wait for a completed report and `Ready` actions, then send one PageDown (`\x1b[6~`). Observe the review disappearing and the composer returning. Smaller-terminal probes additionally show why scrolling is necessary.
+- Root cause: the review registers only Escape through `useBindings`; PageUp/PageDown are handled through raw `useKeyboard`. The fullscreen Session's registered page commands remain eligible and call `dialog.clear()`. Existing Task and Goal dialogs already capture their scrolling keys with higher-priority modal bindings.
+- Fix: not applied during this audit. Register review scrolling through the existing modal keybinding mechanism; do not redesign global keyboard dispatch.
+- Verification: the focused normal-size PTY probe reproduced `PAGE_DOWN_DISMISSES_REVIEW` with one provider call, in addition to the smaller-terminal failure. The initial missing-snippet timeout alone was not treated as proof of a rendering defect. See [normalized evidence](../../development/f01-audit-evidence.json).
+
+## 2026-11-13 remediation verification
+
+- BUG-20261112-024, App/Desktop: passive refresh now has its own state and a response-generation token. Explicit actions invalidate older refreshes without waiting for their response. This reuses the terminal pattern; no generic state framework was introduced.
+- Real browser/mixed-host and rebuilt Desktop-own-sidecar acceptance each pass 22 checks. The fixture holds only the passive GET, leaves other requests real, checks all four controls remain enabled, then actually cancels, selects history and starts another review before releasing that GET. Its late response cannot replace the new selection. Desktop delays the actual request at the owned Electron session network boundary, retaining the default sidecar and its authentication.
+- BUG-20261113-005: PageUp/PageDown use the existing higher-priority modal bindings, ahead of fullscreen Session navigation. They scroll by the evidence viewport height. Long captured evidence proves visible scrolling, not merely absence of dismissal. Mini and fullscreen 120-by-40 checks pass 16 cases each; fullscreen 80-by-24 passes the same cases, including scrolling evidence that starts below the visible area.
+- The earlier audit observations remain historical evidence for `adfce4ec`; they are not additional recurrence counts. The supplementary App `jsxDEV` unit-runner limitation remains unresolved.

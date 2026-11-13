@@ -2,6 +2,10 @@
 
 Branch: `structured-review`. Scope: F01 structured code review from [the development plan](codex-first-batch-plan.md). F04 and F02 remain out of scope. [PR #206](https://github.com/cluster1900/apexo-code/pull/206) remains draft and unmerged for user review.
 
+The [2026-11-13 independent audit](f01-audit.md) found six remaining defects on
+`adfce4ec`. Ordinary-flow checks below still pass, but they do not establish full
+R01–R09 acceptance. The audit records the findings at that revision without applying fixes. The subsequent six-finding remediation is recorded below.
+
 ## Implementation
 
 - Canonical CodeReview contracts and generated Promise/Effect/V2 clients; one `session_code_review` table with additive migrations, including process ownership.
@@ -48,3 +52,27 @@ The five required gates ran sequentially in the prescribed order: root typecheck
 Bug evidence: [capture](../testing/runtime/structured-review-capture.md), [ownership/model errors](../testing/runtime/structured-review-ownership.md), [interfaces/performance](../testing/ui/structured-review-interface.md), [CLI compatibility](../testing/runtime/structured-review-cli-compatibility.md), [types](../testing/types/structured-review-composition.md), [fixtures](../testing/test-fixtures/structured-review-fixtures.md). No historical recurrence counts or new recurring constraints were invented.
 
 Do not merge PR #206 until the user has reviewed and authorized it; required GitHub Actions checks must also pass before any merge.
+
+## Six-finding audit remediation (2026-11-13)
+
+All six findings reproduced by [the independent audit](f01-audit.md) have targeted fixes and boundary regressions. CLI omissions now use native defaults, explicit agents are validated before admission, and an optional review `variant` preserves variant-only selection without inventing a model override. Per-file Git calls are literal; active foreign-owner cancellation rejects with 409; App passive refresh is fenced independently of mutations; terminal page keys use the existing modal binding mechanism. No new endpoint, table, execution engine or cluster coordinator was introduced.
+
+| Final remediation check | Result |
+| --- | --- |
+| Native/CLI/compatibility focused suite | 22 passed / 172 assertions on the completed sources |
+| Local/attached default and explicit selection | Actual provider requests use the configured non-first model and reviewer system; explicit override and variant-only request field verified |
+| Process isolation script | Six checks passed, including rejection of peer cancellation and authoritative active/completed receipts; two provider calls |
+| Production browser / mixed host | 22 checks passed, including cancel/history/start with a passive GET held |
+| Rebuilt Desktop / own sidecar | The same 22 checks passed, retaining sidecar identity and credentials |
+| Mini/fullscreen 120-by-40 PTYs | 16 checks each, including visible evidence scrolling and held-refresh cancellation |
+| Fullscreen 80-by-24 PTY | The same 16 checks passed; evidence below the fold becomes visible after PageDown |
+| App/Desktop builds | Passed |
+| Fresh composer comparison | 221 ms median before; 167.5 ms after. See the performance record for raw samples and variability limits |
+| Root typecheck | Passed, 21/21 tasks on the completed six-finding sources |
+| Root aggregate tests | Passed fresh, all 18 Apexo batches and 6/6 tasks |
+| Client and legacy SDK generated checks | Both passed, no generation drift |
+| Complete HTTP API command | Coverage/auth/Effect each passed 354 scenarios on the six-finding sources; zero failed, missing or skipped |
+
+The five required gates were run sequentially in the prescribed order and all passed on the six-finding sources. The full aggregate run was fresh (zero cached tasks), not a replay.
+
+The original audit records, JSON evidence and screenshot are retained. Bug-record follow-ups describe each fix and fixture corrections without adding invented recurrence counts. App's supplementary JSX unit-runner issue remains unresolved. Keep PR #206 draft and unmerged for user review.

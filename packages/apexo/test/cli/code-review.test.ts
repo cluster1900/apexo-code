@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import { Effect, Schema } from "effect"
 import { CodeReview } from "@apexo/schema/code-review"
+import { Model } from "@apexo/schema/model"
 import { codeReviewExitCode, formatCodeReview } from "@/cli/code-review-output"
 import { reviewApiSupports } from "@/cli/native-code-review"
 import { cliIt, testModelID } from "../lib/cli-process"
@@ -51,6 +52,9 @@ cliIt.live(
           JSON.stringify({
             snapshots: false,
             compaction: { auto: false },
+            model: "test/z-preferred",
+            default_agent: "reviewer",
+            agents: { reviewer: { mode: "primary", system: "CONFIGURED_REVIEWER_SYSTEM" } },
             providers: {
               test: {
                 api: {
@@ -63,6 +67,11 @@ cliIt.live(
                   "test-model": {
                     capabilities: { tools: true, input: ["text"], output: ["text"] },
                     limit: { context: 100000, output: 4096 },
+                  },
+                  "z-preferred": {
+                    capabilities: { tools: true, input: ["text"], output: ["text"] },
+                    limit: { context: 100000, output: 4096 },
+                    variants: [{ id: "careful", body: { review_fixture_variant: "careful" } }],
                   },
                 },
               },
@@ -96,6 +105,10 @@ cliIt.live(
       })
       apexo.expectExit(unavailable, 1)
       expect(unavailable.stderr + unavailable.stdout).toContain("Model unavailable: nope/nope")
+      expect(yield* llm.calls).toBe(0)
+      const invalidAgent = yield* apexo.spawn(["review", "--agent", "missing-review-agent"], { env })
+      apexo.expectExit(invalidAgent, 1)
+      expect(invalidAgent.stderr + invalidAgent.stdout).toContain("Agent unavailable: missing-review-agent")
       expect(yield* llm.calls).toBe(0)
       const incompatible = yield* apexo.spawn(["review", "--session-protocol", "compatibility", "--fail-on", "P1"], {
         env,
@@ -178,6 +191,27 @@ cliIt.live(
         "Attached review",
       )
       expect(yield* llm.calls).toBe(3)
+      for (const selection of [
+        { args: [], model: "z-preferred", reviewer: true },
+        { args: ["--attach", server.url], model: "z-preferred", reviewer: true },
+        { args: ["--variant", "careful"], model: "z-preferred", reviewer: true },
+        { args: ["--model", testModelID, "--agent", "build"], model: "test-model", reviewer: false },
+      ]) {
+        yield* llm.text(JSON.stringify({ summary: "Selection check", assessment: "no_findings", findings: [] }), {
+          usage: { input: 4, output: 3 },
+        })
+        const selected = yield* apexo.spawn(["review", ...selection.args, "--format", "json", "--ephemeral"], { env })
+        apexo.expectExit(selected, 0)
+        const report = Schema.decodeUnknownSync(CodeReview.Run)(JSON.parse(selected.stdout.trim()))
+        expect(report.result?.model?.id).toBe(Model.ID.make(selection.model))
+        const request = (yield* llm.inputs).at(-1)
+        expect(request).toMatchObject({ model: selection.model })
+        expect(JSON.stringify(request).includes("CONFIGURED_REVIEWER_SYSTEM")).toBe(selection.reviewer)
+        if (selection.args.includes("careful")) {
+          expect(report.result?.model?.variant).toBe(Model.VariantID.make("careful"))
+          expect(request).toMatchObject({ review_fixture_variant: "careful" })
+        }
+      }
     }),
   60000,
 )

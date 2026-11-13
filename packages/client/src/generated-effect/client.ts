@@ -1273,6 +1273,7 @@ type Endpoint20_0Input = {
   readonly focus?: Endpoint20_0Request["payload"]["focus"]
   readonly title?: Endpoint20_0Request["payload"]["title"]
   readonly model?: Endpoint20_0Request["payload"]["model"]
+  readonly variant?: Endpoint20_0Request["payload"]["variant"]
   readonly agent?: Endpoint20_0Request["payload"]["agent"]
   readonly limits?: Endpoint20_0Request["payload"]["limits"]
 }
@@ -1285,6 +1286,7 @@ const Endpoint20_0 = (raw: RawClient["server.codeReview"]) => (input: Endpoint20
       focus: input["focus"],
       title: input["title"],
       model: input["model"],
+      variant: input["variant"],
       agent: input["agent"],
       limits: input["limits"],
     },

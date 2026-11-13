@@ -30,3 +30,14 @@ A new production baseline was recorded before this remediation changed App sessi
 The final observed median is 20 ms lower (about 11%). The first two samples are warmups and excluded by the existing method, including the final build's 930 ms cold sample. This single comparison does not establish a general tail-latency improvement or resolve the earlier unexplained request delays.
 
 A separate 6279-file review fixture measured twenty ordinary persisted detail reads at 0.623 ms median and 0.902 ms p95. An explicitly requested `compareWorkspace=true` check took 1018 ms and detected a subsequent edit. This separates expensive advisory workspace work from active status polling; it does not claim workspace capture itself is instantaneous. Real mini/fullscreen PTY checks held a passive response and verified that one cancel key still cancels the selected review.
+
+## Six-finding audit remediation comparison (2026-11-13)
+
+A fresh baseline was built and measured before the App passive-refresh code changed. The final measurement ran after the interactive fixtures exited, using the same ten-sample browser-clock method and excluding its first two warmups.
+
+| Build | Samples (ms) | Median | Reported p95 |
+| --- | --- | --- | --- |
+| Before this remediation | 694, 213, 225, 207, 274, 576, 190, 200, 247, 217 | 221 ms | 576 ms |
+| Final production build | 234, 685, 167, 170, 177, 168, 167, 161, 164, 185 | 167.5 ms | 185 ms |
+
+The observed median decreased by 53.5 ms. This single comparison does not establish a general latency improvement or explain earlier variable tails. The held-refresh acceptance separately proves action availability under an indefinitely delayed request; a low median alone cannot establish that behavior.

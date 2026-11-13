@@ -7,13 +7,16 @@ import { poll, deadline } from "./grok-shell-fixture.mjs"
 const fixture = await startCodeReviewFixture({
   large: process.argv.includes("--large"),
   mixed: process.argv.includes("--mixed"),
+  longEvidence: true,
 })
 const { runtime, repo } = fixture
 const fullscreen = process.argv.includes("--fullscreen")
-const terminal = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
+const cols = process.argv.includes("--small") ? 80 : 120
+const rows = process.argv.includes("--small") ? 24 : 40
+const terminal = new Terminal({ cols, rows, allowProposedApi: true })
 const screen = { text: "" }
 const plain = () =>
-  Array.from({ length: 40 }, (_, row) =>
+  Array.from({ length: rows }, (_, row) =>
     terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true),
   ).join("\n")
 const checks = []
@@ -35,8 +38,8 @@ try {
     {
       env: { ...runtime.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
       terminal: {
-        cols: 120,
-        rows: 40,
+        cols,
+        rows,
         data(pty, bytes) {
           const text = decoder.decode(bytes, { stream: true })
           screen.text += text
@@ -64,7 +67,15 @@ try {
   assert.match(plain(), /REVIEW_UI_REPORT/)
   checks.push("typed-review-command", "start-native-review", "completed-report")
   child.terminal.write("\x1b[B")
-  await poll(() => plain().includes("Captured context") && plain().includes("context 21"), "outside-hunk snippet")
+  await poll(() => plain().includes("Captured context"), "outside-hunk finding selected")
+  const beforeScroll = plain()
+  child.terminal.write("\x1b[6~")
+  await poll(() => plain() !== beforeScroll, "PageDown handled")
+  assert.ok(plain().includes("Code review ·"), "PageDown keeps the review modal open")
+  assert.match(plain(), /captured context \d+/, "PageDown exposes captured evidence")
+  child.terminal.write("\x1b[5~")
+  await poll(() => plain().includes("Captured context"), "PageUp restores captured evidence")
+  checks.push("pagedown-scrolls-evidence", "pageup-keeps-modal")
   child.terminal.write("\x1b[B")
   await poll(() => plain().includes("file-level"), "file anchor")
   child.terminal.write("p")

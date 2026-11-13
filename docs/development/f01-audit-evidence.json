@@ -1,0 +1,529 @@
+{
+  "auditDate": "2026-11-13",
+  "timezone": "Asia/Singapore",
+  "auditedCommit": "adfce4eca88d887ca0a02f4dfeb3d5fb0d16bd3e",
+  "baseCommit": "e4885b0378a0cd88b703133f435fd47383cff64a",
+  "environment": {
+    "platform": "macOS arm64",
+    "bun": "1.4.4",
+    "providers": "programmable local fixtures; no live-model quality certification"
+  },
+  "findings": [
+    {
+      "id": "BUG-20261113-001",
+      "priority": "P1",
+      "status": "open",
+      "name": "configured CLI defaults ignored"
+    },
+    {
+      "id": "BUG-20261112-024",
+      "priority": "P2",
+      "status": "open for App/Desktop; terminal remediation verified",
+      "name": "passive refresh locks user actions"
+    },
+    {
+      "id": "BUG-20261113-002",
+      "priority": "P2",
+      "status": "open",
+      "name": "nonliteral per-file Git diff paths"
+    },
+    {
+      "id": "BUG-20261113-003",
+      "priority": "P2",
+      "status": "open",
+      "name": "foreign owner cancellation falsely acknowledged"
+    },
+    {
+      "id": "BUG-20261113-004",
+      "priority": "P2",
+      "status": "open",
+      "name": "nonexistent explicit agent accepted"
+    },
+    {
+      "id": "BUG-20261113-005",
+      "priority": "P2",
+      "status": "open",
+      "name": "fullscreen PageDown dismisses review"
+    }
+  ],
+  "probes": {
+    "cliSelection": {
+      "configuredModel": "reviewfixture/z-preferred",
+      "configuredDefaultAgent": "reviewer",
+      "runs": [
+        {
+          "args": [],
+          "inputModel": {
+            "id": "a-first",
+            "providerID": "reviewfixture"
+          },
+          "inputAgent": "build",
+          "code": 0,
+          "status": "completed",
+          "stderr": "",
+          "resultModel": {
+            "id": "a-first",
+            "providerID": "reviewfixture",
+            "variant": "default"
+          }
+        },
+        {
+          "args": [
+            "--model",
+            "reviewfixture/z-preferred",
+            "--agent",
+            "reviewer"
+          ],
+          "inputModel": {
+            "id": "z-preferred",
+            "providerID": "reviewfixture"
+          },
+          "inputAgent": "reviewer",
+          "code": 0,
+          "status": "completed",
+          "stderr": "",
+          "resultModel": {
+            "id": "z-preferred",
+            "providerID": "reviewfixture",
+            "variant": "default"
+          }
+        },
+        {
+          "args": [
+            "--model",
+            "reviewfixture/z-preferred",
+            "--agent",
+            "missing-review-agent"
+          ],
+          "inputModel": {
+            "id": "z-preferred",
+            "providerID": "reviewfixture"
+          },
+          "inputAgent": "missing-review-agent",
+          "code": 0,
+          "status": "completed",
+          "stderr": "",
+          "resultModel": {
+            "id": "z-preferred",
+            "providerID": "reviewfixture",
+            "variant": "default"
+          }
+        }
+      ],
+      "providerModels": [
+        "a-first",
+        "z-preferred",
+        "z-preferred"
+      ]
+    },
+    "literalFilenameCitation": {
+      "validatedFinding": {
+        "priority": "P1",
+        "title": "outside-hunk anchor",
+        "explanation": "citation must retain snippet",
+        "confidence": 0.9,
+        "path": "routes/[id].tsx",
+        "anchor": {
+          "type": "line",
+          "side": "new",
+          "startLine": 28,
+          "endLine": 28,
+          "inHunk": true
+        }
+      },
+      "files": [
+        {
+          "path": "routes/[id].tsx",
+          "headers": [
+            "diff --git a/routes/[id].tsx b/routes/[id].tsx",
+            "diff --git a/routes/i.tsx b/routes/i.tsx"
+          ]
+        },
+        {
+          "path": "routes/i.tsx",
+          "headers": [
+            "diff --git a/routes/i.tsx b/routes/i.tsx"
+          ]
+        },
+        {
+          "path": "star*.ts",
+          "headers": [
+            "diff --git a/star*.ts b/star*.ts",
+            "diff --git a/star-other.ts b/star-other.ts"
+          ]
+        },
+        {
+          "path": "star-other.ts",
+          "headers": [
+            "diff --git a/star-other.ts b/star-other.ts"
+          ]
+        }
+      ],
+      "exclusions": [],
+      "indexUnchanged": true,
+      "headUnchanged": true
+    },
+    "peerCancellation": {
+      "beforeInputExecution": "active",
+      "acknowledgedReportStatus": "cancelled",
+      "afterAcknowledgementInputExecution": "active",
+      "afterProviderReleasedInputExecution": "completed",
+      "finalReportStatus": "cancelled",
+      "assistantFinish": "stop",
+      "assistantTokens": {
+        "input": 100,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    "browserHeldRefresh": {
+      "finding": "F01_APP_PASSIVE_REFRESH_LOCKS_CANCEL",
+      "observed": {
+        "cancel": true,
+        "history": true,
+        "refresh": true,
+        "start": true,
+        "status": "running"
+      }
+    },
+    "nativeWindowHeldRefresh": {
+      "finding": "F01_APP_PASSIVE_REFRESH_LOCKS_CANCEL",
+      "observed": {
+        "cancel": true,
+        "history": true,
+        "refresh": true,
+        "start": true,
+        "status": "running"
+      }
+    },
+    "fullscreenPageDown": {
+      "finding": "PAGE_DOWN_DISMISSES_REVIEW",
+      "mode": "fullscreen",
+      "providerCalls": 1
+    },
+    "gitTargetAndLimitMatrix": {
+      "rootCommit": {
+        "files": [
+          "root.ts"
+        ]
+      },
+      "mergeCommit": {
+        "firstParentMatched": true,
+        "files": [
+          "side.ts"
+        ]
+      },
+      "conflict": {
+        "indexUnchanged": true,
+        "exclusions": [
+          {
+            "path": "conflict.ts",
+            "reason": "conflict"
+          }
+        ]
+      },
+      "exclusions": [
+        {
+          "path": "large-untracked.ts",
+          "reason": "oversized"
+        },
+        {
+          "path": "binary.bin",
+          "reason": "binary"
+        },
+        {
+          "path": "module",
+          "reason": "submodule"
+        },
+        {
+          "path": "tracked.ts",
+          "reason": "oversized"
+        }
+      ],
+      "totalLimit": {
+        "capturedFiles": 3,
+        "excluded": [
+          {
+            "path": "two.ts",
+            "reason": "capture_limit"
+          }
+        ]
+      },
+      "fileLimit": {
+        "capturedFiles": 500,
+        "excluded": [
+          {
+            "path": "f99.ts",
+            "reason": "file_limit"
+          }
+        ]
+      }
+    },
+    "missingCapturedBlob": {
+      "capturedBlobUnavailable": true,
+      "liveFallback": false,
+      "anchor": {
+        "type": "file"
+      },
+      "coverage": {
+        "exclusions": [
+          {
+            "path": "evidence.ts",
+            "reason": "captured_content_unavailable"
+          }
+        ],
+        "invalidLocations": 1
+      },
+      "persistedPatchRetainsCapturedVersion": true
+    },
+    "actualCleanCheckoutCapture": {
+      "root": "/Users/hawk_wu/Desktop/apexo-grok",
+      "files": 0,
+      "exclusions": 0,
+      "elapsedMs": 862.0920420000002,
+      "indexUnchanged": true,
+      "headUnchanged": true
+    },
+    "livePrCapture": {
+      "target": "https://github.com/cluster1900/apexo-code/pull/206",
+      "status": "completed",
+      "baseSha": "e4885b0378a0cd88b703133f435fd47383cff64a",
+      "headSha": "adfce4eca88d887ca0a02f4dfeb3d5fb0d16bd3e",
+      "files": 88,
+      "exclusions": 0,
+      "temporaryRefs": 0
+    },
+    "pollPerformanceUnderConcurrentAuditLoad": {
+      "trackedFixtureFiles": 6279,
+      "polls": 20,
+      "medianMs": 3.831521000000066,
+      "p95Ms": 5.868458000000828,
+      "explicitComparisonMs": 7756.916041000002,
+      "checks": [
+        "plain-polls-omit-workspace-scan",
+        "explicit-comparison-current",
+        "explicit-comparison-detects-change"
+      ]
+    }
+  },
+  "freshFocusedTests": {
+    "nativeAndCli": {
+      "passed": 21,
+      "failed": 0,
+      "assertions": 149
+    },
+    "neighboringRegressions": {
+      "passed": 25,
+      "failed": 0,
+      "assertions": 278
+    },
+    "sdkCapability": {
+      "passed": 1,
+      "failed": 0,
+      "assertions": 6
+    },
+    "appPureReviewRouting": {
+      "passed": 1,
+      "assertions": 3
+    },
+    "appNeighboringComponentTest": {
+      "status": "failed import",
+      "message": "jsxDEV export missing",
+      "existingRecord": "BUG-20261112-015"
+    }
+  },
+  "ordinarySurfaceChecks": {
+    "mini120x40Large": {
+      "mode": "mini",
+      "checks": [
+        "typed-review-command",
+        "start-native-review",
+        "completed-report",
+        "finding-navigation",
+        "outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "reopen-without-provider-work",
+        "target-editor-replaces-existing-value",
+        "cancel-during-held-passive-refresh",
+        "focus-editor",
+        "targeted-cancel",
+        "cancelled-status-copy",
+        "parent-transcript-untouched"
+      ],
+      "providerCalls": 2
+    },
+    "fullscreen120x40Large": {
+      "mode": "fullscreen",
+      "checks": [
+        "typed-review-command",
+        "start-native-review",
+        "completed-report",
+        "finding-navigation",
+        "outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "reopen-without-provider-work",
+        "target-editor-replaces-existing-value",
+        "cancel-during-held-passive-refresh",
+        "focus-editor",
+        "targeted-cancel",
+        "cancelled-status-copy",
+        "parent-transcript-untouched"
+      ],
+      "providerCalls": 2
+    },
+    "mini80x24": {
+      "mode": "mini",
+      "checks": [
+        "typed-review-command",
+        "start-native-review",
+        "completed-report",
+        "finding-navigation",
+        "outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "reopen-without-provider-work",
+        "target-editor-replaces-existing-value",
+        "cancel-during-held-passive-refresh",
+        "focus-editor",
+        "targeted-cancel",
+        "cancelled-status-copy",
+        "parent-transcript-untouched"
+      ],
+      "providerCalls": 2
+    },
+    "miniMixed": {
+      "mode": "mini",
+      "checks": [
+        "typed-review-command",
+        "start-native-review",
+        "completed-report",
+        "finding-navigation",
+        "outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "reopen-without-provider-work",
+        "target-editor-replaces-existing-value",
+        "targeted-cancel-on-mixed-host",
+        "focus-editor",
+        "targeted-cancel",
+        "cancelled-status-copy",
+        "parent-transcript-untouched"
+      ],
+      "providerCalls": 2
+    },
+    "fullscreenMixed": {
+      "mode": "fullscreen",
+      "checks": [
+        "typed-review-command",
+        "start-native-review",
+        "completed-report",
+        "finding-navigation",
+        "outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "reopen-without-provider-work",
+        "target-editor-replaces-existing-value",
+        "targeted-cancel-on-mixed-host",
+        "focus-editor",
+        "targeted-cancel",
+        "cancelled-status-copy",
+        "parent-transcript-untouched"
+      ],
+      "providerCalls": 2
+    },
+    "browserMixed": {
+      "kind": "mixed",
+      "checks": [
+        "default-serve-mixed-backend",
+        "one-structured-review-menu-entry",
+        "typed-review-opens-read-only-ui",
+        "start-review",
+        "completed-report",
+        "validated-line-highlight",
+        "priority-navigation",
+        "frozen-outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "stale-badge",
+        "no-live-file-substitution",
+        "reload-without-provider-replay",
+        "base-target-selection",
+        "new-review-clears-previous-report",
+        "targeted-cancel",
+        "review-history-slash-alias",
+        "session-switch-has-no-previous-report"
+      ],
+      "providerCalls": 2
+    },
+    "desktopOwnAuthenticatedSidecar": {
+      "kind": "builtin",
+      "checks": [
+        "desktop-owned-mixed-backend",
+        "one-structured-review-menu-entry",
+        "typed-review-opens-read-only-ui",
+        "start-review",
+        "completed-report",
+        "validated-line-highlight",
+        "priority-navigation",
+        "frozen-outside-hunk-snippet",
+        "file-anchor",
+        "priority-filter",
+        "stale-badge",
+        "no-live-file-substitution",
+        "reload-without-provider-replay",
+        "base-target-selection",
+        "new-review-clears-previous-report",
+        "targeted-cancel",
+        "review-history-slash-alias",
+        "session-switch-has-no-previous-report"
+      ],
+      "providerCalls": 2
+    }
+  },
+  "repositoryGates": {
+    "rootTypecheck": {
+      "status": "passed",
+      "tasks": 21,
+      "cachedTasks": 21
+    },
+    "directPackageTypecheck": {
+      "status": "passed",
+      "packages": [
+        "apexo",
+        "core",
+        "tui",
+        "app",
+        "desktop"
+      ]
+    },
+    "rootTests": {
+      "status": "passed",
+      "tasks": 6,
+      "cachedTasks": 4,
+      "apexoBatchResult": "cache replay of 18 batches; not a fresh complete suite"
+    },
+    "clientGenerated": "passed; no drift",
+    "legacySdkGenerated": "passed; no drift",
+    "httpApi": {
+      "coverageInventory": 354,
+      "authentication": 354,
+      "effect": 354,
+      "failed": 0,
+      "skipped": 0,
+      "missing": 0,
+      "extra": 0
+    },
+    "focusedReviewEffectScenarios": {
+      "passed": 5,
+      "failed": 0
+    },
+    "githubRequiredChecks": "typecheck and unit (linux) green at audited commit when queried"
+  },
+  "changes": "documentation only; no production fix, commit, push or merge"
+}

@@ -138,6 +138,14 @@ const make = Effect.gen(function* () {
         const agent = yield* AgentV2.Service.use((agents) => agents.select(run.input.agent ?? parent.agent)).pipe(
           Effect.provide(locations.get(parent.location)),
         )
+        const model = yield* Effect.gen(function* () {
+          const selected = run.input.model ?? parent.model ?? agent.info?.model
+          if (run.input.variant === undefined) return selected
+          const catalog = yield* Catalog.Service
+          const resolved = selected ?? (yield* catalog.model.default())
+          if (!resolved) return yield* new Failure({ code: "invalid", message: "No review model is available" })
+          return { providerID: resolved.providerID, id: resolved.id, variant: run.input.variant }
+        }).pipe(Effect.provide(locations.get(parent.location)))
         yield* lifecycle.child(
           parent.id,
           run.reviewSessionID,
@@ -155,7 +163,7 @@ const make = Effect.gen(function* () {
                 version: InstallationVersion,
                 title: run.input.title || "Code review",
                 agent: agent.id,
-                model: run.input.model ?? parent.model,
+                model,
                 cost: 0,
                 tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
                 time: { created: Date.now(), updated: Date.now() },
@@ -286,6 +294,13 @@ const make = Effect.gen(function* () {
                   })
                 return run
               }
+              if (normalized.agent !== undefined) {
+                const agent = yield* AgentV2.Service.use((agents) => agents.resolve(normalized.agent)).pipe(
+                  Effect.provide(locations.get(parent.location)),
+                )
+                if (!agent)
+                  return yield* new Failure({ code: "invalid", message: `Agent unavailable: ${normalized.agent}` })
+              }
               for (const selected of [normalized.model, normalized.limits?.fallbackModel].filter(
                 (model) => model !== undefined,
               )) {
@@ -373,6 +388,14 @@ const make = Effect.gen(function* () {
   const cancel = (sessionID: SessionSchema.ID, id: CodeReview.ID) =>
     boundary(
       Effect.gen(function* () {
+        const current = yield* get(sessionID, id)
+        if (CodeReview.terminal(current)) return current
+        const row = yield* db.select().from(SessionCodeReviewTable).where(eq(SessionCodeReviewTable.id, id)).get()
+        if (row?.execution_owner !== SessionInputExecutionOwner.stamp)
+          return yield* new Failure({
+            code: "conflict",
+            message: "This review is owned by another process. Cancel it through the server that started it.",
+          })
         const run = yield* update(sessionID, id, { status: "cancelled" })
         const fiber = active.get(id)
         if (fiber) yield* Fiber.interrupt(fiber)

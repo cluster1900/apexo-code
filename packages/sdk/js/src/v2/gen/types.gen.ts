@@ -6607,6 +6607,7 @@ export type CodeReviewInput = {
   focus?: string
   title?: string
   model?: ModelRef
+  variant?: string
   agent?: string
   limits?: SessionInputExecutionPolicy
 }

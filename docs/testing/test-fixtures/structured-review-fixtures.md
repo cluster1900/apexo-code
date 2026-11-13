@@ -49,6 +49,17 @@
 - Status: unresolved supplementary runner limitation. No production or unit-runner fix is claimed. The actual Vite production App build and rebuilt Electron renderer pass the F01 browser/Desktop acceptance, each with twelve checks. This command is separate from the five required repository gates.
 - Initial sandbox-only listener failures were superseded by the permitted run above; they are not additional production failures.
 
+### 2026-11-13 audit follow-up
+
+`bun test src/components/prompt-input/slash-route-review.test.ts src/components/prompt-input/slash-route.test.ts`
+in `packages/app` again passed the pure review-routing test (three assertions)
+and failed to import the component-bearing slash test with the same missing
+`jsxDEV` export. This is a reproduction of the existing unresolved runner issue,
+not a newly diagnosed F01 production regression or an asserted additional
+historical occurrence. Production browser and rebuilt own-sidecar Desktop
+acceptance each passed eighteen ordinary-flow checks; the separate UI defects
+found by supplementary probes are recorded in [the audit](../../development/f01-audit.md).
+
 ## Follow-up validation observations
 
 - New real-Git fixtures initially inherited global commit signing. All new/reused review Git setup commands now set `commit.gpgsign=false` per command; user/global Git configuration is not changed.
@@ -58,3 +69,10 @@
 
 - The first own-sidecar Desktop attempts used the external-server connection key and omitted the legacy directory parameter when creating the initial Session. The fixture now uses the actual `sidecar` connection identity, authenticates with the owned sidecar credentials, and sends both native Location and legacy directory query keys. This was fixture routing correction, not evidence of a product backend failure.
 - The first held-refresh terminal script tried to fetch its active report through the list endpoint after holding that endpoint. The fixture now obtains the report identity before installing the hold. Later PTY checks establish the hold and send one cancellation key; no repeated shortcut or sleep is used as readiness evidence.
+
+## 2026-11-13 remediation fixture observations
+
+- The first variant fixture attempted to overlay protocol-owned `temperature` through generic HTTP body options and was correctly rejected. It now uses a fixture-only extension field, asserted on the real provider request. The LLM request-hit fixture does not expose chat headers; no production schema or global fixture was weakened to accommodate that assumption.
+- The first new CLI expectation compared a branded variant to a plain string. It now uses `Model.VariantID.make`; runtime success alone was not counted as type validation.
+- Browser command output includes a trailing newline, which the Boolean assertion now trims. This was fixture normalization, not a UI-lock failure.
+- The original short terminal snippet fit the large viewport, so it could not prove scrolling. The fixture now supplies genuinely overflowing evidence. At 80-by-24 the snippet starts below the fold; the test selects the finding first, presses one PageDown, and then asserts visible captured content and an open modal. It does not require content to be visible before scrolling, repeatedly retry a shortcut or infer readiness from a sleep.

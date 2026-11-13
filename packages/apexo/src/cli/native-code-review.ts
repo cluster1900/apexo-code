@@ -105,7 +105,8 @@ export async function runNativeCodeReview(args: Options, input: ReviewPromptInpu
   try {
     if (args.attach) {
       const fields = [
-        ...(args.model || args.variant ? ["model"] : []),
+        ...(args.model ? ["model"] : []),
+        ...(args.variant && !args.model ? ["variant"] : []),
         ...(args.agent ? ["agent"] : []),
         ...(Object.keys(limits).length ? ["limits"] : []),
       ]
@@ -127,26 +128,16 @@ export async function runNativeCodeReview(args: Options, input: ReviewPromptInpu
       throw new Error("Background wait overrides are unavailable for native read-only reviews")
     const transport = nativeSessionTransport(sdk, directory)
     const catalog = await transport.catalog(AbortSignal.timeout(10000))
-    const agent = args.agent ?? catalog.agents.find((agent) => !agent.hidden && agent.mode !== "subagent")?.id
-    const configured = catalog.agents.find((item) => item.id === agent)?.model
-    const fallback = catalog.models.find(
-      (item) =>
-        item.enabled && catalog.providers.some((provider) => provider.id === item.providerID && !provider.disabled),
-    )
-    const selected = configured ?? fallback
+    const agent = args.agent
+    if (agent !== undefined && !catalog.agents.some((item) => item.id === agent))
+      throw new Error(`Agent unavailable: ${agent}`)
     const model = parts
       ? {
           providerID: Provider.ID.make(parts[0]),
           id: Model.ID.make(parts.slice(1).join("/")),
           ...(args.variant ? { variant: args.variant } : {}),
         }
-      : selected
-        ? {
-            providerID: Provider.ID.make(selected.providerID),
-            id: Model.ID.make(selected.id),
-            ...(args.variant ? { variant: args.variant } : {}),
-          }
-        : undefined
+      : undefined
     for (const requested of [model, limits.fallbackModel].filter((value) => value !== undefined)) {
       if (
         !catalog.models.some(
@@ -190,6 +181,7 @@ export async function runNativeCodeReview(args: Options, input: ReviewPromptInpu
           ...(input.prompt ? { focus: input.prompt } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(model ? { model } : {}),
+          ...(args.variant && !model ? { variant: args.variant } : {}),
           ...(agent ? { agent } : {}),
           limits: { mode: "headless", permissions: "reject", ...limits },
         },

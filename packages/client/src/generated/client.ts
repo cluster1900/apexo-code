@@ -1782,6 +1782,7 @@ export function make(options: ClientOptions) {
               focus: input["focus"],
               title: input["title"],
               model: input["model"],
+              variant: input["variant"],
               agent: input["agent"],
               limits: input["limits"],
             },

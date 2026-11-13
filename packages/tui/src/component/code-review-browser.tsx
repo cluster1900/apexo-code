@@ -140,6 +140,16 @@ export function CodeReviewBrowser(props: {
       },
     ],
   }))
+  useBindings(() => ({
+    priority: 1,
+    enabled: !state.editing,
+    bindings: ["pageup", "pagedown"].map((key) => ({
+      key,
+      desc: "Scroll review evidence",
+      group: "Code review",
+      cmd: () => viewport?.scrollBy((key === "pageup" ? -1 : 1) * viewport.height),
+    })),
+  }))
   useKeyboard((key) => {
     if (key.name === "escape" || state.pending || !state.available) return
     if (state.editing) {
@@ -152,8 +162,6 @@ export function CodeReviewBrowser(props: {
     }
     if (key.ctrl || key.meta) return
     key.preventDefault()
-    if (key.name === "pageup") viewport?.scrollBy(-8)
-    if (key.name === "pagedown") viewport?.scrollBy(8)
     if (key.name === "t") setState("editing", "target")
     if (key.name === "f") setState("editing", "focus")
     if (key.name === "r") void run(() => load())

@@ -21,6 +21,15 @@ try {
   assert.ok(response.ok)
   assert.equal((await response.json()).status, "running")
   assert.equal((await runtime.api(`/api/session/${fixture.session.id}/review/${admitted.id}`)).status, "running")
+  const receipt = `/api/session/${admitted.reviewSessionID}/input/${admitted.inputID}/execution`
+  assert.equal((await runtime.api(receipt)).data.status, "active")
+  const rejected = await fetch(`${peer.url}/api/session/${fixture.session.id}/review/${admitted.id}/cancel`, {
+    method: "POST",
+  })
+  assert.equal(rejected.status, 409)
+  assert.match(await rejected.text(), /owned by another process/)
+  assert.equal((await runtime.api(receipt)).data.status, "active")
+  assert.equal((await runtime.api(`/api/session/${fixture.session.id}/review/${admitted.id}`)).status, "running")
   const child = Bun.spawn(
     [
       process.execPath,
@@ -51,10 +60,23 @@ try {
     20000,
   )
   assert.equal(done.result.summary, "REVIEW_UI_REPORT")
+  assert.equal((await runtime.api(receipt)).data.status, "completed")
+  const settled = await fetch(`${peer.url}/api/session/${fixture.session.id}/review/${admitted.id}/cancel`, {
+    method: "POST",
+  })
+  assert.equal(settled.status, 200)
+  assert.equal((await settled.json()).status, "completed")
   console.log(
     JSON.stringify(
       {
-        checks: ["live-owner-survives-peer-startup", "live-owner-survives-second-local-CLI", "first-result-preserved"],
+        checks: [
+          "live-owner-survives-peer-startup",
+          "peer-cancel-rejected",
+          "owner-receipt-remains-active",
+          "live-owner-survives-second-local-CLI",
+          "first-result-preserved",
+          "terminal-cancel-idempotent",
+        ],
         providerCalls: fixture.calls.length,
         output: runtime.output,
       },

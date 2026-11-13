@@ -6462,6 +6462,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6483,6 +6484,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6504,6 +6506,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6525,6 +6528,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6546,6 +6550,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6557,6 +6562,28 @@ export type ServerCodeReviewStartInput = {
       readonly outputSchema?: { readonly [x: string]: JsonValue }
     }
   }["model"]
+  readonly variant?: {
+    readonly id?: string
+    readonly target:
+      | { readonly type: "uncommitted" }
+      | { readonly type: "base"; readonly ref: string }
+      | { readonly type: "commit"; readonly ref: string }
+      | { readonly type: "pr"; readonly ref: string }
+    readonly focus?: string
+    readonly title?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
+    readonly agent?: string
+    readonly limits?: {
+      readonly mode: "headless"
+      readonly permissions: "reject" | "approve_once"
+      readonly maxTurns?: number
+      readonly maxTokens?: number
+      readonly maxBudgetUsd?: number
+      readonly fallbackModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly outputSchema?: { readonly [x: string]: JsonValue }
+    }
+  }["variant"]
   readonly agent?: {
     readonly id?: string
     readonly target:
@@ -6567,6 +6594,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6588,6 +6616,7 @@ export type ServerCodeReviewStartInput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6616,6 +6645,7 @@ export type ServerCodeReviewStartOutput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6702,6 +6732,7 @@ export type ServerCodeReviewListOutput = {
       readonly focus?: string
       readonly title?: string
       readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      readonly variant?: string
       readonly agent?: string
       readonly limits?: {
         readonly mode: "headless"
@@ -6789,6 +6820,7 @@ export type ServerCodeReviewGetOutput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"
@@ -6885,6 +6917,7 @@ export type ServerCodeReviewCancelOutput = {
     readonly focus?: string
     readonly title?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly variant?: string
     readonly agent?: string
     readonly limits?: {
       readonly mode: "headless"

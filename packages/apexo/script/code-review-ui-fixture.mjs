@@ -37,8 +37,8 @@ export async function startCodeReviewFixture(options = {}) {
               confidence: 0.8,
               path: "calc.ts",
               side: "old",
-              startLine: 28,
-              endLine: 28,
+              startLine: options.longEvidence ? 8 : 28,
+              endLine: options.longEvidence ? 30 : 28,
             },
             {
               priority: "P3",

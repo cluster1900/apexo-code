@@ -36,12 +36,16 @@ const make = Effect.gen(function* () {
   const command = (cwd: string, args: string[], env?: Record<string, string>, limit = maximumCapture) =>
     proc
       .run(
-        ChildProcess.make("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], {
-          cwd,
-          extendEnv: true,
-          env,
-          stdin: "ignore",
-        }),
+        ChildProcess.make(
+          "git",
+          ["--literal-pathspecs", "--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
+          {
+            cwd,
+            extendEnv: true,
+            env,
+            stdin: "ignore",
+          },
+        ),
         { maxOutputBytes: limit, maxErrorBytes: 4096, timeout: "60 seconds" },
       )
       .pipe(Effect.mapError(() => new Failure({ message: "Review Git command could not run" })))

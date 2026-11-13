@@ -29,6 +29,8 @@ export const Input = Schema.Struct({
   focus: Schema.String.pipe(optional),
   title: Schema.String.pipe(optional),
   model: Model.Ref.pipe(optional),
+  // Override the variant while leaving model choice to native configured-default resolution.
+  variant: Model.VariantID.pipe(optional),
   agent: Schema.String.pipe(optional),
   limits: SessionInput.ExecutionPolicy.pipe(optional),
 }).annotate({ identifier: "CodeReview.Input" })

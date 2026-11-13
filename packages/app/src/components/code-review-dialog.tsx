@@ -21,10 +21,12 @@ export function CodeReviewDialog(props: {
   const sdk = useSDK()()
   const dialog = useDialog()
   const lifetime = new AbortController()
+  let refreshToken = 0
   const panel = createReviewPanelV2State()
   const [state, setState] = createStore({
     available: false,
     pending: true,
+    refreshing: false,
     error: false,
     hasMore: false,
     target: "uncommitted" as CodeReviewInput["target"]["type"],
@@ -40,7 +42,7 @@ export function CodeReviewDialog(props: {
   const current = () => !lifetime.signal.aborted && props.currentSessionID() === props.sessionID
   const options = { signal: lifetime.signal, throwOnError: true as const }
   const terminal = (run: CodeReviewRun) => !["admitted", "capturing", "running"].includes(run.status)
-  const detail = async (id: string, compare = true) => {
+  const detail = async (id: string, compare = true, token = refreshToken) => {
     const selected = state.items.find((item) => item.id === id)
     const workspace = selected && terminal(selected) && (compare || !state.detail || !terminal(state.detail))
     const result = (
@@ -49,25 +51,26 @@ export function CodeReviewDialog(props: {
         options,
       )
     ).data
-    if (current() && state.selected === id) setState("detail", result)
+    if (current() && token === refreshToken && state.selected === id) setState("detail", result)
   }
-  const refresh = async (more = false, compare = true) => {
+  const refresh = async (more = false, compare = true, token = refreshToken) => {
     const page = (
       await sdk.client.v2.codeReview.list(
         { sessionID: props.sessionID, ...(more && state.items.length ? { after: state.items.at(-1)!.id } : {}) },
         options,
       )
     ).data
-    if (!current()) return
+    if (!current() || token !== refreshToken) return
     const items = more
       ? [...state.items, ...page.data]
       : [...page.data, ...state.items.filter((item) => !page.data.some((fresh) => fresh.id === item.id))]
     const selected = state.selected || items[0]?.id || ""
     setState({ items, selected, hasMore: page.hasMore })
-    if (selected) await detail(selected, compare)
+    if (selected) await detail(selected, compare, token)
   }
   const run = async (work: () => Promise<void>) => {
     if (state.pending) return
+    refreshToken++
     setState({ pending: true, error: false })
     await work()
       .catch(() => {
@@ -146,8 +149,23 @@ export function CodeReviewDialog(props: {
     }
   })
   const timer = setInterval(() => {
-    if (state.available && !state.pending && current() && state.items.some((item) => !terminal(item)))
-      void run(() => refresh(false, false))
+    if (
+      !state.available ||
+      state.pending ||
+      state.refreshing ||
+      !current() ||
+      !state.items.some((item) => !terminal(item))
+    )
+      return
+    const token = refreshToken
+    setState("refreshing", true)
+    void refresh(false, false, token)
+      .catch(() => {
+        if (current() && token === refreshToken) setState("error", true)
+      })
+      .finally(() => {
+        if (current()) setState("refreshing", false)
+      })
   }, 3000)
   onCleanup(() => {
     lifetime.abort()
@@ -155,7 +173,11 @@ export function CodeReviewDialog(props: {
   })
   return (
     <Dialog title={language.t("codeReview.title")} size="x-large" fit>
-      <div data-component="code-review" class="px-4 pb-4 space-y-3 max-h-[85vh] overflow-y-auto">
+      <div
+        data-component="code-review"
+        data-refreshing={state.refreshing}
+        class="px-4 pb-4 space-y-3 max-h-[85vh] overflow-y-auto"
+      >
         <Show when={!state.available && !state.pending}>
           <p>{language.t("codeReview.unsupported")}</p>
         </Show>

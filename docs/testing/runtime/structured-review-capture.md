@@ -71,3 +71,22 @@ Reading the old side of an added file or the new side of a deleted file now retu
 - Root cause: the shared Git failure conversion erased the context of `rev-parse --verify`.
 - Fix: convert failure at the ref-resolution boundary, including the requested ref in a bounded durable review error.
 - Verification: a direct final Core capture-service probe against the Apexo checkout rejects `f01-final-nonexistent-ref` with `Review ref does not exist or is not a commit: f01-final-nonexistent-ref`.
+
+## BUG-20261113-002: Per-file capture interprets literal filenames as Git pathspecs
+
+- Priority: P2. Status: open; reproduced during the 2026-11-13 audit of `adfce4ec`, with no fix applied.
+- Scope: `CodeReviewCapture.capture` per-file numstat/patch commands and downstream finding anchors on every presentation surface.
+- Observed: a manifest entry for `routes/[id].tsx` contained both its own patch and the patch for `routes/i.tsx`. Similarly, `star*.ts` included the patch for `star-other.ts`. Coverage reported zero exclusions. A finding on line 28 of `[id].tsx` was then incorrectly marked `inHunk: true`, without a snippet, solely because line 28 changed in `i.tsx`.
+- Expected: every captured file patch contains only that literal file and its rename source. Hunk membership and historical evidence must belong to the cited file.
+- Reproduction:
+  1. Commit 35-line files `routes/[id].tsx`, `routes/i.tsx`, `star*.ts` and `star-other.ts` in a disposable repository.
+  2. Change line 1 of `[id].tsx` and line 28 of `i.tsx`; change both star-named files as well.
+  3. Invoke the real `CodeReviewCapture.Service.capture(directory, { type: "uncommitted" })` through `AppNodeBuilder.build(CodeReviewCapture.node)`.
+  4. Inspect each patch's `diff --git` headers. Validate a finding on `[id].tsx` line 28 through `CodeReviewResult.validate` and inspect its anchor.
+- Root cause: the private-index writer and captured reads use literal pathspec handling, but the per-file diff commands do not. `--` separates arguments from options; it does not disable Git wildcard/pathspec interpretation.
+- Fix: not applied during this audit. Apply literal path handling consistently to the existing per-file Git operations. No new snapshot/capture subsystem is needed.
+- Verification: two direct Core probes reproduced multi-file patches; the second demonstrated the false `inHunk` result. See [normalized evidence](../../development/f01-audit-evidence.json). The original real index and HEAD remained unchanged.
+
+### 2026-11-13 remediation for BUG-20261113-002
+
+The existing Git command boundary now always uses `--literal-pathspecs`, including per-file numstat, ls-tree and patch commands. No alternate capture engine is introduced. The real Git regression changes `[id].tsx`, `i.tsx`, `star*.ts` and `star-other.ts`, verifies that the wildcard-like paths have no sibling patch, and validates an unchanged line as `inHunk: false` with its captured snippet. The focused native suite passes this regression.

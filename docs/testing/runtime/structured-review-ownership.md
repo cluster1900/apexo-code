@@ -34,3 +34,24 @@
 
 - Reusing a review ID from another Session now reports a conflict, rather than a misleading missing-Session error; the native admission test asserts `conflict`.
 - History now orders by host admission timestamp and ID as a stable tie-breaker. Its ID cursor resolves that row's timestamp within the same parent Session. The regression intentionally supplies IDs in reverse lexical order and checks both pages.
+
+## BUG-20261113-003: A peer process acknowledges cancellation without stopping the owner
+
+- Priority: P2. Status at the audited `adfce4ec` revision: open. Corrected by the remediation below.
+- Scope: `SessionCodeReview.cancel` when two local Apexo processes share the same data directory. Single-owner cancellation remains separately verified.
+- Observed: backend B returned HTTP 200 and `status: cancelled` for a held review owned by backend A. A's authoritative input execution remained `active`; after releasing the held local provider, it became `completed` with an assistant report and 120 accounted tokens. The review report still said `cancelled` and discarded the result.
+- Expected: successful cancellation stops and joins the actual review child. If a local endpoint cannot reach the owner, it must report that limitation rather than recording a confirmed cancellation.
+- Reproduction:
+  1. Start `startCodeReviewFixture()` and admit a review with focus `REVIEW_HOLD`.
+  2. Wait for one provider call and `running`, then use `fixture.peer()` to open the same isolated database in another process.
+  3. Send an empty POST to the peer's `/api/session/<parent>/review/<review>/cancel` route.
+  4. Read `/api/session/<child>/input/<input>/execution` from A before and after cancellation. Release the held provider, then inspect the terminal receipt and child assistant message.
+- Root cause: cancellation updates the shared durable status before consulting the process-local `active` map. A foreign owner has no fiber in that map, so B returns success without interruption. A's subsequent report updates are ignored because the durable report is already terminal.
+- Fix: not applied during this audit. Check local execution ownership before acknowledging cancellation; rejecting an active foreign-owner cancellation is sufficient for the current process-local architecture. Clustered routing is outside this audit's recommendation.
+- Verification: the actual HTTP/two-process probe recorded `active -> active -> completed`, an acknowledged `cancelled` report, a completed assistant message and no extra provider replay. See [normalized evidence](../../development/f01-audit-evidence.json). Both owned fixture processes were joined during cleanup.
+
+### 2026-11-13 remediation for BUG-20261113-003
+
+Cancellation now checks the existing persistent execution-owner stamp before changing an active report. A foreign or uncertain owner returns a 409 conflict naming the owning-server limitation; it cannot write a false cancelled status. Terminal reports remain idempotent from any reader. Successful local cancellation still interrupts and joins the existing local review fiber. No distributed interruption or new coordinator was added.
+
+`bun script/code-review-process-isolation.mjs` passes six checks with two actual servers and a separate local CLI sharing one database. It verifies peer cancellation returns 409, the authoritative child receipt remains active, the owner later persists a completed receipt/report, and a terminal peer cancellation returns the existing result. Total provider calls remain two. Existing native/GUI/PTY cancellation regressions cover owner-side cancellation.

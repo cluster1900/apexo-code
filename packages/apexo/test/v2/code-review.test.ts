@@ -200,6 +200,57 @@ it.live(
   20000,
 )
 
+it.live(
+  "wildcard-like filenames keep per-file patches and outside-hunk anchors literal",
+  () =>
+    Effect.gen(function* () {
+      const root = yield* tmpdirScoped({ git: true })
+      const files = ["[id].tsx", "i.tsx", "star*.ts", "star-other.ts"]
+      const content = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("")
+      yield* Effect.promise(async () => {
+        await Promise.all(files.map((file) => Bun.write(path.join(root, file), content)))
+        await git(root, "add", ".")
+        await git(root, "commit", "-m", "literal paths")
+        await Promise.all(
+          files.map((file, index) =>
+            Bun.write(
+              path.join(root, file),
+              content.replace(index % 2 ? "line 28\n" : "line 1\n", `changed ${file}\n`),
+            ),
+          ),
+        )
+      })
+      yield* Effect.gen(function* () {
+        const capture = yield* CodeReviewCapture.Service
+        const frozen = yield* capture.capture(root, { type: "uncommitted" })
+        expect(frozen.files.find((file) => file.path === "[id].tsx")?.patch).not.toContain("a/i.tsx")
+        expect(frozen.files.find((file) => file.path === "star*.ts")?.patch).not.toContain("a/star-other.ts")
+        const result = yield* CodeReviewResult.validate(frozen, {
+          assessment: "issues_found",
+          summary: "literal anchor",
+          findings: [
+            {
+              path: "[id].tsx",
+              side: "new",
+              startLine: 28,
+              endLine: 28,
+              priority: "P2",
+              title: "unchanged context",
+              explanation: "outside changed hunk",
+              confidence: 1,
+            },
+          ],
+        })
+        expect(result.findings[0]?.anchor).toMatchObject({
+          type: "line",
+          inHunk: false,
+          snippet: { text: expect.stringContaining("line 28") },
+        })
+      }).pipe(Effect.provide(AppNodeBuilder.build(CodeReviewCapture.node)))
+    }),
+  20000,
+)
+
 const setup = Effect.gen(function* () {
   const root = yield* tmpdirScoped({ git: true })
   const llm = yield* TestLLMServer
@@ -400,6 +451,20 @@ it.live(
         expect(invalid._tag).toBe("Failure")
         if (invalid._tag === "Failure")
           expect(invalid.failure).toMatchObject({ code: "invalid", message: "Model unavailable: nope/nope" })
+        expect((yield* reviews.list(parent.id)).data).toHaveLength(0)
+        expect(yield* f.llm.calls).toBe(0)
+        const invalidAgent = yield* reviews
+          .start(parent.id, {
+            target: { type: "uncommitted" },
+            agent: "missing-review-agent",
+          })
+          .pipe(Effect.result)
+        expect(invalidAgent._tag).toBe("Failure")
+        if (invalidAgent._tag === "Failure")
+          expect(invalidAgent.failure).toMatchObject({
+            code: "invalid",
+            message: "Agent unavailable: missing-review-agent",
+          })
         expect((yield* reviews.list(parent.id)).data).toHaveLength(0)
         expect(yield* f.llm.calls).toBe(0)
         yield* f.llm.text(clean, { usage: { input: 2, output: 1 } })
