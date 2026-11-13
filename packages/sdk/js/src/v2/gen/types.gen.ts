@@ -59,6 +59,8 @@ export type Event =
   | EventCodeReviewStarted
   | EventCodeReviewUpdated
   | EventCodeReviewFinished
+  | EventMcpElicitationRequested
+  | EventMcpElicitationSettled
   | EventFileEdited
   | EventReferenceUpdated
   | EventPermissionV2Asked
@@ -1354,6 +1356,40 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "mcp.elicitation.requested"
+        properties: {
+          id: string
+          sessionID: string
+          assistantMessageID: string
+          toolCallID: string
+          server: string
+          message: string
+          form: McpElicitationForm
+          createdAt: number
+          deadlineAt: number
+          status: "pending"
+        }
+      }
+    | {
+        id: string
+        type: "mcp.elicitation.settled"
+        properties: {
+          sessionID: string
+          requestID: string
+          server: string
+          action: "accept" | "decline" | "cancel"
+          reason:
+            | "replied"
+            | "dismissed"
+            | "server_cancelled"
+            | "interrupted"
+            | "timed_out"
+            | "call_completed"
+            | "disconnected"
+        }
+      }
+    | {
+        id: string
         type: "file.edited"
         properties: {
           file: string
@@ -1976,6 +2012,7 @@ export type McpLocalConfig = {
     [key: string]: string
   }
   enabled?: boolean
+  elicitation?: boolean
   timeout?: number
 }
 
@@ -1996,6 +2033,7 @@ export type McpRemoteConfig = {
    * URL of the remote MCP server
    */
   url: string
+  elicitation?: boolean
   enabled?: boolean
   headers?: {
     [key: string]: string
@@ -3256,6 +3294,12 @@ export type WorkflowNotFoundError = {
   message: string
 }
 
+export type McpElicitationNotFoundError = {
+  _tag: "McpElicitationNotFoundError"
+  requestID: string
+  message: string
+}
+
 export type SessionMessagesResponse = {
   data: Array<SessionMessage>
   cursor: {
@@ -3390,6 +3434,8 @@ export type V2Event =
   | CodeReviewStarted
   | CodeReviewUpdated
   | CodeReviewFinished
+  | McpElicitationRequested
+  | McpElicitationSettled
   | FileEdited
   | ReferenceUpdated
   | PermissionV2Asked
@@ -3834,6 +3880,66 @@ export type RevertState = {
   snapshot?: string
   diff?: string
   files?: Array<FileDiff>
+}
+
+export type McpElicitationOption = {
+  value: string
+  title: string
+}
+
+export type McpElicitationField =
+  | {
+      name: string
+      title: string
+      description?: string
+      required: boolean
+      type: "string"
+      minLength?: number
+      maxLength?: number
+      format?: "email" | "uri" | "date" | "date-time"
+      default?: string
+    }
+  | {
+      name: string
+      title: string
+      description?: string
+      required: boolean
+      type: "number" | "integer"
+      minimum?: number
+      maximum?: number
+      default?: number
+    }
+  | {
+      name: string
+      title: string
+      description?: string
+      required: boolean
+      type: "boolean"
+      default?: boolean
+    }
+  | {
+      name: string
+      title: string
+      description?: string
+      required: boolean
+      type: "select"
+      options: Array<McpElicitationOption>
+      default?: string
+    }
+  | {
+      name: string
+      title: string
+      description?: string
+      required: boolean
+      type: "multi"
+      options: Array<McpElicitationOption>
+      minItems?: number
+      maxItems?: number
+      default?: Array<string>
+    }
+
+export type McpElicitationForm = {
+  fields: Array<McpElicitationField>
 }
 
 export type PermissionV2Source = {
@@ -6688,6 +6794,25 @@ export type CodeReviewRun = {
   workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
 
+export type McpElicitationRequest = {
+  id: string
+  sessionID: string
+  assistantMessageID: string
+  toolCallID: string
+  server: string
+  message: string
+  form: McpElicitationForm
+  createdAt: number
+  deadlineAt: number
+  status: "pending"
+}
+
+export type McpElicitationValue = string | number | boolean | Array<string>
+
+export type McpElicitationContent = {
+  [key: string]: McpElicitationValue
+}
+
 export type ModelApi =
   | {
       id: string
@@ -7346,6 +7471,64 @@ export type CodeReviewFinished = {
     reviewID: string
     revision: number
     status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type McpElicitationForm1 = {
+  fields: Array<McpElicitationField>
+}
+
+export type McpElicitationRequested = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "mcp.elicitation.requested"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    sessionID: string
+    assistantMessageID: string
+    toolCallID: string
+    server: string
+    message: string
+    form: McpElicitationForm1
+    createdAt: number
+    deadlineAt: number
+    status: "pending"
+  }
+}
+
+export type McpElicitationSettled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "mcp.elicitation.settled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    requestID: string
+    server: string
+    action: "accept" | "decline" | "cancel"
+    reason:
+      | "replied"
+      | "dismissed"
+      | "server_cancelled"
+      | "interrupted"
+      | "timed_out"
+      | "call_completed"
+      | "disconnected"
   }
 }
 
@@ -8790,6 +8973,42 @@ export type EventCodeReviewFinished = {
     reviewID: string
     revision: number
     status: "admitted" | "capturing" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventMcpElicitationRequested = {
+  id: string
+  type: "mcp.elicitation.requested"
+  properties: {
+    id: string
+    sessionID: string
+    assistantMessageID: string
+    toolCallID: string
+    server: string
+    message: string
+    form: McpElicitationForm
+    createdAt: number
+    deadlineAt: number
+    status: "pending"
+  }
+}
+
+export type EventMcpElicitationSettled = {
+  id: string
+  type: "mcp.elicitation.settled"
+  properties: {
+    sessionID: string
+    requestID: string
+    server: string
+    action: "accept" | "decline" | "cancel"
+    reason:
+      | "replied"
+      | "dismissed"
+      | "server_cancelled"
+      | "interrupted"
+      | "timed_out"
+      | "call_completed"
+      | "disconnected"
   }
 }
 
@@ -20008,6 +20227,98 @@ export type V2CodeReviewCancelResponses = {
 }
 
 export type V2CodeReviewCancelResponse = V2CodeReviewCancelResponses[keyof V2CodeReviewCancelResponses]
+
+export type V2McpElicitationListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    includeDescendants?: "true"
+  }
+  url: "/api/session/{sessionID}/mcp/elicitation"
+}
+
+export type V2McpElicitationListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpElicitationNotFoundError | SessionNotFoundError
+   */
+  404: McpElicitationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpElicitationListError = V2McpElicitationListErrors[keyof V2McpElicitationListErrors]
+
+export type V2McpElicitationListResponses = {
+  /**
+   * Success
+   */
+  200: Array<McpElicitationRequest>
+}
+
+export type V2McpElicitationListResponse = V2McpElicitationListResponses[keyof V2McpElicitationListResponses]
+
+export type V2McpElicitationReplyData = {
+  body: {
+    action: "accept" | "decline" | "cancel"
+    content?: McpElicitationContent
+  }
+  path: {
+    sessionID: string
+    requestID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/mcp/elicitation/{requestID}/reply"
+}
+
+export type V2McpElicitationReplyErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * McpElicitationNotFoundError | SessionNotFoundError
+   */
+  404: McpElicitationNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2McpElicitationReplyError = V2McpElicitationReplyErrors[keyof V2McpElicitationReplyErrors]
+
+export type V2McpElicitationReplyResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2McpElicitationReplyResponse = V2McpElicitationReplyResponses[keyof V2McpElicitationReplyResponses]
 
 export type V2SessionMessagesData = {
   body?: never

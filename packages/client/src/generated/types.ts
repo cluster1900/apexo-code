@@ -114,6 +114,14 @@ export type WorkflowNotFoundError = { readonly _tag: "WorkflowNotFoundError"; re
 export const isWorkflowNotFoundError = (value: unknown): value is WorkflowNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "WorkflowNotFoundError"
 
+export type McpElicitationNotFoundError = {
+  readonly _tag: "McpElicitationNotFoundError"
+  readonly requestID: string
+  readonly message: string
+}
+export const isMcpElicitationNotFoundError = (value: unknown): value is McpElicitationNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "McpElicitationNotFoundError"
+
 export type ProviderNotFoundError = {
   readonly _tag: "ProviderNotFoundError"
   readonly providerID: string
@@ -6981,6 +6989,91 @@ export type ServerCodeReviewCancelOutput = {
   readonly error?: string
   readonly workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
+
+export type ServerMcpElicitationListInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly includeDescendants?: { readonly includeDescendants?: "true" | undefined }["includeDescendants"]
+}
+
+export type ServerMcpElicitationListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly sessionID: string
+  readonly assistantMessageID: string
+  readonly toolCallID: string
+  readonly server: string
+  readonly message: string
+  readonly form: {
+    readonly fields: ReadonlyArray<
+      | {
+          readonly name: string
+          readonly title: string
+          readonly description?: string
+          readonly required: boolean
+          readonly type: "string"
+          readonly minLength?: number
+          readonly maxLength?: number
+          readonly format?: "email" | "uri" | "date" | "date-time"
+          readonly default?: string
+        }
+      | {
+          readonly name: string
+          readonly title: string
+          readonly description?: string
+          readonly required: boolean
+          readonly type: "number" | "integer"
+          readonly minimum?: number
+          readonly maximum?: number
+          readonly default?: number
+        }
+      | {
+          readonly name: string
+          readonly title: string
+          readonly description?: string
+          readonly required: boolean
+          readonly type: "boolean"
+          readonly default?: boolean
+        }
+      | {
+          readonly name: string
+          readonly title: string
+          readonly description?: string
+          readonly required: boolean
+          readonly type: "select"
+          readonly options: ReadonlyArray<{ readonly value: string; readonly title: string }>
+          readonly default?: string
+        }
+      | {
+          readonly name: string
+          readonly title: string
+          readonly description?: string
+          readonly required: boolean
+          readonly type: "multi"
+          readonly options: ReadonlyArray<{ readonly value: string; readonly title: string }>
+          readonly minItems?: number
+          readonly maxItems?: number
+          readonly default?: ReadonlyArray<string>
+        }
+    >
+  }
+  readonly createdAt: number
+  readonly deadlineAt: number
+  readonly status: "pending"
+}>
+
+export type ServerMcpElicitationReplyInput = {
+  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
+  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly action: {
+    readonly action: "accept" | "decline" | "cancel"
+    readonly content?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
+  }["action"]
+  readonly content?: {
+    readonly action: "accept" | "decline" | "cancel"
+    readonly content?: { readonly [x: string]: string | number | boolean | ReadonlyArray<string> } | undefined
+  }["content"]
+}
+
+export type ServerMcpElicitationReplyOutput = void
 
 export type MessagesListInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]

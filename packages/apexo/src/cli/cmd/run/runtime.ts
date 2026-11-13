@@ -456,6 +456,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
             }
           : undefined,
     ),
+    mcpElicitation: { api: ctx.sdk.v2.mcpElicitation, sessions: () => (state.sessionID ? [state.sessionID] : []) },
     codeReviewActions: {
       available: async () => {
         await ensureSession()

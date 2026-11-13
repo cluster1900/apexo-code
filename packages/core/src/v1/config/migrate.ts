@@ -106,7 +106,7 @@ function normalizeAction(action: string) {
   return action === "write" || action === "patch" ? "edit" : action
 }
 
-function references(info?: typeof ConfigV1.Info.Type["references"]) {
+function references(info?: (typeof ConfigV1.Info.Type)["references"]) {
   if (!info) return undefined
   return Object.fromEntries(
     Object.entries(info).map(([name, entry]) => [name, typeof entry === "string" ? entry : { ...entry }]),
@@ -162,12 +162,14 @@ function migrateMcp(info: ConfigMCPV1.Info) {
       command: info.command,
       cwd: info.cwd,
       environment: info.environment,
+      elicitation: info.elicitation,
       disabled,
       timeout: info.timeout === undefined ? undefined : { request: info.timeout },
     }
   return {
     type: info.type,
     url: info.url,
+    elicitation: info.elicitation,
     headers: info.headers,
     oauth: info.oauth && {
       client_id: info.oauth.clientId,

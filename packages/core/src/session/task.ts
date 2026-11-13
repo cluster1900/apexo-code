@@ -25,6 +25,7 @@ import { EventV2 } from "../event"
 import { InstallationVersion } from "../installation/version"
 import { Location } from "../location"
 import { PermissionV2 } from "../permission"
+import { McpElicitation } from "../mcp-elicitation"
 import { Slug } from "../util/slug"
 import { SessionV1 } from "../v1/session"
 import { WorkflowRole } from "../workflow/role"
@@ -132,6 +133,12 @@ const make = Effect.gen(function* () {
         // Capture before any asynchronous permission/model admission: a Stop during launch revokes late notices.
         const checkpoint = input.background ? yield* completions.checkpoint(context.sessionID) : undefined
         const parentRole = roles.get(context.sessionID)
+        // Session coordinators run in their own captured context; carry only this private launch evidence.
+        const allowMcpInteraction =
+          !executionPolicy &&
+          source.type !== "schedule" &&
+          (!parentRole || parentRole.allowMcpInteraction === true) &&
+          (source.type === "operator" || (yield* McpElicitation.Interactive))
         if (workflowRoles.get(context.sessionID) || goalRoles.get(context.sessionID))
           return yield* new SessionTaskStore.Failure({
             code: "denied",
@@ -614,6 +621,7 @@ const make = Effect.gen(function* () {
                     return yield* Effect.interrupt
                 }
                 yield* roles.attach(childID, {
+                  allowMcpInteraction,
                   hooks: hook,
                   launchID: id,
                   inputID: message?.input.inputID ?? SessionMessage.ID.make(`msg_task${id}`),
@@ -664,7 +672,9 @@ const make = Effect.gen(function* () {
                 if (placement?.record.mode === "worktree") {
                   const refreshed = yield* placements.snapshot(placement.record).pipe(Effect.result)
                   if (refreshed._tag === "Success")
-                    yield* tasks.updatePlacement(parent.id, childID, refreshed.success).pipe(Effect.catch(() => Effect.void))
+                    yield* tasks
+                      .updatePlacement(parent.id, childID, refreshed.success)
+                      .pipe(Effect.catch(() => Effect.void))
                 }
                 if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
                 const context = yield* sessions.context(childID)

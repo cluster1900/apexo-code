@@ -1,6 +1,7 @@
 export { Agent } from "./agent"
 export { Command } from "./command"
 export { CodeReview } from "./code-review"
+export { McpElicitation } from "./mcp-elicitation"
 export { Connection } from "./connection"
 export { Credential } from "./credential"
 export { Event } from "./event"

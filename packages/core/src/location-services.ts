@@ -27,6 +27,7 @@ import { ShellEnvironment } from "./shell-environment"
 import { PluginInternal } from "./plugin/internal"
 import { PluginBundleRuntime } from "./plugin-bundle-runtime"
 import { MCP } from "./mcp"
+import { McpElicitation } from "./mcp-elicitation"
 import { LSP } from "./lsp"
 import { Policy } from "./policy"
 import { ProjectCopy } from "./project/copy"
@@ -69,6 +70,7 @@ export const locationServices = LayerNode.group([
   PluginInternal.node,
   PluginBundleRuntime.node,
   MCP.node,
+  McpElicitation.node,
   LSP.node,
   ProjectCopy.node,
   ProjectCopy.refreshNode,

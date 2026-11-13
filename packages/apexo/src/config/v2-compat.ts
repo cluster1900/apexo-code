@@ -41,6 +41,7 @@ const Server = Schema.Union([
     disabled: Schema.optional(Schema.Boolean),
     codemode: Schema.optional(Schema.Boolean),
     defer_tools: Schema.optional(Schema.Boolean),
+    elicitation: Schema.optional(Schema.Boolean),
     timeout: Schema.optional(Timeout),
   }),
   Schema.Struct({
@@ -51,6 +52,7 @@ const Server = Schema.Union([
     disabled: Schema.optional(Schema.Boolean),
     codemode: Schema.optional(Schema.Boolean),
     defer_tools: Schema.optional(Schema.Boolean),
+    elicitation: Schema.optional(Schema.Boolean),
     timeout: Schema.optional(Timeout),
   }),
 ])

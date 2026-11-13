@@ -3,6 +3,8 @@ import { SessionScheduleRuntime } from "../schedule"
 import { SessionInputExecution } from "../input-execution"
 import { SessionInputExecutionOwner } from "../input-execution-owner"
 import { SessionExecutionPolicy } from "../execution-policy"
+import { McpElicitation } from "../../mcp-elicitation"
+import { SessionTaskOrigin } from "../task-origin"
 import { SessionLifecycle } from "../lifecycle"
 import { SessionPlanReceipt } from "../plan-receipt"
 import { SessionPlan } from "../plan"
@@ -763,6 +765,18 @@ const layer = Layer.effect(
           const plannedTools = plan && roleTools ? SessionPlan.materialize(roleTools) : roleTools
           const toolMaterialization =
             execution && plannedTools ? SessionExecutionPolicy.materialize(plannedTools) : plannedTools
+          const interactionPolicies = yield* SessionExecutionPolicy.Current
+          const scheduledOrigin = yield* SessionTaskOrigin.Current
+          const allowMcpInteraction =
+            !execution &&
+            !scheduledOrigin &&
+            !taskRole?.scheduledLaunchID &&
+            (!taskRole || taskRole.allowMcpInteraction === true) &&
+            !workflowRole &&
+            !role &&
+            !summaryRole &&
+            !reviewRole &&
+            ![...interactionPolicies.values()].some((policy) => policy.mode === "headless")
           const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
           const systemParts = [
             agent.info?.system,
@@ -919,7 +933,11 @@ const layer = Layer.effect(
               Effect.gen(function* () {
                 summaryRole?.observe(event)
                 if (overflowFailure || publisher.hasProviderError()) return
-                if (LLMEvent.is.providerError(event) && isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
+                if (
+                  LLMEvent.is.providerError(event) &&
+                  isContextOverflowFailure(event) &&
+                  !publisher.hasAssistantStarted()
+                ) {
                   overflowFailure = event
                   return
                 }
@@ -984,12 +1002,14 @@ const layer = Layer.effect(
                     }
                     const settlement = yield* restore(
                       withToolConcurrency(
-                        toolMaterialization.settle({
-                          sessionID: session.id,
-                          agent: agent.id,
-                          assistantMessageID,
-                          call: event,
-                        }),
+                        toolMaterialization
+                          .settle({
+                            sessionID: session.id,
+                            agent: agent.id,
+                            assistantMessageID,
+                            call: event,
+                          })
+                          .pipe(Effect.provideService(McpElicitation.Interactive, allowMcpInteraction)),
                       ),
                     )
                     yield* publish(

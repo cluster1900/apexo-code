@@ -1,5 +1,11 @@
 import { Schema } from "effect"
 
+export class McpElicitationNotFoundError extends Schema.TaggedErrorClass<McpElicitationNotFoundError>()(
+  "McpElicitationNotFoundError",
+  { requestID: Schema.String, message: Schema.String },
+  { httpApiStatus: 404 },
+) {}
+
 export class InvalidRequestError extends Schema.TaggedErrorClass<InvalidRequestError>()(
   "InvalidRequestError",
   {

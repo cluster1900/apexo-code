@@ -14,6 +14,7 @@ export type Role = {
   // A role alone is not durable authority. Schedule tools verify this exact launch and its origin.
   readonly launchID?: string
   readonly scheduledLaunchID?: string
+  readonly allowMcpInteraction?: boolean
   readonly hooks?: SessionHookSnapshot.Snapshot
   readonly inputID: SessionMessage.ID
   readonly record: SessionTaskStore.Record

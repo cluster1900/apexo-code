@@ -1,6 +1,7 @@
-import { createEffect, createMemo, on, onCleanup } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { PermissionRequest, QuestionRequest, Todo } from "@apexo/sdk/v2"
+import type { McpElicitationRequest, PermissionRequest, QuestionRequest, Todo } from "@apexo/sdk/v2"
+import { watchMcpElicitations } from "@apexo/sdk/v2/mcp-elicitation"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"
@@ -32,6 +33,23 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   const serverSync = useServerSync()
   const language = useLanguage()
   const permission = usePermission()
+  const [forms, setForms] = createStore({ requests: [] as McpElicitationRequest[] })
+  let refreshForms = () => {}
+  createEffect(() => {
+    const current = sdk()
+    const id = params.id
+    setForms("requests", [])
+    const watcher = untrack(() =>
+      watchMcpElicitations(
+        current.client.v2.mcpElicitation,
+        () => (id ? [id] : []),
+        (requests) => setForms("requests", requests),
+      ),
+    )
+    refreshForms = () => void watcher.refresh()
+    onCleanup(() => watcher.close())
+  })
+  const elicitationRequest = () => forms.requests[0]
 
   const questionRequest = createMemo((): QuestionRequest | undefined => {
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
@@ -46,7 +64,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   const blocked = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return !!permissionRequest() || !!questionRequest()
+    return !!permissionRequest() || !!questionRequest() || !!elicitationRequest()
   })
 
   const todos = createMemo((): Todo[] => {
@@ -194,6 +212,8 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   return {
     blocked,
     questionRequest,
+    elicitationRequest,
+    refreshForms: () => refreshForms(),
     permissionRequest,
     permissionResponding,
     decide,

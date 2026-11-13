@@ -2,6 +2,7 @@ export * as EventManifest from "./event-manifest"
 
 import { Catalog } from "./catalog"
 import { CodeReview } from "./code-review"
+import { McpElicitation } from "./mcp-elicitation"
 import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
@@ -46,6 +47,7 @@ const foundationDefinitions = Event.inventory(
 
 const featureDefinitions = Event.inventory(
   ...CodeReview.Event.Definitions,
+  ...McpElicitation.Event.Definitions,
   ...FileSystem.Event.Definitions,
   ...Reference.Event.Definitions,
   ...Permission.Event.Definitions,

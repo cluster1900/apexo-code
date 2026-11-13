@@ -8,3 +8,7 @@
 - Reproduction: Run the generator with the original top-level union payload.
 - Verification: Supported generation passes with the wrapper; both real HTTP hosts accept resource preparation and return validated snapshots.
 - Occurrences: One authoring episode.
+
+## F04 occurrence (2026-11-13)
+
+The initial MCP form reply endpoint used a top-level discriminated union and hit the same generator restriction. The endpoint now has a thin top-level struct with `action` and optional `content`; Core decodes the strict canonical union, so `accept` requires content and decline/cancel reject content. This preserves the planned wire shape without extending the general generator. Client and SDK generation pass. This is a second independent occurrence, below the threshold for a recurring rule.
