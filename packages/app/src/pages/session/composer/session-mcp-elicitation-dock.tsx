@@ -6,6 +6,7 @@ import {
   elicitationConstraints,
   elicitationDefaults,
   elicitationError,
+  elicitationValue,
   selectedValues,
 } from "@apexo/sdk/v2/mcp-elicitation"
 import { DockPrompt } from "@apexo/session-ui/dock-prompt"
@@ -144,7 +145,7 @@ export function SessionMcpElicitationDock(props: { request: McpElicitationReques
                         id={id}
                         class="w-full rounded border px-2 py-1"
                         disabled={state.pending}
-                        value={String(state.values[field.name] ?? "")}
+                        value={String(elicitationValue(state.values, field.name) ?? "")}
                         type={field.type === "number" || field.type === "integer" ? "number" : "text"}
                         step={field.type === "integer" ? 1 : "any"}
                         aria-invalid={state.field === field.name}
@@ -157,7 +158,7 @@ export function SessionMcpElicitationDock(props: { request: McpElicitationReques
                         id={id}
                         type="checkbox"
                         disabled={state.pending}
-                        checked={state.values[field.name] === true}
+                        checked={elicitationValue(state.values, field.name) === true}
                         onChange={(event) => setState("values", field.name, event.currentTarget.checked)}
                       />
                     </Match>
@@ -168,8 +169,12 @@ export function SessionMcpElicitationDock(props: { request: McpElicitationReques
                         disabled={state.pending}
                         value={
                           field.type === "select" &&
-                          field.options.some((option) => option.value === state.values[field.name])
-                            ? String(field.options.findIndex((option) => option.value === state.values[field.name]))
+                          field.options.some((option) => option.value === elicitationValue(state.values, field.name))
+                            ? String(
+                                field.options.findIndex(
+                                  (option) => option.value === elicitationValue(state.values, field.name),
+                                ),
+                              )
                             : ""
                         }
                         aria-invalid={state.field === field.name}
@@ -201,9 +206,11 @@ export function SessionMcpElicitationDock(props: { request: McpElicitationReques
                               <input
                                 type="checkbox"
                                 disabled={state.pending}
-                                checked={selectedValues(state.values[field.name]).includes(option.value)}
+                                checked={selectedValues(elicitationValue(state.values, field.name)).includes(
+                                  option.value,
+                                )}
                                 onChange={(event) => {
-                                  const values = selectedValues(state.values[field.name])
+                                  const values = selectedValues(elicitationValue(state.values, field.name))
                                   setState(
                                     "values",
                                     field.name,

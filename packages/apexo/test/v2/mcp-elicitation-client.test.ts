@@ -4,7 +4,12 @@ import { McpElicitation } from "@apexo/schema/mcp-elicitation"
 import { SessionID } from "@apexo/schema/session-id"
 import type { McpElicitationRequest } from "@apexo/sdk/v2/client"
 import { createApexoClient } from "@apexo/sdk/v2/client"
-import { elicitationContent, elicitationDefaults, watchMcpElicitations } from "@apexo/sdk/v2/mcp-elicitation"
+import {
+  elicitationContent,
+  elicitationDefaults,
+  elicitationValue,
+  watchMcpElicitations,
+} from "@apexo/sdk/v2/mcp-elicitation"
 
 const request = (sessionID: string, id = McpElicitation.ID.create()) => ({
   id,
@@ -43,11 +48,31 @@ const request = (sessionID: string, id = McpElicitation.ID.create()) => ({
 test("typed drafts preserve false, valid empty enums, array defaults and explicit decimal parsing", () => {
   const form = request(SessionID.make(`ses_${"1".repeat(26)}`))
   const values = elicitationDefaults(form)
+  expect(elicitationValue(values, "toString")).toBeUndefined()
+  expect(elicitationValue(values, "valueOf")).toBeUndefined()
   expect(values).toEqual({ quantity: 2, confirm: false, choice: "", regions: ["a"] })
   expect(values.regions).not.toBe(form.form.fields[3].default)
   expect(elicitationContent(form, { ...values, quantity: "3e0" })).toEqual({ content: { ...values, quantity: 3 } })
   expect(elicitationContent(form, { ...values, quantity: "Infinity" })).toEqual({ invalid: "quantity" })
   expect(elicitationContent(form, { ...values, quantity: "0x10" })).toEqual({ invalid: "quantity" })
+})
+
+test("optional prototype-named fields stay absent until explicitly edited", () => {
+  const form = {
+    ...request(SessionID.make(`ses_${"1".repeat(26)}`)),
+    form: {
+      fields: [
+        { name: "toString", title: "Optional number", type: "number" as const, required: false },
+        { name: "valueOf", title: "Optional text", type: "string" as const, required: false },
+        { name: "hasOwnProperty", title: "Confirm", type: "boolean" as const, required: true },
+      ],
+    },
+  }
+  const values = elicitationDefaults(form)
+  expect(elicitationContent(form, values)).toEqual({ content: { hasOwnProperty: false } })
+  expect(elicitationContent(form, { ...values, toString: "2.5", valueOf: "chosen" })).toEqual({
+    content: { hasOwnProperty: false, toString: 2.5, valueOf: "chosen" },
+  })
 })
 
 test("live hydration fences changed sessions, preserves drafts by request identity and retains state on transient failure", async () => {
@@ -99,3 +124,45 @@ test("live hydration fences changed sessions, preserves drafts by request identi
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 }, 10000)
+
+test("hydration includes descendants without client metadata, retains drafts, and clears stale forms after restart", async () => {
+  const root = SessionID.make(`ses_${"1".repeat(26)}`)
+  const child = SessionID.make(`ses_${"2".repeat(26)}`)
+  const form = request(child)
+  const hydrated = Promise.withResolvers<void>()
+  const state = { failing: false, restarted: false, requests: [] as McpElicitationRequest[] }
+  const server = createServer((incoming, response) => {
+    expect(incoming.url).toBe(`/api/session/${root}/mcp/elicitation?includeDescendants=true`)
+    response.writeHead(state.failing ? 503 : 200, { "content-type": "application/json" })
+    response.end(JSON.stringify(state.failing ? {} : state.restarted ? [] : [form]))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Expected TCP listener")
+  const watcher = watchMcpElicitations(
+    createApexoClient({ baseUrl: `http://127.0.0.1:${address.port}` }).v2.mcpElicitation,
+    () => [root],
+    (requests) => {
+      state.requests = requests
+      if (requests.length) hydrated.resolve()
+    },
+  )
+  try {
+    await hydrated.promise
+    const identity = state.requests[0]
+    expect(identity.sessionID).toBe(child)
+    await watcher.refresh()
+    expect(state.requests[0]).toBe(identity)
+    state.failing = true
+    await watcher.refresh()
+    expect(state.requests[0]).toBe(identity)
+    state.failing = false
+    state.restarted = true
+    await watcher.refresh()
+    expect(state.requests).toEqual([])
+  } finally {
+    watcher.close()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})

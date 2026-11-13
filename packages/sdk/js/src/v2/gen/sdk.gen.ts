@@ -10226,10 +10226,21 @@ export class McpElicitation extends HeyApiClient {
   public list<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
+      includeDescendants?: "true"
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "includeDescendants" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).get<
       V2McpElicitationListResponses,
       V2McpElicitationListErrors,

@@ -15,8 +15,8 @@ const plain = () =>
 const screen = []
 let child
 const checks = []
-const tools = async () =>
-  (await runtime.api(`/api/session/${session.id}/message?order=asc`)).data.flatMap((message) =>
+const tools = async (id = session.id) =>
+  (await runtime.api(`/api/session/${id}/message?order=asc`)).data.flatMap((message) =>
     message.type === "assistant" ? message.content.filter((item) => item.type === "tool") : [],
   )
 try {
@@ -116,6 +116,65 @@ try {
       })
     await poll(() => !plain().includes("Input requested by forms"), "form dock closed")
     checks.push(`${action}-exact-wire-result`)
+  }
+  for (const scenario of ["F04_DIRECT", "F04_NESTED", "F04_SPECIAL", "F04_SPECIAL_EDIT"]) {
+    await fixture.prompt(session.id, undefined, scenario)
+    const pending = await fixture.pending(session.id)
+    const special = scenario.includes("SPECIAL")
+    if (!special) {
+      assert.notEqual(pending.sessionID, session.id)
+      assert.deepEqual(await runtime.api(`/api/session/${session.id}/mcp/elicitation`), [])
+      const owner = (await runtime.api(`/api/session/${pending.sessionID}`)).data
+      if (scenario === "F04_DIRECT") assert.equal(owner.parentID, session.id)
+      if (scenario === "F04_NESTED") {
+        assert.notEqual(owner.parentID, session.id)
+        assert.equal((await runtime.api(`/api/session/${owner.parentID}`)).data.parentID, session.id)
+      }
+    }
+    await poll(
+      () => plain().includes("Input requested by forms") && plain().includes(special ? "Optional number" : "sample"),
+      "descendant or special-name form",
+      30000,
+    )
+    const count = special ? 4 : 6
+    if (special) assert.ok(!plain().includes("function"))
+    for (let i = 0; i < count; i++) {
+      if (scenario === "F04_SPECIAL_EDIT" && i < 2) {
+        child.terminal.write(`\x1b[200~${i === 0 ? "2.5" : "chosen"}\x1b[201~`)
+        await poll(() => plain().includes(i === 0 ? "2.5" : "chosen"), "prototype-named input edited")
+      }
+      if (scenario === "F04_SPECIAL_EDIT" && i === 3) {
+        child.terminal.write(" ")
+        await poll(() => plain().includes("> [x] a"), "optional choice updates after first selection")
+      }
+      child.terminal.write("\t")
+      await poll(
+        () => plain().includes(i === count - 1 ? "Review answers" : `Field ${i + 2} /`),
+        "review descendant or special fields",
+      )
+    }
+    child.terminal.write("\r")
+    const result = await poll(
+      async () => {
+        const part = (await tools(pending.sessionID)).find((part) => part.id === pending.toolCallID)
+        return part?.state.status === "completed" ? part : undefined
+      },
+      "owned descendant tool completed",
+      20000,
+    )
+    const output = JSON.parse(result.state.content.find((part) => part.type === "text").text)
+    assert.equal(output.replies[0].action, "accept")
+    assert.deepEqual(
+      output.replies[0].content,
+      special
+        ? {
+            hasOwnProperty: false,
+            ...(scenario.endsWith("EDIT") ? { toString: 2.5, valueOf: "chosen", isPrototypeOf: "a" } : {}),
+          }
+        : { name: "sample", quantity: 2, ratio: 0.5, confirm: false, environment: "dev", regions: ["a"] },
+    )
+    await poll(() => !plain().includes("Input requested by forms"), "descendant form dock closed")
+    checks.push(`${scenario}-owned-typed-reply`)
   }
   console.log(JSON.stringify({ mode: fullscreen ? "fullscreen" : "mini", checks, output: runtime.output }))
 } finally {

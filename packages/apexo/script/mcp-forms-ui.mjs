@@ -200,8 +200,8 @@ try {
   } else await command("open", `${browserUrl}${route}`)
   const dock = '[data-component="session-mcp-elicitation-dock"]'
   const control = (name, suffix = "input") => `${dock} [data-elicitation-field="${name}"] ${suffix}`
-  const tools = async () =>
-    (await runtime.api(`/api/session/${fixture.session.id}/message?order=asc`)).data.flatMap((message) =>
+  const tools = async (id = fixture.session.id) =>
+    (await runtime.api(`/api/session/${id}/message?order=asc`)).data.flatMap((message) =>
       message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : [],
     )
   await command("wait", '[contenteditable="true"]')
@@ -262,6 +262,67 @@ try {
     }
     await command("wait", "--fn", `!document.querySelector(${JSON.stringify(dock)})`)
     checks.push(`${action}-settles-owned-call`)
+  }
+  for (const scenario of ["F04_DIRECT", "F04_NESTED", "F04_SPECIAL", "F04_SPECIAL_EDIT"]) {
+    await fixture.prompt(fixture.session.id, undefined, scenario)
+    const pending = await fixture.pending(fixture.session.id)
+    const special = scenario.includes("SPECIAL")
+    if (!special) {
+      assert.notEqual(pending.sessionID, fixture.session.id)
+      assert.deepEqual(await runtime.api(`/api/session/${fixture.session.id}/mcp/elicitation`), [])
+      const owner = (await runtime.api(`/api/session/${pending.sessionID}`)).data
+      if (scenario === "F04_DIRECT") assert.equal(owner.parentID, fixture.session.id)
+      if (scenario === "F04_NESTED") {
+        assert.notEqual(owner.parentID, fixture.session.id)
+        assert.equal((await runtime.api(`/api/session/${owner.parentID}`)).data.parentID, fixture.session.id)
+      }
+    }
+    await command("wait", dock)
+    if (!special) {
+      await command("reload")
+      await command("wait", dock)
+      assert.equal(
+        JSON.parse(await command("eval", `document.querySelector(${JSON.stringify(dock)}).dataset.requestId`)),
+        pending.id,
+      )
+    }
+    if (special) {
+      assert.equal(
+        JSON.parse(await command("eval", `document.querySelector(${JSON.stringify(control("toString"))}).value`)),
+        "",
+      )
+      assert.equal(
+        JSON.parse(await command("eval", `document.querySelector(${JSON.stringify(control("valueOf"))}).value`)),
+        "",
+      )
+      if (scenario.endsWith("EDIT")) {
+        await command("fill", control("toString"), "2.5")
+        await command("fill", control("valueOf"), "chosen")
+        await command("select", control("isPrototypeOf", "select"), "0")
+      }
+    }
+    await command("click", '[data-action="elicitation-accept"]')
+    const result = await poll(
+      async () => {
+        const part = (await tools(pending.sessionID)).find((part) => part.id === pending.toolCallID)
+        return part?.state.status === "completed" ? part : undefined
+      },
+      "owned descendant tool completed",
+      20000,
+    )
+    const output = JSON.parse(result.state.content.find((part) => part.type === "text").text)
+    assert.equal(output.replies[0].action, "accept")
+    assert.deepEqual(
+      output.replies[0].content,
+      special
+        ? {
+            hasOwnProperty: false,
+            ...(scenario.endsWith("EDIT") ? { toString: 2.5, valueOf: "chosen", isPrototypeOf: "a" } : {}),
+          }
+        : { name: "sample", quantity: 2, ratio: 0.5, confirm: false, environment: "dev", regions: ["a"] },
+    )
+    await command("wait", "--fn", `!document.querySelector(${JSON.stringify(dock)})`)
+    checks.push(`${scenario}-owned-typed-reply`)
   }
   await command("screenshot", join(runtime.output, "forms-final.png"))
   console.log(JSON.stringify({ kind, checks, output: runtime.output }))

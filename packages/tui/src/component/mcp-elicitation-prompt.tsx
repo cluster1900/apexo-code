@@ -9,6 +9,7 @@ import {
   elicitationConstraints,
   elicitationDefaults,
   elicitationError,
+  elicitationValue,
   selectedValues,
   type McpElicitationApi,
 } from "@apexo/sdk/v2/mcp-elicitation"
@@ -57,7 +58,7 @@ export function McpElicitationPrompt(props: {
     const item = field()
     if (!item) return
     if (item.type === "boolean") {
-      setState("values", item.name, state.values[item.name] !== true)
+      setState("values", item.name, elicitationValue(state.values, item.name) !== true)
       return
     }
     const option = options()[state.option]
@@ -66,7 +67,7 @@ export function McpElicitationPrompt(props: {
       setState("values", item.name, option.value)
       return
     }
-    const selected = selectedValues(state.values[item.name])
+    const selected = selectedValues(elicitationValue(state.values, item.name))
     setState(
       "values",
       item.name,
@@ -238,7 +239,7 @@ export function McpElicitationPrompt(props: {
               <For each={props.request.form.fields}>
                 {(item) => (
                   <text fg={props.theme().text}>
-                    {item.title}: {JSON.stringify(state.values[item.name] ?? "(not set)")}
+                    {item.title}: {JSON.stringify(elicitationValue(state.values, item.name) ?? "(not set)")}
                   </text>
                 )}
               </For>
@@ -291,8 +292,8 @@ export function McpElicitationPrompt(props: {
                         {(option, index) => (
                           <text fg={index() === state.option ? props.theme().highlight : props.theme().text}>
                             {index() === state.option ? "> " : "  "}[
-                            {state.values[item.name] === option.value ||
-                            selectedValues(state.values[item.name]).includes(option.value)
+                            {elicitationValue(state.values, item.name) === option.value ||
+                            selectedValues(elicitationValue(state.values, item.name)).includes(option.value)
                               ? "x"
                               : " "}
                             ] {option.title}
@@ -303,8 +304,8 @@ export function McpElicitationPrompt(props: {
                   }
                 >
                   <text fg={props.theme().highlight}>
-                    [{state.values[item.name] === true ? "x" : " "}] {String(state.values[item.name] === true)} · Space
-                    toggle
+                    [{elicitationValue(state.values, item.name) === true ? "x" : " "}]{" "}
+                    {String(elicitationValue(state.values, item.name) === true)} · Space toggle
                   </text>
                 </Show>
               }
@@ -319,7 +320,7 @@ export function McpElicitationPrompt(props: {
                     }
                   })
                 }}
-                initialValue={String(state.values[item.name] ?? "")}
+                initialValue={String(elicitationValue(state.values, item.name) ?? "")}
                 minHeight={1}
                 maxHeight={3}
                 textColor={props.theme().text}

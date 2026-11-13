@@ -8,6 +8,11 @@ import type {
 
 export type McpElicitationApi = ApexoClient["v2"]["mcpElicitation"]
 
+export function elicitationValue(drafts: McpElicitationContent, name: string) {
+  // Enumerating own keys also tracks a previously absent field's first edit in Solid stores.
+  return Object.keys(drafts).includes(name) ? drafts[name] : undefined
+}
+
 export function elicitationDefaults(request: McpElicitationRequest): McpElicitationContent {
   return Object.fromEntries(
     request.form.fields.flatMap((field) => {
@@ -28,7 +33,7 @@ export function elicitationContent(
 ): { content: McpElicitationContent; invalid?: undefined } | { invalid: string; content?: undefined } {
   const content: McpElicitationContent = {}
   for (const field of request.form.fields) {
-    const value = drafts[field.name]
+    const value = elicitationValue(drafts, field.name)
     if (
       value === undefined ||
       (value === "" &&
@@ -74,6 +79,7 @@ export function watchMcpElicitations(
     unsupported: "",
     abort: undefined as AbortController | undefined,
     requests: [] as McpElicitationRequest[],
+    scopes: new Map<string, McpElicitationRequest[]>(),
   }
   const refresh = async () => {
     const ids = [...new Set(sessions().filter(Boolean))]
@@ -81,7 +87,10 @@ export function watchMcpElicitations(
     if (state.closed || (state.pending && state.key === key) || state.unsupported === key) return
     state.abort?.abort()
     if (state.key !== key) {
-      state.requests = state.requests.filter((request) => ids.includes(request.sessionID))
+      state.scopes.forEach((_, id) => {
+        if (!ids.includes(id)) state.scopes.delete(id)
+      })
+      state.requests = ids.flatMap((id) => state.scopes.get(id) ?? [])
       update(state.requests)
     }
     const abort = new AbortController()
@@ -91,7 +100,7 @@ export function watchMcpElicitations(
     const results = await Promise.allSettled(
       ids.map((sessionID) =>
         api.list(
-          { sessionID },
+          { sessionID, includeDescendants: "true" },
           { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5000)]), throwOnError: false },
         ),
       ),
@@ -107,15 +116,12 @@ export function watchMcpElicitations(
       results.every((result) => result.status === "fulfilled" && [404, 405].includes(result.value.response.status))
     )
       state.unsupported = key
-    const items = results.flatMap((result, index) =>
-      result.status === "fulfilled" && result.value.response.ok && result.value.data
-        ? result.value.data.filter((request) => request.sessionID === ids[index])
-        : state.requests.filter(
-            (request) =>
-              request.sessionID === ids[index] &&
-              !(result.status === "fulfilled" && [404, 405].includes(result.value.response.status)),
-          ),
-    )
+    results.forEach((result, index) => {
+      if (result.status !== "fulfilled") return
+      if (result.value.response.ok && result.value.data) state.scopes.set(ids[index], result.value.data)
+      if ([404, 405].includes(result.value.response.status)) state.scopes.delete(ids[index])
+    })
+    const items = [...new Map(ids.flatMap((id) => state.scopes.get(id) ?? []).map((item) => [item.id, item])).values()]
     state.requests = items.map((item) => state.requests.find((old) => old.id === item.id) ?? item)
     state.pending = false
     update(state.requests)

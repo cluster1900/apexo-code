@@ -1849,6 +1849,7 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/elicitation`,
+            query: { includeDescendants: input["includeDescendants"] },
             successStatus: 200,
             declaredStatuses: [409, 400, 404, 503, 401],
             empty: false,

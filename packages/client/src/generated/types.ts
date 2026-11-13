@@ -6990,7 +6990,10 @@ export type ServerCodeReviewCancelOutput = {
   readonly workspaceStatus?: "current" | "stale" | "unavailable" | "not_applicable"
 }
 
-export type ServerMcpElicitationListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+export type ServerMcpElicitationListInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly includeDescendants?: { readonly includeDescendants?: "true" | undefined }["includeDescendants"]
+}
 
 export type ServerMcpElicitationListOutput = ReadonlyArray<{
   readonly id: string

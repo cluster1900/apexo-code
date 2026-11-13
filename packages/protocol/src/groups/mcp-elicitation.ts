@@ -21,6 +21,7 @@ const error = [
 export const McpElicitationGroup = HttpApiGroup.make("server.mcpElicitation").add(
   HttpApiEndpoint.get("mcpElicitation.list", root, {
     params: { sessionID: SessionID },
+    query: { includeDescendants: Schema.optional(Schema.Literal("true")) },
     success: Schema.Array(McpElicitation.Request),
     error,
   }).annotateMerge(OpenApi.annotations({ identifier: "v2.mcpElicitation.list" })),

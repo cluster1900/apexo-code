@@ -1345,9 +1345,15 @@ const adaptGroup20 = (raw: RawClient["server.codeReview"]) => ({
 })
 
 type Endpoint21_0Request = Parameters<RawClient["server.mcpElicitation"]["mcpElicitation.list"]>[0]
-type Endpoint21_0Input = { readonly sessionID: Endpoint21_0Request["params"]["sessionID"] }
+type Endpoint21_0Input = {
+  readonly sessionID: Endpoint21_0Request["params"]["sessionID"]
+  readonly includeDescendants?: Endpoint21_0Request["query"]["includeDescendants"]
+}
 const Endpoint21_0 = (raw: RawClient["server.mcpElicitation"]) => (input: Endpoint21_0Input) =>
-  raw["mcpElicitation.list"]({ params: { sessionID: input["sessionID"] } }).pipe(Effect.mapError(mapClientError))
+  raw["mcpElicitation.list"]({
+    params: { sessionID: input["sessionID"] },
+    query: { includeDescendants: input["includeDescendants"] },
+  }).pipe(Effect.mapError(mapClientError))
 
 type Endpoint21_1Request = Parameters<RawClient["server.mcpElicitation"]["mcpElicitation.reply"]>[0]
 type Endpoint21_1Input = {

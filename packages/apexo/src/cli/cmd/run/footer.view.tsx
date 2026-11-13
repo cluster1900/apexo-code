@@ -175,7 +175,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     props.mcpElicitation &&
     watchMcpElicitations(
       props.mcpElicitation.api,
-      () => [...(props.mcpElicitation?.sessions() ?? []), ...subagent().tabs.map((tab) => tab.sessionID)],
+      () => props.mcpElicitation?.sessions() ?? [],
       (requests) => setForms("requests", requests),
     )
   onCleanup(() => formWatcher?.close())

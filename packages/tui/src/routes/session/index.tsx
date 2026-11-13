@@ -224,15 +224,12 @@ export function Session() {
   const [forms, setForms] = createStore({ requests: [] as McpElicitationRequest[] })
   const formWatcher = watchMcpElicitations(
     sdk.client.v2.mcpElicitation,
-    () => children().map((item) => item.id),
+    () => [route.sessionID],
     (requests) => setForms("requests", requests),
   )
   createEffect(
     on(
-      () =>
-        children()
-          .map((item) => item.id)
-          .join(","),
+      () => route.sessionID,
       () => void formWatcher.refresh(),
     ),
   )

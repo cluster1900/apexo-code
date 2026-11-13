@@ -15,10 +15,27 @@ export async function startMcpFormsFixture(options = {}) {
     .slice(0, 10)}`
   const runtime = await startShellFixture("cli", {
     deferBackend: true,
-    async next({ body, finished, ancillary }) {
+    git: options.git,
+    async next({ body, text, finished, ancillary }) {
       calls.push(body)
       if (ancillary || finished) return { content: "FORM_DONE" }
-      return { tool, args: { mode: "form" } }
+      if (text.includes("F04_NESTED") || text.includes("F04_CHILD"))
+        return {
+          tool: "task",
+          args: {
+            description: "Form child",
+            prompt: text.includes("F04_CHILD") ? "F04_LEAF" : "F04_CHILD",
+            subagent_type: "worker",
+          },
+        }
+      if (text.includes("F04_WORKTREE"))
+        return {
+          tool: "task",
+          args: { description: "Isolated form", prompt: "F04_LEAF", subagent_type: "worker", isolation: "worktree" },
+        }
+      if (text.includes("F04_DIRECT"))
+        return { tool: "task", args: { description: "Form child", prompt: "F04_LEAF", subagent_type: "worker" } }
+      return { tool, args: { mode: text.includes("F04_SPECIAL") ? "special" : "form" } }
     },
   })
   const server = {
@@ -33,6 +50,8 @@ export async function startMcpFormsFixture(options = {}) {
           model: "formfixture/model",
           snapshot: false,
           permission: { "*": "allow" },
+          task: { maxDepth: 2 },
+          agent: { worker: { mode: "subagent", permission: { "*": "allow" } } },
           lsp: false,
           mcp: { forms: server },
           provider: {
@@ -54,6 +73,8 @@ export async function startMcpFormsFixture(options = {}) {
           model: "formfixture/model",
           snapshots: false,
           permissions: [{ action: "*", resource: "*", effect: "allow" }],
+          task: { maxDepth: 2 },
+          agents: { worker: { mode: "subagent", permissions: [{ action: "*", resource: "*", effect: "allow" }] } },
           compaction: { auto: false },
           mcp: { servers: { forms: { ...server, timeout: { request: 2000 } } } },
           providers: {
@@ -80,27 +101,36 @@ export async function startMcpFormsFixture(options = {}) {
   await writeFile(
     serverFile,
     options.mixed
-      ? `import {Server} from ${JSON.stringify(join(repo, "packages/apexo/src/server/server.ts"))};const server=await Server.listen({hostname:"127.0.0.1",port:0});console.log("NATIVE_URL="+server.url.origin);process.on("SIGTERM",async()=>{await server.stop(true);process.exit(0)});`
-      : `import {webHandler} from ${JSON.stringify(join(repo, "packages/server/src/routes.ts"))};const app=webHandler();const server=Bun.serve({hostname:"127.0.0.1",port:0,idleTimeout:0,fetch:app.handler});console.log("NATIVE_URL="+server.url.origin);process.on("SIGTERM",async()=>{await server.stop(true);await app.dispose();process.exit(0)});`,
+      ? `import {Server} from ${JSON.stringify(join(repo, "packages/apexo/src/server/server.ts"))};const server=await Server.listen({hostname:"127.0.0.1",port:Number(process.env.APEXO_TEST_FORM_PORT??0)});console.log("NATIVE_URL="+server.url.origin);process.on("SIGTERM",async()=>{await server.stop(true);process.exit(0)});`
+      : `import {webHandler} from ${JSON.stringify(join(repo, "packages/server/src/routes.ts"))};const app=webHandler();const server=Bun.serve({hostname:"127.0.0.1",port:Number(process.env.APEXO_TEST_FORM_PORT??0),idleTimeout:0,fetch:app.handler});console.log("NATIVE_URL="+server.url.origin);process.on("SIGTERM",async()=>{await server.stop(true);await app.dispose();process.exit(0)});`,
   )
   const logs = []
   const state = { child: undefined, exited: undefined }
-  if (!options.desktop) {
+  const launch = async () => {
+    const ready = Promise.withResolvers()
     state.child = spawn(process.execPath, [serverFile], {
       cwd: runtime.directory,
-      env: { ...runtime.env, APEXO_SERVER_PASSWORD: "" },
+      env: {
+        ...runtime.env,
+        APEXO_SERVER_PASSWORD: "",
+        APEXO_TEST_FORM_PORT: runtime.url ? new URL(runtime.url).port : "0",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     })
     state.exited = new Promise((resolve) => state.child.once("exit", resolve))
-    const old = runtime.url
     state.child.stdout.on("data", (chunk) => {
       logs.push(chunk)
       const match = chunk.toString().match(/NATIVE_URL=(http:\/\/[^\s]+)/)
-      if (match) runtime.url = match[1]
+      if (match) {
+        runtime.url = match[1]
+        ready.resolve()
+      }
     })
     state.child.stderr.on("data", (chunk) => logs.push(chunk))
-    await poll(() => runtime.url !== old, "native form backend", 30000)
+    await deadline(ready.promise, 30000, "native form backend")
   }
+  // The deferred base fixture has reserved its port; keep it stable for client restart checks.
+  if (!options.desktop) await launch()
   runtime.api = async (path, body, method = body ? "POST" : "GET", expected = 200) => {
     const url = new URL(path, runtime.url)
     url.searchParams.set("location[directory]", runtime.directory)
@@ -130,13 +160,23 @@ export async function startMcpFormsFixture(options = {}) {
     session,
     calls,
     create,
-    prompt: (sessionID, executionPolicy) =>
+    prompt: (sessionID, executionPolicy, text = "Collect deployment choices") =>
       runtime.api(`/api/session/${sessionID}/prompt`, {
-        prompt: { text: "Collect deployment choices" },
+        prompt: { text },
         ...(executionPolicy ? { executionPolicy } : {}),
       }),
     pending: (sessionID) =>
-      poll(async () => (await runtime.api(`/api/session/${sessionID}/mcp/elicitation`))[0], "live MCP form", 30000),
+      poll(
+        async () => (await runtime.api(`/api/session/${sessionID}/mcp/elicitation?includeDescendants=true`))[0],
+        "live MCP form",
+        30000,
+      ),
+    async restartBackend() {
+      assert.ok(!options.desktop, "Only the isolated fixture backend can restart here")
+      state.child.kill("SIGTERM")
+      await deadline(state.exited, 15000, "fixture backend shutdown")
+      await launch()
+    },
     async close() {
       state.child?.kill("SIGTERM")
       if (state.exited)

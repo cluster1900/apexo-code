@@ -9,7 +9,7 @@ import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { sessionPermissionRequest, sessionQuestionRequest, sessionTreeIDs } from "./session-request-tree"
+import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
 export const todoState = (input: {
   count: number
@@ -42,7 +42,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     const watcher = untrack(() =>
       watchMcpElicitations(
         current.client.v2.mcpElicitation,
-        () => sessionTreeIDs(sync().data.session, id),
+        () => (id ? [id] : []),
         (requests) => setForms("requests", requests),
       ),
     )

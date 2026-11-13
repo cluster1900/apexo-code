@@ -9,3 +9,11 @@
 - Verification: Browser App and rebuilt Desktop with its own authenticated sidecar pass prefill, validation, reload hydration, exact typed accept, decline, Escape cancel and Session interrupt. Mini/fullscreen real PTYs pass editing, validation, explicit review/submit, decline and cancel.
 - Limit: The stateless-tool HTTP case does not claim that SDK sessionless, one-request transports support bidirectional elicitation.
 - Occurrences: One acceptance-authoring episode.
+
+## Audit repair acceptance corrections
+
+The HTTP evidence now includes an actual sessionless transport, with a fresh SDK HTTP transport per request and no request/response `mcp-session-id`. The single test client uses a fixture bridge to correlate only in-flight HTTP messages; it advertises normal SDK capabilities during initialization and forwards `relatedRequestId` for the tool's form stream. This supersedes the original stateless-tool limitation above without changing the production SDK or MCP orchestration.
+
+Special-name acceptance exposed the SDK fixture's default AJV validator inspecting inherited `toString`/`valueOf` properties even after Apexo sent correct JSON. The fixture validates a copy containing only own JSON fields with a null prototype, retaining actual AJV schema checks. It does not loosen Apexo validation. A native API probe also launched a Task before warming the MCP catalog; its captured tool set correctly excluded the unavailable tool. The probe now explicitly connects MCP before delegation. An HTTP end-to-end assertion was corrected from 200 to the endpoint's declared 204 for payload-free `wait`; no production change was needed for either fixture assumption.
+
+The expanded API fixture restarts only its own isolated backend on the same reserved port. It holds a request in a real SDK watcher, observes empty hydration after restart, requires 404 for the stale reply and verifies no provider call replay. Exact final verification results are in [the implementation checkpoint](../../development/f04-implementation.md).

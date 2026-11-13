@@ -154,10 +154,10 @@ const make = Effect.gen(function* () {
           return yield* Deferred.await(entry.deferred).pipe(Effect.onInterrupt(interrupt))
         }),
       ),
-    list: (sessionID: SessionSchema.ID) =>
+    list: (sessionID?: SessionSchema.ID) =>
       Effect.sync(() =>
         [...pending.values()]
-          .filter((entry) => entry.request.sessionID === sessionID && lifecycle.available(entry.claim))
+          .filter((entry) => (!sessionID || entry.request.sessionID === sessionID) && lifecycle.available(entry.claim))
           .map((entry) => entry.request),
       ),
     reply: (sessionID: SessionSchema.ID, requestID: McpElicitation.ID, input: unknown) =>

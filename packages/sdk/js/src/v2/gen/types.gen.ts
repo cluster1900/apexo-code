@@ -20233,7 +20233,9 @@ export type V2McpElicitationListData = {
   path: {
     sessionID: string
   }
-  query?: never
+  query?: {
+    includeDescendants?: "true"
+  }
   url: "/api/session/{sessionID}/mcp/elicitation"
 }
 
