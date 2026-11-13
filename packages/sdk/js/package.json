@@ -20,13 +20,14 @@
     "./v2/types": "./src/v2/gen/types.gen.ts",
     "./v2/command-prompt": "./src/v2/command-prompt.ts",
     "./v2/task-message": "./src/v2/task-message.ts",
-    "./v2/mcp-attachment": "./src/v2/mcp-attachment.ts"
-    ,"./v2/feedback-images": "./src/v2/feedback-images.ts"
-    ,"./v2/session-report": "./src/v2/session-report.ts"
-    ,"./v2/code-review": "./src/v2/code-review.ts",
-    "./v2/goal-command": "./src/v2/goal-command.ts"
-    ,"./v2/grok-commands": "./src/v2/grok-commands.ts"
-    ,"./v2/agent-dashboard": "./src/v2/agent-dashboard.ts"
+    "./v2/mcp-attachment": "./src/v2/mcp-attachment.ts",
+    "./v2/feedback-images": "./src/v2/feedback-images.ts",
+    "./v2/session-report": "./src/v2/session-report.ts",
+    "./v2/code-review": "./src/v2/code-review.ts",
+    "./v2/mcp-elicitation": "./src/v2/mcp-elicitation.ts",
+    "./v2/goal-command": "./src/v2/goal-command.ts",
+    "./v2/grok-commands": "./src/v2/grok-commands.ts",
+    "./v2/agent-dashboard": "./src/v2/agent-dashboard.ts"
   },
   "files": [
     "dist"

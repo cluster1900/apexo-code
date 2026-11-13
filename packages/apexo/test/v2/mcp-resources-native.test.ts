@@ -216,7 +216,7 @@ test("resource reads reject empty, invalid base64, too many blocks, and oversize
     await cleanup(f.root, f.log)
   }
 }, 20000)
-test("resource requests hold the Location guard, propagate cancellation, and timeout without passive retry", async () => {
+test("resource requests hold the Location guard and retire cancellation/timeout generations without replay", async () => {
   const f = await setup({ local: "normal" }, 300)
   try {
     await Effect.runPromise(
@@ -233,9 +233,17 @@ test("resource requests hold the Location guard, propagate cancellation, and tim
           Effect.promise(async () => (await trace(f.log)).some((row) => row.event === "cancel")),
           "cancellation",
         )
-        expect((yield* o.mcp.readResource("local", "fixture://wait").pipe(Effect.flip)).code).toBe("load")
+        expect((yield* o.mcp.status).local).toMatchObject({
+          status: "failed",
+          error: expect.stringContaining("not replayed"),
+        })
+        expect((yield* Effect.promise(() => trace(f.log))).filter((row) => row.event === "read")).toHaveLength(1)
+        yield* o.mcp.retry("local")
         expect((yield* o.mcp.status).local.status).toBe("connected")
-        expect((yield* Effect.promise(() => trace(f.log))).filter((row) => row.event === "start")).toHaveLength(1)
+        expect((yield* o.mcp.readResource("local", "fixture://wait").pipe(Effect.flip)).code).toBe("load")
+        expect((yield* o.mcp.status).local.status).toBe("failed")
+        expect((yield* Effect.promise(() => trace(f.log))).filter((row) => row.event === "start")).toHaveLength(2)
+        expect((yield* Effect.promise(() => trace(f.log))).filter((row) => row.event === "read")).toHaveLength(2)
       }).pipe(Effect.scoped, Effect.provide(app(f.root))),
     )
   } finally {

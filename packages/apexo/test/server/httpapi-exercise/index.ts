@@ -1620,6 +1620,29 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: `/api/session/${ctx.state.id}/side-question`, headers: ctx.headers() }))
     .json(200, array),
   http.protected
+    .get("/api/session/{sessionID}/mcp/elicitation", "v2.mcpElicitation.list")
+    .seeded((ctx) => ctx.session({ title: "MCP form owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/mcp/elicitation`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/api/session/{sessionID}/mcp/elicitation/{requestID}/reply", "v2.mcpElicitation.reply.missing")
+    .seeded((ctx) => ctx.session({ title: "MCP form owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/mcp/elicitation/elc_missing/reply`,
+      headers: ctx.headers(),
+      body: { action: "cancel" },
+    }))
+    .status(404),
+  http.protected
+    .post("/api/session/{sessionID}/mcp/elicitation/{requestID}/reply", "v2.mcpElicitation.reply.unknown")
+    .seeded((ctx) => ctx.session({ title: "MCP form owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/mcp/elicitation/elc_missing/reply`,
+      headers: ctx.headers(),
+      body: { action: "decline", unexpected: true },
+    }))
+    .status(400),
+  http.protected
     .get("/api/session/{sessionID}/review", "v2.codeReview.list")
     .seeded((ctx) => ctx.session({ title: "Code review owner" }))
     .at((ctx) => ({ path: `/api/session/${ctx.state.id}/review`, headers: ctx.headers() }))

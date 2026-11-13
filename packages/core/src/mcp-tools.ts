@@ -9,6 +9,7 @@ import { Tool } from "./tool/tool"
 import { PermissionV2 } from "./permission"
 import { LocationRuntimeGuard } from "./location-runtime-guard"
 import { Location } from "./location"
+import type { McpCall } from "./mcp-call"
 
 export type ExposureMode = "eager" | "deferred" | "codemode"
 
@@ -21,10 +22,7 @@ export interface CatalogEntry {
   readonly outputSchema?: unknown
   readonly mode: ExposureMode
   readonly tool: Tool.AnyTool
-  readonly call: (
-    args: Record<string, unknown>,
-    context: Tool.Context,
-  ) => Effect.Effect<CallToolResult, Tool.Failure>
+  readonly call: (args: Record<string, unknown>, context: Tool.Context) => Effect.Effect<CallToolResult, Tool.Failure>
 }
 
 export function name(server: string, tool: string) {
@@ -39,8 +37,7 @@ export function name(server: string, tool: string) {
 export function toContent(result: CallToolResult): Tool.Content[] {
   const content = result.content.flatMap((part): Tool.Content[] => {
     if (part.type === "text") return [{ type: "text", text: part.text }]
-    if (part.type === "image" || part.type === "audio")
-      return [{ type: "file", data: part.data, mime: part.mimeType }]
+    if (part.type === "image" || part.type === "audio") return [{ type: "file", data: part.data, mime: part.mimeType }]
     if (part.type === "resource") {
       if ("text" in part.resource) return [{ type: "text", text: part.resource.text }]
       return [{ type: "file", data: part.resource.blob, mime: part.resource.mimeType ?? "application/octet-stream" }]
@@ -56,6 +53,7 @@ export async function make(input: {
   server: string
   definition: Awaited<ReturnType<Client["listTools"]>>["tools"][number]
   client: Client
+  calls?: McpCall.Interface
   timeout: number
   permission: PermissionV2.Interface
   guard: LocationRuntimeGuard.Interface
@@ -89,20 +87,31 @@ export async function make(input: {
             source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
           })
           .pipe(Effect.mapError(() => new Tool.Failure({ message: `Permission denied for ${key}` })))
-        const result = yield* Effect.tryPromise({
-          try: (signal) =>
-            input.client.callTool(
-              { name: input.definition.name, arguments: args as Record<string, unknown> },
-              CallToolResultSchema,
-              {
-                signal,
-                timeout: input.timeout,
-                maxTotalTimeout: input.timeout,
-                resetTimeoutOnProgress: false,
-              },
-            ),
-          catch: () => new Tool.Failure({ message: `MCP request failed for ${key}` }),
-        })
+        const request = (signal: AbortSignal, timeout: number) =>
+          input.client.callTool(
+            { name: input.definition.name, arguments: args as Record<string, unknown> },
+            CallToolResultSchema,
+            {
+              signal,
+              timeout,
+              maxTotalTimeout: timeout,
+              resetTimeoutOnProgress: false,
+            },
+          )
+        const result = yield* (
+          input.calls
+            ? input.calls.tool(context, request)
+            : Effect.tryPromise({ try: (signal) => request(signal, input.timeout), catch: (error) => error })
+        ).pipe(
+          Effect.mapError(
+            () =>
+              new Tool.Failure({
+                message: input.calls?.retired()
+                  ? `MCP request stopped for ${key}; reconnecting may reset server state. The call was not replayed.`
+                  : `MCP request failed for ${key}`,
+              }),
+          ),
+        )
         if (result.isError)
           return yield* new Tool.Failure({
             message:

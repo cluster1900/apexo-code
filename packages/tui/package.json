@@ -50,6 +50,7 @@
     "./ui/dialog": "./src/ui/dialog.tsx",
     "./ui/spinner": "./src/ui/spinner.ts",
     "./ui/toast": "./src/ui/toast.tsx",
+    "./component/mcp-elicitation-prompt": "./src/component/mcp-elicitation-prompt.tsx",
     "./component/mcp-browser": "./src/component/mcp-browser.tsx",
     "./component/plugins-browser": "./src/component/plugins-browser.tsx",
     "./component/workflow-browser": "./src/component/workflow-browser.tsx",

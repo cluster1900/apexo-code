@@ -184,6 +184,7 @@ import type {
   McpConnectResponses,
   McpDisconnectErrors,
   McpDisconnectResponses,
+  McpElicitationContent,
   McpLocalConfig,
   McpRemoteConfig,
   McpStatusErrors,
@@ -470,6 +471,10 @@ import type {
   V2McpConnectResponses,
   V2McpDisconnectErrors,
   V2McpDisconnectResponses,
+  V2McpElicitationListErrors,
+  V2McpElicitationListResponses,
+  V2McpElicitationReplyErrors,
+  V2McpElicitationReplyResponses,
   V2McpResetPreferenceErrors,
   V2McpResetPreferenceResponses,
   V2McpRetryErrors,
@@ -10217,6 +10222,64 @@ export class CodeReview extends HeyApiClient {
   }
 }
 
+export class McpElicitation extends HeyApiClient {
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<
+      V2McpElicitationListResponses,
+      V2McpElicitationListErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mcp/elicitation",
+      ...options,
+      ...params,
+    })
+  }
+
+  public reply<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      requestID: string
+      action?: "accept" | "decline" | "cancel"
+      content?: McpElicitationContent
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "requestID" },
+            { in: "body", key: "action" },
+            { in: "body", key: "content" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2McpElicitationReplyResponses,
+      V2McpElicitationReplyErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/mcp/elicitation/{requestID}/reply",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Model extends HeyApiClient {
   /**
    * List models
@@ -11496,6 +11559,11 @@ export class V2 extends HeyApiClient {
   private _codeReview?: CodeReview
   get codeReview(): CodeReview {
     return (this._codeReview ??= new CodeReview({ client: this.client }))
+  }
+
+  private _mcpElicitation?: McpElicitation
+  get mcpElicitation(): McpElicitation {
+    return (this._mcpElicitation ??= new McpElicitation({ client: this.client }))
   }
 
   private _model?: Model

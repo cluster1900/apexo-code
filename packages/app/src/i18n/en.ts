@@ -1,6 +1,22 @@
 import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 
 export const dict = {
+  "mcpElicitation.from": "Input requested by {{server}}",
+  "mcpElicitation.noSecrets": "Do not enter passwords, tokens, or other secrets.",
+  "mcpElicitation.remaining": "Time remaining: {{seconds}}s",
+  "mcpElicitation.minLength": "Minimum text length: {{value}}",
+  "mcpElicitation.maxLength": "Maximum text length: {{value}}",
+  "mcpElicitation.format": "Format: {{value}}",
+  "mcpElicitation.integer": "Enter a whole number.",
+  "mcpElicitation.minimum": "Minimum value: {{value}}",
+  "mcpElicitation.maximum": "Maximum value: {{value}}",
+  "mcpElicitation.minItems": "Minimum selections: {{value}}",
+  "mcpElicitation.maxItems": "Maximum selections: {{value}}",
+  "mcpElicitation.choose": "Choose an option",
+  "mcpElicitation.validation": "Check this field against the requested constraints.",
+  "mcpElicitation.error": "Could not send the response. Try again.",
+  "mcpElicitation.submit": "Submit",
+  "mcpElicitation.decline": "Decline",
   "codeReview.refresh": "Refresh reports",
   "codeReview.details": "Review details",
   "codeReview.capturedHead": "Captured HEAD",

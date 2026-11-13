@@ -23,6 +23,9 @@ import { CodeModeTool } from "./tool/code-mode"
 import { ToolSearchTools } from "./tool/tool-search"
 import { McpToolIndex } from "./mcp-tool-index"
 import { McpTools } from "./mcp-tools"
+import { McpCall } from "./mcp-call"
+import { McpElicitation } from "./mcp-elicitation"
+import { SessionLifecycle } from "./session/lifecycle"
 import { McpResources } from "./mcp-resources"
 import { McpOAuth } from "./mcp-oauth"
 import { McpPreferences } from "./mcp-preferences"
@@ -69,6 +72,7 @@ interface ExposureDefaults {
 
 interface Connection {
   readonly client: Client
+  readonly calls: McpCall.Interface
   readonly timeout: number
   readonly scope: Scope.Closeable
   readonly token: object
@@ -123,6 +127,8 @@ const make = Effect.gen(function* () {
   const registry = yield* ToolRegistry.Service
   const tools = yield* Tools.Service
   const sandbox = yield* CommandSandbox.Service
+  const makeCalls = yield* McpCall.make
+  const runForm = yield* FiberSet.makeRuntimePromise<never, McpElicitation.Reply, McpElicitation.Failure>()
   const lifetime = yield* Scope.Scope
   // Keep jobs outside individual connection scopes: a successful recovery retires
   // its predecessor, and must never wait for its own worker to stop.
@@ -300,7 +306,10 @@ const make = Effect.gen(function* () {
     )
     return yield* Effect.gen(function* () {
       const { Client } = yield* Effect.promise(() => import("@modelcontextprotocol/sdk/client/index.js"))
-      const { ListRootsRequestSchema } = yield* Effect.promise(() => import("@modelcontextprotocol/sdk/types.js"))
+      const { ListRootsRequestSchema, ElicitRequestSchema } = yield* Effect.promise(
+        () => import("@modelcontextprotocol/sdk/types.js"),
+      )
+      const { z } = yield* Effect.promise(() => import("zod/v4"))
       const { UnauthorizedError } = yield* Effect.promise(() => import("@modelcontextprotocol/sdk/client/auth.js"))
       const needsAuth = (error: unknown) =>
         (error instanceof McpOAuth.Failure && error.code === "auth") ||
@@ -308,10 +317,49 @@ const make = Effect.gen(function* () {
         (error instanceof Error && "code" in error && error.code === 401)
       const registration = yield* Scope.fork(connection, "sequential")
       const alive = { value: true }
-      const client = yield* Effect.gen(function* () {
+      const connected = yield* Effect.gen(function* () {
         const create = (transport: Transport) =>
           Effect.gen(function* () {
-            const client = new Client({ name: "apexo", version: InstallationVersion }, { capabilities: { roots: {} } })
+            const client = new Client(
+              { name: "apexo", version: InstallationVersion },
+              { capabilities: { roots: {}, ...(server.elicitation !== false ? { elicitation: { form: {} } } : {}) } },
+            )
+            const calls = makeCalls({
+              server: name,
+              timeout: server.timeout?.request ?? defaults.request ?? 30_000,
+              enabled: server.elicitation !== false,
+              current: () =>
+                ownership.open &&
+                alive.value &&
+                (!ownership.committed || current.connections.get(name)?.token === token),
+              close: () => client.close(),
+              runForm: async (effect) => {
+                const reply = await runForm(effect)
+                return reply.action === "accept"
+                  ? {
+                      action: "accept",
+                      content: Object.fromEntries(
+                        Object.entries(reply.content).map(
+                          ([key, value]) => [key, typeof value === "object" ? [...value] : value] as const,
+                        ),
+                      ),
+                    }
+                  : reply
+              },
+            })
+            if (server.elicitation !== false) {
+              // Preserve raw constraints for Core validation; the SDK still validates the elicitation envelope.
+              client.setRequestHandler(
+                ElicitRequestSchema.extend({
+                  params: z.looseObject({
+                    mode: z.enum(["form", "url"]).optional(),
+                    message: z.string(),
+                    requestedSchema: z.unknown().optional(),
+                  }),
+                }),
+                (request, extra) => calls.handle(request.params, extra.signal),
+              )
+            }
             client.setRequestHandler(ListRootsRequestSchema, async () => ({
               roots: [{ uri: pathToFileURL(location.directory).href }],
             }))
@@ -345,7 +393,7 @@ const make = Effect.gen(function* () {
                   : Effect.void,
               ),
             )
-            return client
+            return { client, calls }
           })
         if (server.type === "local") {
           const { McpStdio } = yield* Effect.promise(() => import("./mcp-stdio"))
@@ -389,13 +437,17 @@ const make = Effect.gen(function* () {
         if (error instanceof Failure && error.code === "auth") return yield* error
         return yield* create(new SSEClientTransport(url, options))
       }).pipe(Effect.provideService(Scope.Scope, connection))
+      const client = connected.client
+      const calls = connected.calls
       client.onclose = () => {
         alive.value = false
         if (!ownership.open || !ownership.committed || current.connections.get(name)?.token !== token) return
         setStatus(name, {
           status: "failed",
           tools: 0,
-          error: "MCP connection closed",
+          error: calls.retired()
+            ? "MCP call stopped; reconnecting may reset server state. The call was not replayed."
+            : "MCP connection closed",
         })
         fork(close(registration))
         if (server.type === "local") schedule(name, token)
@@ -405,19 +457,23 @@ const make = Effect.gen(function* () {
       if (client.getServerCapabilities()?.tools) {
         const page = { cursor: undefined as string | undefined }
         do {
-          const listed = yield* Effect.tryPromise({
-            try: (signal) =>
+          const listed = yield* calls
+            .request((signal, timeout) =>
               client.listTools(page.cursor ? { cursor: page.cursor } : undefined, {
                 signal,
-                timeout: server.timeout?.request ?? defaults.request ?? 30_000,
+                timeout,
               }),
-            catch: () =>
-              new Failure({
-                code: "load",
-                server: name,
-                message: "Could not list MCP tools",
-              }),
-          })
+            )
+            .pipe(
+              Effect.mapError(
+                () =>
+                  new Failure({
+                    code: "load",
+                    server: name,
+                    message: "Could not list MCP tools",
+                  }),
+              ),
+            )
           definitions.push(...listed.tools)
           if (definitions.length > 1_000 || (listed.nextCursor && cursors.has(listed.nextCursor)))
             return yield* new Failure({
@@ -438,6 +494,7 @@ const make = Effect.gen(function* () {
                 server: name,
                 definition,
                 client,
+                calls,
                 timeout: server.timeout?.request ?? defaults.request ?? 30_000,
                 permission,
                 guard,
@@ -490,6 +547,7 @@ const make = Effect.gen(function* () {
       return {
         scope: connection,
         client,
+        calls,
         timeout: server.timeout?.request ?? defaults.request ?? 30_000,
         token,
         status: { status: "connected", tools: catalog.length } as Mcp.Status,
@@ -876,15 +934,18 @@ const make = Effect.gen(function* () {
         for (const name of names) {
           const result = yield* Effect.gen(function* () {
             const connection = yield* resourceConnection(name)
-            const listed = yield* Effect.tryPromise({
-              try: (signal) => McpResources.catalog(connection.client, kind, connection.timeout, signal),
-              catch: (error) =>
-                new Failure({
-                  code: error instanceof McpResources.Invalid ? "invalid" : "load",
-                  server: name,
-                  message: error instanceof McpResources.Invalid ? error.message : "Could not list MCP resources",
-                }),
-            })
+            const listed = yield* connection.calls
+              .request((signal, timeout) => McpResources.catalog(connection.client, kind, timeout, signal))
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new Failure({
+                      code: error instanceof McpResources.Invalid ? "invalid" : "load",
+                      server: name,
+                      message: error instanceof McpResources.Invalid ? error.message : "Could not list MCP resources",
+                    }),
+                ),
+              )
             if (current.connections.get(name)?.token !== connection.token || !connection.healthy())
               return yield* new Failure({
                 code: "load",
@@ -947,15 +1008,18 @@ const make = Effect.gen(function* () {
       location,
       Effect.gen(function* () {
         const connection = yield* resourceConnection(server)
-        const result = yield* Effect.tryPromise({
-          try: (signal) => McpResources.read(connection.client, uri, connection.timeout, signal),
-          catch: (error) =>
-            new Failure({
-              code: error instanceof McpResources.Invalid ? "invalid" : "load",
-              server,
-              message: error instanceof McpResources.Invalid ? error.message : "Could not read MCP resource",
-            }),
-        })
+        const result = yield* connection.calls
+          .request((signal, timeout) => McpResources.read(connection.client, uri, timeout, signal))
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new Failure({
+                  code: error instanceof McpResources.Invalid ? "invalid" : "load",
+                  server,
+                  message: error instanceof McpResources.Invalid ? error.message : "Could not read MCP resource",
+                }),
+            ),
+          )
         if (current.connections.get(server)?.token !== connection.token || !connection.healthy())
           return yield* new Failure({
             code: "load",
@@ -1104,5 +1168,7 @@ export const node = makeLocationNode({
     ToolRegistry.node,
     ToolRegistry.toolsNode,
     CommandSandbox.node,
+    McpElicitation.node,
+    SessionLifecycle.node,
   ],
 })

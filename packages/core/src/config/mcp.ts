@@ -20,8 +20,12 @@ export class Local extends Schema.Class<Local>("ConfigV2.MCP.Local")({
   }),
   environment: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
+  elicitation: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Allow interactive MCP forms on this server (default: true).",
+  }),
   codemode: Schema.Boolean.pipe(Schema.optional).annotate({
-    description: "Expose this MCP server's tools through the confined Code Mode execute tool instead of eager definitions.",
+    description:
+      "Expose this MCP server's tools through the confined Code Mode execute tool instead of eager definitions.",
   }),
   defer_tools: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Defer this MCP server's tools behind on-demand search_tool and use_tool discovery.",
@@ -43,8 +47,12 @@ export class Remote extends Schema.Class<Remote>("ConfigV2.MCP.Remote")({
   headers: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
   oauth: Schema.Union([OAuth, Schema.Literal(false)]).pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
+  elicitation: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Allow interactive MCP forms on this server (default: true).",
+  }),
   codemode: Schema.Boolean.pipe(Schema.optional).annotate({
-    description: "Expose this MCP server's tools through the confined Code Mode execute tool instead of eager definitions.",
+    description:
+      "Expose this MCP server's tools through the confined Code Mode execute tool instead of eager definitions.",
   }),
   defer_tools: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Defer this MCP server's tools behind on-demand search_tool and use_tool discovery.",
@@ -59,7 +67,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.MCP")({
     description: "Default Code Mode enablement for MCP servers that do not specify codemode explicitly.",
   }),
   defer_tools: Schema.Boolean.pipe(Schema.optional).annotate({
-    description: "Default deferred search_tool/use_tool discovery for MCP servers that do not specify defer_tools explicitly.",
+    description:
+      "Default deferred search_tool/use_tool discovery for MCP servers that do not specify defer_tools explicitly.",
   }),
   timeout: Timeout.pipe(Schema.optional),
   servers: Schema.Record(Schema.String, Server).pipe(Schema.optional),

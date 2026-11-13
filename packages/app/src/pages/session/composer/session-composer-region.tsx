@@ -3,6 +3,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
+import { SessionMcpElicitationDock } from "./session-mcp-elicitation-dock"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
@@ -36,7 +37,19 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
       >
-        <Show when={controller.state.questionRequest()} keyed>
+        <Show when={controller.state.elicitationRequest()} keyed>
+          {(request) => (
+            <SessionMcpElicitationDock
+              request={request}
+              onSubmit={() => {
+                controller.onResponseSubmit()
+                controller.state.refreshForms()
+              }}
+            />
+          )}
+        </Show>
+
+        <Show when={controller.state.elicitationRequest() ? undefined : controller.state.questionRequest()} keyed>
           {(request) => (
             <div>
               <SessionQuestionDock request={request} onSubmit={controller.onResponseSubmit} />
@@ -44,7 +57,7 @@ export function SessionComposerRegion(props: {
           )}
         </Show>
 
-        <Show when={controller.state.permissionRequest()} keyed>
+        <Show when={controller.state.elicitationRequest() ? undefined : controller.state.permissionRequest()} keyed>
           {(request) => (
             <div>
               <SessionPermissionDock

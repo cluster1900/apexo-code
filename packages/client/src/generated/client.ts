@@ -223,6 +223,10 @@ import type {
   ServerCodeReviewDiffOutput,
   ServerCodeReviewCancelInput,
   ServerCodeReviewCancelOutput,
+  ServerMcpElicitationListInput,
+  ServerMcpElicitationListOutput,
+  ServerMcpElicitationReplyInput,
+  ServerMcpElicitationReplyOutput,
   MessagesListInput,
   MessagesListOutput,
   ModelsListInput,
@@ -1835,6 +1839,31 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [409, 400, 503, 404, 401],
             empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    "server.mcpElicitation": {
+      list: (input: ServerMcpElicitationListInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpElicitationListOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/elicitation`,
+            successStatus: 200,
+            declaredStatuses: [409, 400, 404, 503, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      reply: (input: ServerMcpElicitationReplyInput, requestOptions?: RequestOptions) =>
+        request<ServerMcpElicitationReplyOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mcp/elicitation/${encodeURIComponent(input.requestID)}/reply`,
+            body: { action: input["action"], content: input["content"] },
+            successStatus: 204,
+            declaredStatuses: [409, 400, 404, 503, 401],
+            empty: true,
           },
           requestOptions,
         ),

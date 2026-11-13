@@ -18,6 +18,7 @@ import { SandboxHandler } from "./handlers/sandbox"
 import { WorkflowHandler } from "./handlers/workflow"
 import { SideQuestionHandler } from "./handlers/side-question"
 import { CodeReviewHandler } from "./handlers/code-review"
+import { McpElicitationHandler } from "./handlers/mcp-elicitation"
 import { SessionHandler } from "./handlers/session"
 import { PermissionHandler } from "./handlers/permission"
 import { FileSystemHandler } from "./handlers/fs"
@@ -56,6 +57,7 @@ export const handlers = Layer.mergeAll(
   WorkflowHandler,
   SideQuestionHandler,
   CodeReviewHandler,
+  McpElicitationHandler,
   MessageHandler,
   ModelHandler,
   ProviderHandler,

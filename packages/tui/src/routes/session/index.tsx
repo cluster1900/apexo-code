@@ -1,3 +1,7 @@
+import { createStore } from "solid-js/store"
+import { McpElicitationPrompt } from "../../component/mcp-elicitation-prompt"
+import { watchMcpElicitations } from "@apexo/sdk/v2/mcp-elicitation"
+import type { McpElicitationRequest } from "@apexo/sdk/v2/client"
 import { DialogCodeReview } from "../../component/dialog-code-review"
 import { DialogWorkflow } from "../../component/dialog-workflow"
 import { canonicalToolInput, canonicalToolName } from "@apexo/core/util/grok-tool-display"
@@ -216,8 +220,28 @@ export function Session() {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.question[x.id] ?? [])
   })
-  const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
-  const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
+  const sdk = useSDK()
+  const [forms, setForms] = createStore({ requests: [] as McpElicitationRequest[] })
+  const formWatcher = watchMcpElicitations(
+    sdk.client.v2.mcpElicitation,
+    () => children().map((item) => item.id),
+    (requests) => setForms("requests", requests),
+  )
+  createEffect(
+    on(
+      () =>
+        children()
+          .map((item) => item.id)
+          .join(","),
+      () => void formWatcher.refresh(),
+    ),
+  )
+  onCleanup(() => formWatcher.close())
+  const elicitation = () => forms.requests[0]
+  const visible = createMemo(
+    () => !session()?.parentID && permissions().length === 0 && questions().length === 0 && !elicitation(),
+  )
+  const disabled = createMemo(() => permissions().length > 0 || questions().length > 0 || !!elicitation())
 
   const pending = createMemo(() => {
     const completed = messages().findLastIndex((message) => message.role === "assistant" && message.time.completed)
@@ -259,7 +283,6 @@ export function Session() {
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const toast = useToast()
-  const sdk = useSDK()
   const editor = useEditorContext()
 
   createEffect(() => {
@@ -1405,13 +1428,28 @@ export function Session() {
               <box flexShrink={0}>
                 <TaskStatus sessionID={() => route.sessionID} />
                 <MemoryCaptureNotifications sessionID={() => route.sessionID} />
-                <Show when={permissions().length > 0}>
+                <Show when={elicitation()} keyed>
+                  {(request) => (
+                    <McpElicitationPrompt
+                      request={request}
+                      api={sdk.client.v2.mcpElicitation}
+                      theme={() => ({
+                        text: theme.text,
+                        muted: theme.textMuted,
+                        error: theme.error,
+                        highlight: theme.accent,
+                      })}
+                      onSubmit={() => void formWatcher.refresh()}
+                    />
+                  )}
+                </Show>
+                <Show when={!elicitation() && permissions().length > 0}>
                   <PermissionPrompt
                     request={permissions()[0]}
                     directory={sync.session.get(permissions()[0].sessionID)?.directory}
                   />
                 </Show>
-                <Show when={permissions().length === 0 && questions().length > 0}>
+                <Show when={!elicitation() && permissions().length === 0 && questions().length > 0}>
                   <QuestionPrompt
                     request={questions()[0]}
                     directory={sync.session.get(questions()[0].sessionID)?.directory}

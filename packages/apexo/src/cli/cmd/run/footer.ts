@@ -103,6 +103,7 @@ type RunFooterOptions = {
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
+  mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
   commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
@@ -355,6 +356,7 @@ export class RunFooter implements FooterApi {
               memoryActions: options.memoryActions,
               workflowActions: options.workflowActions,
               codeReviewActions: options.codeReviewActions,
+              mcpElicitation: options.mcpElicitation,
               sideQuestionActions: options.sideQuestionActions,
               feedbackActions: options.feedbackActions,
               hooksActions: options.hooksActions,
@@ -764,14 +766,17 @@ export class RunFooter implements FooterApi {
 
   // Resizes the footer to fit the current view. Permission and question views
   // get fixed extra rows; the prompt view scales with textarea line count.
+  private elicitation = false
+
   private applyHeight(): void {
     const type = this.view().type
     const noticeText = this.state().phase !== "running" ? this.state().status.trim() : ""
     const noticeWidth = Math.max(20, (this.renderer.width || 80) - 10)
     const noticeExtraRows =
       noticeText.length > 24 && noticeText.length > noticeWidth ? Math.ceil(noticeText.length / noticeWidth) - 1 : 0
-    const height =
-      type === "permission"
+    const height = this.elicitation
+      ? 18
+      : type === "permission"
         ? this.base + PERMISSION_ROWS
         : type === "question"
           ? this.base + QUESTION_ROWS
@@ -828,7 +833,13 @@ export class RunFooter implements FooterApi {
     }
   }
 
-  private syncLayout = (next: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }): void => {
+  private syncLayout = (next: {
+    route: FooterPromptRoute
+    autocomplete: boolean
+    subagentRows: number
+    elicitation: boolean
+  }): void => {
+    this.elicitation = next.elicitation
     this.promptRoute = next.route
     this.autocomplete = next.autocomplete
     this.subagentMenuRows = next.subagentRows

@@ -247,7 +247,7 @@ test("deletion joins pending approval and same-ID recreation cannot adopt old at
     await clean(f)
   }
 }, 30000)
-test("authority changes reject held bytes while another Session can prepare independently; exact admission retry does not reread", async () => {
+test("authority changes reject held bytes while another Session queues on the shared MCP gate; exact retry does not reread", async () => {
   const f = await setup()
   try {
     await Effect.runPromise(
@@ -266,17 +266,20 @@ test("authority changes reject held bytes while another Session can prepare inde
           ),
           "held read",
         )
-        const result = yield* attachments.prepare(other.id, {
-          kind: "resource",
-          server: "plugin:local",
-          uri: "fixture://independent",
-        })
+        const waiting = yield* attachments
+          .prepare(other.id, {
+            kind: "resource",
+            server: "plugin:local",
+            uri: "fixture://independent",
+          })
+          .pipe(Effect.forkChild)
         yield* store.setPermissions({
           sessionID: session.id,
           permissions: [{ permission: "read", pattern: "*", action: "deny" }],
         })
         yield* Effect.promise(() => Bun.write(f.log + ".release", "release"))
         expect(Exit.isFailure(yield* Fiber.await(pending))).toBe(true)
+        const result = yield* Fiber.join(waiting)
         const id = SessionMessage.ID.create()
         const prompt = { text: "snapshot", files: result.files.map((file) => ({ uri: file.uri, name: file.name })) }
         yield* sessions.prompt({ sessionID: other.id, id, prompt, resume: false })

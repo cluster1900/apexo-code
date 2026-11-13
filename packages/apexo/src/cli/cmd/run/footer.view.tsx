@@ -1,3 +1,7 @@
+import { McpElicitationPrompt } from "@apexo/tui/component/mcp-elicitation-prompt"
+import { watchMcpElicitations } from "@apexo/sdk/v2/mcp-elicitation"
+import type { McpElicitationRequest } from "@apexo/sdk/v2/client"
+import { createStore } from "solid-js/store"
 import { CodeReviewBrowser } from "@apexo/tui/component/code-review-browser"
 import { CommandSandboxBrowser } from "@apexo/tui/component/command-sandbox-browser"
 import { WorkflowBrowser } from "@apexo/tui/component/workflow-browser"
@@ -122,6 +126,7 @@ type RunFooterViewProps = {
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
+  mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
   commandSandboxActions?: import("@apexo/tui/component/command-sandbox-browser").CommandSandboxActions
   hooksActions?: import("@apexo/tui/component/hooks-browser").HooksActions
@@ -135,7 +140,12 @@ type RunFooterViewProps = {
   onModelSelect: (model: NonNullable<RunInput["model"]>) => void
   onVariantSelect: (variant: string | undefined) => void
   onRows: (rows: number) => void
-  onLayout: (input: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }) => void
+  onLayout: (input: {
+    route: FooterPromptRoute
+    autocomplete: boolean
+    subagentRows: number
+    elicitation: boolean
+  }) => void
   onStatus: (text: string) => void
   /** `/copy [N] [path]` over the responses this footer has shown. */
   onCopy?: (args: string) => void
@@ -160,11 +170,21 @@ export function RunFooterView(props: RunFooterViewProps) {
       }
     )
   })
+  const [forms, setForms] = createStore({ requests: [] as McpElicitationRequest[] })
+  const formWatcher =
+    props.mcpElicitation &&
+    watchMcpElicitations(
+      props.mcpElicitation.api,
+      () => [...(props.mcpElicitation?.sessions() ?? []), ...subagent().tabs.map((tab) => tab.sessionID)],
+      (requests) => setForms("requests", requests),
+    )
+  onCleanup(() => formWatcher?.close())
+  const elicitation = () => forms.requests[0]
   const [route, setRoute] = createSignal<FooterPromptRoute>({ type: "composer" })
   const [subagentMenuRows, setSubagentMenuRows] = createSignal(RUN_SUBAGENT_PANEL_ROWS)
   const queuedPrompts = createMemo(() => props.queuedPrompts?.() ?? [])
   const skills = createMemo(() => (props.commands() ?? []).filter((item) => item.source === "skill"))
-  const prompt = createMemo(() => active().type === "prompt" && route().type === "composer")
+  const prompt = createMemo(() => active().type === "prompt" && route().type === "composer" && !elicitation())
   const selectingSubagent = createMemo(() => active().type === "prompt" && route().type === "subagent-menu")
   const selectingQueued = createMemo(() => active().type === "prompt" && route().type === "queued-menu")
   const memoryAvailable = createMemo(
@@ -175,13 +195,14 @@ export function RunFooterView(props: RunFooterViewProps) {
   const selectingPlugins = createMemo(() => active().type === "prompt" && route().type === "plugins")
   const selectingMemory = createMemo(() => active().type === "prompt" && route().type === "memory")
   const selectingTasks = createMemo(() => active().type === "prompt" && route().type === "tasks")
-  const inspecting = createMemo(() => active().type === "prompt" && route().type === "subagent")
+  const inspecting = createMemo(() => !elicitation() && active().type === "prompt" && route().type === "subagent")
   const commanding = createMemo(() => active().type === "prompt" && route().type === "command")
   const skilling = createMemo(() => active().type === "prompt" && route().type === "skill")
   const modeling = createMemo(() => active().type === "prompt" && route().type === "model")
   const varianting = createMemo(() => active().type === "prompt" && route().type === "variant")
   const panel = createMemo(
     () =>
+      !!elicitation() ||
       active().type === "permission" ||
       active().type === "question" ||
       selectingQueued() ||
@@ -848,7 +869,7 @@ export function RunFooterView(props: RunFooterViewProps) {
 
   useBindings(() => ({
     mode: APEXO_BASE_MODE,
-    enabled: active().type === "prompt" && route().type === "composer" && !composer.visible(),
+    enabled: active().type === "prompt" && route().type === "composer" && !elicitation() && !composer.visible(),
     commands: [
       {
         name: "command.palette.show",
@@ -871,7 +892,7 @@ export function RunFooterView(props: RunFooterViewProps) {
 
   useBindings(() => ({
     mode: APEXO_BASE_MODE,
-    enabled: active().type === "prompt" && route().type === "composer" && foregroundTasks(),
+    enabled: active().type === "prompt" && route().type === "composer" && !elicitation() && foregroundTasks(),
     priority: 1,
     commands: [
       {
@@ -886,7 +907,7 @@ export function RunFooterView(props: RunFooterViewProps) {
 
   useBindings(() => ({
     mode: APEXO_BASE_MODE,
-    enabled: active().type === "prompt" && route().type === "composer" && tabs().length > 0,
+    enabled: active().type === "prompt" && route().type === "composer" && !elicitation() && tabs().length > 0,
     commands: [
       {
         name: "session.child.first",
@@ -900,7 +921,7 @@ export function RunFooterView(props: RunFooterViewProps) {
 
   useBindings(() => ({
     mode: APEXO_BASE_MODE,
-    enabled: active().type === "prompt" && route().type === "composer" && queuedPrompts().length > 0,
+    enabled: active().type === "prompt" && route().type === "composer" && !elicitation() && queuedPrompts().length > 0,
     commands: [
       {
         name: "session.queued_prompts",
@@ -979,6 +1000,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     props.onLayout({
       route: route(),
       autocomplete: menu(),
+      elicitation: !!elicitation(),
       subagentRows: subagentMenuRows(),
     })
   })
@@ -1029,7 +1051,17 @@ export function RunFooterView(props: RunFooterViewProps) {
                   >
                     <box width="100%" flexGrow={1} flexShrink={1} flexDirection="column">
                       <Switch>
-                        <Match when={active().type === "prompt" && route().type === "composer"}>
+                        <Match when={elicitation()} keyed>
+                          {(request) => (
+                            <McpElicitationPrompt
+                              request={request}
+                              api={props.mcpElicitation!.api}
+                              theme={theme}
+                              onSubmit={() => void formWatcher?.refresh()}
+                            />
+                          )}
+                        </Match>
+                        <Match when={active().type === "prompt" && route().type === "composer" && !elicitation()}>
                           <RunPromptBody
                             theme={theme}
                             background={() => runTheme().background}
