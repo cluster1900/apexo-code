@@ -65,6 +65,9 @@ export type Event =
   | EventReferenceUpdated
   | EventPermissionV2Asked
   | EventPermissionV2Replied
+  | EventPermissionReviewStarted
+  | EventPermissionReviewSettled
+  | EventPermissionReviewModeChanged
   | EventPluginAdded
   | EventProjectDirectoriesUpdated
   | EventFileWatcherUpdated
@@ -923,6 +926,7 @@ export type GlobalEvent = {
           messageID: string
           prompt: Prompt
           delivery: "steer" | "queue"
+          origin?: SessionInputOrigin1
           executionPolicy?: SessionInputExecutionPolicy
         }
       }
@@ -935,6 +939,7 @@ export type GlobalEvent = {
           messageID: string
           prompt: Prompt
           delivery: "steer" | "queue"
+          origin?: SessionInputOrigin1
           executionPolicy?: SessionInputExecutionPolicy
         }
       }
@@ -1415,6 +1420,10 @@ export type GlobalEvent = {
             [key: string]: unknown
           }
           source?: PermissionV2Source
+          review?: {
+            status: "reviewing" | "ask_manual"
+            reason?: string
+          }
         }
       }
     | {
@@ -1424,6 +1433,35 @@ export type GlobalEvent = {
           sessionID: string
           requestID: string
           reply: PermissionV2Reply
+        }
+      }
+    | {
+        id: string
+        type: "permission.review.started"
+        properties: {
+          sessionID: string
+          requestID: string
+          model?: string
+        }
+      }
+    | {
+        id: string
+        type: "permission.review.settled"
+        properties: {
+          sessionID: string
+          requestID: string
+          model?: string
+          outcome: "allowed_once" | "ask_manual" | "superseded"
+          reason: string
+        }
+      }
+    | {
+        id: string
+        type: "permission.review.mode.changed"
+        properties: {
+          sessionID: string
+          mode: PermissionReviewMode
+          revision: number
         }
       }
     | {
@@ -3440,6 +3478,9 @@ export type V2Event =
   | ReferenceUpdated
   | PermissionV2Asked
   | PermissionV2Replied
+  | PermissionReviewStarted
+  | PermissionReviewSettled
+  | PermissionReviewModeChanged
   | PluginAdded
   | ProjectDirectoriesUpdated
   | FileWatcherUpdated
@@ -3841,6 +3882,10 @@ export type LocationRef = {
   workspaceID?: string
 }
 
+export type SessionInputOrigin1 = "user" | "task" | "workflow" | "schedule" | "imported" | "unknown"
+
+export type SessionInputOrigin = SessionInputOrigin1
+
 export type SessionInputExecutionPolicy = {
   mode: "headless"
   permissions: "reject" | "approve_once"
@@ -3949,6 +3994,8 @@ export type PermissionV2Source = {
 }
 
 export type PermissionV2Reply = "once" | "always" | "reject"
+
+export type PermissionReviewMode = "manual" | "review"
 
 export type QuestionV2Option = {
   /**
@@ -4252,6 +4299,7 @@ export type SyncEventSessionNextPrompted = {
       messageID: string
       prompt: Prompt
       delivery: "steer" | "queue"
+      origin?: SessionInputOrigin1
       executionPolicy?: SessionInputExecutionPolicy
     }
   }
@@ -4271,6 +4319,7 @@ export type SyncEventSessionNextPromptAdmitted = {
       messageID: string
       prompt: Prompt
       delivery: "steer" | "queue"
+      origin?: SessionInputOrigin1
       executionPolicy?: SessionInputExecutionPolicy
     }
   }
@@ -5444,6 +5493,7 @@ export type SessionInputAdmitted = {
   sessionID: string
   prompt: Prompt
   delivery: "steer" | "queue"
+  origin: SessionInputOrigin1
   executionPolicy?: SessionInputExecutionPolicy
   timeCreated: number
   promotedSeq?: number
@@ -5658,6 +5708,7 @@ export type SessionNextPrompted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    origin?: SessionInputOrigin1
     executionPolicy?: SessionInputExecutionPolicy
   }
 }
@@ -5680,6 +5731,7 @@ export type SessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    origin?: SessionInputOrigin1
     executionPolicy?: SessionInputExecutionPolicy
   }
 }
@@ -7039,6 +7091,10 @@ export type PermissionV2Request = {
     [key: string]: unknown
   }
   source?: PermissionV2Source
+  review?: {
+    status: "reviewing" | "ask_manual"
+    reason?: string
+  }
 }
 
 export type PermissionSavedInfo = {
@@ -7046,6 +7102,11 @@ export type PermissionSavedInfo = {
   projectID: string
   action: string
   resource: string
+}
+
+export type PermissionReviewState = {
+  mode: PermissionReviewMode
+  revision: number
 }
 
 export type FileSystemEntry = {
@@ -7588,6 +7649,10 @@ export type PermissionV2Asked = {
       [key: string]: unknown
     }
     source?: PermissionV2Source
+    review?: {
+      status: "reviewing" | "ask_manual"
+      reason?: string
+    }
   }
 }
 
@@ -7607,6 +7672,65 @@ export type PermissionV2Replied = {
     sessionID: string
     requestID: string
     reply: PermissionV2Reply
+  }
+}
+
+export type PermissionReviewStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "permission.review.started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    requestID: string
+    model?: string
+  }
+}
+
+export type PermissionReviewSettled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "permission.review.settled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    requestID: string
+    model?: string
+    outcome: "allowed_once" | "ask_manual" | "superseded"
+    reason: string
+  }
+}
+
+export type PermissionReviewModeChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "permission.review.mode.changed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    mode: PermissionReviewMode
+    revision: number
   }
 }
 
@@ -8508,6 +8632,7 @@ export type EventSessionNextPrompted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    origin?: SessionInputOrigin1
     executionPolicy?: SessionInputExecutionPolicy
   }
 }
@@ -8521,6 +8646,7 @@ export type EventSessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+    origin?: SessionInputOrigin1
     executionPolicy?: SessionInputExecutionPolicy
   }
 }
@@ -9041,6 +9167,10 @@ export type EventPermissionV2Asked = {
       [key: string]: unknown
     }
     source?: PermissionV2Source
+    review?: {
+      status: "reviewing" | "ask_manual"
+      reason?: string
+    }
   }
 }
 
@@ -9051,6 +9181,38 @@ export type EventPermissionV2Replied = {
     sessionID: string
     requestID: string
     reply: PermissionV2Reply
+  }
+}
+
+export type EventPermissionReviewStarted = {
+  id: string
+  type: "permission.review.started"
+  properties: {
+    sessionID: string
+    requestID: string
+    model?: string
+  }
+}
+
+export type EventPermissionReviewSettled = {
+  id: string
+  type: "permission.review.settled"
+  properties: {
+    sessionID: string
+    requestID: string
+    model?: string
+    outcome: "allowed_once" | "ask_manual" | "superseded"
+    reason: string
+  }
+}
+
+export type EventPermissionReviewModeChanged = {
+  id: string
+  type: "permission.review.mode.changed"
+  properties: {
+    sessionID: string
+    mode: PermissionReviewMode
+    revision: number
   }
 }
 
@@ -20990,6 +21152,86 @@ export type V2PermissionSavedRemoveResponses = {
 }
 
 export type V2PermissionSavedRemoveResponse = V2PermissionSavedRemoveResponses[keyof V2PermissionSavedRemoveResponses]
+
+export type V2SessionPermissionReviewGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/permission-review"
+}
+
+export type V2SessionPermissionReviewGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionPermissionReviewGetError =
+  V2SessionPermissionReviewGetErrors[keyof V2SessionPermissionReviewGetErrors]
+
+export type V2SessionPermissionReviewGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: PermissionReviewState
+  }
+}
+
+export type V2SessionPermissionReviewGetResponse =
+  V2SessionPermissionReviewGetResponses[keyof V2SessionPermissionReviewGetResponses]
+
+export type V2SessionPermissionReviewSetData = {
+  body: {
+    mode: PermissionReviewMode
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/permission-review"
+}
+
+export type V2SessionPermissionReviewSetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionPermissionReviewSetError =
+  V2SessionPermissionReviewSetErrors[keyof V2SessionPermissionReviewSetErrors]
+
+export type V2SessionPermissionReviewSetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: PermissionReviewState
+  }
+}
+
+export type V2SessionPermissionReviewSetResponse =
+  V2SessionPermissionReviewSetResponses[keyof V2SessionPermissionReviewSetResponses]
 
 export type V2SessionPermissionListData = {
   body?: never

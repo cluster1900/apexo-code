@@ -45,6 +45,7 @@ it.live("history copies replay full context without billing or admitting importe
         variant: Model.VariantID.make("default"),
       })
       yield* events.publish(SessionEvent.Prompted, {
+          origin: "unknown",
         ...base,
         messageID: SessionMessage.ID.create(),
         prompt: {

@@ -162,7 +162,7 @@ for (const mode of ["native", "compatibility"] as const) {
     })
     try {
       const client = createApexoClient({ baseUrl: server.url.href })
-      const select = sessionTransport(client, undefined, mode)
+      const select = sessionTransport(client, undefined, mode, undefined, SessionID.create())
       const owner = new AbortController()
       const first = await select(owner.signal)
       expect(first.kind).toBe(mode)
@@ -200,6 +200,64 @@ test("auto still selects compatibility on a mixed server and shares the selectio
     await server.stop(true)
   }
 })
+
+for (const origin of ["native", "legacy", "missing"] as const) {
+  test(`mixed-host auto selection uses canonical history for an existing ${origin} Session`, async () => {
+    const requests: string[] = []
+    const sessionID = SessionID.create()
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url)
+        requests.push(url.pathname)
+        if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "test" })
+        expect(url.searchParams.get("limit")).toBe("1")
+        if (origin === "missing") return new Response("missing", { status: 404 })
+        return Response.json({ data: origin === "native" ? [{ type: "session.next.prompt.admitted" }] : [] })
+      },
+    })
+    try {
+      const select = sessionTransport(
+        createApexoClient({ baseUrl: server.url.href }),
+        undefined,
+        "auto",
+        undefined,
+        sessionID,
+      )
+      const signal = new AbortController().signal
+      const [first, second] = await Promise.all([select(signal), select(signal)])
+      expect(first.kind).toBe(origin === "native" ? "native" : "compatibility")
+      expect(second).toBe(first)
+      expect(requests).toEqual(["/global/health", `/api/session/${sessionID}/history`])
+    } finally {
+      await server.stop(true)
+    }
+  })
+}
+
+for (const status of [401, 403, 500]) {
+  test(`mixed-host Session history HTTP ${status} cannot silently select compatibility`, async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        if (new URL(request.url).pathname === "/global/health") return Response.json({ healthy: true, version: "test" })
+        return new Response("unavailable", { status })
+      },
+    })
+    try {
+      const select = sessionTransport(
+        createApexoClient({ baseUrl: server.url.href }),
+        undefined,
+        "auto",
+        undefined,
+        SessionID.create(),
+      )
+      await expect(select(new AbortController().signal)).rejects.toBeDefined()
+    } finally {
+      await server.stop(true)
+    }
+  })
+}
 
 test("native /loop expands discovered prompt once and uses ordinary durable admission", async () => {
   const calls: { path: string; method: string; body: unknown }[] = []

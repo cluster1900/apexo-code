@@ -7,6 +7,8 @@ import {
   type ToastVariant,
 } from "@apexo/ui/toast"
 import { ToastV2, showToastV2, toasterV2 } from "@apexo/ui/v2/toast-v2"
+import { isRTL } from "@kobalte/core/i18n"
+import { useLanguage } from "@/context/language"
 
 let v2 = false
 
@@ -15,8 +17,17 @@ export function setV2Toast(value: boolean) {
 }
 
 export function ToastRegion(props: { v2: boolean }) {
-  if (props.v2) return <ToastV2.Region />
-  return <Toast.Region />
+  const language = useLanguage()
+  // Keep feedback above the session dock and the first-run Tabs card.
+  if (props.v2)
+    return (
+      <ToastV2.Region
+        position={isRTL(language.intl()) ? "top-left" : "top-right"}
+        offset={isRTL(language.intl()) ? { left: 32, top: 48 } : { right: 32, top: 48 }}
+        swipeDirections={["top"]}
+      />
+    )
+  return <Toast.Region style={{ top: "48px", bottom: "auto", "max-height": "calc(100dvh - 240px)" }} />
 }
 
 export function showToast(options: ToastOptions | string) {

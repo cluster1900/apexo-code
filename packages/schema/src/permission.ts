@@ -34,6 +34,10 @@ const RequestFields = {
 export const Request = Schema.Struct({
   id: ID,
   ...RequestFields,
+  review: Schema.Struct({
+    status: Schema.Literals(["reviewing", "ask_manual"]),
+    reason: Schema.String.pipe(optional),
+  }).pipe(optional),
 }).annotate({ identifier: "PermissionV2.Request" })
 export interface Request extends Schema.Schema.Type<typeof Request> {}
 

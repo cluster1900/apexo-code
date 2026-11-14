@@ -355,6 +355,7 @@ const layer = Layer.effectDiscard(
           sessionID: event.data.sessionID,
           prompt: event.data.prompt,
           delivery: event.data.delivery,
+          origin: event.data.origin,
           executionPolicy: event.data.executionPolicy,
           timeCreated: event.data.timestamp,
           promotedSeq: event.durable.seq,
@@ -377,6 +378,7 @@ const layer = Layer.effectDiscard(
           sessionID: event.data.sessionID,
           prompt: event.data.prompt,
           delivery: event.data.delivery,
+          origin: event.data.origin,
           executionPolicy: event.data.executionPolicy,
           timeCreated: event.data.timestamp,
         })

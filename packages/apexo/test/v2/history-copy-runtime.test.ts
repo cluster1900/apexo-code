@@ -72,6 +72,7 @@ it.live(
         const timestamp = yield* DateTime.now
         const base = { sessionID: source.id, timestamp }
         yield* events.publish(SessionEvent.Prompted, {
+          origin: "unknown",
           ...base,
           messageID: SessionMessage.ID.create(),
           prompt: { text: "ORIGINAL_USER_HISTORY" },

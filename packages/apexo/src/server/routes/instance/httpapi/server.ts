@@ -59,6 +59,7 @@ import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { EventV2 } from "@apexo/core/event"
 import { ModelsDev } from "@apexo/core/models-dev"
 import { Npm } from "@apexo/core/npm"
+import { PermissionReviewState } from "@apexo/core/permission/review-state"
 import { PermissionSaved } from "@apexo/core/permission/saved"
 import { ProjectV2 } from "@apexo/core/project"
 import { ProjectCopy } from "@apexo/core/project/copy"
@@ -365,6 +366,7 @@ const app = LayerNode.group([
   Question.node,
   Permission.node,
   PermissionSaved.node,
+  PermissionReviewState.node,
   Todo.node,
   Session.node,
   SessionProjector.node,

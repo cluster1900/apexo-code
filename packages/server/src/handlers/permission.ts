@@ -1,5 +1,6 @@
 import { Location } from "@apexo/core/location"
 import { PermissionV2 } from "@apexo/core/permission"
+import { PermissionReviewState } from "@apexo/core/permission/review-state"
 import { PermissionSaved } from "@apexo/core/permission/saved"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -14,11 +15,43 @@ function missingRequest(id: PermissionV2.ID) {
 export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", (handlers) =>
   Effect.gen(function* () {
     const saved = yield* PermissionSaved.Service
+    const review = yield* PermissionReviewState.Service
     return handlers
       .handle(
         "permission.request.list",
         Effect.fn(function* () {
-          return yield* response((yield* PermissionV2.Service).list())
+          const permission = yield* PermissionV2.Service
+          return yield* response(permission.list())
+        }),
+      )
+      .handle(
+        "session.permissionReview.get",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* review
+              .get(ctx.params.sessionID)
+              .pipe(
+                Effect.catchTag(
+                  "SessionLifecycle.Closed",
+                  () => new SessionNotFoundError({ sessionID: ctx.params.sessionID, message: "Session not found" }),
+                ),
+              ),
+          }
+        }),
+      )
+      .handle(
+        "session.permissionReview.set",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* review
+              .set(ctx.params.sessionID, ctx.payload.mode)
+              .pipe(
+                Effect.catchTag(
+                  "SessionLifecycle.Closed",
+                  () => new SessionNotFoundError({ sessionID: ctx.params.sessionID, message: "Session not found" }),
+                ),
+              ),
+          }
         }),
       )
       .handle(
@@ -60,7 +93,8 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "session.permission.get",
         Effect.fn(function* (ctx) {
-          const request = yield* (yield* PermissionV2.Service).get(ctx.params.requestID)
+          const permission = yield* PermissionV2.Service
+          const request = yield* permission.get(ctx.params.requestID)
           if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)
           return { data: request }
         }),

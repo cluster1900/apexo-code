@@ -94,6 +94,7 @@ export type FooterPhase = "idle" | "running"
 // object in the SolidJS signal so the view re-renders atomically.
 export type FooterState = {
   agent?: string
+  permissionMode?: "normal" | "review" | "auto"
   phase: FooterPhase
   status: string
   queue: number
@@ -108,6 +109,12 @@ export type FooterState = {
   taskNative?: boolean
   taskError?: string
   taskIssues?: ("tasks" | "processes" | "schedules")[]
+}
+
+export type RunModeActions = {
+  cycleAgent: () => Promise<void>
+  cycle: () => Promise<void>
+  toggleAlwaysApprove: () => Promise<void>
 }
 
 export type RunTaskActions = {

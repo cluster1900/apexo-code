@@ -592,6 +592,7 @@ const make = Effect.gen(function* () {
                       return { launch, record, started: true }
                     }
                     yield* SessionInput.admit(database.db, events, {
+                      origin: scheduled ? "schedule" : "task",
                       id: SessionMessage.ID.make(`msg_task${id}`),
                       sessionID: childID,
                       prompt: { text: input.prompt },

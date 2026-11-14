@@ -16,6 +16,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     url: string
     local?: boolean
     sessionProtocol?: "auto" | "native" | "compatibility"
+    sessionID?: string
     directory?: string
     fetch?: typeof fetch
     headers?: RequestInit["headers"]
@@ -35,7 +36,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
 
     let sdk = createSDK()
-    const selectTransport = sessionTransport(sdk, props.directory, props.sessionProtocol, abort.signal)
+    const selectTransport = sessionTransport(sdk, props.directory, props.sessionProtocol, abort.signal, props.sessionID)
     const transport = () => selectTransport(abort.signal)
     const nativeHandlers = new Set<(event: unknown) => void>()
     const nativeEvent = {

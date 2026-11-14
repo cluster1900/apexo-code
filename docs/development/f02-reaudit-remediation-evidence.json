@@ -1,0 +1,270 @@
+{
+  "date": "2026-11-14",
+  "base": "71d85e5b42da83efd5f236d25e280ce17895336f",
+  "branch": "permission-review",
+  "environment": {
+    "platform": "macOS arm64",
+    "bun": "1.4.4",
+    "permissionScenarioVariables": {
+      "GIT_EDITOR": "true",
+      "GIT_SEQUENCE_EDITOR": "true"
+    }
+  },
+  "focused": {
+    "tests": 97,
+    "assertions": 476,
+    "failures": 0
+  },
+  "humanSimulation": {
+    "mini": {
+      "fullscreen": false,
+      "checks": [
+        "slash-auto-enables-backend",
+        "live-reviewing-single-backend-evaluation",
+        "manual-reply-during-stream",
+        "live-fallback-reason",
+        "slash-auto-disables-backend",
+        "tab-cycles-agent",
+        "shift-tab-cycles-all-four-modes",
+        "ctrl-o-approves-once-without-backend-review",
+        "always-approve-slash-toggles",
+        "escape-rejection-stops-execution-with-clear-status",
+        "double-ctrl-c-quits-without-abort-stack"
+      ]
+    },
+    "fullscreen": {
+      "fullscreen": true,
+      "checks": [
+        "slash-auto-enables-backend",
+        "live-reviewing-single-backend-evaluation",
+        "manual-reply-during-stream",
+        "live-fallback-reason",
+        "slash-auto-disables-backend",
+        "tab-cycles-agent",
+        "shift-tab-cycles-all-four-modes",
+        "ctrl-o-approves-once-without-backend-review",
+        "always-approve-slash-toggles",
+        "escape-rejection-stops-execution-with-clear-status",
+        "ctrl-c-quits-without-abort-stack"
+      ]
+    },
+    "mixedMini": {
+      "fullscreen": false,
+      "checks": [
+        "slash-auto-enables-backend",
+        "live-reviewing-single-backend-evaluation",
+        "manual-reply-during-stream",
+        "live-fallback-reason",
+        "slash-auto-disables-backend",
+        "tab-cycles-agent",
+        "shift-tab-cycles-all-four-modes",
+        "ctrl-o-approves-once-without-backend-review",
+        "always-approve-slash-toggles",
+        "escape-rejection-stops-execution-with-clear-status",
+        "double-ctrl-c-quits-without-abort-stack"
+      ]
+    },
+    "mixedFullscreen": {
+      "fullscreen": true,
+      "checks": [
+        "slash-auto-enables-backend",
+        "live-reviewing-single-backend-evaluation",
+        "manual-reply-during-stream",
+        "live-fallback-reason",
+        "slash-auto-disables-backend",
+        "tab-cycles-agent",
+        "shift-tab-cycles-all-four-modes",
+        "ctrl-o-approves-once-without-backend-review",
+        "always-approve-slash-toggles",
+        "escape-rejection-stops-execution-with-clear-status",
+        "ctrl-c-quits-without-abort-stack"
+      ]
+    },
+    "browser": {
+      "kind": "browser",
+      "checks": [
+        "slash-auto-updates-backend",
+        "reviewing-all-manual-actions-enabled",
+        "visible-toast-clears-permission-button-and-tabs-card",
+        "real-center-mouse-approval-during-stream",
+        "reload-hydrates-single-backend-review",
+        "two-connected-clients-one-review",
+        "live-manual-fallback-reason",
+        "manual-once-settles",
+        "two-tabs-render-authoritative-mode-changes",
+        "escape-rejects-and-renders-permission-denial",
+        "slash-auto-disables-backend",
+        "full-auto-remains-an-explicit-separate-mode",
+        "always-approve-executes-without-backend-review",
+        "no-renderer-errors"
+      ]
+    },
+    "mixedApp": {
+      "kind": "mixed",
+      "checks": [
+        "default-serve-mixed-backend",
+        "slash-auto-updates-backend",
+        "reviewing-all-manual-actions-enabled",
+        "visible-toast-clears-permission-button-and-tabs-card",
+        "real-center-mouse-approval-during-stream",
+        "reload-hydrates-single-backend-review",
+        "two-connected-clients-one-review",
+        "live-manual-fallback-reason",
+        "manual-once-settles",
+        "two-tabs-render-authoritative-mode-changes",
+        "escape-rejects-and-renders-permission-denial",
+        "slash-auto-disables-backend",
+        "full-auto-remains-an-explicit-separate-mode",
+        "always-approve-executes-without-backend-review",
+        "legacy-review-keeps-its-compatibility-owner",
+        "no-renderer-errors"
+      ]
+    },
+    "desktopOwnBackend": {
+      "kind": "builtin",
+      "checks": [
+        "desktop-owned-mixed-backend",
+        "slash-auto-updates-backend",
+        "reviewing-all-manual-actions-enabled",
+        "visible-toast-clears-permission-button-and-tabs-card",
+        "real-center-mouse-approval-during-stream",
+        "reload-hydrates-single-backend-review",
+        "live-manual-fallback-reason",
+        "manual-once-settles",
+        "escape-rejects-and-renders-permission-denial",
+        "slash-auto-disables-backend",
+        "full-auto-remains-an-explicit-separate-mode",
+        "always-approve-executes-without-backend-review",
+        "no-renderer-errors"
+      ]
+    },
+    "localCli": {
+      "checks": [
+        "headless-default-explains-denial",
+        "headless-json-explains-denial",
+        "headless-streaming-json-explains-denial",
+        "local-auto-enables-review",
+        "local-single-review-human-approval",
+        "local-fallback-and-accurate-denial",
+        "local-ctrl-o-executes-without-review",
+        "local-clean-double-ctrl-c-exit"
+      ]
+    },
+    "miniActiveQuit": {
+      "fullscreen": false,
+      "checks": [
+        "slash-auto-enables-backend",
+        "live-reviewing-single-backend-evaluation",
+        "manual-reply-during-stream",
+        "live-fallback-reason",
+        "slash-auto-disables-backend",
+        "tab-cycles-agent",
+        "shift-tab-cycles-all-four-modes",
+        "ctrl-o-approves-once-without-backend-review",
+        "always-approve-slash-toggles",
+        "escape-rejection-stops-execution-with-clear-status",
+        "quit-with-typed-prompt-still-waiting-for-permission",
+        "double-ctrl-c-quits-without-abort-stack"
+      ]
+    },
+    "mixedMiniActiveQuit": {
+      "fullscreen": false,
+      "checks": [
+        "slash-auto-enables-backend",
+        "live-reviewing-single-backend-evaluation",
+        "manual-reply-during-stream",
+        "live-fallback-reason",
+        "slash-auto-disables-backend",
+        "tab-cycles-agent",
+        "shift-tab-cycles-all-four-modes",
+        "ctrl-o-approves-once-without-backend-review",
+        "always-approve-slash-toggles",
+        "escape-rejection-stops-execution-with-clear-status",
+        "quit-with-typed-prompt-still-waiting-for-permission",
+        "double-ctrl-c-quits-without-abort-stack"
+      ]
+    }
+  },
+  "composer": {
+    "before": {
+      "samples": [
+        207,
+        333,
+        195,
+        204,
+        235,
+        240,
+        233,
+        222,
+        1085,
+        204
+      ],
+      "medianMs": 227.5,
+      "p95Ms": 1085,
+      "scope": "browser clock: reload requested to first visible composer animation frame; agent-browser"
+    },
+    "after": {
+      "samples": [
+        310,
+        201,
+        244,
+        209,
+        222,
+        295,
+        243,
+        1078,
+        201,
+        189
+      ],
+      "medianMs": 232.5,
+      "p95Ms": 1078,
+      "scope": "browser clock: reload requested to first visible composer animation frame; agent-browser"
+    }
+  },
+  "typecheck": {
+    "successful": 21,
+    "total": 21
+  },
+  "generated": {
+    "client": "passed",
+    "sdk": "passed"
+  },
+  "supplementalAppUnit": {
+    "passed": 86,
+    "failedImports": 3,
+    "errors": 3,
+    "assertions": 974,
+    "status": "pre-existing jsxDEV loader limitation; unresolved"
+  },
+  "completeUnitGate": {
+    "apexoBatches": 18,
+    "apexoPassed": 18,
+    "turboTasks": 6,
+    "turboPassed": 6,
+    "cached": 0,
+    "exit": 0
+  },
+  "httpapi": {
+    "coverage": {
+      "pass": 360,
+      "fail": 0,
+      "skip": 0,
+      "missing": 0,
+      "extra": 0
+    },
+    "auth": {
+      "pass": 360,
+      "fail": 0,
+      "skip": 0,
+      "missing": 0,
+      "extra": 0
+    },
+    "effect": {
+      "pass": 360,
+      "fail": 0,
+      "skip": 0,
+      "missing": 0,
+      "extra": 0
+    }
+  }
+}

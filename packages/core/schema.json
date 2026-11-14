@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3ba7fc1e-c6e8-414e-be0f-15413ac8dc8a",
+  "id": "3dfd59a4-0e91-49c9-b658-cf31fb1cfecd",
   "prevIds": [
-    "cab3d066-455b-4aa3-9255-e1b67a1792d8"
+    "3ba7fc1e-c6e8-414e-be0f-15413ac8dc8a"
   ],
   "ddl": [
     {
@@ -2199,6 +2199,16 @@
       "default": null,
       "generated": null,
       "name": "delivery",
+      "entityType": "columns",
+      "table": "session_input"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'unknown'",
+      "generated": null,
+      "name": "origin",
       "entityType": "columns",
       "table": "session_input"
     },

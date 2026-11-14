@@ -1941,6 +1941,8 @@ export const dict = {
   "grok.auto.on.description": "Routine tool calls are approved; risky ones still ask",
   "grok.auto.off.title": "Auto-review off",
   "grok.auto.off.description": "Tool calls ask for approval",
+  "permission.review.reviewing": "Reviewing permission… You can still decide now.",
+  "permission.review.manual": "Manual approval required.",
   "grok.auto.noSession": "Open a session first",
   "grok.contextWindow": "Set the context window",
   "grok.contextWindow.set": "Context window set to {{size}}",
