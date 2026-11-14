@@ -95,6 +95,90 @@ try {
   child.terminal.write("\r")
   await poll(async () => (await fixture.mode(session.id)).data.mode === "manual", "backend mode disabled", 15000)
   checks.push("slash-auto-disables-backend")
+  await poll(() => plain().includes(fullscreen ? "0 running" : "Ask anything"), "mode controls ready")
+  child.terminal.write("\t")
+  await poll(() => /\bplan\b/i.test(plain()), "Tab selects Plan agent")
+  child.terminal.write("\t")
+  await poll(() => /\bbuild\b/i.test(plain()) && !/\bplan\b/i.test(plain()), "Tab restores Build agent")
+  checks.push("tab-cycles-agent")
+  child.terminal.write("\x1b[Z")
+  await poll(() => /\bplan\b/i.test(plain()), "Shift+Tab enters Plan")
+  child.terminal.write("\x1b[Z")
+  await poll(async () => (await fixture.mode(session.id)).data.mode === "review", "Shift+Tab enters backend review")
+  child.terminal.write("\x1b[Z")
+  await poll(
+    async () => (await fixture.mode(session.id)).data.mode === "manual" && /always-approve/i.test(plain()),
+    "Shift+Tab enters always-approve",
+  )
+  child.terminal.write("\x1b[Z")
+  await poll(() => !/always-approve/i.test(plain()), "Shift+Tab returns to Normal")
+  checks.push("shift-tab-cycles-all-four-modes")
+  child.terminal.write("\x0f")
+  await poll(() => /always-approve/i.test(plain()), "Ctrl+O enables always-approve")
+  const before = fixture.state.calls.length
+  await fixture.prompt(session.id)
+  await runtime.api(`/api/session/${session.id}/wait`, undefined, "POST", 204)
+  assert.equal((await runtime.api(`/api/session/${session.id}/permission`)).data.length, 0)
+  assert.equal(fixture.state.calls.length, before)
+  checks.push("ctrl-o-approves-once-without-backend-review")
+  await poll(() => plain().includes(fullscreen ? "0 running" : "Ask anything"), "auto turn finishes")
+  child.terminal.write("\x0f")
+  await poll(() => !/always-approve/i.test(plain()), "Ctrl+O disables always-approve")
+  for (const active of [true, false]) {
+    child.terminal.write("\x1b[200~/always-approve\x1b[201~")
+    await poll(
+      () => plain().includes("/always-approve") && !plain().includes("No matching items"),
+      "always-approve slash exists",
+    )
+    child.terminal.write("\r")
+    await poll(
+      () => !plain().includes("/always-approve") && /always-approve/i.test(plain()) === active,
+      "always-approve slash toggles mode",
+    )
+  }
+  checks.push("always-approve-slash-toggles")
+  await fixture.prompt(session.id)
+  await fixture.pending(session.id)
+  await poll(() => plain().includes(fullscreen ? "Allow once" : "once"), "deny controls ready")
+  child.terminal.write("\x1b")
+  if (!fullscreen) {
+    await poll(() => /Reject permission|Tell Apexo/i.test(plain()), "rejection confirmation ready")
+    child.terminal.write("\r")
+  }
+  await poll(
+    async () => !(await runtime.api(`/api/session/${session.id}/permission`)).data.length,
+    "terminal rejection settles",
+  )
+  await poll(async () => !(await runtime.api("/api/session/active")).data[session.id], "denied turn stops")
+  if (!fullscreen) {
+    await poll(
+      () => screen.join("").includes("Permission denied; tool execution stopped"),
+      "denial is visible in scrollback",
+    )
+    assert.ok(!screen.join("").includes("bash completed ·"), "denial must not be reported as completion")
+  }
+  checks.push("escape-rejection-stops-execution-with-clear-status")
+  if (process.argv.includes("--exit-active")) {
+    assert.equal(fullscreen, false, "active prompt shutdown probe targets split-footer transport")
+    await poll(() => plain().includes("Ask anything"), "composer ready before active quit probe")
+    child.terminal.write("\x1b[200~Run bun --version\x1b[201~")
+    await poll(() => plain().includes("Run bun --version"), "typed prompt before quit")
+    child.terminal.write("\r")
+    await fixture.pending(session.id)
+    await poll(
+      () => plain().includes("Permission required") && plain().includes("once"),
+      "active prompt waiting for permission",
+    )
+    checks.push("quit-with-typed-prompt-still-waiting-for-permission")
+  }
+  child.terminal.write(process.argv.includes("--exit-active") ? "\x03\x03" : "\x03")
+  if (!fullscreen && !process.argv.includes("--exit-active")) {
+    await poll(() => /again to exit/i.test(plain()), "first Ctrl+C asks to exit")
+    child.terminal.write("\x03")
+  }
+  assert.equal(await deadline(child.exited, 15000, "normal two-key quit"), 0)
+  assert.ok(!/DOMException|AbortError/.test(screen.join("")), "normal exit must not dump an abort stack")
+  checks.push(fullscreen ? "ctrl-c-quits-without-abort-stack" : "double-ctrl-c-quits-without-abort-stack")
   console.log(JSON.stringify({ fullscreen, checks, output: runtime.output }))
 } finally {
   fixture.state.hold = false

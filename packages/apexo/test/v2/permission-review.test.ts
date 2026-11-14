@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import path from "node:path"
-import { chmod, mkdir } from "node:fs/promises"
+import { chmod, mkdir, symlink } from "node:fs/promises"
 import { ConfigProvider, DateTime, Effect, Exit, Layer, Schema } from "effect"
 import { eq } from "drizzle-orm"
 import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
@@ -99,6 +99,40 @@ const setup = Effect.gen(function* () {
 })
 const decision = (messageID: string, value = "allow_once") =>
   JSON.stringify({ decision: value, reason: "Matches the verified local test instruction", messageIDs: [messageID] })
+
+it.live(
+  "Headless reject explains permission denial and never executes the command or starts review",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionV2.Service
+        const modes = yield* PermissionReviewState.Service
+        const session = yield* sessions.create(f.create)
+        yield* modes.set(session.id, "review")
+        yield* f.llm.tool("bash", { command: "touch DENIED_COMMAND_EXECUTED" })
+        yield* f.llm.text("DONE")
+        yield* sessions.prompt({
+          sessionID: session.id,
+          prompt: { text: "Try the command" },
+          executionPolicy: { mode: "headless", permissions: "reject" },
+        })
+        yield* sessions.wait(session.id)
+        expect(yield* f.llm.calls).toBe(2)
+        expect(yield* Effect.promise(() => Bun.file(path.join(f.root, "DENIED_COMMAND_EXECUTED")).exists())).toBe(false)
+        const messages = yield* sessions.messages({ sessionID: session.id, order: "asc" })
+        expect(
+          messages.flatMap((message) =>
+            message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : [],
+          )[0]?.state,
+        ).toMatchObject({
+          status: "error",
+          error: { message: "Permission denied; command was not executed: touch DENIED_COMMAND_EXECUTED" },
+        })
+      }).pipe(Effect.provide(f.app))
+    }),
+  30000,
+)
 
 it.live(
   "native scope capture never launches a repository Git wrapper before a manual grant",
@@ -602,7 +636,7 @@ it.live(
   30000,
 )
 
-for (const scope of ["matching", "force", "wrong-remote", "changed"] as const)
+for (const scope of ["matching", "force", "wrong-remote", "changed", "alias-changed"] as const)
   it.live(
     `Git push ${scope} uses backend-resolved scope and revalidates before executing`,
     () =>
@@ -633,6 +667,10 @@ for (const scope of ["matching", "force", "wrong-remote", "changed"] as const)
         yield* git(["commit", "--allow-empty", "-m", "base"])
         yield* git(["remote", "add", "origin", destination])
         yield* git(["remote", "add", "other", destination])
+        const changed = scope === "changed" || scope === "alias-changed"
+        const matching = scope === "matching"
+        const alias = path.join(destination, "git2")
+        if (scope.startsWith("alias-")) yield* Effect.promise(() => symlink(Bun.which("git")!, alias))
         const hold = Promise.withResolvers<void>()
         yield* Effect.addFinalizer(() => Effect.sync(() => hold.resolve()))
         yield* Effect.gen(function* () {
@@ -642,17 +680,14 @@ for (const scope of ["matching", "force", "wrong-remote", "changed"] as const)
           const session = yield* sessions.create(f.create)
           yield* modes.set(session.id, "review")
           const id = SessionMessage.ID.create()
-          const command = `git push ${scope === "force" ? "--force " : ""}${scope === "wrong-remote" ? "other" : "origin"} HEAD:refs/heads/work`
+          const command = `${scope.startsWith("alias-") ? "'" + alias + "'" : "git"} push ${scope === "force" ? "--force " : ""}${scope === "wrong-remote" ? "other" : "origin"} HEAD:refs/heads/work`
           yield* f.llm.tool("bash", { command })
-          if (scope === "changed") yield* f.llm.hold(decision(id), hold.promise)
-          if (scope !== "changed")
+          if (changed) yield* f.llm.hold(decision(id), hold.promise)
+          if (!changed)
             yield* f.llm.text(
               JSON.stringify({
-                decision: scope === "matching" ? "allow_once" : "ask",
-                reason:
-                  scope === "matching"
-                    ? "Matching requested branch and origin"
-                    : "Force or remote is outside user intent",
+                decision: matching ? "allow_once" : "ask",
+                reason: matching ? "Matching requested branch and origin" : "Force or remote is outside user intent",
                 messageIDs: [id],
               }),
             )
@@ -664,11 +699,11 @@ for (const scope of ["matching", "force", "wrong-remote", "changed"] as const)
           const review = (yield* f.llm.inputs)[1]!
           expect(JSON.stringify(review)).toContain("gitDirectory")
           expect(JSON.stringify(review)).toContain("refs/heads/work")
-          if (scope === "changed") {
+          if (changed) {
             yield* git(["commit", "--allow-empty", "-m", "scope changed"])
             hold.resolve()
           }
-          if (scope !== "matching")
+          if (!matching)
             yield* Effect.gen(function* () {
               const permissions = yield* PermissionV2.Service
               const pending = yield* pollWithTimeout(
@@ -678,13 +713,13 @@ for (const scope of ["matching", "force", "wrong-remote", "changed"] as const)
                 "scope fallback",
                 "15 seconds",
               )
-              expect(pending.review?.reason).toContain(scope === "changed" ? "changed" : "outside")
+              expect(pending.review?.reason).toContain(changed ? "changed" : "outside")
               yield* permissions.reply({ requestID: pending.id, reply: "reject" })
             }).pipe(Effect.provide(locations.get(session.location)))
           yield* sessions.wait(session.id).pipe(Effect.exit)
           const refs = yield* git(["for-each-ref", "--format=%(refname)"], destination)
-          expect(refs.trim()).toBe(scope === "matching" ? "refs/heads/work" : "")
-          expect(yield* f.llm.calls).toBe(scope === "matching" ? 3 : 2)
+          expect(refs.trim()).toBe(matching ? "refs/heads/work" : "")
+          expect(yield* f.llm.calls).toBe(matching ? 3 : 2)
         }).pipe(Effect.provide(f.app))
       }),
     30000,

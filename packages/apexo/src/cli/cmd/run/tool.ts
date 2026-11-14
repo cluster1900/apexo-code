@@ -686,6 +686,7 @@ function scrollBashProgress(p: ToolProps<typeof BashTool>): string {
 }
 
 function scrollBashFinal(p: ToolProps<typeof BashTool>): string {
+  if (p.frame.status === "error") return fail(p.frame)
   const code = p.metadata.exit ?? num(p.frame.meta.exitCode) ?? num(p.frame.meta.exit_code)
   const time = span(p.frame.state)
   if (code === undefined) {

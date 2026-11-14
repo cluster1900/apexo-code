@@ -9,6 +9,7 @@ import { FSUtil } from "@apexo/core/fs-util"
 import { PermissionReviewContext } from "@apexo/core/permission/review-context"
 import { SessionSchema } from "@apexo/core/session/schema"
 import { ShellEnvironment } from "@apexo/core/shell-environment"
+import { which } from "@apexo/core/util/which"
 import { ChildProcess } from "effect/unstable/process"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -51,6 +52,90 @@ const setup = Effect.gen(function* () {
     })
   return { cwd, git, action }
 })
+
+for (const name of ["GIT", "git2", "git.exe", "absolute"])
+  it.live(
+    `Resolved Git alias ${name} captures refs and invalidates when HEAD or push URL changes`,
+    () =>
+      Effect.gen(function* () {
+        const f = yield* setup
+        const fs = yield* FSUtil.Service
+        const directory = yield* tmpdirScoped()
+        const installed = which("git")
+        expect(installed).toBeTruthy()
+        const executable = yield* fs.resolve(installed!)
+        const aliases = [name === "absolute" ? "git2" : name]
+        for (const alias of aliases) yield* fs.symlink(executable, path.join(directory, alias))
+        const env = { ...ShellEnvironment.subprocessEnv({}), PATH: `${directory}${path.delimiter}${process.env.PATH}` }
+        const actions = [
+          f.action(`${name === "absolute" ? "'" + path.join(directory, "git2") + "'" : name} push origin HEAD`, env),
+        ]
+        const before = yield* Effect.forEach(actions, (action) => action.capture)
+        for (const capture of before) {
+          expect(capture.facts).toMatchObject({
+            executable,
+            git: { repository: f.cwd, remote: "origin", refs: [{ source: "HEAD", destination: "refs/heads/work" }] },
+          })
+          expect(JSON.stringify(capture.facts)).not.toContain("password")
+        }
+        yield* f.git([
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "commit",
+          "--allow-empty",
+          "-m",
+          "new HEAD",
+        ])
+        const changed = yield* Effect.forEach(actions, (action) => action.capture)
+        changed.forEach((capture, index) => expect(capture.fingerprint).not.toBe(before[index]!.fingerprint))
+        yield* f.git(["remote", "set-url", "--push", "origin", "https://other.invalid/target.git"])
+        const moved = yield* Effect.forEach(actions, (action) => action.capture)
+        moved.forEach((capture, index) => expect(capture.fingerprint).not.toBe(changed[index]!.fingerprint))
+      }),
+    30000,
+  )
+
+it.live(
+  "Editor environment is command-aware while execution-changing hooks stay manual",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup
+      const env = { ...ShellEnvironment.subprocessEnv({}), GIT_EDITOR: "true", GIT_SEQUENCE_EDITOR: "true" }
+      for (const command of [
+        "bun --version",
+        "bun test",
+        "bun run test:unit",
+        "ls",
+        "cat file.txt",
+        "git push origin HEAD",
+        "git status",
+        "git diff",
+        "git log",
+        "git show",
+        "git ls-files",
+        "git rev-parse HEAD",
+      ])
+        expect((yield* f.action(command, env).capture.pipe(Effect.result))._tag).toBe("Success")
+      for (const command of ["git commit", "git rebase", "git merge", "git tag", "git custom-alias"])
+        expect((yield* f.action(command, env).capture.pipe(Effect.result))._tag).toBe("Failure")
+      for (const key of [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_SSH_COMMAND",
+        "GIT_ASKPASS",
+        "BASH_ENV",
+        "ENV",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+      ])
+        expect(
+          (yield* f.action("git push origin HEAD", { ...env, [key]: "untrusted" }).capture.pipe(Effect.result))._tag,
+        ).toBe("Failure")
+    }),
+  30000,
+)
 
 it.live("Git scope never executes repository sibling or custom PATH wrappers before approval", () =>
   Effect.gen(function* () {
@@ -144,6 +229,9 @@ it.live(
       for (const command of [
         "cd .. && git push",
         "env git push",
+        "ENV git push",
+        "/usr/bin/env git push",
+        "BASH -c 'git push'",
         "timeout 2 git push",
         "git -C .. push",
         "git -c remote.origin.url=bad push",

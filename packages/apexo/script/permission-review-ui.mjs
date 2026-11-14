@@ -162,6 +162,7 @@ try {
     )
     await command("reload")
   } else await command("open", `${browserUrl}${route}`)
+  await command("set", "viewport", "1280", "633")
   const id = fixture.session.id
   await command("wait", '[contenteditable="true"]')
   assert.equal((await fixture.mode(id)).data.mode, "manual")
@@ -186,14 +187,47 @@ try {
   assert.equal(enabled.length, 3)
   assert.ok(enabled.every((button) => !button.disabled))
   checks.push("reviewing-all-manual-actions-enabled")
+  const hit = JSON.parse(
+    await command(
+      "eval",
+      `(()=>{
+    const button=document.querySelector('[data-slot="permission-footer-actions"] button:last-child');
+    const rect=button.getBoundingClientRect();
+    const x=rect.x+rect.width/2,y=rect.y+rect.height/2;
+    const toasts=Array.from(document.querySelectorAll('[data-component="toast"],.toast-v2')).filter(el=>el.getBoundingClientRect().height>0);
+    const card=document.querySelector('[data-component="tabs-info-popup"]')?.getBoundingClientRect();
+    const overlaps=toasts.some(el=>{const r=el.getBoundingClientRect();return card&&r.x<card.right&&r.right>card.x&&r.y<card.bottom&&r.bottom>card.y});
+    return {x,y,clickable:button.contains(document.elementFromPoint(x,y)),toasts:toasts.length,overlaps};
+  })()`,
+    ),
+  )
+  assert.equal(hit.clickable, true, "toast must not intercept Allow once center")
+  assert.ok(hit.toasts > 0, "mode feedback must still be visible during the hit test")
+  assert.equal(hit.overlaps, false, "Tabs card and mode feedback must not overlap")
+  await command("screenshot", join(runtime.output, "permission-toast-hit-target.png"))
+  await command("mouse", "move", String(hit.x), String(hit.y))
+  await command("mouse", "down")
+  await command("mouse", "up")
+  await poll(
+    async () => !(await runtime.api(`/api/session/${id}/permission`)).data.length,
+    "center mouse click settles",
+  )
+  fixture.state.hold = false
+  await poll(async () => !(await runtime.api("/api/session/active")).data[id], "first reviewed action finishes")
+  checks.push("visible-toast-clears-permission-button-and-tabs-card")
+  checks.push("real-center-mouse-approval-during-stream")
+  fixture.state.hold = true
+  await fixture.prompt(id)
+  await fixture.pending(id, "reviewing")
+  await poll(() => fixture.state.calls.length === 2, "second held review")
   await command("reload")
   await command("wait", "--fn", `document.querySelector('${review}')?.textContent.includes('Reviewing permission')`)
-  assert.equal(fixture.state.calls.length, 1)
+  assert.equal(fixture.state.calls.length, 2)
   checks.push("reload-hydrates-single-backend-review")
   if (!nativeWindow) {
     await command("tab", "new", "--label", "permission-second", `${browserUrl}${route}`)
     await command("wait", "--fn", `document.querySelector('${review}')?.textContent.includes('Reviewing permission')`)
-    assert.equal(fixture.state.calls.length, 1)
+    assert.equal(fixture.state.calls.length, 2)
     checks.push("two-connected-clients-one-review")
   }
   fixture.state.hold = false
@@ -209,6 +243,42 @@ try {
   await poll(async () => !(await runtime.api(`/api/session/${id}/permission`)).data.length, "manual once settles")
   await command("wait", "--fn", `!document.querySelector('${review}')`)
   checks.push("manual-once-settles")
+  await poll(async () => !(await runtime.api("/api/session/active")).data[id], "approved turn finishes")
+  if (!nativeWindow) {
+    const tabs = JSON.parse(await command("tab", "list", "--json")).data.tabs.filter(
+      (tab) => tab.url === `${browserUrl}${route}`,
+    )
+    assert.equal(tabs.length, 2)
+    await command("tab", tabs[0].targetId)
+    await slash()
+    await poll(async () => (await fixture.mode(id)).data.mode === "manual", "first tab disables review")
+    await command("tab", tabs[1].targetId)
+    await command("click", 'button[aria-label="Command palette"]')
+    await command("fill", '[role="dialog"] input', "auto-review")
+    await command("wait", "--fn", "document.body.textContent.includes('Turn on auto-review permissions')")
+    await command("press", "Escape")
+    await slash()
+    await poll(async () => (await fixture.mode(id)).data.mode === "review", "second tab enables review")
+    await command("tab", tabs[0].targetId)
+    await command("click", 'button[aria-label="Command palette"]')
+    await command("fill", '[role="dialog"] input', "auto-review")
+    await command("wait", "--fn", "document.body.textContent.includes('Turn off auto-review permissions')")
+    await command("press", "Escape")
+    checks.push("two-tabs-render-authoritative-mode-changes")
+  }
+  fixture.state.hold = true
+  await fixture.prompt(id)
+  await fixture.pending(id, "reviewing")
+  await command("wait", "--fn", `document.querySelector('${review}')?.textContent.includes('Reviewing permission')`)
+  await command("press", "Escape")
+  await poll(
+    async () => !(await runtime.api(`/api/session/${id}/permission`)).data.length,
+    "Escape rejects the pending permission",
+  )
+  fixture.state.hold = false
+  await poll(async () => !(await runtime.api("/api/session/active")).data[id], "rejected turn stops")
+  await command("wait", "--fn", "document.body.textContent.includes('Permission denied; tool execution stopped')")
+  checks.push("escape-rejects-and-renders-permission-denial")
   await slash()
   await poll(async () => (await fixture.mode(id)).data.mode === "manual", "backend review disabled", 15000)
   checks.push("slash-auto-disables-backend")
@@ -218,6 +288,12 @@ try {
   await command("press", "Enter")
   await poll(async () => (await fixture.mode(id)).data.mode === "manual", "full auto disables native review")
   checks.push("full-auto-remains-an-explicit-separate-mode")
+  const beforeAuto = fixture.state.calls.length
+  await fixture.prompt(id)
+  await poll(async () => !(await runtime.api("/api/session/active")).data[id], "always-approve runs without review")
+  assert.equal((await runtime.api(`/api/session/${id}/permission`)).data.length, 0)
+  assert.equal(fixture.state.calls.length, beforeAuto)
+  checks.push("always-approve-executes-without-backend-review")
   await command("fill", '[contenteditable="true"]', "/always-approve")
   await command("press", "Enter")
 
@@ -233,6 +309,9 @@ try {
     checks.push("legacy-review-keeps-its-compatibility-owner")
   }
   await command("screenshot", join(runtime.output, "permission-final.png"))
+  const errors = await command("errors")
+  assert.ok(!errors.includes("Error:"), errors)
+  checks.push("no-renderer-errors")
   console.log(JSON.stringify({ kind, checks, output: runtime.output }))
 } finally {
   await command("screenshot", join(runtime.output, "permission-final.png")).catch(() => {})

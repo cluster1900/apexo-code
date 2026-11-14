@@ -1076,7 +1076,15 @@ const layer = Layer.effect(
                   : ordinary
               if (settled._tag === "Failure" && isUserDeclined(settled.cause)) {
                 yield* FiberSet.clear(toolFibers)
-                yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
+                yield* withPublication(
+                  publisher.failUnsettledTools(
+                    settled.cause.reasons.some(
+                      (reason) => Cause.isDieReason(reason) && reason.defect instanceof PermissionV2.DeclinedError,
+                    )
+                      ? "Permission denied; tool execution stopped"
+                      : "Tool execution interrupted",
+                  ),
+                )
                 return yield* Effect.interrupt
               }
               if (

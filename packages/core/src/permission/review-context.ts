@@ -117,7 +117,9 @@ export function bash(input: {
       return yield* Effect.fail(new Error("This execution mode needs manual approval"))
     if (
       Object.keys(env).some(
-        (key) => key !== "GIT_PAGER" && /^(GIT_|BASH_ENV$|ENV$|ZDOTDIR$|BASH_FUNC_|LD_PRELOAD$|DYLD_)/.test(key),
+        (key) =>
+          !["GIT_PAGER", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR"].includes(key) &&
+          /^(GIT_|BASH_ENV$|ENV$|ZDOTDIR$|BASH_FUNC_|LD_PRELOAD$|DYLD_)/.test(key),
       )
     )
       return yield* Effect.fail(new Error("Custom shell or Git environment needs manual approval"))
@@ -125,9 +127,9 @@ export function bash(input: {
     const words = parsed.segments?.[0]?.words
     if (parsed.opaque || parsed.segments?.length !== 1 || !words?.length || !/^[\w./-]+$/.test(words[0]!))
       return yield* Effect.fail(new Error("Dynamic or compound commands need manual approval"))
-    if (["cd", "env", "timeout", "nice", "sudo", "command", "exec", "sh", "bash", "zsh", "fish"].includes(words[0]!))
+    const program = BashApproval.head(words)!
+    if (["cd", "env", "timeout", "nice", "sudo", "command", "exec", "sh", "bash", "zsh", "fish"].includes(program))
       return yield* Effect.fail(new Error("Shell wrappers need manual approval"))
-    const program = BashApproval.head(words)
     const localTests =
       program === "bun" && (words[1] === "test" || (words[1] === "run" && /^test(?::|$)/.test(words[2] ?? "")))
     const version = program === "bun" && words.length === 2 && ["--version", "--revision"].includes(words[1]!)
@@ -146,11 +148,16 @@ export function bash(input: {
     if ([cwd, ...repositories.map((entry) => path.dirname(entry))].some((root) => FSUtil.contains(root, executable)))
       return yield* Effect.fail(new Error("Workspace executable wrappers need manual approval"))
     // Scope queries must never launch a tool-supplied Git wrapper, even outside the worktree.
-    if (program === "git") {
-      const installed = which("git")
-      if (!installed || executable !== (yield* input.fs.resolve(installed)))
-        return yield* Effect.fail(new Error("Custom Git executables need manual approval"))
-    }
+    const installed = which("git")
+    const isGit = installed !== null && executable === (yield* input.fs.resolve(installed))
+    if (program === "git" && !isGit) return yield* Effect.fail(new Error("Custom Git executables need manual approval"))
+    // Git editors do not change other executables. For Git, keep editor-capable commands and aliases manual.
+    if (
+      (env.GIT_EDITOR !== undefined || env.GIT_SEQUENCE_EDITOR !== undefined) &&
+      isGit &&
+      !["push", "status", "diff", "log", "show", "ls-files", "rev-parse"].includes(words[1] ?? "")
+    )
+      return yield* Effect.fail(new Error("Custom Git editor needs manual approval for this command"))
     if (redactURL(input.command) !== input.command)
       return yield* Effect.fail(new Error("Commands containing URL credentials need manual approval"))
     const policy = yield* input.policy
@@ -171,7 +178,7 @@ export function bash(input: {
             : Effect.fail(new Error("Git configuration is unavailable")),
         ),
       )
-    const push = path.basename(words[0]!) === "git" ? yield* gitScope(words, git, config, input.fs) : undefined
+    const push = isGit ? yield* gitScope(words, git, config, input.fs) : undefined
     const facts = {
       tool: "bash",
       cwd,

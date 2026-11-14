@@ -7,7 +7,7 @@ import { deadline, poll, startShellFixture } from "./grok-shell-fixture.mjs"
 
 export async function startPermissionReviewFixture(options = {}) {
   const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
-  const state = { hold: false, child: undefined, exited: undefined, calls: [] }
+  const state = { hold: false, child: undefined, exited: undefined, calls: [], completed: 0 }
   const runtime = await startShellFixture("cli", {
     deferBackend: true,
     async next({ body, input, ancillary, finished, text }) {
@@ -23,7 +23,10 @@ export async function startPermissionReviewFixture(options = {}) {
           }),
         }
       }
-      if (ancillary || finished) return { content: "PERMISSION_DONE" }
+      if (ancillary || finished) {
+        if (finished) state.completed++
+        return { content: "PERMISSION_DONE" }
+      }
       return { tool: "bash", args: { command: "bun --version" } }
     },
   })
@@ -79,7 +82,7 @@ export async function startPermissionReviewFixture(options = {}) {
   await writeFile(join(runtime.directory, "apexo.json"), JSON.stringify(config))
   runtime.env.APEXO_CONFIG_CONTENT = JSON.stringify(config)
   const logs = []
-  if (!options.desktop) {
+  if (!options.desktop && !options.local) {
     const file = join(runtime.output, "permission-server.mjs")
     await writeFile(
       file,
@@ -145,7 +148,7 @@ export async function startPermissionReviewFixture(options = {}) {
     repo,
     state,
     create,
-    session: options.desktop ? undefined : await create(),
+    session: options.desktop || options.local ? undefined : await create(),
     mode: (id, mode) =>
       runtime.api(`/api/session/${id}/permission-review`, mode ? { mode } : undefined, mode ? "PUT" : "GET"),
     prompt: (id) => runtime.api(`/api/session/${id}/prompt`, { prompt: { text: "Run bun --version" } }),

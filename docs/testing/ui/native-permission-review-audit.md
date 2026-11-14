@@ -34,3 +34,43 @@ The findings below describe the audited revision; the remediation section record
 - **Automated verification:** The combined review, scope, protocol, terminal-render, event and HTTP command passed **66 tests / 360 assertions**. The protocol cases cover native, legacy and missing native history plus 401/403/500 responses and preservation of explicit choices.
 
 The first committed-fixture attempt imported Route/Permission providers through package subpaths that are not public exports, and typed an async fetch wrapper without Bun's `preconnect` member. The fixture was corrected to use direct source imports for those private providers and preserve `fetch.preconnect` on the wrapper. The original errors and typecheck failures were fixture preparation errors, not evidence of a product fix.
+
+## BUG-20261114-F02-U1: Bottom-right feedback obscures permission actions and Tabs guidance
+
+- **Scope:** App/Desktop toast placement; audit U1 and N2-02, one shared layout cause.
+- **Observed:** At 1280×633 the center of Allow once hits the mode toast instead of its button. Desktop's first-run Tabs card also overlaps and truncates mode feedback.
+- **Expected:** Permission actions remain clickable during mode feedback, and both toast text and Tabs guidance remain readable.
+- **Reproduction:** Start an isolated browser/Desktop Session, enable `/auto`, immediately hold a pending review, inspect `elementFromPoint` at the Allow once center and click that exact coordinate. Keep the first-run Desktop Tabs card visible.
+- **Root cause:** Toasts and permission actions share the lower-right screen area; the fixed Tabs card uses that area too. Raising z-index cannot make all three readable and clickable.
+- **Fix:** Place App feedback at the upper inline end, below the title bar, through the existing application ToastRegion wrapper. Configure both legacy Kobalte and current Sonner regions; leave shared UI defaults alone.
+- **Verification:** `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true bun script/permission-review-ui.mjs browser`, `mixed`, `builtin` from `packages/apexo`: **14 / 16 / 13 checks**. A visible mode toast is required during the center hit test; an actual mouse-down/up settles the held request, and the Tabs card rectangles do not intersect the toast. Production screenshots were inspected. Desktop was rebuilt from the changed source with its own authenticated backend. No z-index or toast auto-dismiss workaround is used.
+
+## BUG-20261114-F02-U3: Mini lacks documented agent and permission-mode controls
+
+- **Scope:** Split-footer mini runtime and composer; audit U3.
+- **Observed:** Tab, Shift+Tab and Ctrl+O do nothing; `/always-approve` has no matching command; the label always says BUILD.
+- **Expected:** Tab selects primary agents; Shift+Tab cycles Normal → Plan → Auto-review → Always-approve; Ctrl+O and `/always-approve` toggle explicit full auto. Full auto replies once and does not invoke the reviewer or save grants.
+- **Reproduction:** Attach mini to an established native Session and press the documented keys, then submit an ask-policy tool action.
+- **Root cause:** Only variant cycling and `/auto` were wired through the mini footer. Agent state and explicit full-auto handling were absent.
+- **Fix:** Wire the existing keymap actions and shared mode order to the runtime, use canonical native agent/mode methods, render the actual agent and permission mode, and send one existing permission reply per pending request in explicit full auto. Mode hydration/reconnect/events use the existing native stream.
+- **Verification:** Production render regression verifies shortcuts and slash selection without prompt submission. `permission-review-tui.mjs` with no flags, `--fullscreen`, `--mixed`, and `--mixed --fullscreen` passes **11 checks each**, including real agent/mode keys and an actual full-auto command with zero reviewer calls. `permission-review-cli.mjs` additionally verifies native-local mini full auto and clean exit.
+
+## BUG-20261114-F02-U4: App permission dock ignores Escape
+
+- **Scope:** App/Desktop permission dock; audit U4.
+- **Observed:** Escape leaves an actively reviewing permission pending even though the question dock and terminal provide keyboard rejection.
+- **Expected:** Escape rejects the focused permission request once; responding, repeated and composing keystrokes cannot duplicate replies.
+- **Reproduction:** Open a held native review in browser/Desktop and press Escape without clicking a button first.
+- **Root cause:** The permission dock neither focuses an action on mount nor handles Escape.
+- **Fix:** Focus its first action, handle Escape on the existing dock root, stop propagation, honor responding/repeat/composition guards, and expose the shortcut on Deny.
+- **Verification:** Real browser, mixed App and rebuilt own-sidecar Desktop acceptance all press Escape immediately after the reviewing dock appears, assert no pending request, wait for the drain to stop and inspect the visible permission-denied result.
+
+## BUG-20261114-F02-U6: Denied Bash looks completed or hides the policy reason
+
+- **Scope:** Core Bash/runner error presentation, mini scrollback and native headless output; audit U6.
+- **Observed:** Mini labels an error without an exit code `bash completed`; headless rejection says only `Unable to execute command`.
+- **Expected:** Denial never implies process execution or successful completion; the operator sees the permission reason in text and machine output.
+- **Reproduction:** Reject a real mini Bash prompt; separately run an ask-policy Bash action under native headless reject in default, JSON and streaming-JSON formats.
+- **Root cause:** Bash's final label checks only exit metadata; its expected typed failure adapter erases PermissionV2.BlockedError. The runner uses a generic interrupted label for an explicit permission decline.
+- **Fix:** Render failed Bash state before exit metadata, retain the typed blocked reason as `Permission denied; command was not executed`, and identify explicit permission decline when settling interrupted tools. Preserve ordinary interruption/question semantics and existing headless exit status.
+- **Verification:** Regression checks failed versus completed labels. A real native headless test verifies the denial text, no marker file and no reviewer call. `permission-review-cli.mjs` passes **8 checks**, including all three headless formats and real local mini denial; all four attach PTY combinations also verify rejection. Browser/Desktop show the canonical declined-tool reason.

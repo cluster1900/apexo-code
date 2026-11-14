@@ -77,3 +77,11 @@ The remediation typecheck passed all **21 packages**. Its first complete unit ru
 The second unchanged complete unit run passed 17/18 batches, including those two original cases, but failed a PTY child fixture hook timeout. All ten PTY repetitions and their 900 assertions completed in that child; its nonzero hook result failed the parent. The unchanged focused PTY file passed **3 tests / 104 assertions**. Neither local aggregate is reported as green, and the unknown hook timing is not marked fixed. PR CI results are reported separately for the committed snapshot.
 
 Client and legacy SDK `bun run check:generated` both passed after the remediation. The complete `bun run test:httpapi` gate passed **360 scenarios each in coverage, auth and effect modes**, with zero failures, skips or missing/extra scenarios.
+
+## Second audit (2026-11-14)
+
+A fresh re-audit at `71d85e5b` confirmed the delivered surfaces and gates above but found two residual F02 defects: Git scope capture is skipped when the real Git is invoked under another executable name, and an inherited `GIT_EDITOR` disables all native review. It also recorded unrelated CLI/App/Desktop issues (toast layering over permission controls, mini mode-key gaps, Escape handling, and denial presentation). F02 is not fully accepted until the residual scope and environment cases are corrected. See [the second audit](f02-audit.md#second-audit-2026-11-14).
+
+## Second-audit correction and expanded scenarios
+
+Follow-up changes resolve both residual scope/environment findings and all accompanying client issues. The [complete remediation report](f02-reaudit-remediation.md) contains the issue-to-test matrix, **97 passing regressions / 476 assertions**, permanent pure/mixed Client e2e coverage, **11 checks for each of four real terminal combinations**, browser/mixed App **14/16**, rebuilt own-sidecar Desktop **13**, and native-local/headless CLI **8** checks. It also records the new composer comparison and repository gate results without changing the earlier audit evidence. The PR remains draft for human review and is not merged.

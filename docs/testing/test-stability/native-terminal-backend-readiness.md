@@ -33,6 +33,16 @@ The first shared `bun script/grok-scheduler-restore-native.mjs cli` run exceeded
 
 After the typecheck command exited, the unchanged source CLI command passed all four checks with eleven provider calls, including process kill/reopen, passive reads, retained manual/Stop pauses, unknown unfinished-owner refusal and one real future cadence tick. No timeout, source, configuration or assertion was changed. The successful rerun verifies the functional scenario but does not fix or explain the earlier startup delay.
 
+## F02 second-audit verification setup (2026-11-14)
+
+The first post-change composer benchmark timed out at backend readiness with an empty owned backend log while the root typecheck was active. A concurrent mixed fullscreen acceptance run timed out before its composer appeared. After typechecking completed, the unchanged benchmark returned all ten samples and the mixed fullscreen script passed all eleven checks. No readiness deadline or production startup behavior was changed. Host load is context, not an established cause; these startup symptoms remain unexplained.
+
+The native-local F02 harness needed three setup corrections: explicitly select its controlled `reviewfixture/model`; launch source CLI from the package working directory so Bun loads OpenTUI's preload; and use the actual post-first-prompt idle status, because the production composer intentionally removes the initial placeholder. An additional assertion observed `reviewing` before the provider call arrived and was changed to wait for the held provider request, following [RULE-20261015-015](../../rules/terminal-action-readiness.md). These are fixture preparation errors, not product fixes. The final provider-only CLI scenario passes eight checks, including three headless formats, actual human approval/rejection, full auto and clean exit. Its results are recorded in the F02 remediation report.
+
+The initial alias-capture fixture bundled twelve sequential Git captures into one 30-second test while package typechecks were active and exceeded that test deadline. It was split into independent per-alias scenarios with the original per-test and production capture deadlines; the final combined regression passes. The native alias-publication probe also established that Apple's Git dispatcher cannot run a tool named `git2`; that platform boundary is retained in [R2-01](../permissions/native-permission-review-audit.md#bug-20261114-f02-r2-01-git-aliases-bypass-publication-scope-and-revalidation).
+
+Desktop's first fresh build stopped during model-catalog download with `ECONNRESET`. The rerun used the build script's supported `MODELS_DEV_API_JSON` input with an existing local catalog snapshot and rebuilt the backend plus Electron renderer successfully. No catalog/schema/generator code was changed for this environmental download failure.
+
 ## Native Memory operations setup observation
 
 One private `bun script/grok-native-memory-operations-tui.mjs --fullscreen --narrow` invocation exceeded the unchanged 30-second initial backend readiness bound before the terminal was created. Owned bounded cleanup completed. No common root cause is established and this is not counted as a verified recurrence. No timeout increase or product repair is claimed; later UI verification remains separate from this startup symptom.

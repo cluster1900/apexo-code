@@ -23,3 +23,24 @@ Scope capture now resolves the executable canonically and rejects executables in
 `test/v2/permission-review-scope.test.ts` verifies repository sibling and external wrappers through explicit paths and custom PATH values; no marker is created. `test/v2/permission-review.test.ts` exercises a real native Bash action and verifies manual fallback, no wrapper execution and exactly one provider call for the main tool proposal, with no reviewer call. The ordinary local Git publication and changed-scope regressions still pass.
 
 The combined review, scope, protocol, terminal-render, event and HTTP command passed **66 tests / 360 assertions**. Complete repository gates and rebuilt Desktop verification are recorded in the implementation report after the final runs. The original 18-execution evidence above remains historical.
+
+## BUG-20261114-F02-R2-01: Git aliases bypass publication scope and revalidation
+
+- **Scope:** Core Bash review capture on every native client; P2 in the second audit.
+- **Observed:** Uppercase `GIT` and a `git2` symlink resolve to the installed Git but have no `git` facts. Moving HEAD leaves their fingerprints unchanged.
+- **Expected:** The installed Git always uses the same bounded repository, remote, ref and HEAD capture, regardless of command spelling. Unknown wrappers stay manual without scope-query execution.
+- **Reproduction:** Create an isolated repository and committed branch with a remote, symlink the installed Git under another name, capture `git2 push origin HEAD`, commit again, and compare captures. Repeat with uppercase and `.exe` names.
+- **Root cause:** The identity check normalizes the command basename, while Git scope selection compares a case-sensitive literal `git`. Symlink identity is ignored by scope selection.
+- **Fix:** Compare canonical resolved executable identities once and use that identity for both the installed-Git check and Git scope capture. Normalize shell-wrapper basenames before exclusion.
+- **Verification:** `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true bun test test/v2/permission-review-scope.test.ts test/v2/permission-review.test.ts` from `packages/apexo`. Four alias spellings include complete redacted Git facts and invalidate on HEAD and URL changes. The real runner's held aliased push falls back after HEAD changes and leaves the local destination without refs. Repository/custom PATH wrappers and opaque/override commands remain manual. These tests passed in the combined **97-test / 476-assertion** regression run.
+- **Platform boundary:** This macOS host's `/usr/bin/git` is an Apple developer-tool dispatcher: invoking it as `git2` can fail with exit 72 because it searches for a developer tool named `git2`. Canonical capture still identifies Git and revalidation still blocks a changed action. No successful aliased publication is claimed on that dispatcher; ordinary Git publication remains covered. No external repository was pushed.
+
+## BUG-20261114-F02-R2-02: Inherited Git editor configuration disables unrelated review
+
+- **Scope:** Core Bash review environment validation; P2 in the second audit.
+- **Observed:** Exporting `GIT_EDITOR=true` prevents review of `bun --version`, `bun test` and `git push`. Actual terminal acceptance times out without a reviewer call.
+- **Expected:** Editor settings must not disable commands that cannot invoke an editor; execution-changing environment hooks remain manual.
+- **Reproduction:** Export `GIT_EDITOR=true`; run `bun test test/v2/permission-review.test.ts -t "one tool-free backend review"` or `bun script/permission-review-tui.mjs` from `packages/apexo`.
+- **Root cause:** A pre-parse guard rejects all `GIT_*` environment keys except `GIT_PAGER` without considering the command.
+- **Fix:** Defer `GIT_EDITOR`/`GIT_SEQUENCE_EDITOR` sensitivity until command and executable identity are established. Git editor variables do not disable other executables such as Bun, `ls` or `cat`; existing opaque-command/wrapper guards still apply. Installed Git push and known read-only Git commands tolerate editors, while editor-capable commands and unknown Git aliases remain manual. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, shell startup and loader hooks still fall back.
+- **Verification:** Positive/negative environment matrix in `permission-review-scope.test.ts`; the combined **97-test / 476-assertion** suite, all four real PTY combinations, browser/mixed App, rebuilt own-sidecar Desktop and native-local/headless CLI ran with **both editor variables explicitly set**. No global environment was unset to obtain those passes.

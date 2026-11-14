@@ -402,7 +402,12 @@ const layer = Layer.effectDiscard(
               Effect.mapError((error) =>
                 error instanceof ToolFailure
                   ? error
-                  : new ToolFailure({ message: `Unable to execute command: ${input.command ?? input.cmd}` }),
+                  : new ToolFailure({
+                      message:
+                        error instanceof PermissionV2.BlockedError
+                          ? `Permission denied; command was not executed: ${input.command ?? input.cmd}`
+                          : `Unable to execute command: ${input.command ?? input.cmd}`,
+                    }),
               ),
             ),
         }),

@@ -1,6 +1,32 @@
 import { expect, test } from "bun:test"
 import type { ToolPart } from "@apexo/sdk/v2"
-import { toolInlineInfo } from "@/cli/cmd/run/tool"
+import { toolFrame, toolInlineInfo, toolScroll } from "@/cli/cmd/run/tool"
+
+test("denied bash is rendered as failed even when it has no process exit code", () => {
+  const output = toolScroll(
+    "final",
+    toolFrame(
+      {
+        kind: "tool",
+        source: "tool",
+        tool: "bash",
+        phase: "final",
+        text: "",
+        toolState: "error",
+        toolError: "Permission denied; tool execution stopped",
+      },
+      "",
+    ),
+  )
+  expect(output).toContain("bash failed: Permission denied")
+  expect(output).not.toContain("completed")
+  expect(
+    toolScroll(
+      "final",
+      toolFrame({ kind: "tool", source: "tool", tool: "bash", phase: "final", text: "", toolState: "completed" }, ""),
+    ),
+  ).toBe("bash completed")
+})
 
 test("a task without subagent_type is labelled as the general agent it runs", () => {
   const part = {

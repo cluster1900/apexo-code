@@ -1,5 +1,5 @@
 import { permissionReviewStatus } from "@apexo/sdk/v2/permission-review"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { PermissionRequest } from "@apexo/sdk/v2"
 import { Button } from "@apexo/ui/button"
 import { DockPrompt } from "@apexo/session-ui/dock-prompt"
@@ -12,6 +12,8 @@ export function SessionPermissionDock(props: {
   onDecide: (response: "once" | "always" | "reject", save?: readonly string[]) => void
 }) {
   const language = useLanguage()
+  let root: HTMLDivElement | undefined
+  onMount(() => root?.querySelector<HTMLButtonElement>("button")?.focus())
   const review = createMemo(() => permissionReviewStatus(props.request.metadata))
   // Grok Build "Always allow" scope picker (same choices as the CLI: ← narrower, wider →).
   const choices = createMemo(() => {
@@ -57,6 +59,13 @@ export function SessionPermissionDock(props: {
   return (
     <DockPrompt
       kind="permission"
+      ref={(element) => (root = element)}
+      onKeyDown={(event) => {
+        if (event.defaultPrevented || event.key !== "Escape" || event.isComposing) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (!props.responding && !event.repeat) props.onDecide("reject")
+      }}
       header={
         <div data-slot="permission-row" data-variant="header">
           <span data-slot="permission-icon">
@@ -69,7 +78,13 @@ export function SessionPermissionDock(props: {
         <>
           <div />
           <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+            <Button
+              variant="ghost"
+              size="normal"
+              onClick={() => props.onDecide("reject")}
+              disabled={props.responding}
+              aria-keyshortcuts="Escape"
+            >
               {language.t("ui.permission.deny")}
             </Button>
             <Button variant="secondary" size="normal" onClick={always} disabled={props.responding}>
