@@ -176,7 +176,6 @@ try {
   await fixture.prompt(id)
   const pending = await fixture.pending(id, "reviewing")
   const review = '[data-slot="permission-review"]'
-  await command("wait", review)
   await command("wait", "--fn", `document.querySelector('${review}')?.textContent.includes('Reviewing permission')`)
   const enabled = JSON.parse(
     await command(
@@ -187,15 +186,12 @@ try {
   assert.equal(enabled.length, 3)
   assert.ok(enabled.every((button) => !button.disabled))
   checks.push("reviewing-all-manual-actions-enabled")
-  await command("screenshot", join(runtime.output, "permission-reviewing.png"))
   await command("reload")
-  await command("wait", review)
   await command("wait", "--fn", `document.querySelector('${review}')?.textContent.includes('Reviewing permission')`)
   assert.equal(fixture.state.calls.length, 1)
   checks.push("reload-hydrates-single-backend-review")
   if (!nativeWindow) {
     await command("tab", "new", "--label", "permission-second", `${browserUrl}${route}`)
-    await command("wait", review)
     await command("wait", "--fn", `document.querySelector('${review}')?.textContent.includes('Reviewing permission')`)
     assert.equal(fixture.state.calls.length, 1)
     checks.push("two-connected-clients-one-review")
@@ -208,6 +204,7 @@ try {
     `document.querySelector('${review}')?.textContent.includes('Fixture requires a human decision')`,
   )
   checks.push("live-manual-fallback-reason")
+  await command("screenshot", join(runtime.output, "permission-manual.png"))
   await command("click", '[data-slot="permission-footer-actions"] button:last-child')
   await poll(async () => !(await runtime.api(`/api/session/${id}/permission`)).data.length, "manual once settles")
   await command("wait", "--fn", `!document.querySelector('${review}')`)

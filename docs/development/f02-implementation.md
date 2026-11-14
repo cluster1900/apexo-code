@@ -57,3 +57,23 @@ The final median was 1.5 ms (0.8%) above baseline. The earlier after-run overlap
 No PR is merged by this work.
 
 Related development records: [native permission review](../testing/permissions/native-permission-review.md), [acceptance fixture corrections](../testing/test-fixtures/native-permission-review.md).
+
+## Audit remediation (2026-11-14)
+
+The [independent audit](f02-audit.md) identified three gaps at `6f6f5b99`. The follow-up retains their original evidence and fixes them through existing boundaries:
+
+- Canonical executable checks reject wrappers throughout enclosing repositories. Git scope capture additionally verifies the backend's installed Git identity before invoking read-only queries. Real native execution confirms the wrapper never runs while permission is pending, and supported Git pushes retain their original behavior.
+- Fullscreen reconnect clears the old backend's mode cache. Responses from a previous connection cannot restore it; ordinary mode revisions still order changes within the current connection.
+- Mixed-host terminal attachment consults the selected Session's canonical native history. Mini and fullscreen now use the backend review mode by default for established native Sessions. Explicit compatibility selection and legacy Sessions preserve their existing behavior; authorization errors cannot silently switch engines.
+
+Fresh focused verification passed **66 tests / 360 assertions** across review, scope, native transport, terminal rendering, event inventory and HTTP cases. Mini/fullscreen each passed **5 real PTY checks on both pure and mixed hosts**. Production browser and mixed App passed **8 / 10 checks**. A freshly rebuilt Desktop using its own backend passed **8 checks**. Client Promise, Client Effect and legacy SDK integration passed **12 checks**, including canonical review events, inline state and manual replies.
+
+Two intermediate Desktop automation waits timed out; their preserved screenshots eventually showed manual fallback, including the exact fixture reason in the serial run. The [fixture record](../testing/test-fixtures/native-permission-review.md#2026-11-14-remediation-verification) distinguishes these unconfirmed automation timings from production fixes. The fixture removes redundant waits inside the bounded reviewer window; the production timeout is unchanged.
+
+No new API, persistence table, runtime dependency or orchestration layer was added. The App source and composer rendering are unchanged by this remediation; the production composer comparison above remains the applicable implementation baseline.
+
+The remediation typecheck passed all **21 packages**. Its first complete unit run passed 16/18 batches and failed two separate existing CLI/MCP cases: a 25.96-second duration against a 25-second assertion, and sanitized MCP worker initialization failure. An unchanged focused rerun passed **29 tests / 144 assertions**; no cause or unrelated production fix is claimed. The [gate record](../testing/test-stability/f02-remediation-unit-gate.md) preserves both symptoms and the subsequent complete rerun.
+
+The second unchanged complete unit run passed 17/18 batches, including those two original cases, but failed a PTY child fixture hook timeout. All ten PTY repetitions and their 900 assertions completed in that child; its nonzero hook result failed the parent. The unchanged focused PTY file passed **3 tests / 104 assertions**. Neither local aggregate is reported as green, and the unknown hook timing is not marked fixed. PR CI results are reported separately for the committed snapshot.
+
+Client and legacy SDK `bun run check:generated` both passed after the remediation. The complete `bun run test:httpapi` gate passed **360 scenarios each in coverage, auth and effect modes**, with zero failures, skips or missing/extra scenarios.

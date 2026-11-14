@@ -13,6 +13,7 @@ import { SessionHistory } from "../session/history"
 import { SessionSchema } from "../session/schema"
 import { SessionInputTable } from "../session/sql"
 import { BashApproval } from "../tool/bash-approval"
+import { which } from "../util/which"
 
 export const Interactive = Context.Reference<boolean>("@apexo/PermissionReview/Interactive", {
   defaultValue: () => false,
@@ -138,11 +139,18 @@ export function bash(input: {
       !new RegExp(`^(?:${words[0]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} is )?/[\\w./+ -]+$`).test(resolution.text)
     )
       return yield* Effect.fail(new Error("Shell aliases, functions or unresolved executables need manual approval"))
-    const executable = resolution.text.replace(/^.* is /, "")
+    const executable = yield* input.fs.resolve(resolution.text.replace(/^.* is /, ""))
     const cwd = yield* input.fs.resolve(input.cwd)
     if (cwd !== input.cwd) return yield* Effect.fail(new Error("Working directory changed"))
-    if (FSUtil.contains(cwd, yield* input.fs.resolve(executable)))
+    const repositories = yield* input.fs.up({ targets: [".git"], start: cwd })
+    if ([cwd, ...repositories.map((entry) => path.dirname(entry))].some((root) => FSUtil.contains(root, executable)))
       return yield* Effect.fail(new Error("Workspace executable wrappers need manual approval"))
+    // Scope queries must never launch a tool-supplied Git wrapper, even outside the worktree.
+    if (program === "git") {
+      const installed = which("git")
+      if (!installed || executable !== (yield* input.fs.resolve(installed)))
+        return yield* Effect.fail(new Error("Custom Git executables need manual approval"))
+    }
     if (redactURL(input.command) !== input.command)
       return yield* Effect.fail(new Error("Commands containing URL credentials need manual approval"))
     const policy = yield* input.policy

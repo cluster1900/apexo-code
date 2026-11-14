@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import path from "node:path"
-import { mkdir } from "node:fs/promises"
+import { chmod, mkdir } from "node:fs/promises"
 import { ConfigProvider, DateTime, Effect, Exit, Layer, Schema } from "effect"
 import { eq } from "drizzle-orm"
 import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
@@ -99,6 +99,66 @@ const setup = Effect.gen(function* () {
 })
 const decision = (messageID: string, value = "allow_once") =>
   JSON.stringify({ decision: value, reason: "Matches the verified local test instruction", messageIDs: [messageID] })
+
+it.live(
+  "native scope capture never launches a repository Git wrapper before a manual grant",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup
+      const marker = path.join(f.root, "wrapper-executed")
+      const wrapper = path.join(f.root, "bin", "git")
+      const git = Bun.which("git")!
+      yield* Effect.promise(async () => {
+        for (const args of [
+          ["init", "--initial-branch=work"],
+          [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "initial",
+          ],
+          ["remote", "add", "origin", "https://example.invalid/repo.git"],
+        ]) {
+          const result = Bun.spawnSync([git, "-c", "commit.gpgsign=false", ...args], { cwd: f.root })
+          if (result.exitCode) throw new Error(result.stderr.toString())
+        }
+        await mkdir(path.join(f.root, "package"))
+        await mkdir(path.dirname(wrapper))
+        await Bun.write(wrapper, `#!/bin/sh\nprintf x >> '${marker}'\nexec '${git}' "$@"\n`)
+        await chmod(wrapper, 0o755)
+      })
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionV2.Service
+        const modes = yield* PermissionReviewState.Service
+        const locations = yield* LocationServiceMap.Service
+        const session = yield* sessions.create(f.create)
+        yield* Effect.addFinalizer(() => sessions.interrupt(session.id))
+        yield* modes.set(session.id, "review")
+        yield* f.llm.tool("bash", { command: `'${wrapper}' push origin HEAD`, workdir: "package" })
+        yield* sessions
+          .prompt({ sessionID: session.id, prompt: { text: "Inspect the repository; do not publish." } })
+          .pipe(Effect.provideService(SessionInput.CurrentOrigin, "user"))
+        yield* Effect.gen(function* () {
+          const permissions = yield* PermissionV2.Service
+          const request = yield* pollWithTimeout(
+            permissions
+              .forSession(session.id)
+              .pipe(Effect.map((items) => items.find((item) => item.review?.status === "ask_manual"))),
+            "wrapper must stay manual",
+          )
+          expect(request.review?.reason).toContain("Workspace executable")
+          expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+          expect(yield* f.llm.calls).toBe(1)
+          yield* permissions.reply({ requestID: request.id, reply: "reject" })
+        }).pipe(Effect.provide(locations.get(session.location)))
+      }).pipe(Effect.provide(f.app))
+    }),
+  30000,
+)
 
 it.live(
   "native runtime performs one tool-free backend review and never saves a grant or reviewer transcript",

@@ -8,12 +8,21 @@ export function sessionTransport(
   directory?: string,
   selection: "auto" | "native" | "compatibility" = "auto",
   owner?: AbortSignal,
+  sessionID?: string,
 ) {
   const protocol = serverProtocol(client)
   const cache: { current?: Promise<SessionTransport> } = {}
   return (signal: AbortSignal): Promise<SessionTransport> =>
     (cache.current ??= (async () => {
-      if (selection === "native" || (selection === "auto" && (await protocol(signal)) === "v2")) {
+      const kind = selection === "auto" ? await protocol(signal) : undefined
+      // Mixed hosts share Session records; canonical history establishes native execution.
+      const history =
+        kind === "v1" && sessionID !== undefined
+          ? await client.v2.session.history({ sessionID, limit: 1 }, { signal, throwOnError: false })
+          : undefined
+      if (history && !history.data && history.response?.status !== 404)
+        throw history.error ?? new Error("Could not determine the Session protocol")
+      if (selection === "native" || kind === "v2" || !!history?.data?.data.length) {
         const { nativeSessionTransport } = await import("./native-session")
         return nativeSessionTransport(client, directory, owner)
       }

@@ -23,3 +23,9 @@ The final mini rerun exposed a fixture readiness race: an old `PERMISSION_DONE` 
 ## Final verification
 
 The final browser, mixed-host and rebuilt Desktop runs passed 8, 10 and 8 checks respectively. Mini and fullscreen PTY runs each passed 5 checks. The focused native regression command passed 41 tests / 244 assertions; the complete unit gate passed all 18 batches. These results supersede the earlier partial fixture totals above while preserving their original failures and causes. The [implementation report](../../development/f02-implementation.md) records the full gates and production benchmark.
+
+## 2026-11-14 remediation verification
+
+Two rebuilt Desktop runs reached an automation wait timeout: first waiting for the review element while other verification ran, then waiting for the controlled provider's fallback reason in a serial run. Saved final screenshots showed live manual fallback: the first timed out in Core as designed; the second ultimately displayed the exact fixture reason. No production root cause was established for the automation timing. A passing rerun alone is not claimed as a runtime fix.
+
+The acceptance script now removes redundant selector waits and captures its screenshot after releasing the held stream, reducing work inside the bounded 20-second reviewer window. It still verifies reviewing text, all manual actions enabled, reload with exactly one backend evaluation, the exact live fallback reason and manual settlement. The next own-sidecar Desktop run passed all 8 checks. The production reviewer timeout was not increased, and no App/Desktop business code was changed to satisfy the fixture.

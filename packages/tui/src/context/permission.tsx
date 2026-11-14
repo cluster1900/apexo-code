@@ -3,7 +3,7 @@ import { Option, Schema } from "effect"
 import { createEffect, onCleanup } from "solid-js"
 import { useSDK } from "./sdk"
 import { useRoute } from "./route"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { resolvePermissionMode } from "@apexo/sdk/v2/grok-commands"
 import { useArgs } from "./args"
 import { createSimpleContext } from "./helper"
@@ -18,6 +18,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     const args = useArgs()
     const sdk = useSDK()
     const route = useRoute()
+    const connection = { generation: 0 }
     const [store, setStore] = createStore<{
       mode: PermissionMode
       touched: boolean
@@ -34,11 +35,14 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       if ((store.states[id]?.revision ?? -1) <= value.revision) setStore("states", id, value)
     }
     const hydrate = async () => {
+      const generation = connection.generation
       const id = sessionID()
       const selected = await sdk.transport()
+      if (generation !== connection.generation) return
       setStore("native", selected.kind === "native")
       if (selected.kind !== "native" || !id) return
-      update(id, await selected.permissionReview(id))
+      const state = await selected.permissionReview(id)
+      if (generation === connection.generation) update(id, state)
     }
     createEffect(() => {
       sessionID()
@@ -49,8 +53,11 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       sdk.nativeEvent.on((event) => {
         const parsed = decode(event)
         if (Option.isSome(parsed)) update(parsed.value.data.sessionID, parsed.value.data)
-        if (event && typeof event === "object" && "type" in event && event.type === "server.connected")
+        if (event && typeof event === "object" && "type" in event && event.type === "server.connected") {
+          connection.generation++
+          setStore("states", reconcile({}))
           void hydrate().catch(() => undefined)
+        }
       }),
     )
     const mode = (): PermissionMode =>
@@ -60,11 +67,14 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
           : "normal"
         : store.mode
     const set = async (value: PermissionMode) => {
+      const generation = connection.generation
       const selected = await sdk.transport()
       if (selected.kind === "native") {
         const id = sessionID()
         if (!id) throw new Error("Open a session first")
-        update(id, await selected.setPermissionReview(id, value === "review" ? "review" : "manual"))
+        const state = await selected.setPermissionReview(id, value === "review" ? "review" : "manual")
+        if (generation !== connection.generation) return
+        update(id, state)
         setStore({ mode: value === "auto" ? "auto" : "normal", native: true, touched: true })
         return
       }

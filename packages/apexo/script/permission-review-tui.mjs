@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { startPermissionReviewFixture } from "./permission-review-fixture.mjs"
 import { deadline, poll } from "./grok-shell-fixture.mjs"
-const fixture = await startPermissionReviewFixture()
+const fixture = await startPermissionReviewFixture({ mixed: process.argv.includes("--mixed") })
 const { runtime, repo, session } = fixture
 const fullscreen = process.argv.includes("--fullscreen")
 const terminal = new Terminal({ cols: 110, rows: 35, allowProposedApi: true })
@@ -23,6 +23,7 @@ try {
       join(repo, "packages/apexo/src/index.ts"),
       "attach",
       runtime.url,
+      ...(process.argv.includes("--native") ? ["--session-protocol", "native"] : []),
       ...(!fullscreen ? ["--mini", "--no-replay"] : []),
       "--dir",
       runtime.directory,

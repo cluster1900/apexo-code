@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
 import { Effect } from "effect"
 import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
 import { LayerNode } from "@apexo/core/effect/layer-node"
@@ -35,11 +36,11 @@ const setup = Effect.gen(function* () {
   yield* git(["remote", "add", "origin", "https://user:password@example.invalid/repo.git"])
   yield* git(["config", "branch.work.remote", "origin"])
   yield* git(["config", "branch.work.merge", "refs/heads/work"])
-  const action = (command: string, env = ShellEnvironment.subprocessEnv({}), profile = "off") =>
+  const action = (command: string, env = ShellEnvironment.subprocessEnv({}), profile = "off", directory = cwd) =>
     PermissionReviewContext.bash({
       sessionID: SessionSchema.ID.make("ses_scope"),
       callID: "scope",
-      cwd,
+      cwd: directory,
       shell: "/bin/sh",
       command,
       env: Effect.succeed(env),
@@ -50,6 +51,28 @@ const setup = Effect.gen(function* () {
     })
   return { cwd, git, action }
 })
+
+it.live("Git scope never executes repository sibling or custom PATH wrappers before approval", () =>
+  Effect.gen(function* () {
+    const f = yield* setup
+    const fs = yield* FSUtil.Service
+    const external = yield* tmpdirScoped()
+    const marker = path.join(f.cwd, "wrapper-executed")
+    const cwd = path.join(f.cwd, "package")
+    yield* fs.makeDirectory(cwd)
+    yield* fs.makeDirectory(path.join(f.cwd, "bin"))
+    for (const directory of [path.join(f.cwd, "bin"), external]) {
+      const wrapper = path.join(directory, "git")
+      yield* fs.writeFileString(wrapper, `#!/bin/sh\nprintf x >> '${marker}'\nexit 1\n`)
+      yield* fs.chmod(wrapper, 0o755)
+      for (const command of [`'${wrapper}' push origin HEAD`, "git push origin HEAD"]) {
+        const env = { ...ShellEnvironment.subprocessEnv({}), PATH: `${directory}${path.delimiter}${process.env.PATH}` }
+        expect((yield* f.action(command, env, "off", cwd).capture.pipe(Effect.result))._tag).toBe("Failure")
+        expect(yield* fs.exists(marker)).toBe(false)
+      }
+    }
+  }),
+)
 
 it.live(
   "Git push scope resolves implicit defaults, explicit refs, force/deletion and redacts URL credentials",

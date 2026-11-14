@@ -46,15 +46,19 @@ export async function validateSession(input: {
     headers: input.headers,
   })
   const signal = AbortSignal.timeout(10_000)
-  const transport = await sessionTransport(client, input.directory, input.sessionProtocol)(signal).catch(
-    (error: unknown) => {
-      if (!input.fetch && !(error && typeof error === "object" && "status" in error)) {
-        throw new Error(`Failed to connect to ${input.url}`)
-      }
-      throw error
-    },
-  )
   const sessionID = decodeSessionID(input.sessionID)
+  const transport = await sessionTransport(
+    client,
+    input.directory,
+    input.sessionProtocol,
+    undefined,
+    Option.getOrUndefined(sessionID),
+  )(signal).catch((error: unknown) => {
+    if (!input.fetch && !(error && typeof error === "object" && "status" in error)) {
+      throw new Error(`Failed to connect to ${input.url}`)
+    }
+    throw error
+  })
   if (Option.isSome(sessionID)) {
     if (transport.kind === "native") await transport.get(sessionID.value, signal)
     else await client.session.get({ sessionID: sessionID.value }, { signal, throwOnError: true })
