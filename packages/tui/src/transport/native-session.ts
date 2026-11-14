@@ -91,6 +91,12 @@ export function nativeSessionTransport(client: ApexoClient, directory?: string, 
     async rejectQuestion(input: Parameters<Native["question"]["reject"]>[0], signal?: AbortSignal) {
       return client.v2.session.question.reject(input, requestOptions(signal, owner))
     },
+    async permissionReview(sessionID: string, signal?: AbortSignal) {
+      return (await client.v2.session.permissionReview.get({ sessionID }, requestOptions(signal, owner))).data.data
+    },
+    async setPermissionReview(sessionID: string, mode: "manual" | "review", signal?: AbortSignal) {
+      return (await client.v2.session.permissionReview.set({ sessionID, mode }, requestOptions(signal, owner))).data.data
+    },
     async permissions(sessionID: string, signal?: AbortSignal) {
       return (await client.v2.session.permission.list({ sessionID }, requestOptions(signal, owner))).data.data
     },

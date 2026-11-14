@@ -14,6 +14,7 @@ import { McpEvent } from "./mcp-event"
 import { MemoryCaptureEvent } from "./memory-capture-event"
 import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
+import { PermissionReview } from "./permission-review"
 import { PermissionV1 } from "./permission-v1"
 import { Plugin } from "./plugin"
 import { Project } from "./project"
@@ -51,6 +52,7 @@ const featureDefinitions = Event.inventory(
   ...FileSystem.Event.Definitions,
   ...Reference.Event.Definitions,
   ...Permission.Event.Definitions,
+  ...PermissionReview.Event.Definitions,
   ...Plugin.Event.Definitions,
   ...ProjectDirectories.Event.Definitions,
   ...FileSystemWatcher.Event.Definitions,

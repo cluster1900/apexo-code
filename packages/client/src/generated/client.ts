@@ -261,6 +261,10 @@ import type {
   PermissionsListSavedOutput,
   PermissionsRemoveSavedInput,
   PermissionsRemoveSavedOutput,
+  PermissionsGetReviewInput,
+  PermissionsGetReviewOutput,
+  PermissionsSetReviewInput,
+  PermissionsSetReviewOutput,
   PermissionsCreateInput,
   PermissionsCreateOutput,
   PermissionsListInput,
@@ -2088,6 +2092,29 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      getReview: (input: PermissionsGetReviewInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: PermissionsGetReviewOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/permission-review`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      setReview: (input: PermissionsSetReviewInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: PermissionsSetReviewOutput }>(
+          {
+            method: "PUT",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/permission-review`,
+            body: { mode: input["mode"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       create: (input: PermissionsCreateInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: PermissionsCreateOutput }>(
           {

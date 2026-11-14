@@ -79,6 +79,8 @@ export type LifecycleInput = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  onTogglePermissionReview?: () => Promise<boolean>
+  modeActions?: import("./types").RunModeActions
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
@@ -273,6 +275,8 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       memoryActions: input.memoryActions,
       workflowActions: input.workflowActions,
       codeReviewActions: input.codeReviewActions,
+      onTogglePermissionReview: input.onTogglePermissionReview,
+      modeActions: input.modeActions,
       mcpElicitation: input.mcpElicitation,
       sideQuestionActions: input.sideQuestionActions,
       feedbackActions: input.feedbackActions,

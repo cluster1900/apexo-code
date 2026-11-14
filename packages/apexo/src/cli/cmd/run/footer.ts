@@ -102,6 +102,8 @@ type RunFooterOptions = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  onTogglePermissionReview?: () => Promise<boolean>
+  modeActions?: import("./types").RunModeActions
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
@@ -180,6 +182,7 @@ function eventPatch(next: FooterEvent): FooterPatch | undefined {
 }
 
 export class RunFooter implements FooterApi {
+  private autoReply?: string
   private closed = false
   private destroyed = false
   private prompts = new Set<(input: RunPrompt) => void>()
@@ -347,6 +350,7 @@ export class RunFooter implements FooterApi {
               onQuestionReply: footer.handleQuestionReply,
               onQuestionReject: footer.handleQuestionReject,
               onCycle: footer.handleCycle,
+              modeActions: options.modeActions,
               onInterrupt: footer.handleInterrupt,
               onBackground: options.onBackground,
               taskActions: options.taskActions,
@@ -356,6 +360,7 @@ export class RunFooter implements FooterApi {
               memoryActions: options.memoryActions,
               workflowActions: options.workflowActions,
               codeReviewActions: options.codeReviewActions,
+              onTogglePermissionReview: options.onTogglePermissionReview,
               mcpElicitation: options.mcpElicitation,
               sideQuestionActions: options.sideQuestionActions,
               feedbackActions: options.feedbackActions,
@@ -522,6 +527,7 @@ export class RunFooter implements FooterApi {
     }
     const state = {
       agent: next.agent ?? prev.agent,
+      permissionMode: next.permissionMode ?? prev.permissionMode,
       phase: next.phase ?? prev.phase,
       tasks: next.tasks ?? prev.tasks,
       taskError: next.taskError ?? prev.taskError,
@@ -547,6 +553,7 @@ export class RunFooter implements FooterApi {
     }
 
     this.setState(state)
+    if (prev.permissionMode !== state.permissionMode && state.permissionMode === "auto") this.present(this.view())
     if ((prev.status !== state.status || prev.phase !== state.phase) && this.view().type === "prompt") {
       this.applyHeight()
     }
@@ -571,6 +578,15 @@ export class RunFooter implements FooterApi {
     }
 
     this.setView(view)
+    if (view.type !== "permission") this.autoReply = undefined
+    if (view.type === "permission" && this.state().permissionMode === "auto" && this.autoReply !== view.request.id) {
+      this.autoReply = view.request.id
+      void this.handlePermissionReply({
+        sessionID: view.request.sessionID,
+        requestID: view.request.id,
+        reply: "once",
+      }).catch(() => this.setNotice("Could not approve permission"))
+    }
     this.applyHeight()
   }
 

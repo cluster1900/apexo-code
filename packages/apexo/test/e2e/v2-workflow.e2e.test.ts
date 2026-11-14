@@ -1,3 +1,4 @@
+import { SessionEvent } from "@apexo/schema/session-event"
 import { Workflow } from "@apexo/schema/workflow"
 import { describe, expect } from "bun:test"
 import { Config, Effect, Fiber, Layer, Schema } from "effect"
@@ -198,6 +199,15 @@ it.instance(
       const research = yield* terminal(`${root}/${first.id}`)
       expect(research).toMatchObject({ status: "completed", agentsSpent: 6, tokens: 30 })
       expect(new Set(research.children).size).toBe(6)
+      const inputHistory = yield* HttpClient.get(`/api/session/${research.children[0]}/history?limit=100`).pipe(
+        Effect.flatMap((response) => response.json),
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ data: Schema.Array(SessionEvent.All) }))),
+      )
+      expect(
+        inputHistory.data
+          .filter((event) => event.type === SessionEvent.PromptAdmitted.type)
+          .map((event) => event.data.origin),
+      ).toEqual(["workflow"])
       expect(yield* llm.calls).toBe(6)
       expect(
         tools.every((names) => !names.includes("workflow") && !names.includes("write") && !names.includes("bash")),

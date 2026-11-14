@@ -1,3 +1,5 @@
+import { PermissionReview } from "@apexo/schema/permission-review"
+import { Option, Schema } from "effect"
 import { Binary } from "@apexo/core/util/binary"
 import { retry } from "@apexo/core/util/retry"
 import type { ApexoEvent, SessionApi, SessionMessageInfo } from "@apexo/client/promise"
@@ -27,6 +29,18 @@ import type { ServerApi } from "@/utils/server"
 type MessageApi = ServerApi["message"]
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+const decodeReview = Schema.decodeUnknownOption(
+  Schema.Union([
+    Schema.Struct({
+      type: PermissionReview.Event.Started.fields.type,
+      data: PermissionReview.Event.Started.fields.data,
+    }),
+    Schema.Struct({
+      type: PermissionReview.Event.Settled.fields.type,
+      data: PermissionReview.Event.Settled.fields.data,
+    }),
+  ]),
+)
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const initialMessagePageSize = 20
 const historyMessagePageSize = 200
@@ -266,11 +280,7 @@ export function createServerSession(
       setData("session_message", message.sessionID, index, reconcile(next))
       return
     }
-    setData(
-      "session_message",
-      message.sessionID,
-      reconcile([...current, next]),
-    )
+    setData("session_message", message.sessionID, reconcile([...current, next]))
   }
 
   const remember = (session: Session) => {
@@ -1150,6 +1160,27 @@ export function createServerSession(
         event.type !== "session.deleted"
       )
         void resolve(eventID).catch(() => {})
+    }
+    const review = decodeReview({ type: event.type, data: event.properties })
+    if (Option.isSome(review)) {
+      const value = review.value
+      setData("permission", value.data.sessionID, (items = []) =>
+        items.map((item) =>
+          item.id !== value.data.requestID
+            ? item
+            : {
+                ...item,
+                metadata: {
+                  ...item.metadata,
+                  nativeReview:
+                    value.type === "permission.review.started"
+                      ? { status: "reviewing" }
+                      : { status: "ask_manual", reason: value.data.reason },
+                },
+              },
+        ),
+      )
+      return
     }
     switch (event.type) {
       case "session.created":

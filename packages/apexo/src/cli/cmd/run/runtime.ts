@@ -1,5 +1,6 @@
 import { codeReviewAvailable } from "@apexo/sdk/v2/code-review"
 import { taskMessageDraft } from "@apexo/sdk/v2/task-message"
+import { nextSessionMode } from "@apexo/sdk/v2/grok-commands"
 import { nativeMemoryActions } from "@apexo/tui/util/session-memory"
 import { mcpActions } from "@apexo/tui/component/mcp-browser"
 import { pluginsActions } from "@apexo/tui/component/plugins-browser"
@@ -34,7 +35,15 @@ import {
 import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
 import { cycleVariant, formatModelLabel, resolveSavedVariant, resolveVariant, saveVariant } from "./variant.shared"
-import type { LocalReplayAnchor, LocalReplayRow, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
+import type {
+  LocalReplayAnchor,
+  LocalReplayRow,
+  RunAgent,
+  RunInput,
+  RunPrompt,
+  RunProvider,
+  StreamCommit,
+} from "./types"
 
 /** @internal Exported for testing */
 export { pickVariant, resolveVariant } from "./variant.shared"
@@ -136,6 +145,9 @@ function createSessionResolver(fn?: CreateSession) {
 }
 
 type RuntimeState = {
+  agents: RunAgent[]
+  alwaysApprove: boolean
+  previousAgent: string
   shown: boolean
   aborting: boolean
   model: RunInput["model"]
@@ -232,6 +244,9 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     localRows: [],
     sessionTitle: ctx.sessionTitle,
     agent: ctx.agent,
+    agents: [],
+    alwaysApprove: false,
+    previousAgent: "build",
   }
   const ensureSession = () => {
     if (!input.resolveSession || state.sessionID) {
@@ -255,6 +270,25 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
     () => state.sessionID,
     async () => (ctx.native ? "native" : "compatibility"),
   )
+  const native = ctx.native
+  const setAgent = async (agent: string) => {
+    await ensureSession()
+    if (ctx.native) await ctx.native.switchAgent({ sessionID: state.sessionID, agent })
+    state.agent = agent
+    footer.event({ type: "stream.patch", patch: { agent, status: `${agent} agent` } })
+  }
+  const setPermissionMode = async (mode: "normal" | "review" | "auto") => {
+    await ensureSession()
+    if (ctx.native) await ctx.native.setPermissionReview(state.sessionID, mode === "review" ? "review" : "manual")
+    state.alwaysApprove = mode === "auto"
+    footer.event({
+      type: "stream.patch",
+      patch: {
+        permissionMode: mode,
+        status: mode === "auto" ? "Always-approve mode" : mode === "review" ? "Auto-review mode" : "Normal mode",
+      },
+    })
+  }
   const shell = await (deps.createRuntimeLifecycle ?? createRuntimeLifecycle)({
     directory: ctx.directory,
     findFiles: (query) =>
@@ -457,6 +491,39 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           : undefined,
     ),
     mcpElicitation: { api: ctx.sdk.v2.mcpElicitation, sessions: () => (state.sessionID ? [state.sessionID] : []) },
+    onTogglePermissionReview: native
+      ? async () => {
+          await ensureSession()
+          const current = await native.permissionReview(state.sessionID)
+          const mode = !state.alwaysApprove && current.mode === "review" ? "normal" : "review"
+          await setPermissionMode(mode)
+          return mode === "review"
+        }
+      : undefined,
+    modeActions: {
+      cycleAgent: async () => {
+        const agents = state.agents.filter((agent) => agent.mode !== "subagent" && !agent.hidden)
+        const next = agents[(agents.findIndex((agent) => agent.name === state.agent) + 1) % agents.length]
+        if (next) await setAgent(next.name)
+      },
+      cycle: async () => {
+        await ensureSession()
+        const review = ctx.native ? (await ctx.native.permissionReview(state.sessionID)).mode === "review" : false
+        const next = nextSessionMode(
+          state.agent === "plan" ? "plan" : state.alwaysApprove ? "always-approve" : review ? "auto" : "normal",
+          { plan: state.agents.some((agent) => agent.name === "plan"), auto: !!ctx.native },
+        )
+        if (next === "plan") {
+          state.previousAgent = state.agent ?? "build"
+          await setAgent("plan")
+          await setPermissionMode("normal")
+          return
+        }
+        if (state.agent === "plan") await setAgent(state.previousAgent)
+        await setPermissionMode(next === "auto" ? "review" : next === "always-approve" ? "auto" : "normal")
+      },
+      toggleAlwaysApprove: () => setPermissionMode(state.alwaysApprove ? "normal" : "auto"),
+    },
     codeReviewActions: {
       available: async () => {
         await ensureSession()
@@ -779,17 +846,18 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
 
     if (ctx.native) {
       const catalog = await ctx.native.catalog()
+      state.agents = catalog.agents.map((agent) => ({
+        name: agent.id,
+        description: agent.description ?? undefined,
+        mode: agent.mode,
+        hidden: agent.hidden ?? undefined,
+        color: agent.color ?? undefined,
+        model: agent.model ? { providerID: agent.model.providerID, modelID: agent.model.id } : undefined,
+      }))
       if (!footer.isClosed)
         footer.event({
           type: "catalog",
-          agents: catalog.agents.map((agent) => ({
-            name: agent.id,
-            description: agent.description ?? undefined,
-            mode: agent.mode,
-            hidden: agent.hidden ?? undefined,
-            color: agent.color ?? undefined,
-            model: agent.model ? { providerID: agent.model.providerID, modelID: agent.model.id } : undefined,
-          })),
+          agents: state.agents,
           resources: [],
           commands: catalog.commands.map((command) => ({
             name: command.name,
@@ -818,6 +886,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       return
     }
 
+    state.agents = agents
     footer.event({
       type: "catalog",
       agents,
@@ -927,6 +996,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       const handle = await mod.createSessionTransport({
         sdk: ctx.sdk,
         native: ctx.native,
+        onPermissionReview: (mode) =>
+          footer.event({
+            type: "stream.patch",
+            patch: { permissionMode: state.alwaysApprove ? "auto" : mode === "review" ? "review" : "normal" },
+          }),
         onSelection: (session) => {
           state.agent = session.agent ?? undefined
           state.model = session.model ? { modelID: session.model.id, providerID: session.model.providerID } : undefined

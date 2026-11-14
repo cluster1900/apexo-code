@@ -1,3 +1,4 @@
+import { PermissionReview } from "@apexo/schema/permission-review"
 import { autoReview } from "@apexo/sdk/v2/grok-commands"
 import { terminalCatalog, terminalSession } from "../transport/native-catalog"
 import { terminalPermission, terminalQuestion, terminalRequestEvent } from "../transport/native-session-events"
@@ -229,6 +230,9 @@ export const {
       setStore("question", sessionID, reconcile(questions.map(terminalQuestion)))
       setStore("session_status", sessionID, active[sessionID] ? { type: "busy" } : { type: "idle" })
     }
+    const reviewEvent = Schema.decodeUnknownOption(
+      Schema.Union([PermissionReview.Event.Started, PermissionReview.Event.Settled]),
+    )
     const connectedEvent = Schema.decodeUnknownOption(Schema.Struct({ type: Schema.Literal("server.connected") }))
     onCleanup(
       sdk.nativeEvent.on((value) => {
@@ -284,6 +288,27 @@ export const {
           nativeSerial.set(id, next)
           return
         }
+        const review = reviewEvent(value)
+        if (Option.isSome(review)) {
+          const event = review.value
+          setStore("permission", event.data.sessionID, (items = []) =>
+            items.map((item) =>
+              item.id !== event.data.requestID
+                ? item
+                : {
+                    ...item,
+                    metadata: {
+                      ...item.metadata,
+                      nativeReview:
+                        event.type === "permission.review.started"
+                          ? { status: "reviewing" }
+                          : { status: "ask_manual", reason: event.data.reason },
+                    },
+                  },
+            ),
+          )
+          return
+        }
         const event = terminalRequestEvent(value)
         if (!event) return
         if (event.type === "question.asked")
@@ -295,6 +320,12 @@ export const {
           setStore("question", event.properties.sessionID, (items = []) =>
             items.filter((item) => item.id !== event.properties.requestID),
           )
+        if (event.type === "permission.asked" && permission.mode === "auto")
+          void sdk.replyPermission({
+            sessionID: event.properties.sessionID,
+            requestID: event.properties.id,
+            reply: "once",
+          })
         if (event.type === "permission.asked")
           setStore("permission", event.properties.sessionID, (items = []) => [
             ...items.filter((item) => item.id !== event.properties.id),

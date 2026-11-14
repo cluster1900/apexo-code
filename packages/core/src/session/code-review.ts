@@ -184,6 +184,7 @@ const make = Effect.gen(function* () {
         yield* roles.attach(run.reviewSessionID, { owner, inputID: run.inputID, captured, system: SYSTEM })
         yield* Effect.addFinalizer(() => children.interrupt(run.reviewSessionID))
         yield* SessionInput.admit(db, events, {
+          origin: "unknown",
           id: run.inputID,
           sessionID: run.reviewSessionID,
           delivery: "steer",

@@ -1,0 +1,157 @@
+{
+  "revision": "6f6f5b99a649f12cb7e959dc949fa17293839796",
+  "branch": "permission-review",
+  "findings": [
+    {
+      "id": "BUG-20261113-F02-001",
+      "priority": "P1",
+      "effectiveCwd": "repository/package",
+      "executable": "repository/bin/git",
+      "directScopeResult": "Success",
+      "nativePermissionStatus": "ask_manual",
+      "wrapperExecutedBeforeManualGrant": true,
+      "wrapperQueryCount": 18,
+      "nativeModelCalls": 2,
+      "reviewerDecision": "ask",
+      "manualGrantSent": false
+    },
+    {
+      "id": "BUG-20261113-F02-002",
+      "priority": "P2",
+      "surface": "fullscreen-production-providers",
+      "before": {
+        "mode": "review",
+        "revision": 3
+      },
+      "newBackend": {
+        "mode": "manual",
+        "revision": 0
+      },
+      "modeGets": 2,
+      "renderedAfterReconnect": "review"
+    },
+    {
+      "id": "BUG-20261113-F02-003",
+      "priority": "P2",
+      "surface": "fullscreen-real-pty",
+      "host": "mixed",
+      "session": "canonical-native-admission-present",
+      "transportOption": "auto",
+      "toast": "Auto-review on: routine tool calls are approved; risky ones still ask",
+      "backendAfterToast": {
+        "mode": "manual",
+        "revision": 0
+      },
+      "explicitNativeWorkaround": {
+        "miniChecksPassed": 5,
+        "fullscreenChecksPassed": 5
+      },
+      "defaultMixedMiniProbe": "inconclusive-timeout"
+    }
+  ],
+  "freshPassingChecks": {
+    "focusedTests": {
+      "passed": 41,
+      "assertions": 244
+    },
+    "httpTests": {
+      "passed": 2,
+      "assertions": 42
+    },
+    "miniPtyChecks": 5,
+    "fullscreenPtyChecks": 5,
+    "browserChecks": 8,
+    "mixedBrowserChecks": 10,
+    "desktopOwnBackendChecks": 8,
+    "clientIntegrationChecks": 12,
+    "requiredCi": {
+      "typecheck": "pass",
+      "unit (linux)": "pass"
+    }
+  },
+  "businessCodeChanged": false,
+  "pr": "https://github.com/cluster1900/apexo-code/pull/208",
+  "merged": false,
+  "remediation": {
+    "date": "2026-11-14",
+    "branch": "permission-review",
+    "businessCodeChanged": true,
+    "scope": {
+      "repositorySiblingWrapperExecuted": false,
+      "externalPathWrapperExecuted": false,
+      "reviewerCallsForRejectedWrapper": 0
+    },
+    "reconnect": {
+      "newBackendMode": "manual",
+      "newBackendRevision": 0,
+      "renderedMode": "normal",
+      "subsequentToggleMode": "review"
+    },
+    "defaultMixedAttach": {
+      "miniPassed": 5,
+      "fullscreenPassed": 5
+    },
+    "focusedTests": {
+      "passed": 66,
+      "assertions": 360
+    },
+    "browserPassed": 8,
+    "mixedBrowserPassed": 10,
+    "rebuiltDesktopOwnBackendPassed": 8,
+    "clientIntegrationPassed": 12,
+    "typecheckPackagesPassed": 21,
+    "merged": false,
+    "localUnitAttempts": [
+      {
+        "passedBatches": 16,
+        "totalBatches": 18,
+        "green": false,
+        "symptoms": [
+          "cli-duration-bound",
+          "mcp-worker-initialization"
+        ]
+      },
+      {
+        "passedBatches": 17,
+        "totalBatches": 18,
+        "green": false,
+        "symptoms": [
+          "pty-child-hook-timeout"
+        ]
+      }
+    ],
+    "unchangedFocusedCliMcp": {
+      "passed": 29,
+      "assertions": 144
+    },
+    "unchangedFocusedPty": {
+      "passed": 3,
+      "assertions": 104
+    },
+    "clientGeneratedCheck": "pass",
+    "sdkGeneratedCheck": "pass",
+    "httpApi": {
+      "coverage": {
+        "passed": 360,
+        "failed": 0,
+        "skipped": 0,
+        "missing": 0,
+        "extra": 0
+      },
+      "auth": {
+        "passed": 360,
+        "failed": 0,
+        "skipped": 0,
+        "missing": 0,
+        "extra": 0
+      },
+      "effect": {
+        "passed": 360,
+        "failed": 0,
+        "skipped": 0,
+        "missing": 0,
+        "extra": 0
+      }
+    }
+  }
+}

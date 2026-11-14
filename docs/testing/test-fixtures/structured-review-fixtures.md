@@ -47,6 +47,7 @@
 - Reproduction: run the unmodified `test:unit` package script with Bun 1.4.4 and local listener permission.
 - Root cause: Bun's direct JSX runtime import requests `jsxDEV`; the installed Solid runtime does not export it. The App's existing unit setup has no Solid JSX compiler preload. No historical recurrence or successful pre-feature baseline run is asserted here.
 - Status: unresolved supplementary runner limitation. No production or unit-runner fix is claimed. The actual Vite production App build and rebuilt Electron renderer pass the F01 browser/Desktop acceptance, each with twelve checks. This command is separate from the five required repository gates.
+- F02 second-audit rerun (2026-11-14, Bun 1.4.4): **86 passed / 974 assertions**, with the same three `jsxDEV` import failures in `context/sync.test.ts`, `utils/message-part-text.test.ts` and `components/prompt-input/slash-route.test.ts`. The existing runner was not changed, no repair is claimed, and this is not counted as another independent root cause. Production browser/mixed App/rebuilt Desktop passed **14/16/13** actual interaction checks, recorded in [the F02 remediation report](../../development/f02-reaudit-remediation.md).
 - Initial sandbox-only listener failures were superseded by the permitted run above; they are not additional production failures.
 
 ### 2026-11-13 audit follow-up
@@ -59,6 +60,21 @@ not a newly diagnosed F01 production regression or an asserted additional
 historical occurrence. Production browser and rebuilt own-sidecar Desktop
 acceptance each passed eighteen ordinary-flow checks; the separate UI defects
 found by supplementary probes are recorded in [the audit](../../development/f01-audit.md).
+
+### 2026-11-14 minimal runner repair
+
+The failure was reproduced before editing: **86 passed, 3 failed imports / 3 errors**. The three files were never reaching their assertions; removing their imports or inventing `jsxDEV` exports would hide the missing compiler.
+
+The existing HappyDOM preload now compiles JSX with the same `babel-preset-solid` DOM transform used by Vite, then lets Bun erase TypeScript. App unit/watch commands use the `browser` resolution condition: after adding the compiler, the previous `solid` condition still selected Solid's server-only DOM runtime and failed on browser exports. Both changes are necessary. Babel and its Solid preset are explicit development dependencies at already-installed workspace versions; no production dependency or component behavior changes.
+
+A real `.test.tsx` imports the shared UI Button, mounts it with Solid's DOM renderer, clicks twice, verifies reactive text and disabled state, then disposes the DOM. This covers both App and shared-package JSX and rejects an accidentally selected server runtime. The original three test files now execute unchanged.
+
+- `bun run test:unit` and `bun run test:browser` in `packages/app`: **114 passed / 1034 assertions each**, zero failures or import errors.
+- Focused original three files plus `src/utils/solid-dom.test.tsx`, with `--conditions=browser`: **28 passed / 60 assertions**.
+- `bun typecheck` in `packages/app`: passed.
+- The existing CI test job now runs `bun run test:unit`; its result participates in the existing required `unit (linux)` aggregation.
+
+Status: **fixed and locally verified**. Historical failures above remain evidence for this one root cause; they are not promoted into an invented recurrence count.
 
 ## Follow-up validation observations
 

@@ -1560,18 +1560,40 @@ type Endpoint27_2Input = { readonly id: Endpoint27_2Request["params"]["id"] }
 const Endpoint27_2 = (raw: RawClient["server.permission"]) => (input: Endpoint27_2Input) =>
   raw["permission.saved.remove"]({ params: { id: input["id"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint27_3Request = Parameters<RawClient["server.permission"]["session.permission.create"]>[0]
-type Endpoint27_3Input = {
-  readonly sessionID: Endpoint27_3Request["params"]["sessionID"]
-  readonly id?: Endpoint27_3Request["payload"]["id"]
-  readonly action: Endpoint27_3Request["payload"]["action"]
-  readonly resources: Endpoint27_3Request["payload"]["resources"]
-  readonly save?: Endpoint27_3Request["payload"]["save"]
-  readonly metadata?: Endpoint27_3Request["payload"]["metadata"]
-  readonly source?: Endpoint27_3Request["payload"]["source"]
-  readonly agent?: Endpoint27_3Request["payload"]["agent"]
-}
+type Endpoint27_3Request = Parameters<RawClient["server.permission"]["session.permissionReview.get"]>[0]
+type Endpoint27_3Input = { readonly sessionID: Endpoint27_3Request["params"]["sessionID"] }
 const Endpoint27_3 = (raw: RawClient["server.permission"]) => (input: Endpoint27_3Input) =>
+  raw["session.permissionReview.get"]({ params: { sessionID: input["sessionID"] } }).pipe(
+    Effect.mapError(mapClientError),
+    Effect.map((value) => value.data),
+  )
+
+type Endpoint27_4Request = Parameters<RawClient["server.permission"]["session.permissionReview.set"]>[0]
+type Endpoint27_4Input = {
+  readonly sessionID: Endpoint27_4Request["params"]["sessionID"]
+  readonly mode: Endpoint27_4Request["payload"]["mode"]
+}
+const Endpoint27_4 = (raw: RawClient["server.permission"]) => (input: Endpoint27_4Input) =>
+  raw["session.permissionReview.set"]({
+    params: { sessionID: input["sessionID"] },
+    payload: { mode: input["mode"] },
+  }).pipe(
+    Effect.mapError(mapClientError),
+    Effect.map((value) => value.data),
+  )
+
+type Endpoint27_5Request = Parameters<RawClient["server.permission"]["session.permission.create"]>[0]
+type Endpoint27_5Input = {
+  readonly sessionID: Endpoint27_5Request["params"]["sessionID"]
+  readonly id?: Endpoint27_5Request["payload"]["id"]
+  readonly action: Endpoint27_5Request["payload"]["action"]
+  readonly resources: Endpoint27_5Request["payload"]["resources"]
+  readonly save?: Endpoint27_5Request["payload"]["save"]
+  readonly metadata?: Endpoint27_5Request["payload"]["metadata"]
+  readonly source?: Endpoint27_5Request["payload"]["source"]
+  readonly agent?: Endpoint27_5Request["payload"]["agent"]
+}
+const Endpoint27_5 = (raw: RawClient["server.permission"]) => (input: Endpoint27_5Input) =>
   raw["session.permission.create"]({
     params: { sessionID: input["sessionID"] },
     payload: {
@@ -1588,34 +1610,34 @@ const Endpoint27_3 = (raw: RawClient["server.permission"]) => (input: Endpoint27
     Effect.map((value) => value.data),
   )
 
-type Endpoint27_4Request = Parameters<RawClient["server.permission"]["session.permission.list"]>[0]
-type Endpoint27_4Input = { readonly sessionID: Endpoint27_4Request["params"]["sessionID"] }
-const Endpoint27_4 = (raw: RawClient["server.permission"]) => (input: Endpoint27_4Input) =>
+type Endpoint27_6Request = Parameters<RawClient["server.permission"]["session.permission.list"]>[0]
+type Endpoint27_6Input = { readonly sessionID: Endpoint27_6Request["params"]["sessionID"] }
+const Endpoint27_6 = (raw: RawClient["server.permission"]) => (input: Endpoint27_6Input) =>
   raw["session.permission.list"]({ params: { sessionID: input["sessionID"] } }).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),
   )
 
-type Endpoint27_5Request = Parameters<RawClient["server.permission"]["session.permission.get"]>[0]
-type Endpoint27_5Input = {
-  readonly sessionID: Endpoint27_5Request["params"]["sessionID"]
-  readonly requestID: Endpoint27_5Request["params"]["requestID"]
+type Endpoint27_7Request = Parameters<RawClient["server.permission"]["session.permission.get"]>[0]
+type Endpoint27_7Input = {
+  readonly sessionID: Endpoint27_7Request["params"]["sessionID"]
+  readonly requestID: Endpoint27_7Request["params"]["requestID"]
 }
-const Endpoint27_5 = (raw: RawClient["server.permission"]) => (input: Endpoint27_5Input) =>
+const Endpoint27_7 = (raw: RawClient["server.permission"]) => (input: Endpoint27_7Input) =>
   raw["session.permission.get"]({ params: { sessionID: input["sessionID"], requestID: input["requestID"] } }).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),
   )
 
-type Endpoint27_6Request = Parameters<RawClient["server.permission"]["session.permission.reply"]>[0]
-type Endpoint27_6Input = {
-  readonly sessionID: Endpoint27_6Request["params"]["sessionID"]
-  readonly requestID: Endpoint27_6Request["params"]["requestID"]
-  readonly reply: Endpoint27_6Request["payload"]["reply"]
-  readonly message?: Endpoint27_6Request["payload"]["message"]
-  readonly save?: Endpoint27_6Request["payload"]["save"]
+type Endpoint27_8Request = Parameters<RawClient["server.permission"]["session.permission.reply"]>[0]
+type Endpoint27_8Input = {
+  readonly sessionID: Endpoint27_8Request["params"]["sessionID"]
+  readonly requestID: Endpoint27_8Request["params"]["requestID"]
+  readonly reply: Endpoint27_8Request["payload"]["reply"]
+  readonly message?: Endpoint27_8Request["payload"]["message"]
+  readonly save?: Endpoint27_8Request["payload"]["save"]
 }
-const Endpoint27_6 = (raw: RawClient["server.permission"]) => (input: Endpoint27_6Input) =>
+const Endpoint27_8 = (raw: RawClient["server.permission"]) => (input: Endpoint27_8Input) =>
   raw["session.permission.reply"]({
     params: { sessionID: input["sessionID"], requestID: input["requestID"] },
     payload: { reply: input["reply"], message: input["message"], save: input["save"] },
@@ -1625,10 +1647,12 @@ const adaptGroup27 = (raw: RawClient["server.permission"]) => ({
   listRequests: Endpoint27_0(raw),
   listSaved: Endpoint27_1(raw),
   removeSaved: Endpoint27_2(raw),
-  create: Endpoint27_3(raw),
-  list: Endpoint27_4(raw),
-  get: Endpoint27_5(raw),
-  reply: Endpoint27_6(raw),
+  getReview: Endpoint27_3(raw),
+  setReview: Endpoint27_4(raw),
+  create: Endpoint27_5(raw),
+  list: Endpoint27_6(raw),
+  get: Endpoint27_7(raw),
+  reply: Endpoint27_8(raw),
 })
 
 type Endpoint28_0Request = Parameters<RawClient["server.fs"]["fs.list"]>[0]

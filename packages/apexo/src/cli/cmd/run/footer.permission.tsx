@@ -11,6 +11,7 @@
 // The diff view (when available) uses the same diff component as scrollback
 // tool snapshots.
 /** @jsxImportSource @opentui/solid */
+import { permissionReviewStatus } from "@apexo/sdk/v2/permission-review"
 import type { TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
@@ -271,6 +272,16 @@ export function RunPermissionBody(props: {
           <text fg={state().stage === "reject" ? props.theme.error : props.theme.warning}>△</text>
           <text fg={props.theme.text}>{title()}</text>
         </box>
+        <Show when={permissionReviewStatus(props.request.metadata)}>
+          {(review) => (
+            <text fg={props.theme.muted}>
+              {review().status === "reviewing"
+                ? "Reviewing permission… You can still decide now."
+                : "Manual approval required."}{" "}
+              {review().reason}
+            </text>
+          )}
+        </Show>
         <Switch>
           <Match when={state().stage === "permission"}>
             <box flexDirection="row" gap={1} paddingLeft={2}>

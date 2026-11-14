@@ -1420,6 +1420,30 @@ const scenarios: Scenario[] = [
     array(body.data)
   }),
   http.protected
+    .get("/api/session/{sessionID}/permission-review", "v2.session.permissionReview.get")
+    .seeded((ctx) => ctx.session({ title: "Permission review mode owner" }))
+    .at((ctx) => ({ path: `/api/session/${ctx.state.id}/permission-review`, headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      object(body.data)
+      check(body.data.mode === "manual", "native review defaults to manual")
+      check(body.data.revision === 0, "initial review revision should be zero")
+    }),
+  http.protected
+    .put("/api/session/{sessionID}/permission-review", "v2.session.permissionReview.set")
+    .seeded((ctx) => ctx.session({ title: "Permission review toggle owner" }))
+    .at((ctx) => ({
+      path: `/api/session/${ctx.state.id}/permission-review`,
+      headers: ctx.headers(),
+      body: { mode: "review" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      object(body.data)
+      check(body.data.mode === "review", "native review should enable immediately")
+      check(body.data.revision === 1, "mode change should advance the revision")
+    }),
+  http.protected
     .post("/api/session/{sessionID}/permission", "v2.session.permission.create")
     .seeded((ctx) => ctx.session({ title: "Permission create owner" }))
     .at((ctx) => ({

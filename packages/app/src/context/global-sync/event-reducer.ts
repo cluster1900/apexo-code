@@ -1,3 +1,5 @@
+import { PermissionReview } from "@apexo/schema/permission-review"
+import { Option, Schema } from "effect"
 import { Binary } from "@apexo/core/util/binary"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type {
@@ -17,6 +19,18 @@ import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { messageKey } from "@/utils/session-message"
 
+const decodeReview = Schema.decodeUnknownOption(
+  Schema.Union([
+    Schema.Struct({
+      type: PermissionReview.Event.Started.fields.type,
+      data: PermissionReview.Event.Started.fields.data,
+    }),
+    Schema.Struct({
+      type: PermissionReview.Event.Settled.fields.type,
+      data: PermissionReview.Event.Settled.fields.data,
+    }),
+  ]),
+)
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const SESSION_CONTENT_EVENTS = new Set([
   "session.diff",
@@ -29,6 +43,8 @@ const SESSION_CONTENT_EVENTS = new Set([
   "message.part.delta",
   "permission.asked",
   "permission.replied",
+  "permission.review.started",
+  "permission.review.settled",
   "question.asked",
   "question.replied",
   "question.rejected",
@@ -121,6 +137,25 @@ export function applyDirectoryEvent(input: {
   permission?: State["permission"]
 }) {
   const event = input.event
+  const review = decodeReview({ type: input.event.type, data: input.event.properties })
+  if (Option.isSome(review)) {
+    const value = review.value
+    const items = input.store.permission[value.data.sessionID] ?? []
+    const index = items.findIndex((item) => item.id === value.data.requestID)
+    if (index >= 0)
+      input.setStore(
+        "permission",
+        value.data.sessionID,
+        index,
+        "metadata",
+        "nativeReview",
+        value.type === "permission.review.started"
+          ? { status: "reviewing" }
+          : { status: "ask_manual", reason: value.data.reason },
+      )
+    return
+  }
+
   if (input.sessionContent === false && SESSION_CONTENT_EVENTS.has(event.type)) return
   const limit = Math.max(input.store.limit, input.retainedLimit ?? 0)
   switch (event.type) {

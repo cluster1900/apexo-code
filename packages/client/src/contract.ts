@@ -48,6 +48,8 @@ export const endpointNames = {
   "integration.attempt.complete": "attemptComplete",
   "integration.attempt.cancel": "attemptCancel",
   "permission.request.list": "listRequests",
+  "session.permissionReview.get": "getReview",
+  "session.permissionReview.set": "setReview",
   "permission.saved.list": "listSaved",
   "permission.saved.remove": "removeSaved",
   "question.request.list": "listRequests",

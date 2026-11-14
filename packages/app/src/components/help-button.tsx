@@ -26,6 +26,7 @@ export function TabsInfoPopup() {
     <Drawer open={drawerOpen()} onOpenChange={setDrawerOpen} side={rtl() ? "left" : "right"}>
       <Show when={settings.general.shouldDisplayTabsToast()}>
         <div
+          data-component="tabs-info-popup"
           class="fixed bottom-5 end-5 z-50 h-[240px] w-[192px] rounded-[8px] bg-v2-background-bg-base p-1 shadow-[var(--v2-elevation-floating)]"
           aria-label={language.t("help.tabs.toast.ariaLabel")}
         >

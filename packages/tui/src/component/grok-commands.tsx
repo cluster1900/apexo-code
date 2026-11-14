@@ -712,8 +712,8 @@ export function useGrokCommands() {
         local.permission.mode === "review" ? "Turn off auto-review permissions" : "Turn on auto-review permissions",
       category: "System",
       slashName: "auto",
-      run: () => {
-        local.permission.toggleReview()
+      run: async () => {
+        await local.permission.toggleReview()
         toast.show({
           variant: "info",
           message:

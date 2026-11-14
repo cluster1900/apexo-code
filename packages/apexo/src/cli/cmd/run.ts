@@ -829,20 +829,35 @@ const CompatibilityRunCommand = effectCmd({
       async function execute(sdk: ApexoClient) {
         if (args.attach) {
           const { sessionTransport } = await import("@apexo/tui/transport/session")
-          const native = await sessionTransport(sdk, directory, args["session-protocol"])(AbortSignal.timeout(10_000))
+          const { validateSession } = await import("../tui/validate-session")
+          const sessionID =
+            args.session && interactive
+              ? await validateSession({
+                  url: args.attach,
+                  directory,
+                  sessionID: args.session,
+                  sessionProtocol: args["session-protocol"],
+                  headers: attachHeaders,
+                })
+              : args.session
+          const native = await sessionTransport(
+            sdk,
+            directory,
+            args["session-protocol"],
+            undefined,
+            sessionID,
+          )(AbortSignal.timeout(10_000))
           if (native.kind === "native") {
             if (!interactive) {
               if (args.command || args.demo || args.profile || args.title)
-                throw new Error(
-                  "Native headless attachment does not support command, demo, profile or title options",
-                )
+                throw new Error("Native headless attachment does not support command, demo, profile or title options")
               if (args.format !== "default" && args.format !== "json" && args.format !== "streaming-json")
                 throw new Error("Unsupported native output format")
               const { runNativeHeadless } = await import("../native-headless")
               return runNativeHeadless({
                 sdk,
                 directory,
-                session: args.session,
+                session: sessionID,
                 continue: args.continue,
                 fork: args.fork,
                 inputID: args["input-id"],
@@ -867,7 +882,7 @@ const CompatibilityRunCommand = effectCmd({
             return runNativeInteractive({
               sdk,
               directory,
-              session: args.session,
+              session: sessionID,
               continue: args.continue,
               agent: args.agent,
               model: pick(args.model),

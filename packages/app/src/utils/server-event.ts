@@ -14,7 +14,11 @@ export function adaptServerEvent(event: ApexoEvent): ServerEvent {
         permission: event.data.action,
         patterns: event.data.resources,
         always: event.data.save ?? [],
-        metadata: event.data.metadata ?? {},
+        metadata: {
+          ...event.data.metadata,
+          nativePermission: true,
+          ...("review" in event.data && event.data.review ? { nativeReview: event.data.review } : {}),
+        },
         tool:
           event.data.source?.type === "tool"
             ? { messageID: event.data.source.messageID, callID: event.data.source.callID }
@@ -41,7 +45,9 @@ export function adaptServerEvent(event: ApexoEvent): ServerEvent {
       : typeof data?.timestamp === "number"
         ? data.timestamp
         : Date.now()
-  const current = ("created" in event && typeof event.created === "number" ? event : { ...event, created }) as ApexoEvent
+  const current = (
+    "created" in event && typeof event.created === "number" ? event : { ...event, created }
+  ) as ApexoEvent
   return { id: event.id, type: event.type, properties: event.data, current } as ServerEvent
 }
 
@@ -53,6 +59,7 @@ export function adaptLegacySyncEvent(payload: unknown): ServerEvent | undefined 
     typeof value.type === "string" &&
     ((value.type.startsWith("session.next.") && value.type.endsWith(".delta")) ||
       value.type.startsWith("permission.v2.") ||
+      value.type.startsWith("permission.review.") ||
       value.type.startsWith("question.v2.")) &&
     value.properties &&
     typeof value.properties === "object"

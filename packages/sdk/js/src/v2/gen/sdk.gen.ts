@@ -216,6 +216,7 @@ import type {
   PermissionRespondErrors,
   PermissionRespondResponses,
   PermissionReviewErrors,
+  PermissionReviewMode,
   PermissionReviewResponses,
   PermissionRuleset,
   PermissionV2Reply,
@@ -627,6 +628,10 @@ import type {
   V2SessionPermissionListResponses,
   V2SessionPermissionReplyErrors,
   V2SessionPermissionReplyResponses,
+  V2SessionPermissionReviewGetErrors,
+  V2SessionPermissionReviewGetResponses,
+  V2SessionPermissionReviewSetErrors,
+  V2SessionPermissionReviewSetResponses,
   V2SessionPromptErrors,
   V2SessionPromptResponses,
   V2SessionQuestionListErrors,
@@ -7044,6 +7049,66 @@ export class Revert extends HeyApiClient {
   }
 }
 
+export class PermissionReview extends HeyApiClient {
+  /**
+   * Read automatic permission review mode
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<
+      V2SessionPermissionReviewGetResponses,
+      V2SessionPermissionReviewGetErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/permission-review",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Set automatic permission review mode
+   */
+  public set<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      mode?: PermissionReviewMode
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "mode" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<
+      V2SessionPermissionReviewSetResponses,
+      V2SessionPermissionReviewSetErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/permission-review",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Permission2 extends HeyApiClient {
   /**
    * List session permission requests
@@ -7841,6 +7906,11 @@ export class Session3 extends HeyApiClient {
   private _revert?: Revert
   get revert(): Revert {
     return (this._revert ??= new Revert({ client: this.client }))
+  }
+
+  private _permissionReview?: PermissionReview
+  get permissionReview(): PermissionReview {
+    return (this._permissionReview ??= new PermissionReview({ client: this.client }))
   }
 
   private _permission?: Permission2

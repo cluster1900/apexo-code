@@ -293,6 +293,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                           url={input.url}
                                           local={input.local}
                                           sessionProtocol={input.args.sessionProtocol}
+                                          sessionID={input.args.sessionID}
                                           directory={input.directory}
                                           fetch={input.fetch}
                                           headers={input.headers}

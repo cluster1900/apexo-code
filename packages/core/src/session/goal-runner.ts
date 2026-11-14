@@ -125,9 +125,7 @@ const make = Effect.gen(function* () {
           const agent = selection.agent.id
           const modelRef = selection.execution.model
           const roleExecution = selection.execution
-          const resolvedRoleModel = yield* models
-            .resolve({ ...session, agent, model: modelRef })
-            .pipe(Effect.option)
+          const resolvedRoleModel = yield* models.resolve({ ...session, agent, model: modelRef }).pipe(Effect.option)
           const roleBaseURL =
             Option.isSome(resolvedRoleModel) && typeof resolvedRoleModel.value.route.endpoint.baseURL === "string"
               ? resolvedRoleModel.value.route.endpoint.baseURL
@@ -279,9 +277,7 @@ const make = Effect.gen(function* () {
                   )
                   yield* Effect.addFinalizer(() => Effect.sync(files.close))
                   const reviewDir = path.dirname(files.paths.objective)
-                  const realReviewDir = yield* Effect.promise(() =>
-                    fs.realpath(reviewDir).catch(() => reviewDir),
-                  )
+                  const realReviewDir = yield* Effect.promise(() => fs.realpath(reviewDir).catch(() => reviewDir))
                   const reviewPatterns = [...new Set([reviewDir, realReviewDir])].map((dir) =>
                     path.join(dir, "*").replaceAll("\\", "/"),
                   )
@@ -325,6 +321,7 @@ const make = Effect.gen(function* () {
                   const childClaim = yield* lifecycle.capture(childID)
                   yield* Effect.addFinalizer(() => lifecycle.owned(childClaim, children.interrupt(childID)))
                   yield* SessionInput.admit(database.db, events, {
+                    origin: "unknown",
                     id: inputID,
                     sessionID: childID,
                     prompt: { text: request.content },

@@ -125,6 +125,8 @@ type RunFooterViewProps = {
   pluginsActions?: import("@apexo/tui/component/plugins-browser").PluginsBrowserActions
   mcpActions?: import("@apexo/tui/component/mcp-browser").McpBrowserActions
   workflowActions?: import("@apexo/tui/component/workflow-browser").WorkflowActions
+  onTogglePermissionReview?: () => Promise<boolean>
+  modeActions?: import("./types").RunModeActions
   codeReviewActions?: import("@apexo/tui/component/code-review-browser").CodeReviewActions
   mcpElicitation?: { api: import("@apexo/sdk/v2/mcp-elicitation").McpElicitationApi; sessions: () => string[] }
   sideQuestionActions?: import("@apexo/tui/component/side-question-browser").SideQuestionActions
@@ -468,6 +470,28 @@ export function RunFooterView(props: RunFooterViewProps) {
             source: "command" as const,
           }))
         : []),
+      ...(props.onTogglePermissionReview
+        ? [
+            {
+              name: "auto",
+              description: "Toggle automatic permission review",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
+      ...(props.modeActions
+        ? [
+            {
+              name: "always-approve",
+              description: "Toggle always-approve permissions",
+              template: "",
+              hints: [],
+              source: "command" as const,
+            },
+          ]
+        : []),
       ...(props.codeReviewActions
         ? ["review", "reviews"].map((name) => ({
             name,
@@ -571,6 +595,17 @@ export function RunFooterView(props: RunFooterViewProps) {
     theme,
     history: props.history,
     onSubmit: (input) => {
+      if (props.modeActions && input.mode !== "shell" && input.text.trim() === "/always-approve") {
+        void props.modeActions.toggleAlwaysApprove().catch(() => props.onStatus("Could not change session mode"))
+        return true
+      }
+      if (props.onTogglePermissionReview && input.mode !== "shell" && input.text.trim() === "/auto") {
+        void props
+          .onTogglePermissionReview()
+          .then((active) => props.onStatus(active ? "Auto-review on" : "Auto-review off"))
+          .catch(() => props.onStatus("Could not change permission review mode"))
+        return true
+      }
       if (props.codeReviewActions && input.mode !== "shell" && /^\/(?:review|reviews)$/.test(input.text.trim())) {
         setRoute({ type: "review" })
         return true
@@ -748,7 +783,7 @@ export function RunFooterView(props: RunFooterViewProps) {
       return "EXIT"
     }
 
-    return shell() ? "SHELL" : "BUILD"
+    return shell() ? "SHELL" : (props.agent || "build").toUpperCase()
   })
   const modeColor = createMemo(() => {
     if (exiting()) {
@@ -774,7 +809,13 @@ export function RunFooterView(props: RunFooterViewProps) {
       return stateStatus()
     }
 
-    return shell() ? "Shell mode" : ""
+    return shell()
+      ? "Shell mode"
+      : props.state().permissionMode === "auto"
+        ? "Always-approve mode"
+        : props.state().permissionMode === "review"
+          ? "Auto-review mode"
+          : ""
   })
   const activityMeta = createMemo(() => {
     if (hasLongNotice() || !responsive().statusline.showActivityMeta || usage().length === 0) {
@@ -883,10 +924,42 @@ export function RunFooterView(props: RunFooterViewProps) {
         category: "Model",
         run: props.onCycle,
       },
+      ...(props.modeActions
+        ? [
+            {
+              name: "agent.cycle",
+              title: "Cycle agent",
+              category: "Agent",
+              run: () => void props.modeActions?.cycleAgent().catch(() => props.onStatus("Could not change agent")),
+            },
+            {
+              name: "session.mode.cycle",
+              title: "Cycle session mode",
+              category: "Agent",
+              run: () => void props.modeActions?.cycle().catch(() => props.onStatus("Could not change session mode")),
+            },
+            {
+              name: "permission.mode",
+              title: "Toggle always-approve",
+              category: "System",
+              run: () =>
+                void props.modeActions
+                  ?.toggleAlwaysApprove()
+                  .catch(() => props.onStatus("Could not change session mode")),
+            },
+          ]
+        : []),
     ],
     bindings: [
       ...props.tuiConfig.keybinds.get("command.palette.show"),
       ...props.tuiConfig.keybinds.get("variant.cycle"),
+      ...(props.modeActions
+        ? [
+            ...props.tuiConfig.keybinds.get("agent.cycle"),
+            ...props.tuiConfig.keybinds.get("session.mode.cycle"),
+            ...props.tuiConfig.keybinds.get("permission.mode"),
+          ]
+        : []),
     ],
   }))
 

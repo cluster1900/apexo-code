@@ -55,7 +55,7 @@ export function normalizePermissionRequest(input: PermissionV2Request | Permissi
     permission: input.action,
     patterns: input.resources,
     always: input.save ?? [],
-    metadata: input.metadata ?? {},
+    metadata: { ...input.metadata, nativePermission: true, ...("review" in input && input.review ? { nativeReview: input.review } : {}) },
     tool:
       input.source?.type === "tool" ? { messageID: input.source.messageID, callID: input.source.callID } : undefined,
   }

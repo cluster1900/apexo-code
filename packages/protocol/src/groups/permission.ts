@@ -1,6 +1,7 @@
 import { Agent } from "@apexo/schema/agent"
 import { Location } from "@apexo/schema/location"
 import { Permission } from "@apexo/schema/permission"
+import { PermissionReview } from "@apexo/schema/permission-review"
 import { PermissionSaved } from "@apexo/schema/permission-saved"
 import { Project } from "@apexo/schema/project"
 import { Session } from "@apexo/schema/session"
@@ -59,6 +60,35 @@ export const makePermissionGroup = <
     )
     // Effect applies group middleware only to endpoints already added; session endpoints use session placement below.
     .middleware(locationMiddleware)
+    .add(
+      HttpApiEndpoint.get("session.permissionReview.get", "/api/session/:sessionID/permission-review", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: PermissionReview.State }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.permissionReview.get",
+            summary: "Read automatic permission review mode",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.put("session.permissionReview.set", "/api/session/:sessionID/permission-review", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ mode: PermissionReview.Mode }),
+        success: Schema.Struct({ data: PermissionReview.State }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.permissionReview.set",
+            summary: "Set automatic permission review mode",
+          }),
+        ),
+    )
     .add(
       HttpApiEndpoint.post("session.permission.create", "/api/session/:sessionID/permission", {
         params: { sessionID: Session.ID },

@@ -3,6 +3,7 @@ import { SessionScheduleRuntime } from "../schedule"
 import { SessionInputExecution } from "../input-execution"
 import { SessionInputExecutionOwner } from "../input-execution-owner"
 import { SessionExecutionPolicy } from "../execution-policy"
+import { PermissionReviewContext } from "../../permission/review-context"
 import { McpElicitation } from "../../mcp-elicitation"
 import { SessionTaskOrigin } from "../task-origin"
 import { SessionLifecycle } from "../lifecycle"
@@ -1009,7 +1010,10 @@ const layer = Layer.effect(
                             assistantMessageID,
                             call: event,
                           })
-                          .pipe(Effect.provideService(McpElicitation.Interactive, allowMcpInteraction)),
+                          .pipe(
+                            Effect.provideService(McpElicitation.Interactive, allowMcpInteraction),
+                            Effect.provideService(PermissionReviewContext.Interactive, allowMcpInteraction),
+                          ),
                       ),
                     )
                     yield* publish(
@@ -1072,7 +1076,15 @@ const layer = Layer.effect(
                   : ordinary
               if (settled._tag === "Failure" && isUserDeclined(settled.cause)) {
                 yield* FiberSet.clear(toolFibers)
-                yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
+                yield* withPublication(
+                  publisher.failUnsettledTools(
+                    settled.cause.reasons.some(
+                      (reason) => Cause.isDieReason(reason) && reason.defect instanceof PermissionV2.DeclinedError,
+                    )
+                      ? "Permission denied; tool execution stopped"
+                      : "Tool execution interrupted",
+                  ),
+                )
                 return yield* Effect.interrupt
               }
               if (

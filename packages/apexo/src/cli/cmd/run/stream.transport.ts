@@ -68,6 +68,7 @@ type Trace = {
 const StreamClosed = undefined as never
 
 export type StreamInput = {
+  onPermissionReview?: (mode: "manual" | "review") => void
   onSelection?: (
     session: Awaited<ReturnType<import("@apexo/tui/transport/native-session").NativeSessionTransport["get"]>>,
   ) => void

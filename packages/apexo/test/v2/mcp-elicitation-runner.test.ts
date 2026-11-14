@@ -8,6 +8,7 @@ import { CrossSpawnSpawner } from "@apexo/core/cross-spawn-spawner"
 import { Global } from "@apexo/core/global"
 import { SessionScheduleStore } from "@apexo/core/session/schedule-store"
 import { SessionScheduleOwner } from "@apexo/core/session/schedule-owner"
+import { SessionEvent } from "@apexo/core/session/event"
 import { SessionMessage } from "@apexo/core/session/message"
 import { SessionV2 } from "@apexo/core/session"
 import { SessionExecution } from "@apexo/core/session/execution"
@@ -185,6 +186,11 @@ it.live(
         yield* sessions.wait(session.id)
         const child = (yield* sessions.list()).find((item) => item.parentID === session.id)!
         expect(child).toBeDefined()
+        expect(
+          (yield* sessions.history({ sessionID: child.id, limit: 100 })).events
+            .filter((event) => event.type === SessionEvent.PromptAdmitted.type)
+            .map((event) => event.data.origin),
+        ).toEqual(["task"])
         expect((yield* outcomes.selected(child.id))?.policy.mode).toBe("headless")
         const tools = (yield* sessions.messages({ sessionID: child.id, order: "asc" })).flatMap((message) =>
           message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : [],
@@ -238,6 +244,11 @@ it.live(
         )
         const child = (yield* sessions.list()).find((item) => item.parentID === session.id)!
         expect(child).toBeDefined()
+        expect(
+          (yield* sessions.history({ sessionID: child.id, limit: 100 })).events
+            .filter((event) => event.type === SessionEvent.PromptAdmitted.type)
+            .map((event) => event.data.origin),
+        ).toEqual(["schedule"])
         const tools = (yield* sessions.messages({ sessionID: child.id, order: "asc" })).flatMap((message) =>
           message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : [],
         )

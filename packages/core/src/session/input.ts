@@ -1,8 +1,8 @@
 export * as SessionInput from "./input"
 
 import { and, asc, desc, eq, isNull, lte, notExists } from "drizzle-orm"
-import { DateTime, Effect, Schema } from "effect"
-import { Admitted, Delivery, ExecutionPolicy } from "@apexo/schema/session-input"
+import { Context, DateTime, Effect, Schema } from "effect"
+import { Admitted, Delivery, ExecutionPolicy, Origin } from "@apexo/schema/session-input"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
 import { SessionEvent } from "./event"
@@ -14,6 +14,11 @@ import { SessionTaskMessageTable } from "./task.sql"
 import { SessionInputTable, SessionMessageTable } from "./sql"
 
 type DatabaseService = Database.Interface["db"]
+
+/** Set only by trusted ingress; never accepted from a public prompt payload. */
+export const CurrentOrigin = Context.Reference<Origin>("@apexo/SessionInput/Origin", {
+  defaultValue: () => "unknown",
+})
 
 // Launch-bound messages are admitted only by their explicit owner promotion path.
 const ordinaryInput = (db: DatabaseService) =>
@@ -27,6 +32,7 @@ const ordinaryInput = (db: DatabaseService) =>
 export {
   Admitted,
   Delivery,
+  Origin,
   ExecutionPolicy,
   Execution,
   ExecutionStatus,
@@ -45,6 +51,7 @@ const fromRow = (row: typeof SessionInputTable.$inferSelect): Admitted =>
     sessionID: SessionSchema.ID.make(row.session_id),
     prompt: decodePrompt(row.prompt),
     delivery: row.delivery,
+    origin: row.origin,
     ...(row.execution_policy === null ? {} : { executionPolicy: row.execution_policy }),
     timeCreated: DateTime.makeUnsafe(row.time_created),
     ...(row.promoted_seq === null ? {} : { promotedSeq: row.promoted_seq }),
@@ -72,11 +79,13 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
     readonly sessionID: SessionSchema.ID
     readonly prompt: Prompt
     readonly delivery: Delivery
+    readonly origin?: Origin
     readonly executionPolicy?: ExecutionPolicy
   },
 ) {
   const existing = yield* find(db, input.id)
   if (existing !== undefined) return existing
+  const origin = input.origin ?? (yield* CurrentOrigin)
   const timestamp = yield* DateTime.now
   return yield* events
     .publish(SessionEvent.PromptAdmitted, {
@@ -85,6 +94,7 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
       timestamp,
       prompt: input.prompt,
       delivery: input.delivery,
+      origin,
       executionPolicy: input.executionPolicy,
     })
     .pipe(
@@ -98,6 +108,7 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
                 sessionID: input.sessionID,
                 prompt: input.prompt,
                 delivery: input.delivery,
+                origin,
                 executionPolicy: input.executionPolicy,
                 timeCreated: timestamp,
               }),
@@ -117,6 +128,7 @@ export const projectAdmitted = Effect.fn("SessionInput.projectAdmitted")(functio
     readonly sessionID: SessionSchema.ID
     readonly prompt: Prompt
     readonly delivery: Delivery
+    readonly origin?: Origin
     readonly executionPolicy?: ExecutionPolicy
     readonly timeCreated: DateTime.Utc
   },
@@ -136,6 +148,7 @@ export const projectAdmitted = Effect.fn("SessionInput.projectAdmitted")(functio
       admitted_seq: input.admittedSeq,
       prompt: encodePrompt(input.prompt),
       delivery: input.delivery,
+      origin: input.origin ?? "unknown",
       execution_policy: input.executionPolicy,
       execution_status: input.executionPolicy ? "admitted" : null,
       time_created: DateTime.toEpochMillis(input.timeCreated),
@@ -195,6 +208,7 @@ export const projectPrompted = Effect.fn("SessionInput.projectPrompted")(functio
     readonly sessionID: SessionSchema.ID
     readonly prompt: Prompt
     readonly delivery: Delivery
+    readonly origin?: Origin
     readonly executionPolicy?: ExecutionPolicy
     readonly timeCreated: DateTime.Utc
     readonly promotedSeq: number
@@ -285,6 +299,7 @@ export const projectPrompted = Effect.fn("SessionInput.projectPrompted")(functio
       session_id: input.sessionID,
       prompt: encodePrompt(input.prompt),
       delivery: input.delivery,
+      origin: input.origin ?? "unknown",
       execution_policy: input.executionPolicy,
       execution_status: input.executionPolicy ? "active" : null,
       execution_started_seq: input.executionPolicy ? input.promotedSeq : null,
@@ -370,6 +385,7 @@ const publish = Effect.fn("SessionInput.publish")(function* (
           messageID: id,
           prompt: decodePrompt(row.prompt),
           delivery: row.delivery,
+          origin: row.origin,
           executionPolicy: row.execution_policy ?? undefined,
         },
         {

@@ -10,6 +10,8 @@ import { makeGlobalNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
 import { SessionExecutionPolicy } from "./execution-policy"
 import { SessionIncarnation } from "./incarnation"
+import { SessionInputAdmission } from "./input-admission"
+import { SessionLifecycle } from "./lifecycle"
 import { SessionInput } from "./input"
 import { SessionGoal } from "./goal"
 import { SessionManagedChild } from "./managed-child"
@@ -54,10 +56,7 @@ const decodeBinding = (raw: string, record: SessionTaskStore.Record): StoredBind
 }
 
 const encodeBinding = (binding: StoredBinding) =>
-  binding.source === undefined &&
-  binding.senderID === undefined
-    ? binding.parentCreated
-    : JSON.stringify(binding)
+  binding.source === undefined && binding.senderID === undefined ? binding.parentCreated : JSON.stringify(binding)
 
 const make = Effect.gen(function* () {
   const database = yield* Database.Service
@@ -66,6 +65,27 @@ const make = Effect.gen(function* () {
   const tasks = yield* SessionTaskStore.Service
   const roles = yield* SessionTaskRole.Service
   const goals = yield* SessionGoal.Service
+  const admission = yield* SessionInputAdmission.Service
+  const lifecycle = yield* SessionLifecycle.Service
+  const admit =
+    (sessionID: SessionSchema.ID, inputID: SessionMessage.ID) =>
+    (effect: Effect.Effect<void, SessionTaskStore.Failure>) =>
+      Effect.gen(function* () {
+        const claim = yield* lifecycle.capture(sessionID)
+        return yield* admission.admit(
+          claim,
+          Effect.gen(function* () {
+            const before = yield* SessionInput.find(db, inputID)
+            yield* effect
+            return { value: undefined, changed: !before }
+          }),
+        )
+      }).pipe(
+        Effect.catchTag(
+          "SessionLifecycle.Closed",
+          () => new SessionTaskStore.Failure({ code: "stale", message: "Task Session closed during admission" }),
+        ),
+      )
   const signals = new Map<string, Deferred.Deferred<void>>()
   const pending = (launchID: string) =>
     db
@@ -189,11 +209,7 @@ const make = Effect.gen(function* () {
         })
     })
   // Exact retries reconcile the canonical input and sender attribution before inspecting a later launch.
-  const retry = (
-    senderID: SessionSchema.ID,
-    childID: SessionSchema.ID,
-    input: Task.MessageInput,
-  ) =>
+  const retry = (senderID: SessionSchema.ID, childID: SessionSchema.ID, input: Task.MessageInput) =>
     Effect.gen(function* () {
       const delivery = input.delivery ?? "steer"
       const existing = yield* SessionInput.find(db, input.inputID)
@@ -236,6 +252,7 @@ const make = Effect.gen(function* () {
             timestamp: yield* DateTime.now,
             prompt: { text: input.text },
             delivery: input.delivery === "queue" ? "queue" : "steer",
+            origin: source === "operator" ? "user" : "task",
           },
           {
             commit: () =>
@@ -285,9 +302,11 @@ const make = Effect.gen(function* () {
           },
         )
         .pipe(
+          Effect.asVoid,
           Effect.catchDefect((error) =>
             error instanceof SessionTaskStore.Failure ? Effect.fail(error) : Effect.die(error),
           ),
+          admit(launch.sessionID, input.inputID),
         )
     })
   const send = (
@@ -348,6 +367,7 @@ const make = Effect.gen(function* () {
             timestamp: yield* DateTime.now,
             prompt: { text: input.text },
             delivery: delivery === "queue" ? "queue" : "steer",
+            origin: options?.source === "operator" ? "user" : "task",
           },
           {
             commit: () =>
@@ -373,17 +393,15 @@ const make = Effect.gen(function* () {
                       message: "Sender Task lost its live capability during admission",
                     })
                   if (senderRole.attempt)
-                    yield* goals
-                      .check(senderRole.attempt)
-                      .pipe(
-                        Effect.mapError(
-                          () =>
-                            new SessionTaskStore.Failure({
-                              code: "stale",
-                              message: "Task Goal attempt is no longer eligible",
-                            }),
-                        ),
-                      )
+                    yield* goals.check(senderRole.attempt).pipe(
+                      Effect.mapError(
+                        () =>
+                          new SessionTaskStore.Failure({
+                            code: "stale",
+                            message: "Task Goal attempt is no longer eligible",
+                          }),
+                      ),
+                    )
                 }
                 if (options && "agent" in options) {
                   const parent = yield* db
@@ -477,6 +495,7 @@ const make = Effect.gen(function* () {
                 })
             }),
           ),
+          admit(childID, input.inputID),
         )
       if (delivery === "interject") {
         const signal = signals.get(latest.id)
@@ -609,5 +628,13 @@ export class Service extends Context.Service<Service, Effect.Success<typeof make
 export const node = makeGlobalNode({
   service: Service,
   layer: Layer.effect(Service, make),
-  deps: [Database.node, EventV2.node, SessionTaskStore.node, SessionTaskRole.node, SessionGoal.node],
+  deps: [
+    Database.node,
+    EventV2.node,
+    SessionTaskStore.node,
+    SessionTaskRole.node,
+    SessionGoal.node,
+    SessionInputAdmission.node,
+    SessionLifecycle.node,
+  ],
 })

@@ -24,6 +24,7 @@
     "./v2/feedback-images": "./src/v2/feedback-images.ts",
     "./v2/session-report": "./src/v2/session-report.ts",
     "./v2/code-review": "./src/v2/code-review.ts",
+    "./v2/permission-review": "./src/v2/permission-review.ts",
     "./v2/mcp-elicitation": "./src/v2/mcp-elicitation.ts",
     "./v2/goal-command": "./src/v2/goal-command.ts",
     "./v2/grok-commands": "./src/v2/grok-commands.ts",

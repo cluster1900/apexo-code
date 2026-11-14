@@ -1,3 +1,4 @@
+import { SessionInput } from "@apexo/core/session/input"
 import type { SessionInputExecution } from "@apexo/core/session/input-execution"
 import { CommandSandbox } from "@apexo/core/command-sandbox"
 import { SessionV2 } from "@apexo/core/session"
@@ -279,6 +280,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 resume: ctx.payload.resume,
               })
               .pipe(
+                Effect.provideService(SessionInput.CurrentOrigin, "user"),
                 Effect.catchTag("Session.NotFoundError", (error) =>
                   Effect.fail(
                     new SessionNotFoundError({

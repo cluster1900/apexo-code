@@ -5,6 +5,7 @@ import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
 import { EventV2 } from "@apexo/core/event"
 import { Credential } from "@apexo/core/credential"
+import { PermissionReviewState } from "@apexo/core/permission/review-state"
 import { PermissionSaved } from "@apexo/core/permission/saved"
 import { PtyTicket } from "@apexo/core/pty/ticket"
 import { ProjectCatalog } from "@apexo/core/project/catalog"
@@ -60,6 +61,7 @@ const applicationServices = LayerNode.group([
   SessionSideQuestionNative.node,
   SessionCodeReview.node,
   PermissionSaved.node,
+  PermissionReviewState.node,
   PtyTicket.node,
   Credential.node,
   PtyEnvironment.node,

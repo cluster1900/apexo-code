@@ -168,6 +168,7 @@ async function renderFooter(
     state?: Partial<FooterState>
     onCycle?: () => void
     onBackground?: () => void
+    modeActions?: import("@/cli/cmd/run/types").RunModeActions
     taskActions?: import("@/cli/cmd/run/types").RunTaskActions
     onSubmit?: (prompt: RunPrompt) => boolean
   } = {},
@@ -203,12 +204,13 @@ async function renderFooter(
           theme={input.theme ?? (() => RUN_THEME_FALLBACK)}
           tuiConfig={config}
           backgroundSubagents={input.backgroundSubagents ?? true}
-          agent="apexo"
+          agent={input.state?.agent ?? "build"}
           onSubmit={input.onSubmit ?? (() => true)}
           onPermissionReply={() => {}}
           onQuestionReply={() => {}}
           onQuestionReject={() => {}}
           onCycle={input.onCycle ?? (() => {})}
+          modeActions={input.modeActions}
           onBackground={input.onBackground}
           taskActions={input.taskActions}
           onInterrupt={() => false}
@@ -253,6 +255,43 @@ function expectPaletteList(list: BoxRenderable, selectedIndex: number) {
     (RUN_THEME_FALLBACK.footer.selected as RGBA).toInts(),
   )
 }
+
+test("mini mode keys and always-approve slash command use the runtime actions without submitting a prompt", async () => {
+  const calls: string[] = []
+  const app = await renderFooter({
+    modeActions: {
+      cycleAgent: async () => {
+        calls.push("agent")
+      },
+      cycle: async () => {
+        calls.push("mode")
+      },
+      toggleAlwaysApprove: async () => {
+        calls.push("always")
+      },
+    },
+    onSubmit: () => {
+      calls.push("prompt")
+      return true
+    },
+  })
+  try {
+    await app.renderOnce()
+    app.mockInput.pressKey("TAB")
+    app.mockInput.pressKey("TAB", { shift: true })
+    app.mockInput.pressKey("o", { ctrl: true })
+    await app.renderOnce()
+    expect(calls).toEqual(["agent", "mode", "always"])
+    "/always-approve".split("").forEach((key) => app.mockInput.pressKey(key))
+    await app.renderOnce()
+    expect(app.captureCharFrame()).not.toContain("No matching items")
+    app.mockInput.pressEnter()
+    await app.renderOnce()
+    expect(calls).toEqual(["agent", "mode", "always", "always"])
+  } finally {
+    app.cleanup()
+  }
+})
 
 function child(root: BoxRenderable | RootRenderable, index: number) {
   return root.getChildren()[index] as BoxRenderable
