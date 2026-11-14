@@ -1,4 +1,26 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { transformSync } from "@babel/core"
+import solid from "babel-preset-solid"
+import { plugin } from "bun"
+
+// Bun's automatic JSX runtime is incompatible with Solid; use the same DOM compiler as Vite.
+plugin({
+  name: "solid-dom-tests",
+  setup(build) {
+    build.onLoad({ filter: /\.[jt]sx$/ }, async (args) => {
+      const result = transformSync(await Bun.file(args.path).text(), {
+        filename: args.path,
+        configFile: false,
+        babelrc: false,
+        presets: [[solid, { generate: "dom", hydratable: false }]],
+        parserOpts: { plugins: ["jsx", "typescript"] },
+        sourceMaps: "inline",
+      })
+      if (!result?.code) throw new Error(`Solid compilation produced no code: ${args.path}`)
+      return { contents: result.code, loader: "ts" }
+    })
+  },
+})
 
 GlobalRegistrator.register()
 

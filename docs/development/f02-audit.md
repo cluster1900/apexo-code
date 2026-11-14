@@ -8,6 +8,8 @@ Current follow-up: the findings from both audits have been remediated on `permis
 
 Status at `71d85e5b`: all three findings below are remediated. A [second audit](#second-audit-2026-11-14) found two residual F02 defects and two unrelated surface issues, so F02 remains not fully accepted.
 
+Status at `b5943b2e`: the second-audit product findings and the human-simulation UI/CLI issues are fixed and independently re-verified; one committed acceptance-script reliability issue remains recorded in [the regression section](#regression-verification-2026-11-14-b5943b2e).
+
 The implementation [PR #208](https://github.com/cluster1900/apexo-code/pull/208) remains draft and unmerged. Its required `unit (linux)` and `typecheck` checks pass at the audited head. Those checks do not cover the additional failures below. This audit changes documentation and evidence only; no business code, commit, push or merge was made.
 
 ## Confirmed findings
@@ -263,6 +265,30 @@ Expected: a denied action should be reported as denied/not executed, not as a co
 - Browser/Desktop: `/auto`, deny, approve, reload during review, second client, 1100×700 viewport, full-auto separation, command palette, help-card dismissal, console errors.
 - No additional F02 defect was found beyond R2-01/R2-02; review start/settle state, inline reload state, two-client state, manual actions during streaming, full-auto separation and fallback reasons matched the implementation report.
 
+### Regression verification (2026-11-14, `b5943b2e`)
+
+Every product issue recorded in this audit was re-run on the fix commit with `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true`:
+
+| Previous issue | Status | Independent evidence |
+| --- | --- | --- |
+| R2-01 aliased Git scope | **Fixed** | `GIT push origin HEAD` and an absolute `git2 -> /usr/bin/git` symlink now include full `git` facts (repository, HEAD, remote, refs) and change the fingerprint after a new commit. Committed alias tests pass. |
+| R2-02 `GIT_EDITOR` availability | **Fixed** | Focused remediation suite (9 files) passed **97 tests / 476 assertions** with both editor variables set. An independent matrix allowed Bun, `ls`, `git status`, `git push` and `git log`, while `git commit`, `git rebase -i`, `git tag -a` and `git merge` stayed manual. Real mini/fullscreen/mixed PTYs passed with the variables set. |
+| U1 toast over permission action | **Fixed** | Browser check kept the toast visible while `elementFromPoint` at the `Allow once` center returned the button; an actual center mouse click approved during the held review. With the harness correction described below, the browser suite passed **14 checks**. |
+| N2-02 Tabs card over toasts | **Fixed** | Desktop window kept the Tabs card visible; the toast no longer overlaps it and the center of `Allow once` is unobstructed. Desktop suite passed **13 checks**. |
+| U3 mini mode keys / always-approve | **Fixed** | Mini PTY: Tab cycles agents, Shift+Tab runs Normal → Plan → Auto-review → Always-approve, Ctrl+O runs an ask without a reviewer, `/always-approve` exists and toggles. Mini/mixed suites passed **11 checks**; active-exit variants **12**. |
+| U4 App Escape | **Fixed** | Browser, mixed and Desktop all passed `escape-rejects-and-renders-permission-denial`. |
+| N2-01 abort dump on quit | **Fixed** | Double Ctrl+C and the active-prompt variants exit 0 with no `DOMException`/`AbortError` in the raw PTY output. |
+| U6 denial presentation | **Fixed** | Mini shows a failure and the denial text, never `bash completed`; headless default, JSON and streaming-JSON output explain the denial. CLI suite passed **8 checks**. |
+
+Client integration (Promise, Effect and legacy SDK) passed **12 checks** on pure and mixed hosts, including the three review events and inline state.
+
+Remaining problems found during this regression:
+
+- **P3 (test harness): the committed browser/mixed acceptance script is red on this machine.** `permission-review-ui.mjs` clicks `button[aria-label="Command palette"]` and immediately runs `fill '[role="dialog"] input' "auto-review"` inside the cross-tab mode-label check. The palette mounts its search as `[data-slot="text-input-v2-input"]` and has no `[role="dialog"]` wrapper, so the script exits 1 even though the palette is open and lists `Turn on auto-review permissions`. Adding an explicit wait for `[data-slot="text-input-v2-input"]` and using that selector makes the same script pass **14** browser and **16** mixed checks, including `two-tabs-render-authoritative-mode-changes`. The Desktop path is green because it skips this block. The product feature works; the committed script needs the wait/selector correction.
+- **Known and unchanged (non-F02):** `packages/app` `bun run test:unit` reports **86 pass / 3 fail / 3 errors** from the Solid `jsxDEV` loader issue already recorded in [the fixture notes](../testing/test-fixtures/structured-review-fixtures.md). It is not counted as green.
+
+Repository gates on this commit: typecheck **21/21**, generated checks passed, HttpApi **360/360 in each mode**, and the full unit gate completed **6/6 Turbo tasks and 18/18 Apexo batches** with the editor variables set.
+
 ### Limits
 
 No real-provider judgment benchmark, Windows or Linux GUI run, signed installer, or backend-restart acceptance is claimed. The alias probe confirms the capture boundary and fingerprint behavior; whether a model would approve an aliased push still depends on its output. Cross-window `mode.changed` behavior is covered by unit transport tests but was not visually asserted in two live windows. The supplemental Client Promise/Effect/SDK integration harness referenced by the implementation report is not in the repository, so generated-source checks and the real HTTP/event suites were used instead.
@@ -270,3 +296,9 @@ No real-provider judgment benchmark, Windows or Linux GUI run, signed installer,
 ## Second-audit remediation (2026-11-14)
 
 The findings above describe `71d85e5b` and remain preserved. Follow-up changes fix R2-01/R2-02 and the accompanying N2/U client issues. [The remediation and scenario report](f02-reaudit-remediation.md) records exact fixes, permanent regression/e2e sources, actual CLI/mini/fullscreen/browser/Desktop interactions, before/after screenshots, composer samples and final gate results. The prior off-repository Client harness is now committed and runs against pure/mixed HTTP from a permanent e2e test. PR #208 remains draft and unmerged.
+
+## Regression follow-up: test entry points (2026-11-14)
+
+The remaining browser/mixed fixture issue now waits for and fills the actual palette search control at both cross-tab checks. Fresh committed-script runs pass **14 browser / 16 mixed / 13 own-sidecar Desktop checks**, preserving the mode-label assertions. No production code is changed.
+
+The previously recorded App `jsxDEV` limitation is also fixed: the existing DOM preload uses Solid's DOM compiler, and unit/watch scripts select the browser runtime. The original three files execute unchanged. App `test:unit` and `test:browser` each pass **114 tests / 1034 assertions**, including a real shared-Button render/click/reactivity regression. The focused original three files plus the new DOM regression pass **28 tests / 60 assertions**. App unit tests are now included in the existing CI test job. See [the fixture repair records](../testing/test-fixtures/structured-review-fixtures.md#2026-11-14-minimal-runner-repair) and [the browser-selector record](../testing/test-fixtures/native-permission-review.md#bug-20261114-f02-004-cross-tab-browser-acceptance-targets-a-nonexistent-palette-wrapper).

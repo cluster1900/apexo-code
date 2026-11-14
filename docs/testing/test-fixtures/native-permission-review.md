@@ -29,3 +29,14 @@ The final browser, mixed-host and rebuilt Desktop runs passed 8, 10 and 8 checks
 Two rebuilt Desktop runs reached an automation wait timeout: first waiting for the review element while other verification ran, then waiting for the controlled provider's fallback reason in a serial run. Saved final screenshots showed live manual fallback: the first timed out in Core as designed; the second ultimately displayed the exact fixture reason. No production root cause was established for the automation timing. A passing rerun alone is not claimed as a runtime fix.
 
 The acceptance script now removes redundant selector waits and captures its screenshot after releasing the held stream, reducing work inside the bounded 20-second reviewer window. It still verifies reviewing text, all manual actions enabled, reload with exactly one backend evaluation, the exact live fallback reason and manual settlement. The next own-sidecar Desktop run passed all 8 checks. The production reviewer timeout was not increased, and no App/Desktop business code was changed to satisfy the fixture.
+
+## BUG-20261114-F02-004: Cross-tab browser acceptance targets a nonexistent palette wrapper
+
+- **Scope:** `permission-review-ui.mjs`, browser and mixed-host cross-tab mode-label checks at `b5943b2e`.
+- **Observed:** The command palette opens and shows the correct mode action, but the script fills `[role="dialog"] input` and exits because the current palette has no matching wrapper.
+- **Expected:** Wait for the real mounted search control, type the query, and verify authoritative mode labels in both tabs.
+- **Reproduction:** Run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true bun script/permission-review-ui.mjs browser` or `mixed` against the current production App. The user's independent retest records the wrong-selector failure in [the audit](../../development/f02-audit.md#regression-verification-2026-11-14-b5943b2e).
+- **Root cause:** The fixture assumes a dialog role not provided by the current palette and does not observe search-input readiness after opening it.
+- **Fix:** At both cross-tab checks, wait for `[data-slot="text-input-v2-input"]` and fill that actual control. No sleep, retry loop or product markup change is added.
+- **Verification:** The committed script passes **14 browser / 16 mixed checks**, including both cross-tab mode-label assertions. The same unchanged own-sidecar Desktop path passes **13 checks**. Both Git editor variables remain set during all three runs.
+- **Status:** Fixed and verified; this is a harness defect, not another F02 classification defect.

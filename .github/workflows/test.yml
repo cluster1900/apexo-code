@@ -83,6 +83,10 @@ jobs:
       - name: Run non-apexo package tests
         run: GITHUB_ACTIONS=false bun turbo test --filter='!apexo' --concurrency=2 --log-order=stream --log-prefix=none
 
+      - name: Run App unit tests
+        working-directory: packages/app
+        run: bun run test:unit
+
   generated:
     name: generated code
     runs-on: ubuntu-latest

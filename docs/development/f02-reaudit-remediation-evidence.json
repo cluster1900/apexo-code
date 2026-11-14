@@ -266,5 +266,126 @@
       "missing": 0,
       "extra": 0
     }
+  },
+  "testEntryFollowup": {
+    "date": "2026-11-14",
+    "startingHead": "b5943b2e",
+    "appUnit": {
+      "tests": 114,
+      "assertions": 1034,
+      "failures": 0,
+      "errors": 0
+    },
+    "appBrowserUnit": {
+      "tests": 114,
+      "assertions": 1034,
+      "failures": 0,
+      "errors": 0
+    },
+    "previouslyFailingFilesAndDomRegression": {
+      "tests": 28,
+      "assertions": 60,
+      "failures": 0
+    },
+    "actualClients": {
+      "browser": {
+        "kind": "browser",
+        "checks": [
+          "slash-auto-updates-backend",
+          "reviewing-all-manual-actions-enabled",
+          "visible-toast-clears-permission-button-and-tabs-card",
+          "real-center-mouse-approval-during-stream",
+          "reload-hydrates-single-backend-review",
+          "two-connected-clients-one-review",
+          "live-manual-fallback-reason",
+          "manual-once-settles",
+          "two-tabs-render-authoritative-mode-changes",
+          "escape-rejects-and-renders-permission-denial",
+          "slash-auto-disables-backend",
+          "full-auto-remains-an-explicit-separate-mode",
+          "always-approve-executes-without-backend-review",
+          "no-renderer-errors"
+        ]
+      },
+      "mixedApp": {
+        "kind": "mixed",
+        "checks": [
+          "default-serve-mixed-backend",
+          "slash-auto-updates-backend",
+          "reviewing-all-manual-actions-enabled",
+          "visible-toast-clears-permission-button-and-tabs-card",
+          "real-center-mouse-approval-during-stream",
+          "reload-hydrates-single-backend-review",
+          "two-connected-clients-one-review",
+          "live-manual-fallback-reason",
+          "manual-once-settles",
+          "two-tabs-render-authoritative-mode-changes",
+          "escape-rejects-and-renders-permission-denial",
+          "slash-auto-disables-backend",
+          "full-auto-remains-an-explicit-separate-mode",
+          "always-approve-executes-without-backend-review",
+          "legacy-review-keeps-its-compatibility-owner",
+          "no-renderer-errors"
+        ]
+      },
+      "desktopOwnBackend": {
+        "kind": "builtin",
+        "checks": [
+          "desktop-owned-mixed-backend",
+          "slash-auto-updates-backend",
+          "reviewing-all-manual-actions-enabled",
+          "visible-toast-clears-permission-button-and-tabs-card",
+          "real-center-mouse-approval-during-stream",
+          "reload-hydrates-single-backend-review",
+          "live-manual-fallback-reason",
+          "manual-once-settles",
+          "escape-rejects-and-renders-permission-denial",
+          "slash-auto-disables-backend",
+          "full-auto-remains-an-explicit-separate-mode",
+          "always-approve-executes-without-backend-review",
+          "no-renderer-errors"
+        ]
+      }
+    },
+    "typecheck": {
+      "passed": 21,
+      "total": 21
+    },
+    "generated": {
+      "client": "passed",
+      "sdk": "passed"
+    },
+    "frozenInstall": "passed",
+    "httpapi": {
+      "coverage": {
+        "pass": 360,
+        "fail": 0,
+        "skip": 0,
+        "missing": 0,
+        "extra": 0
+      },
+      "auth": {
+        "pass": 360,
+        "fail": 0,
+        "skip": 0,
+        "missing": 0,
+        "extra": 0
+      },
+      "effect": {
+        "pass": 360,
+        "fail": 0,
+        "skip": 0,
+        "missing": 0,
+        "extra": 0
+      }
+    },
+    "completeUnitGate": {
+      "apexoBatches": 18,
+      "apexoPassed": 18,
+      "turboTasks": 6,
+      "turboPassed": 6,
+      "cachedBuildTasks": 3,
+      "exit": 0
+    }
   }
 }

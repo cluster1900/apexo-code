@@ -87,3 +87,11 @@ The browser and Desktop screenshots below retain the toast during a pending revi
 Controlled providers establish orchestration, origin, races and user interactions; real Grok judgment quality was not benchmarked. No Windows/Linux GUI or signed-installer certification is claimed. Uppercase and `.exe` names are exercised as real symlinks on macOS, not as a Windows runtime claim. Apple's Git dispatcher can reject a renamed invocation even though canonical capture and changed-scope protection are correct. Default compatibility CLI auto-migration remains the product decision explicitly excluded by the audit.
 
 [Normalized results](f02-reaudit-remediation-evidence.json) retain per-surface check names and composer samples without credentials or temporary paths.
+
+## Follow-up: reliable acceptance and App unit entry points
+
+The user's regression found that the cross-tab script assumed `[role="dialog"] input` even though the palette's actual search control is `[data-slot="text-input-v2-input"]`. Both checks now wait for and fill that control. Fresh runs of the committed script pass **14 browser / 16 mixed / 13 own-sidecar Desktop checks** with both editor variables set.
+
+The historical App loader limitation above is now resolved. The existing HappyDOM preload compiles Solid DOM JSX, and unit/watch scripts select browser modules. `bun run test:unit` and `bun run test:browser` each pass **114 tests / 1034 assertions**; the original three failing files plus the new real shared-Button render/reactivity test pass **28 tests / 60 assertions**. The CI test workflow now runs the App unit command. No production component, renderer, provider or permission logic changed, so no new production build or composer benchmark is required for this test-only correction.
+
+Fresh follow-up gates: root typecheck **21/21**, Client and SDK `check:generated` both passed, frozen dependency installation passed, and HTTP **360/360 in each of coverage/auth/effect** with zero failures, skips, missing or extra scenarios. The complete unit gate passed **18/18 Apexo batches and 6/6 Turbo tasks** (three build tasks reused cache). All App assertions ran in the separate App unit/browser commands above; CI now runs the App command as part of the required test aggregation.

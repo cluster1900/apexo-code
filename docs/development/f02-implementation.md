@@ -80,8 +80,12 @@ Client and legacy SDK `bun run check:generated` both passed after the remediatio
 
 ## Second audit (2026-11-14)
 
-A fresh re-audit at `71d85e5b` confirmed the delivered surfaces and gates above but found two residual F02 defects: Git scope capture is skipped when the real Git is invoked under another executable name, and an inherited `GIT_EDITOR` disables all native review. It also recorded unrelated CLI/App/Desktop issues (toast layering over permission controls, mini mode-key gaps, Escape handling, and denial presentation). F02 is not fully accepted until the residual scope and environment cases are corrected. See [the second audit](f02-audit.md#second-audit-2026-11-14).
+A fresh re-audit at `71d85e5b` confirmed the delivered surfaces and gates above but found two residual F02 defects: Git scope capture is skipped when the real Git is invoked under another executable name, and an inherited `GIT_EDITOR` disables all native review. It also recorded unrelated CLI/App/Desktop issues (toast layering over permission controls, mini mode-key gaps, Escape handling, and denial presentation). Follow-up `b5943b2e` corrected the product findings and they were independently re-verified; one acceptance-script reliability issue remains. See [the regression record](f02-audit.md#regression-verification-2026-11-14-b5943b2e).
 
 ## Second-audit correction and expanded scenarios
 
 Follow-up changes resolve both residual scope/environment findings and all accompanying client issues. The [complete remediation report](f02-reaudit-remediation.md) contains the issue-to-test matrix, **97 passing regressions / 476 assertions**, permanent pure/mixed Client e2e coverage, **11 checks for each of four real terminal combinations**, browser/mixed App **14/16**, rebuilt own-sidecar Desktop **13**, and native-local/headless CLI **8** checks. It also records the new composer comparison and repository gate results without changing the earlier audit evidence. The PR remains draft for human review and is not merged.
+
+## Acceptance entry-point follow-up (2026-11-14)
+
+The independent regression's remaining test issues are corrected with no production behavior change. Browser/mixed acceptance uses the mounted palette input and passes **14/16 checks**; own-sidecar Desktop passes **13**. The App unit preload now uses Solid's DOM compiler and the browser runtime, so all **114 tests / 1034 assertions** execute successfully in both unit and browser modes. The existing CI test job includes this App command. The [audit follow-up](f02-audit.md#regression-follow-up-test-entry-points-2026-11-14) links the exact cause, minimal fixes and regression evidence.

@@ -61,6 +61,21 @@ historical occurrence. Production browser and rebuilt own-sidecar Desktop
 acceptance each passed eighteen ordinary-flow checks; the separate UI defects
 found by supplementary probes are recorded in [the audit](../../development/f01-audit.md).
 
+### 2026-11-14 minimal runner repair
+
+The failure was reproduced before editing: **86 passed, 3 failed imports / 3 errors**. The three files were never reaching their assertions; removing their imports or inventing `jsxDEV` exports would hide the missing compiler.
+
+The existing HappyDOM preload now compiles JSX with the same `babel-preset-solid` DOM transform used by Vite, then lets Bun erase TypeScript. App unit/watch commands use the `browser` resolution condition: after adding the compiler, the previous `solid` condition still selected Solid's server-only DOM runtime and failed on browser exports. Both changes are necessary. Babel and its Solid preset are explicit development dependencies at already-installed workspace versions; no production dependency or component behavior changes.
+
+A real `.test.tsx` imports the shared UI Button, mounts it with Solid's DOM renderer, clicks twice, verifies reactive text and disabled state, then disposes the DOM. This covers both App and shared-package JSX and rejects an accidentally selected server runtime. The original three test files now execute unchanged.
+
+- `bun run test:unit` and `bun run test:browser` in `packages/app`: **114 passed / 1034 assertions each**, zero failures or import errors.
+- Focused original three files plus `src/utils/solid-dom.test.tsx`, with `--conditions=browser`: **28 passed / 60 assertions**.
+- `bun typecheck` in `packages/app`: passed.
+- The existing CI test job now runs `bun run test:unit`; its result participates in the existing required `unit (linux)` aggregation.
+
+Status: **fixed and locally verified**. Historical failures above remain evidence for this one root cause; they are not promoted into an invented recurrence count.
+
 ## Follow-up validation observations
 
 - New real-Git fixtures initially inherited global commit signing. All new/reused review Git setup commands now set `commit.gpgsign=false` per command; user/global Git configuration is not changed.
