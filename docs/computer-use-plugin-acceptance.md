@@ -1,6 +1,6 @@
 # Computer Use plugin acceptance
 
-Status: specification only; all cases are **not run**. Reviewed: 2026-11-16.
+Status: implementation acceptance in progress. Executed results, failed attempts, artifacts, and unrun conditions are recorded in the [implementation acceptance record](development/computer-use-acceptance.md). Reviewed: 2026-11-16.
 
 This verifies the direct upstream MCP integration described in the [development plan](computer-use-plugin-development.md). The accepted scope is a local macOS user, one desktop task at a time, through native V2 CLI and packaged Desktop. It does not certify concurrent workflow isolation, application confinement, confidential text entry, or remote frontend control.
 
@@ -88,15 +88,13 @@ Current test CI also runs the App unit job. From `packages/app`:
 bun run test:unit
 ```
 
-No public schema change is planned. If an independently justified host fix changes public Protocol or Server HttpApi, regenerate with `bun run generate` in `packages/client`; use `./packages/sdk/js/script/build.ts` from the root when the legacy SDK surface needs regeneration. Finish writers before readers and never edit generated sources directly. Make changes on a branch with a PR to `main`; required test/typecheck CI must pass before merge.
+No public schema change was needed. The implementation's generic host fixes are documented in the acceptance record. If another independently justified host fix changes public Protocol or Server HttpApi, regenerate with `bun run generate` in `packages/client`; use `./packages/sdk/js/script/build.ts` from the root when the legacy SDK surface needs regeneration. Finish writers before readers and never edit generated sources directly. Make changes on a branch with a PR to `main`; required test/typecheck CI must pass before merge.
 
 ## Acceptance record and release decision
 
 Start every case as `not run`. Use `pass`, `fail`, or `blocked` only with evidence, including the artifact and entrypoint to which it applies. Document any bug fix under the relevant English `docs/testing/` record with root cause or explicit unknown, reproduction, fix, and verification. A passing rerun alone does not prove a fix.
 
-| Case | Artifact / OS / entrypoint | Procedure      | Expected vs. observed | Result  | Evidence / bug ID |
-| ---- | -------------------------- | -------------- | --------------------- | ------- | ----------------- |
-| D02  | To be recorded             | To be recorded | Not observed          | not run | None              |
+The dated [implementation acceptance record](development/computer-use-acceptance.md) contains the current per-case results, artifact identities, observations, measurements, and bug links. Keep those results in that record rather than maintaining a second status table here.
 
 Keep private screenshots, text, and traces out of public logs and Git. Reports should contain sanitized outcomes, hashes, and durable evidence references rather than ephemeral log paths.
 
@@ -105,4 +103,4 @@ Keep private screenshots, text, and traces out of public logs and Git. Reports s
 - [ ] Packaged launch, real UI actions, image/model consumption, Stop/cleanup, no-replay recovery, and data cleanup have direct evidence.
 - [ ] Local repository gates and required PR CI pass; feature acceptance remains separate from generic CI success.
 
-This document specifies future implementation acceptance. The current documentation PR does not certify a working Computer Use plugin.
+The plugin implementation and executed tests do not by themselves certify every case above. Consult the dated result matrix before making a platform or workflow support claim.

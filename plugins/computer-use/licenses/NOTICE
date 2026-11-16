@@ -1,0 +1,7 @@
+This bundle redistributes unmodified agent-desktop and agent-desktop-macos-helper
+from vercel-labs/agent-desktop v1.3.1 under the Apache License, Version 2.0.
+https://github.com/vercel-labs/agent-desktop
+
+Apexo plugin packaging, launcher, permission profile and instructions are separate
+from the upstream executables. See UPSTREAM.json and SHA256SUMS in the assembled
+bundle for the selected archive and file identities.

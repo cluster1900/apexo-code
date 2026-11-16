@@ -518,7 +518,13 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
         : request.tools.map((tool) =>
             lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
           ),
-    tool_choice: request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
+    // xAI rejects even "none" when the Responses request has no tool definitions.
+    tool_choice:
+      request.tools.length === 0 && request.toolChoice?.type === "none"
+        ? undefined
+        : request.toolChoice
+          ? yield* lowerToolChoice(request.toolChoice)
+          : undefined,
     stream: true as const,
     max_output_tokens: generation?.maxTokens,
     temperature: generation?.temperature,

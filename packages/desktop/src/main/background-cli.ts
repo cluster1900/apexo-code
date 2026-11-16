@@ -41,7 +41,7 @@ export async function startBackgroundCli(logger: Logger, shellStateHome?: string
 
   const daemonStateHome = found?.stateHome ?? stateHome
   const url = await run(binary, ["service", "start"], logger, { stateHome: daemonStateHome })
-  const password = await run(binary, ["service", "get", "password"], logger, {
+  const password = await run(binary, ["service", "password"], logger, {
     redact: true,
     stateHome: daemonStateHome,
   })

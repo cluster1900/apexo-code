@@ -1,8 +1,8 @@
 # Computer Use plugin development plan
 
-Status: proposed; no plugin implementation or desktop acceptance has been completed. Reviewed: 2026-11-16.
+Status: implementation in progress; the standalone bundle, launcher, Skill, and permission profiles exist under `plugins/computer-use`. Desktop acceptance is in progress. Reviewed: 2026-11-16.
 
-Integrate `vercel-labs/agent-desktop` through its existing MCP server, packaged as an optional Apexo plugin with a Skill and pinned native binaries. **Plan zero host production changes.** Apexo retains model execution, Sessions, permissions, tool history, cancellation, and plugin lifecycle. The plugin supplies desktop tools and usage instructions; it does not run another agent loop.
+Integrate `vercel-labs/agent-desktop` through its existing MCP server, packaged as an optional Apexo plugin with a Skill and pinned native binaries. **Add no Computer Use-specific host API.** Acceptance exposed two existing generic defects requiring small corrections: Desktop's V2 CLI password command and Responses requests with no tools. Apexo retains model execution, Sessions, permissions, tool history, cancellation, and plugin lifecycle. The plugin supplies desktop tools and usage instructions; it does not run another agent loop.
 
 The first release supports a local user running one desktop task at a time. This is a deliberate operating limit, not enforced workflow isolation. Release requires the [integration and desktop acceptance cases](computer-use-plugin-acceptance.md), not merely a successful MCP handshake.
 
@@ -59,7 +59,7 @@ flowchart LR
 | [Persistent plugin data](plugins-persistent-data.md)                                       | Use the provided writable data epoch for upstream state; preserve existing update/uninstall/keep-data behavior.                                                                        |
 | [V2 PluginContext](../packages/plugin/src/v2/promise/context.ts)                           | No public tool-registration hook is needed: this is an installed MCP bundle.                                                                                                           |
 
-No changes are planned to Core, Protocol, Server, Client, SDKs, App, TUI, or Desktop production code. New work belongs in a proposed `plugins/computer-use/` package, its release instructions, and narrowly scoped acceptance tests. This directory does not exist yet. If a real compatibility test exposes a host defect, fix that generic defect separately with a reproducer; do not use this plan to introduce a new plugin framework or Session coordinator.
+Computer Use implementation belongs in the standalone [plugin package](../plugins/computer-use/README.md), its release instructions, and narrowly scoped acceptance tests. The only existing production files changed during acceptance are Desktop's CLI adapter and LLM Responses lowering; both have [reproductions and verification](testing/runtime/computer-use-host-integration.md). Core, Protocol, Server, Client, SDKs, App, and TUI need no feature implementation changes. Do not introduce a new plugin framework or Session coordinator.
 
 ## 4. Package and launcher
 
@@ -75,6 +75,8 @@ computer-use/
   bin/agent-desktop
   bin/agent-desktop-macos-helper
   SHA256SUMS
+  permissions.json
+  permissions-v1.json
   licenses/
 ```
 
@@ -129,7 +131,11 @@ Before enabling desktop work, apply a user-owned configuration with a deny rule 
 }
 ```
 
-This example uses the current `McpTools.name("computer-use:desktop", "desktop_snapshot")`. During implementation, publish a complete copyable profile for the selected tools using the actual discovered keys. Do not use a broad per-agent `allow` or `ask` for the entire server: that would also expose administrative and composite tools. A changed plugin/server name requires regenerating the profile. Merge into a supported V2 configuration; do not mix native `permissions`/`agents` with V1 `permission`/`agent` keys or place this fragment inside the plugin manifest.
+This example uses the current `McpTools.name("computer-use:desktop", "desktop_snapshot")`. The builder publishes a complete profile for the selected tools using this contract, verified against host names. Do not use a broad per-agent `allow` or `ask` for the entire server: that would also expose administrative and composite tools. A changed plugin/server name requires regenerating the profile. Merge into a supported V2 configuration; do not mix native `permissions`/`agents` with V1 `permission`/`agent` keys or place this fragment inside the plugin manifest.
+
+The default Desktop/mixed-server V1 loader explicitly rejects V2 permission fields. Use the generated `permissions-v1.json` there, merged into a consistently V1 document. Core migrates it into native permissions for native Sessions. `permissions.json` targets the native V2 loader. Tests verify equal effective tool rules for both profiles; neither profile raises permission automatically at plugin installation.
+
+Runtime selection is separate from configuration syntax. The tested Desktop window uses the existing V2 sidecar, assembled/launched with `APEXO_SIDECAR_V2=1`, or can connect to a local native V2 server. The default mixed sidecar advertises V1 to the frontend, so its UI does not display native plugin activation. Do not claim V1 Session support from either the V1 profile or successful native API calls against a mixed backend.
 
 Suggested baseline, with each enabled tool set to `ask`:
 

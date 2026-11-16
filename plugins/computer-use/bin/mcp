@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+if [ "$(/usr/bin/uname -s)" != Darwin ]; then
+  printf '%s\n' 'Computer Use currently requires local macOS 13 or later.' >&2
+  exit 1
+fi
+
+root=$(CDPATH='' cd -- "$(/usr/bin/dirname -- "$0")" && /bin/pwd -P)
+if [ ! -x "$root/agent-desktop" ] || [ ! -x "$root/agent-desktop-macos-helper" ]; then
+  printf '%s\n' 'Computer Use native files are missing. Assemble the platform bundle before installing it.' >&2
+  exit 1
+fi
+if [ -z "${AGENT_DESKTOP_HOME:-}" ]; then
+  printf '%s\n' 'Computer Use requires the absolute plugin data directory (AGENT_DESKTOP_HOME).' >&2
+  exit 1
+fi
+case "$AGENT_DESKTOP_HOME" in
+  /*) ;;
+  *) printf '%s\n' 'AGENT_DESKTOP_HOME must be absolute.' >&2; exit 1 ;;
+esac
+
+namespace="apexo-$(/usr/bin/uuidgen)"
+AGENT_DESKTOP_MACOS_HELPER_PATH="$root/agent-desktop-macos-helper"
+export AGENT_DESKTOP_MACOS_HELPER_PATH
+# exec retains the host-owned process group; a new connection never adopts old refs.
+exec "$root/agent-desktop" mcp --session "$namespace"

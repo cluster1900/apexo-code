@@ -1,0 +1,7 @@
+{
+  "plugins/computer-use/bin/mcp": "ddaacff9ecefc4475a0063e8301f8d037384981d80e04824d5b2a27493077ee3",
+  "plugins/computer-use/script/build.mjs": "3dffbc58c7ab9af035df00b5b12d6d5fba4dc879435f07cca5a26e7538a00a51",
+  "plugins/computer-use/skills/computer-use/SKILL.md": "03da6ec2bc03b8f7397b1cdc186dce814159747615e324682df7c7c3b719e410",
+  "packages/desktop/src/main/background-cli.ts": "e79941d67946cd4db35f9374135dce709bfac257fcfd095650e958d082d43689",
+  "packages/llm/src/protocols/openai-responses.ts": "b7eb3064f425a84ddbc2f5c604ca68e6e6613f6d9dc4708233f1f0952717848e"
+}

@@ -87,6 +87,10 @@ jobs:
         working-directory: packages/app
         run: bun run test:unit
 
+      - name: Run Computer Use packaging tests
+        working-directory: plugins/computer-use
+        run: bun test test
+
   generated:
     name: generated code
     runs-on: ubuntu-latest

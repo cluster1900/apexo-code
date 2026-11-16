@@ -2,7 +2,7 @@
 
 Apexo's native runtime activates trusted installed bundle agents, commands, embedded skills, hook sources, and MCP tools from the shared global plugin store. Catalog installation and enablement describe stored configuration; `GET /api/plugins/runtime` reports what the selected Location has actually activated.
 
-The proposed [Computer Use plugin](computer-use-plugin-development.md) reuses this bundle lifecycle and upstream stdio MCP with no planned host production changes. Its [integration and desktop acceptance gates](computer-use-plugin-acceptance.md) cover local, sequential desktop use. It is a development plan, not an implemented runtime capability.
+The [Computer Use plugin package](../plugins/computer-use/README.md) reuses this bundle lifecycle and upstream stdio MCP. Its [development plan](computer-use-plugin-development.md) and [acceptance gates](computer-use-plugin-acceptance.md) cover local, sequential native V2 desktop use. Assembly and integration tests exist; a platform support claim still requires the recorded graphical acceptance results.
 
 The runtime response includes `generation`, `active` plugin IDs, and an optional failure. The status read is passive. `POST /api/plugins/reload` returns `true` on successful activation without starting provider work. Active work in the same Location produces a typed busy response. Other Locations remain independent.
 

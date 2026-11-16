@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "desktop": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/mcp",
+      "env": {
+        "AGENT_DESKTOP_HOME": "${CLAUDE_PLUGIN_DATA}/agent-desktop"
+      }
+    }
+  }
+}
