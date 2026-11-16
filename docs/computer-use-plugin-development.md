@@ -1,78 +1,69 @@
 # Computer Use plugin development plan
 
-Status: proposed; implementation and desktop acceptance have not started. Updated: 2026-11-16.
+Status: proposed; no plugin implementation or desktop acceptance has been completed. Reviewed: 2026-11-16.
 
-Build Computer Use as an optional installed plugin backed by `vercel-labs/agent-desktop`. Keep desktop behavior, native dependencies, application policy, reference ownership, and operational documentation in the plugin. Apexo continues to own prompts, model execution, permissions, tool history, cancellation, and plugin activation.
+Integrate `vercel-labs/agent-desktop` through its existing MCP server, packaged as an optional Apexo plugin with a Skill and pinned native binaries. **Plan zero host production changes.** Apexo retains model execution, Sessions, permissions, tool history, cancellation, and plugin lifecycle. The plugin supplies desktop tools and usage instructions; it does not run another agent loop.
 
-The delivery has two distinct milestones: a zero-host-change integration spike, then a supported plugin with one small, generic MCP extension for trusted caller identity. Passing the spike does not satisfy the release criteria. The detailed cases and evidence requirements are in [Computer Use plugin acceptance](computer-use-plugin-acceptance.md).
+The first release supports a local user running one desktop task at a time. This is a deliberate operating limit, not enforced workflow isolation. Release requires the [integration and desktop acceptance cases](computer-use-plugin-acceptance.md), not merely a successful MCP handshake.
 
-## 1. Scope and decisions
+## 1. Design review decisions
 
-| Decision           | First supported release                                                                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installation       | Existing trusted file/Git plugin bundle mechanism; explicit install and activation                                                                    |
-| Execution          | Native V2 CLI and packaged Desktop, using a backend on the same machine and in the same user's graphical session                                      |
-| Platform           | macOS first; claim arm64 or x64 support only after that artifact passes acceptance                                                                    |
-| Desktop operations | List permitted applications/windows, inspect accessibility trees, act on refs, enter text, scroll, bounded key input, and capture the selected window |
-| Model              | Existing Apexo tool-capable models; a vision-capable model is required for screenshot reasoning                                                       |
-| Concurrency        | One active Computer Use run per OS user/desktop across plugin processes; unrelated Apexo work continues                                               |
-| UI                 | Existing Plugins, MCP status, permission requests, tool results, and Stop control                                                                     |
-| Host change        | Opt-in caller metadata for trusted local MCP tools; no Computer Use-specific host API                                                                 |
-| Distribution       | Plugin-owned native adapter, upstream executable/helper, pinned versions, and license files                                                           |
+| Earlier proposal                                                                                  | Revised decision and reason                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A mandatory custom Rust MCP adapter and new `computer_*` tools                                    | Use upstream `agent-desktop mcp` and its `desktop_*` tools. Another protocol implementation and command translation layer duplicate upstream functionality.                                        |
+| A `client_context` host extension carrying Session/agent/call ownership                           | Remove it from v1. Caller identity is needed for enforced multi-Session ownership, which is outside the first release. Do not change config schemas, public APIs, or generated SDKs speculatively. |
+| Plugin run IDs, cross-process workflow leases, TTLs, a crash guardian, and a deduplication ledger | Reuse upstream snapshot namespaces and existing MCP process handling. Document that they do not isolate concurrent desktop workflows or provide exactly-once effects.                              |
+| An app allowlist and restricted arguments enforced by the adapter                                 | Use existing tool-level permissions with an explicit setup recipe. Do not claim application or argument restrictions that the current MCP permission boundary cannot enforce.                      |
+| Fixed 20-second operation and five-second cleanup limits                                          | Use the existing host/native deadlines and measure actual completion and cleanup. Choose any additional performance target from observed requirements.                                             |
+| A new native fixture application and a broad adapter test suite                                   | Start with existing MCP fixtures, TextEdit, Calculator, and a small image fixture. Add fixtures only for a boundary that existing tools cannot observe.                                            |
+| Typed text kept out of process arguments through stdin                                            | Correct the claim: upstream MCP passes values as child-process arguments and closes stdin. The direct integration does not provide secret-entry confidentiality.                                   |
 
-Defer remote desktop bridging, WSL-to-Windows desktop control, browser/CDP integration, coordinate-only automation, held keys/buttons, clipboard access, notifications, arbitrary program launch, sandbox management, unattended background control, and a custom desktop preview panel. These can be separate plugin increments after the baseline is accepted. A local MCP process controls its own host's desktop; a remote Apexo backend does not acquire access to the frontend machine's desktop.
+The simplification reduces scope; it does not preserve the earlier proposal's stronger isolation claims. If enforced concurrency, app restrictions, or confidential input becomes a requirement, revisit the relevant boundary before advertising that capability.
 
-Do not add a second agent loop, an external model client, or a dependency on the Grok Build executable. Desktop runs are operational leases and ref namespaces, not Apexo Sessions, drains, transcripts, or durable prompt admission records.
+## 2. Supported scope and actual limits
 
-## 2. Verified integration points and gaps
+| Area         | First release                                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime      | Native V2 CLI and packaged Desktop, with the backend in the same user's local graphical session                                    |
+| Platform     | macOS 13+; advertise only the architecture and packaged artifacts that pass acceptance                                             |
+| Workflow     | Inspect an app/window, use observed refs to click or edit, scroll, verify the result, and capture a window when needed             |
+| Permissions  | User-owned tool rules; desktop tools denied by default in the setup profile, selected tools set to `ask` for the chosen agent      |
+| Model        | An existing tool-capable Apexo model; screenshot reasoning additionally requires verified image support                            |
+| Concurrency  | One desktop task at a time across Sessions, Locations, and Apexo processes on that desktop; ordinary non-desktop work may continue |
+| UI           | Existing plugin/MCP management, permission requests, tool attachments, and Stop control                                            |
+| Distribution | A platform-specific extracted plugin bundle containing the upstream executable and helper                                          |
 
-Source baseline: Apexo `d2ca7f0c6f65fd343bb5c7301cc79d85ae4626b1`; upstream `8ffecc1d3d088727f8d84baf4dde0224aab2e8ad`, whose package version is `1.3.1`. These identify the source review, not a tested release combination. Resolve and record the actual release artifact digest before implementation acceptance.
+The MCP connection is Location-scoped and can serve several Apexo Sessions. Upstream global flags are fixed when that connection starts. A fresh namespace per connection avoids accidental ref reuse across connections, but **does not authorize refs by Apexo Session or reserve the desktop for an entire task**. Upstream's interaction lock serializes individual interactions, not the observe/act/verify workflow. The Skill must direct sequential use and fresh observations; it cannot enforce that rule against other Sessions or a human changing the UI.
 
-| Existing component                                                                         | Reuse and limitation                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [PluginBundle](../packages/core/src/plugin-bundle.ts)                                      | Loads `.mcp.json`, skills, commands, and agents. Expands package/data placeholders. MCP entries pass through V1 config and migration. Arbitrary new manifest fields do not automatically reach native config. |
-| [PluginBundleRuntime](../packages/core/src/plugin-bundle-runtime.ts)                       | Stages activation and preserves the previous generation on preparation failure. Reload is rejected during active Location work.                                                                               |
-| [MCP](../packages/core/src/mcp.ts)                                                         | Owns local transports, tool discovery, registration, and connection generations per Location. A connection can serve several Apexo Sessions.                                                                  |
-| [McpTools](../packages/core/src/mcp-tools.ts)                                              | Has the authoritative Session, agent, message, and call context. Runs PermissionV2 before sending a call. Currently sends only tool name/arguments, and checks resource `*`.                                  |
-| [McpCall](../packages/core/src/mcp-call.ts), [McpStdio](../packages/core/src/mcp-stdio.ts) | Provide request cancellation, bounded execution, transport retirement, and process-group cleanup. A cancelled request may retire the shared connection. Reconnect is not permission to replay an action.      |
-| [ToolRegistry](../packages/core/src/tool/registry.ts)                                      | Preserves tool identity and bounds output. MCP image blocks already have a path into tool attachments; real provider consumption remains an acceptance requirement.                                           |
-| [Persistent plugin data](plugins-persistent-data.md)                                       | Provides a writable epoch separate from the installed package, with existing retain/uninstall semantics.                                                                                                      |
-| [V2 PluginContext](../packages/plugin/src/v2/promise/context.ts)                           | Has no public custom-tool registration hook. Use an installed MCP bundle; do not expand the in-process plugin API for this feature.                                                                           |
+Defer multi-user or parallel desktop automation, remote/WSL bridging, a custom preview panel, coordinate/held-input control, clipboard and notification access, arbitrary program launch, sandbox administration, and unattended scheduled control. A remote backend operates its own machine, not the frontend desktop. Do not market headless semantic actions as an OS security sandbox, or a permitted tool as confined to a named app.
 
-Upstream's MCP service fixes `--session`, `--agent-id`, and other global flags at process startup. Calling its session-start tool does not change later calls' session selection. It therefore cannot identify multiple Apexo callers sharing one Location connection. Its ref namespaces and interaction locks help, but neither supplies Apexo's caller identity nor reserves the whole observe/act/verify sequence.
+## 3. Existing integration boundaries
 
-Existing hooks carry some Session context, but hooks are separately scheduled and can be disabled. Do not infer the current MCP caller from a shared file containing the most recent hook's Session ID, or use model-supplied `session_id` arguments as authority.
-
-## 3. Architecture and change boundary
+Source baseline: Apexo `d2ca7f0c6f65fd343bb5c7301cc79d85ae4626b1`; upstream `8ffecc1d3d088727f8d84baf4dde0224aab2e8ad`, package version `1.3.1`. These are reviewed sources, not an accepted binary combination. Pin the actual artifact digests during assembly.
 
 ```mermaid
 flowchart LR
-    Runner["Apexo SessionRunner"] --> Tools["ToolRegistry + PermissionV2"]
-    Tools --> MCP["Existing local MCP transport"]
-    MCP --> Adapter["Installed Computer Use adapter"]
-    Adapter --> Native["Pinned agent-desktop CLI + helper"]
-    Native --> Apps["Permitted local applications"]
-    Skill["Plugin Skill"] --> Runner
-    Policy["Plugin-owned policy and run state"] --> Adapter
+    Skill["Installed Skill"] --> Runner["Apexo SessionRunner"]
+    Runner --> Tools["ToolRegistry + PermissionV2"]
+    Tools --> MCP["Existing MCP transport"]
+    MCP --> Native["agent-desktop mcp + native helper"]
+    Native --> Apps["Local desktop applications"]
 ```
 
-The adapter is a local MCP server which translates a deliberately small typed tool surface into upstream CLI argument arrays. It checks caller/run ownership and application policy, then executes one bounded operation. The normal Apexo provider loop decides the next operation. The adapter must not call a model or autonomously continue a task.
+| Existing component                                                                         | Integration consequence                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [PluginBundle](../packages/core/src/plugin-bundle.ts)                                      | Already loads `.mcp.json` and Skills, expands package/data placeholders, and namespaces MCP servers. Bundle agent definitions do not import permission overrides.                      |
+| [PluginBundleRuntime](../packages/core/src/plugin-bundle-runtime.ts)                       | Reuse staged activation, busy reload rejection, and retention of a healthy generation after failed staging.                                                                            |
+| [MCP](../packages/core/src/mcp.ts), [McpTools](../packages/core/src/mcp-tools.ts)          | Reuse tool discovery, schema validation, permission-before-dispatch, and image-to-attachment conversion. Tool names include the server name and a hash.                                |
+| [McpCall](../packages/core/src/mcp-call.ts), [McpStdio](../packages/core/src/mcp-stdio.ts) | Reuse request deadlines, cancellation, bounded framing, and process-group retirement. A cancelled call can retire the shared connection; recovery must not replay the original action. |
+| [Persistent plugin data](plugins-persistent-data.md)                                       | Use the provided writable data epoch for upstream state; preserve existing update/uninstall/keep-data behavior.                                                                        |
+| [V2 PluginContext](../packages/plugin/src/v2/promise/context.ts)                           | No public tool-registration hook is needed: this is an installed MCP bundle.                                                                                                           |
 
-| Area                                                | Planned change budget                                                                                                                     |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Plugin source and release                           | All desktop commands, process handling specific to upstream, refs, leases, policy, diagnostics, skills, binaries, and acceptance fixtures |
-| Core MCP/config                                     | One opt-in context feature; approximately six existing production files, plus a helper only if needed for the identity boundary           |
-| Existing tool/history/permission/lifecycle services | Reuse; no new desktop action types, tool registry, Session store, or execution coordinator                                                |
-| App, TUI, Desktop                                   | No feature-specific UI required for v1; use current management and permission surfaces                                                    |
-| Schema, Protocol, Server, Client                    | No new endpoints or database tables. Regenerate clients/SDKs if the additive config field changes an existing public schema.              |
+No changes are planned to Core, Protocol, Server, Client, SDKs, App, TUI, or Desktop production code. New work belongs in a proposed `plugins/computer-use/` package, its release instructions, and narrowly scoped acceptance tests. This directory does not exist yet. If a real compatibility test exposes a host defect, fix that generic defect separately with a reproducer; do not use this plan to introduce a new plugin framework or Session coordinator.
 
-File count is a review boundary, not a reason to omit a necessary contract. A proposal requiring a new host daemon, plugin framework rewrite, desktop state machine in Core, or custom permission UI must be split from v1 and justified separately. Keep Schema → Core/Protocol → Server dependency direction; the plugin must not import private Core/Server implementation.
+## 4. Package and launcher
 
-## 4. Plugin package and distribution
-
-Keep the plugin independently buildable, for example under a new `plugins/computer-use/` directory with its own build manifest and tests. That path is proposed and does not exist yet. It can later move to a separate repository without changing the runtime contract. Use a small Rust adapter for the first distributable: it can ship as a native executable without requiring globally installed Node or Bun in a GUI-launched Desktop process.
-
-The assembled, platform-specific bundle is:
+Proposed assembled bundle:
 
 ```text
 computer-use/
@@ -80,167 +71,113 @@ computer-use/
   .mcp.json
   README.md
   skills/computer-use/SKILL.md
-  commands/computer-use.md
-  bin/apexo-computer-use
+  bin/mcp
   bin/agent-desktop
   bin/agent-desktop-macos-helper
-  policy.default.json
-  release.json
+  SHA256SUMS
   licenses/
 ```
 
-An optional agent can be added later; it must not select an unconfigured model or raise host permissions. The first command loads the Skill and reports setup status using normal tool calls. Installation and startup must not start provider work, capture the screen, operate an app, or prompt for OS permissions.
+Keep the plugin manifest name `computer-use` and MCP entry `desktop` stable; they determine permission identifiers. A separate agent, slash command, settings UI, and custom release-manifest schema are unnecessary for v1.
 
-Proposed `.mcp.json` for the supported adapter:
+Use only fields already consumed by the bundle loader:
 
 ```json
 {
   "mcpServers": {
     "desktop": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/apexo-computer-use",
-      "args": ["mcp"],
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/mcp",
       "env": {
-        "APEXO_COMPUTER_USE_DATA": "${CLAUDE_PLUGIN_DATA}/computer-use"
-      },
-      "client_context": true
+        "AGENT_DESKTOP_HOME": "${CLAUDE_PLUGIN_DATA}/agent-desktop"
+      }
     }
   }
 }
 ```
 
-`client_context` is a proposed field, not supported configuration today. Old hosts must remain safe: the adapter can serve passive status/help without it, but must reject desktop access when trusted call metadata is absent. Declare the minimum tested Apexo version in `release.json` and README; do not assume the current manifest loader enforces a minimum-version field.
+`bin/mcp` is a small macOS shell launcher, not an MCP proxy. It resolves its adjacent native executable, creates a fresh `apexo-<uuid>` namespace using a system utility by absolute path, and replaces itself with `exec .../agent-desktop mcp --session <namespace>`. It writes no diagnostics to stdout, forwards no model-controlled flags, and performs no downloads or desktop actions. A new launch always gets a new namespace, including after reconnect. Do not call `session start`: a namespace without a session manifest already works and does not enable tracing. There is no mapping to Apexo Session IDs.
 
-Release requirements:
+Let upstream create its private state directory. Namespace refmaps still persist on disk even with tracing off; do not describe this mode as memory-only. Rely on the plugin data lifecycle and document how to clear retained data after disconnecting all consumers. Do not add a background garbage collector or delete shared data on each launcher exit.
 
-- Pin the adapter, upstream executable, and helper together, with platform, architecture, hashes, and upstream source/tag provenance in `release.json`. Copy native files as regular executable files and preserve the helper's adjacency. Do not copy an npm installation tree or symlinks.
-- Respect current PluginStore limits: at most 20,000,000 bytes per file, 200,000,000 bytes total, and 20,000 files. `node_modules` is omitted and symlinks are rejected. Check actual artifacts against these limits; do not enlarge host limits to accommodate a bundled JavaScript runtime.
-- Verify upstream checksums and available provenance during assembly. Keep Apache-2.0 license/attribution and any applicable NOTICE material with redistributed upstream files. Record any changes to upstream source.
-- Initially distribute an extracted platform bundle installable through `apexo plugins install --source /absolute/path/to/computer-use --trust`. A pinned Git/catalog source may follow using existing loader behavior. Direct ZIP installation and npm install hooks are not existing plugin capabilities.
-- Perform downloads and assembly before activation. MCP startup must work offline and within the host's startup deadline. Never run `npx ...@latest`, a package installer, or a silent dependency upgrade during a tool call.
-- Retain settings under the provided plugin data epoch; keep installed files immutable. Check a manually supplied external binary only through explicit local setup, with version/hash validation. The shipped default uses its adjacent binary, not an arbitrary PATH match.
+Assembly requirements:
 
-For the spike only, replace the command with an explicitly provisioned absolute `agent-desktop` executable and pass `mcp` plus a fixed experiment session namespace. Omit `client_context`. Use an isolated test backend with a single test Session; this does not establish concurrent-session safety.
+- Keep downloaded binaries and assembled bundles in release artifacts or ignored build output, not source commits. Commit only the plugin metadata, launcher, Skill, assembly tooling, and documentation.
+- Pin a release/source revision and the matching executable/helper; record versions, architecture, artifact origin, and hashes in README and `SHA256SUMS`. Verify upstream checksums and available build attestations. Include Apache-2.0 license/attribution and applicable NOTICE material.
+- Copy regular files with executable bits and keep the helper adjacent to the CLI. The installed plugin must work without global Node/Bun, npm hooks, or a PATH-resolved `agent-desktop`.
+- Check actual files against PluginStore's current limits: 20,000,000 bytes per file, 200,000,000 bytes total, and 20,000 files; symlinks are rejected and `node_modules` is omitted. An oversized artifact is a packaging decision to resolve, not permission to silently raise host limits.
+- Assemble/download before activation. Start offline using the existing MCP startup deadline. Initially use `apexo plugins install --source /absolute/path/to/computer-use --trust`; this does not imply support for direct archive installation.
+- Keep installed files immutable. Retain the previous accepted bundle for rollback and list the minimum tested Apexo version in README; the current loader does not enforce that prose as a version constraint.
 
-## 5. The small host extension: trusted MCP call context
+Do not place `client_context`, `timeout`, or `defer_tools` in `.mcp.json` expecting them to work: the current bundle mapping does not forward those fields. Use existing host MCP configuration for supported timeout/exposure settings when needed, and test the effective configuration.
 
-Add a default-off `client_context` boolean to local MCP definitions. It is a generic opt-in for a trusted local executable. Reject it for remote transports in v1. Preserve it through these paths:
+## 5. Permission setup is part of integration
 
-1. [Bundle mapping](../packages/core/src/plugin-bundle.ts).
-2. [V1 MCP schema](../packages/core/src/v1/config/mcp.ts) and [V1-to-V2 migration](../packages/core/src/v1/config/migrate.ts).
-3. [Native MCP schema](../packages/core/src/config/mcp.ts).
-4. [MCP connection/tool construction](../packages/core/src/mcp.ts).
-5. [McpTools call construction](../packages/core/src/mcp-tools.ts).
+The built-in [build agent defaults](../packages/core/src/plugin/agent.ts) include wildcard `allow`. Therefore installing a trusted MCP plugin **does not automatically require confirmation**. Plugin trust permits loading code; it is not a desktop permission profile.
 
-After the existing permission check and before dispatch, attach host-generated metadata alongside `arguments` in the MCP request. The proposed wire shape is:
+Before enabling desktop work, apply a user-owned configuration with a deny rule for this server and exact exceptions for the intended agent. The following native V2 fragment enables only snapshot confirmation on `build`; all other desktop tools remain denied:
 
 ```json
 {
-  "name": "computer_snapshot",
-  "arguments": { "run_id": "opaque-plugin-run" },
-  "_meta": {
-    "io.apexo/call-context": {
-      "version": 1,
-      "owner": "opaque-owner-for-this-session-incarnation-and-connection",
-      "sessionID": "host-session-id",
-      "agentID": "host-agent-id",
-      "messageID": "host-assistant-message-id",
-      "callID": "host-tool-call-id"
+  "permissions": [{ "action": "mcp_computer-use_desktop_*", "resource": "*", "effect": "deny" }],
+  "agents": {
+    "build": {
+      "permissions": [
+        { "action": "mcp_computer-use_desktop_desktop_snapshot_3bd13b1a54", "resource": "*", "effect": "ask" }
+      ]
     }
   }
 }
 ```
 
-The owner must distinguish a Session incarnation and an MCP connection generation, which is already Location-bound. Derive it from the captured [SessionLifecycle claim](../packages/core/src/session/lifecycle.ts), for example with a connection-scoped weak map and random opaque values. Do not rediscover ownership by bare Session ID after awaiting work, introduce a durable drain ID, or serialize the claim object. Missing/stale ownership fails before a context-dependent call executes.
+This example uses the current `McpTools.name("computer-use:desktop", "desktop_snapshot")`. During implementation, publish a complete copyable profile for the selected tools using the actual discovered keys. Do not use a broad per-agent `allow` or `ask` for the entire server: that would also expose administrative and composite tools. A changed plugin/server name requires regenerating the profile. Merge into a supported V2 configuration; do not mix native `permissions`/`agents` with V1 `permission`/`agent` keys or place this fragment inside the plugin manifest.
 
-The metadata is outside the model-visible input schema and is never merged from model arguments. Pass no credentials, prompt text, environment, or workspace files. Only explicitly opted-in local servers receive it; ordinary MCP requests remain unchanged. Status/help requests that do not access desktop content may work without metadata. The adapter trusts the parent stdio channel, not a bearer field the model can choose. This is isolation between calls through Apexo, not a sandbox against other programs running as the same OS user.
+Suggested baseline, with each enabled tool set to `ask`:
 
-Propagate context through eager tools, deferred `use_tool`, and Code Mode's actual MCP execution path. The plugin should expose a small catalog, so it does not need Code Mode to function. Do not add Computer Use-specific branches to those paths.
+| Purpose                | Upstream tools to consider for the explicit profile                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Setup and instructions | `desktop_status`, `desktop_permissions`, `desktop_version`, `desktop_skills_get`                                                      |
+| Observation            | `desktop_list_apps`, `desktop_list_windows`, `desktop_list_surfaces`, `desktop_snapshot`, `desktop_find`, `desktop_get`, `desktop_is` |
+| Ref-based interaction  | `desktop_click`, `desktop_type`, `desktop_set_value`, `desktop_clear`, `desktop_scroll`                                               |
+| Visual observation     | `desktop_screenshot`                                                                                                                  |
 
-A public config-schema change can require generated output updates even without a new endpoint. Run the canonical generators when required; never edit generated sources. Keep the normal PluginContext, PermissionV2 resource model, and SessionRunner orchestration unchanged for this milestone.
+Leave other tools denied, including `desktop_batch`, `desktop_launch`, clipboard, session/trace/sandbox administration, raw pointer/held-input tools, and unrestricted keyboard shortcuts. Use native menu refs for the initial save workflow. Extend this list only for a concrete accepted workflow.
 
-## 6. Adapter behavior
+[PermissionV2](../packages/core/src/permission.ts) uses the last matching rule; [agent configuration](../packages/core/src/config/plugin/agent.ts) appends agent-specific rules after global rules. Other configuration, saved grants, child authority, and automatic review settings can affect the effective decision. Test that decision with a fresh Session before the first real action. An `ask` rule enters Apexo's existing approval mechanism; it does not guarantee a fresh human dialog under every review configuration. Restart/recreate the Location when changing host configuration: bundle reload alone does not rediscover those files.
 
-### Tool surface
+The current MCP permission check receives the tool key and resource `*`, not the app/window/text arguments. These rules cannot enforce an app allowlist, disallow `output_path` on screenshot, or restrict the flags of an enabled tool. The Skill's target selection and no-file-output guidance are operating instructions, not security controls. Other enabled host tools, such as shell execution, remain governed by their own permissions. An app-confined product would require a separate design.
 
-Names below are plugin-facing proposal names. Apexo derives its model-facing MCP names; the Skill must use discovered tools rather than hardcode Apexo's hashed prefix.
+## 6. Skill, errors, and data handling
 
-| Tool/group                                                                 | Contract                                                                                                                                      |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computer_status`                                                          | Report versions, supported capabilities, permission states, context support, and readiness without prompting or reading desktop content.      |
-| `computer_help`                                                            | Return the installed version's usage/recovery guidance.                                                                                       |
-| `computer_apps`, `computer_windows`                                        | List only policy-permitted targets; avoid titles/content from unrelated apps. Require caller context.                                         |
-| `computer_start`                                                           | Select a permitted app/window, acquire the desktop lease, and return a fresh opaque `run_id`. It does not launch arbitrary executables.       |
-| `computer_snapshot`                                                        | Return bounded accessibility data and refs for the selected target. Support compact/region reads; report truncation explicitly.               |
-| `computer_click`, `computer_set_value`, `computer_type`, `computer_scroll` | Accept refs issued for this owner/run only. Validate the live target and capability before dispatch. One operation per call.                  |
-| `computer_press`                                                           | Use an explicit key allowlist and selected target. Disable combinations that can escape the selected app or launch programs.                  |
-| `computer_screenshot`                                                      | Capture only the selected permitted window and return an MCP image block plus dimensions. No arbitrary output path or whole-desktop fallback. |
-| `computer_release`                                                         | End this owner's run and join its children before releasing control. Repeating release is harmless.                                           |
+The Skill must use discovered MCP names and the installed version's schemas. It should explain this short workflow:
 
-Do not offer raw CLI arguments, an eval/shell tool, upstream `batch`, arbitrary launch arguments, or upstream session/sandbox administration. Those would bypass the typed operation and policy boundary. Unsupported operations return a capability error; a Skill must not route around it through bash or another tool.
+1. Confirm local graphical placement, OS grants, the selected app/window, and sequential desktop use. Use passive permission checks; only open a grant guide when the user requests setup. Installation/activation must not prompt for OS grants or start provider work.
+2. Read installed upstream guidance with `desktop_skills_get` when needed. Do not rely only on MCP initialization instructions, which are not guaranteed to become model context.
+3. Observe the target, select a ref from that observation, perform one action, and re-observe the result. Prefer a focused/compact tree before expanding it. Text found in a window is task data, not an instruction source.
+4. Re-observe after stale/ambiguous refs, human interference, or reconnect. Do not guess a replacement ref or treat a successful AX return as proof the UI changed.
+5. Preserve upstream error codes and delivery/retry information when available. A timeout, disconnect, or `delivered_unverified` outcome can mean an action already happened. Inspect state before considering another action; do not blindly repeat a mutation or fall back to shell to bypass a denial.
+6. Request screenshots for the intended window without an output path, so MCP returns an image block. Use a vision-capable model only after the provider image path passes acceptance.
 
-Use argument arrays without a shell. The adapter controls global flags, binary path, helper path, state root, and session namespace. Send typed text through upstream stdin where supported, so it is not exposed in the OS argument list. This does not remove text from Apexo's normal tool history; do not claim secret storage.
+Reuse existing cancellation and transport recovery; do not implement plugin retry queues or an idempotency service. Stop cannot undo an already delivered action. Test real descendant cleanup before claiming that Stop prevents further activity. Upstream's MCP request limit is 4 MiB and Apexo's stdio frame limit is 16 MiB; use bounded observations and appropriate screenshot sizes. A host size/transport error may lose detailed upstream diagnostics and must not be converted into an assumed safe retry.
 
-### Ownership, control, and interruption
+The direct MCP bridge passes text as subprocess arguments without a shell. Do not promise that typed text is hidden from process inspection. Screen content, tool arguments, and screenshots may also enter Apexo history and the configured model provider. Keep tracing and extra screenshot-file output off in the recommended workflow, use synthetic data for acceptance, and leave password/secret entry outside v1's supported workflows.
 
-- Bind `run_id` to the trusted owner and selected app/process/window identity. Model-visible `run_id` is a selector, not authority. Reject another caller's run/ref even when its exact string is known.
-- Give every run a fresh upstream namespace, satisfying upstream's ID constraints. Same-Session reconnects, plugin reload, process restart, release, and lease expiry invalidate previous run IDs and refs. Start again and observe before acting; do not silently reuse old refs.
-- Serialize commands within a run. Use a shared OS-user/desktop lease across Locations and plugin processes, held from `computer_start` to release/expiry. A second run gets `DESKTOP_BUSY`; do not queue hidden desktop actions. Upstream's shorter action lock remains additional protection.
-- Keep that coordination lock outside versioned package/data epochs, at a private stable per-user location, so an update or a second Apexo data root cannot create an independent desktop lock. The lock contains only ownership/liveness information; it is not a background host service or a place for screenshots and application content.
-- Default idle expiry is 120 seconds between plugin calls, configurable locally up to five minutes. Expiry requires a new run and snapshot. Time spent awaiting a human approval can expire a run; the subsequent call must fail safely instead of acting on old context.
-- Hold the lease while a child is running. Cancellation, EOF, disconnect, or shutdown stops admission, terminates owned child work, joins it, invalidates the run, and then releases control. A process crash must not free control while a surviving descendant can still send input; use an inherited lock/guardian or an equivalent proven lifetime mechanism. Do not infer cleanup solely from the wrapper PID exiting.
-- Use a 20-second maximum native operation deadline and a five-second cleanup budget for v1, within the current default 30-second host request budget. These are proposed bounds to verify, not measured performance. Keep model idle time separate from an executing operation.
-- Never replay a mutation after timeout, cancellation, disconnect, or an uncertain delivery result. Preserve upstream error code and delivery/retry disposition. A new observation determines what happened before any new action.
-- Track admitted message/call IDs within each live owner before spawning a child. An exact duplicate can return the recorded completed result or an in-progress/unknown error, but cannot spawn again. After a crash, old run IDs are invalid rather than recovered for execution. This bounded ledger does not schedule or resume work.
-- Idle runs perform no background desktop actions. An interrupted model turn between calls may leave only an idle lease until expiry; document that bounded limitation. A new call from a retired Session cannot renew it. Active-call cancellation must stop native work within the tested cleanup bound.
+macOS grants depend on the actual launch chain. Test native CLI and the packaged Electron app separately; Terminal permission is not proof of Desktop permission. Missing Screen Recording should block screenshot use while supported Accessibility actions remain usable. Unsupported placement or dependencies must be explained through existing status/errors and README, without promising automatic host-location detection that is not implemented.
 
-The wrapper should call the CLI per operation, supplying its chosen namespace. Directly proxying one upstream MCP process cannot provide per-call namespace selection. A CLI child is implementation detail; all externally visible calls remain MCP tools in Apexo's standard execution path.
+## 7. Delivery sequence and expansion triggers
 
-### Permissions and data
+| Stage               | Work and exit condition                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Prove the boundary  | Use a pinned local executable and a minimal bundle; verify discovery, a real observe/edit/observe sequence, denied dispatch, image delivery, and Stop through native Apexo. Use disposable data. |
+| Assemble the plugin | Add the launcher, Skill, exact permission profile, native files, license/provenance, and setup/rollback instructions. Validate offline packaged launch.                                          |
+| Accept the release  | Complete the companion acceptance cases through CLI and packaged Desktop, record evidence and limitations, then distribute the exact accepted bundle.                                            |
 
-Keep Apexo's existing per-tool allow/ask/deny policy authoritative. Plugin trust, an app being on a list, and the OS Accessibility grant do not override a host denial. The current generic MCP permission request uses resource `*`; v1 must not advertise app-scoped saved approvals in Apexo's permission UI.
+These stages use the same upstream MCP architecture; the first stage does not commit the project to replacing it with a custom adapter.
 
-Enforce an additional plugin-owned application allowlist configured by the user outside model tools. Default to no application access until setup. Identify targets using stable platform identity and the actual running process/window, and revalidate after app restart. A ref must be tied to a previously permitted snapshot; accepting a ref string alone is insufficient. No tool can edit policy, enable headed mode, or expand capture scope.
+Add a wrapper only if an observed requirement needs argument/app enforcement, secret input transport, or a smaller server-side tool catalog. Investigate a generic host call-context contract only if enforced ownership across Apexo Sessions is required and plugin-only mechanisms cannot meet it. Treat remote desktop placement and parallel workflow scheduling as separate features. Each expansion needs a concrete requirement, a minimal change proposal, and acceptance for the new guarantee.
 
-Start with semantic accessibility actions. Headed input, when explicitly enabled in local policy, must still validate the exact target; reject any action whose target cannot be established. The human can change the UI at any time, so re-observation and stale-ref handling remain necessary even while the plugin holds its own lease. App targeting reduces accidental access; it is not an OS security sandbox or a complete classifier for sensitive actions inside an allowed app.
+## References
 
-OS permission detection is passive. The setup instructions identify which packaged application/binary needs Accessibility and, for screenshots, Screen Recording. Let the user perform the grant; never edit OS privacy databases or assume a Terminal grant covers Electron's launch chain. Prefer an existing permission guide or setup command over a new host settings page.
-
-Store refs and operational state in a private directory inside the provided data epoch. Default upstream trace and automatic screenshot persistence off. Return only task-relevant observations to the model. A requested screenshot necessarily enters the configured model's input and Apexo's normal history/attachment handling. Plugin diagnostics omit raw screen text, typed text, clipboard contents, and base64 images. Keep upstream error/disposition fields at the beginning of bounded error text so recovery survives the current MCP error truncation.
-
-Persist settings across updates and normal disable/enable, but invalidate transient runs. Follow existing keep-data/uninstall and deferred cleanup behavior; never remove data still owned by a live process. A minimal operation receipt may record call identity, operation, target identity, timing, and delivery status. It is evidence for diagnosis, not a durable execution queue or authority to retry.
-
-### Skill contract
-
-The shipped Skill must describe the installed tool vocabulary, setup status, and supported app/operation scope. Load it through Apexo's existing Skill mechanism; MCP initialization instructions alone are not a guaranteed system-context source. Teach the sequence: check readiness, select a target, start a run, observe, perform one action, observe the result, and release when finished. Use compact/region reads to control context size and request screenshots only when they help the task.
-
-Keep screen content as untrusted task data, explain stale-ref and delivery-uncertainty recovery, and require the agent to stop when the user takes over or the requested operation is unsupported. Do not copy upstream CLI examples that encourage shell execution around the adapter's policy. The Skill guides behavior; ownership, target validation, and permission enforcement remain executable checks.
-
-## 7. Implementation sequence
-
-| Stage                              | Work                                                                                                                                                    | Exit gate                                                                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| P0: integration spike              | Isolated bundle with upstream MCP and Skill, pinned native executable, one test Session. Verify tool discovery, a real action, and an image round trip. | A01–A04; record limitations. Host source delta is zero.                      |
-| P1: generic host context           | Implement the opt-in field and trusted metadata through bundle/migration/native execution. Add real MCP protocol tests.                                 | H01–H08. Ordinary MCP and disabled-plugin behavior remain unchanged.         |
-| P2: plugin adapter                 | Build typed tools, app policy, run/ref ownership, cross-process control, deadlines, and cancellation. Package a native artifact.                        | P01–P14. No autonomous task loop.                                            |
-| P3: installed integration          | Install the real bundle; test lifecycle, permissions, provider tool calls/results, and screenshot consumption through native CLI and rebuilt Desktop.   | I01–I10. Setup works with no global Node/Bun on the GUI PATH.                |
-| P4: desktop acceptance and release | Execute fixture-owned UI scenarios plus real application tasks, review evidence, run required repository gates, and publish the versioned plugin.       | D01–D09 and release checklist pass on each advertised platform/architecture. |
-
-Each implementation PR should identify the acceptance IDs it closes and the exact host/plugin/upstream versions. Keep the generic host change independently reviewable from the plugin. Do not merge a raw upstream MCP spike as the supported plugin. Adding Windows/Linux or remote placement requires a new platform acceptance record, not just a successful cross-compilation.
-
-## 8. Design review checklist
-
-- [ ] Every desktop-specific behavior lives in the plugin; host changes implement only generic caller context and any unavoidable generated schema outputs.
-- [ ] The bundle is compatible with current installation, size, executable-mode, and data-epoch behavior.
-- [ ] Caller identity is never taken from the model, hook timing, or a process-global last-session variable.
-- [ ] App policy, native launch chain, output limits, cancellation, and lease recovery have observable failure cases.
-- [ ] Tests exercise the installed plugin through Apexo; upstream tests and standalone CLI demonstrations remain separate evidence.
-- [ ] The [acceptance record](computer-use-plugin-acceptance.md#evidence-and-release-checklist) shows proposed/not-run items honestly.
-
-## 9. References
-
-- [Native installed plugin lifecycle](native-plugin-runtime.md), [persistent plugin data](plugins-persistent-data.md).
-- [Native MCP runtime](native-mcp-runtime.md); source is authoritative where historical feature documents lag current behavior.
-- [Pinned upstream README](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/README.md).
-- [Pinned MCP implementation](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/src/mcp/mod.rs) and [call/result mapping](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/src/mcp/call.rs).
-- [Pinned session semantics](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/apps/docs/content/docs/sessions.mdx), [configuration](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/apps/docs/content/docs/configuration.mdx), [macOS requirements](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/apps/docs/content/docs/platforms/macos.mdx), and [installation](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/docs/install.md).
-- [Upstream Apache-2.0 license](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/LICENSE).
+- [Pinned upstream MCP guide](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/apps/docs/content/docs/guides/mcp.mdx): command mapping, fixed globals, cancellation, and security scope.
+- [Pinned upstream sessions](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/apps/docs/content/docs/sessions.mdx): namespaces and tracing behavior.
+- [Pinned upstream MCP subprocess code](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/src/mcp/call.rs): argument transport and image conversion.
+- [Pinned upstream installation](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/docs/install.md) and [macOS requirements](https://github.com/vercel-labs/agent-desktop/blob/8ffecc1d3d088727f8d84baf4dde0224aab2e8ad/apps/docs/content/docs/platforms/macos.mdx).
