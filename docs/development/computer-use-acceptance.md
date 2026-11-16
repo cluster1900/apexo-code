@@ -54,8 +54,11 @@ The tested native Desktop variant was rebuilt with `APEXO_SIDECAR_V2=1`, package
 | Live TextEdit                               | Real xAI edited English/Chinese/punctuation/newlines and saved; independent file bytes matched exactly. Separate live long-document scroll action completed.                                                                                                  |
 | Live Calculator                             | Real xAI clicked native controls for `137 × 29`; a completed tool observation contained `3973`. A final-bundle rerun with randomized operands observed `137 × 52 = 7124`                                                                                      |
 | Live vision                                 | Real xAI correctly identified a randomized left-to-right color order available only in screenshot pixels; image attachment and model answer independently checked                                                                                             |
+| Manual OS permission follow-up              | Desktop denied/Accessibility-only/granted verified; CLI denied/granted passed, with attribution and intermediate-state limits.                                                                                                                                |
 
 Fixtures may prepare disposable files, open test apps, select exact target windows, and independently inspect results. The UI operations completing the measured tasks flow through the installed plugin. Controlled-provider outcomes and live-model outcomes are separate evidence.
+
+The [OS permission follow-up](computer-use-permission-transitions.md) records manual grant transitions, test identities, failed attempts, and cleanup without resetting existing user grants.
 
 Measured native cancellation settlements included 15 ms on CLI and 26 ms on Electron backend; the final CLI run measured 47 ms. These are individual measurements, not a promised deadline. Tests waited for the actual native wait child to disappear, explicitly retried a retired connection, and did not replay the original action.
 
@@ -99,7 +102,7 @@ This maps the [18 acceptance cases](../computer-use-plugin-acceptance.md) withou
 | I06  | pass, tested cancellation | Actual native descendant stops; explicit recovery sends new work only; no original mutation is replayed                                                                                  |
 | I07  | partial                   | Idle update, failed staging retention, busy reload via existing suite, disable and reconnect tested; no distinct older published Computer Use release exists for a version rollback test |
 | I08  | pass, tested lifecycle    | Normal/keep-data uninstall/reinstall and existing live-reader data contract tests; connection authority is fresh after restart                                                           |
-| D01  | partial                   | Actual CLI, Electron backend and packaged app grant checks passed with existing grants; denied-to-granted OS settings transitions were not forced by revoking the user's current grants  |
+| D01  | partial                   | Separate Desktop: denied/Accessibility-only/granted verified. CLI denied/granted passed; its grant attribution and Accessibility-only stage remain uncertified.                          |
 | D02  | partial; dialog failed    | Live Unicode edit/save/byte comparison and long-document scrolling passed. Three new-document Save attempts did not produce the destination file; root cause remains unresolved          |
 | D03  | pass, tested app          | Calculator workflow independently observed with other fixture windows present                                                                                                            |
 | D04  | partial                   | Exact-window/closed-target recovery and host-denied launch covered; a live screenshot/AX prompt-injection experiment is not certified                                                    |
@@ -114,13 +117,14 @@ Parallel desktop workflows, app confinement, secret entry, unattended runs, Wind
 - [Host integration](../testing/runtime/computer-use-host-integration.md): fixed actual V2 CLI startup and xAI no-tool request failures.
 - [Fixture failures](../testing/test-fixtures/computer-use-acceptance.md): catalog/Client shape, local-provider routing, TSX preload, runtime selection, UI readiness, rejected-drain sequencing, ref assumptions, and the initial Calculator allowance failure are recorded separately. The initial TextEdit menu timeouts and the unsuccessful new-document Save dialog remain unresolved.
 - [Full repository gate](../testing/test-stability/computer-use-repository-gates.md): the first full test gate had three lifecycle timeouts. The unchanged focused rerun passed 87 tests with one skip. The final full-gate rerun passed all 18 batches; this passing rerun does not establish the original root cause.
+- [Native permission transitions](../testing/permissions/computer-use-transitions.md): a first post-grant Desktop capture failed; a controlled relaunch succeeded, with root cause still unknown. Fixture lifecycle/state and CLI attribution limits are recorded separately.
 
 ## Repository verification
 
-- `bun turbo typecheck --concurrency=2`: 21 tasks passed, 18 cached.
+- `bun turbo typecheck --concurrency=2`: follow-up run passed 21 tasks, 20 cached.
 - `bun run check:generated` in Client and legacy SDK: passed with no generated changes.
 - `bun run test:httpapi`: coverage/auth/effect each passed 360 cases, no failures/skips/missing.
-- Final `GITHUB_ACTIONS=false bun turbo test --concurrency=2`: six successful tasks, three cached; all 18 Apexo batches exited zero in 12m42.784s.
+- Follow-up `GITHUB_ACTIONS=false bun turbo test --concurrency=2`: six successful tasks, three cached; all 18 Apexo batches exited zero in 12m15.937s.
 - App unit tests: 114 passed, zero failures, 1,034 assertions. Desktop runtime-profile unit tests: three passed, eight assertions.
 - CI results apply only to the exact pushed PR head; no merge is authorized by local results alone.
 
@@ -151,6 +155,7 @@ bun script/computer-use-live.mjs cli calculator
 bun script/computer-use-live.mjs cli scroll
 bun script/computer-use-live.mjs cli vision
 bun script/computer-use-live.mjs cli smoke
+bun script/computer-use-permissions.mjs
 ```
 
 The separate exploratory `bun script/computer-use-live.mjs cli save-dialog` currently reproduces the incomplete new-document Save workflow; it is not a passing release gate.
