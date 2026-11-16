@@ -2,6 +2,8 @@
 
 Apexo's native runtime activates trusted installed bundle agents, commands, embedded skills, hook sources, and MCP tools from the shared global plugin store. Catalog installation and enablement describe stored configuration; `GET /api/plugins/runtime` reports what the selected Location has actually activated.
 
+The proposed [Computer Use plugin](computer-use-plugin-development.md) reuses this bundle lifecycle and defines separate [integration and desktop acceptance gates](computer-use-plugin-acceptance.md). It is a development plan, not an implemented runtime capability.
+
 The runtime response includes `generation`, `active` plugin IDs, and an optional failure. The status read is passive. `POST /api/plugins/reload` returns `true` on successful activation without starting provider work. Active work in the same Location produces a typed busy response. Other Locations remain independent.
 
 Bundle files and schema validation are staged first. Agent, command, and skill state transforms prepare private drafts before publication. The runtime holds their writer permits and the Location admission gate until it synchronously publishes the prepared state and bundle generation. A validation, load, or unsupported-component failure keeps the previous effective generation and persists a failure for subsequent status reads. A busy attempt does not overwrite that failure. Interrupted preparation releases the gate and writer permits.
