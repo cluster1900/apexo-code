@@ -1,4 +1,5 @@
 import { PluginBundle } from "@apexo/core/plugin-bundle"
+import { PluginStore } from "@apexo/core/plugin-store"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { httpClient } from "@apexo/core/effect/app-node-platform"
 import { serviceUse } from "@apexo/core/effect/service-use"
@@ -18,7 +19,7 @@ import { existsSync } from "fs"
 import { isRecord } from "@/util/record"
 import { FSUtil } from "@apexo/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
-import { Context, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
+import { Context, Duration, Effect, Exit, Fiber, Layer, Schema, Scope } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { ConfigV1 } from "@apexo/core/v1/config/config"
@@ -369,7 +370,14 @@ const layer = Layer.effect(
       function* (ctx: InstanceContext) {
         const auth = yield* authSvc.all().pipe(Effect.orDie)
 
-        let result: Info = Flag.APEXO_PURE ? {} : yield* Effect.promise(() => PluginBundle.configuration(path.join(Global.Path.data, "plugins")))
+        let result: Info = {}
+        if (!Flag.APEXO_PURE) {
+          const captured = yield* Effect.acquireRelease(
+            Effect.promise(() => PluginStore.capture(path.join(Global.Path.data, "plugins"))),
+            (capture) => Effect.promise(capture.release),
+          )
+          result = yield* Effect.promise(() => PluginBundle.configuration(captured.plugins))
+        }
         const authEnv: Record<string, string> = {}
 
         const pluginScopeForSource = Effect.fnUntraced(function* (source: string) {
@@ -607,8 +615,14 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Config.state")(function* (ctx) {
-        return yield* loadInstanceState(ctx).pipe(Effect.orDie)
+        const parent = yield* Scope.Scope
+        const scope = yield* Scope.fork(parent)
+        return yield* Scope.provide(loadInstanceState(ctx), scope).pipe(
+          Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
+          Effect.orDie,
+        )
       }),
+      "leases",
     )
 
     const get = Effect.fn("Config.get")(function* () {

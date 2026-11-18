@@ -61,7 +61,10 @@ try {
     30_000,
   )
   checks.push("native-terminal-startup-and-session-attachment")
-  child.terminal.write("Report the installed Computer Use native version.\r")
+  const prompt = "Report the installed Computer Use native version."
+  child.terminal.write(`\x1b[200~${prompt}\x1b[201~`)
+  await poll(() => plain().includes(prompt), "terminal editor shows the complete prompt")
+  child.terminal.write("\r")
   await poll(() => fixture.state.requests.length >= 2, "terminal prompt executes real plugin", 45_000)
   await poll(() => plain().includes("COMPUTER_USE_TUI_DONE"), "terminal renders provider completion", 30_000)
   const history = (await fixture.client.messages.list({ sessionID: session.id, order: "asc" })).data

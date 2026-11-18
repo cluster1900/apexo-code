@@ -56,10 +56,13 @@ export function permissionProfile(effect = "ask") {
 export function legacyPermissionProfile(effect = "ask") {
   const profile = permissionProfile(effect)
   return {
-    permission: { "mcp_computer-use_desktop_*": "deny" },
+    permission: { "mcp_computer-use_desktop_*": "deny", "computer-use_desktop_*": "deny" },
     agent: {
       build: {
-        permission: Object.fromEntries(profile.agents.build.permissions.map((rule) => [rule.action, rule.effect])),
+        permission: Object.fromEntries([
+          ...profile.agents.build.permissions.map((rule) => [rule.action, rule.effect]),
+          ...tools.map((tool) => ["computer-use_desktop_" + tool, effect]),
+        ]),
       },
     },
   }

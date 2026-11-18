@@ -2,7 +2,7 @@
 
 Optional local macOS desktop tools, backed by `vercel-labs/agent-desktop` 1.3.1. Apexo runs the model, Session, permissions, and tools; the plugin runs upstream MCP over stdio. Requires macOS 13+ and the native executable/helper for your architecture. The accepted platform/entrypoint matrix is recorded in the repository acceptance report; do not infer x64 support from an arm64 run.
 
-Use native V2 Sessions. The browser client must connect to the native V2 server. Desktop's native window acceptance uses the existing V2 sidecar (`APEXO_SIDECAR_V2=1`); the default mixed sidecar advertises V1 to the frontend and does not expose native plugin activation there. To assemble the tested Desktop variant, run `APEXO_SIDECAR_V2=1 bun run build` then `APEXO_UNSIGNED=1 bun run package --mac --dir` from `packages/desktop`, and launch it with `APEXO_SIDECAR_V2=1`. Alternatively connect Desktop to a local native V2 server through its existing server settings. A V1 config profile below describes config syntax; it does not certify V1 Session execution. The minimum reviewed host baseline is Apexo 1.18.35 at `d2ca7f0c6f65fd343bb5c7301cc79d85ae4626b1`; the two generic host corrections recorded in the implementation report are also required for the tested V2 Desktop/xAI combination.
+Use Apexo with support for installed plugin data in the backend that runs your Session. In default Desktop or a V1 browser client, use **Apply to this project** in Plugins after installation. Once `computer-use:desktop` shows as connected, send your next message in the existing Session. In native V2, use the Plugins runtime reload control. The Apexo repository's Computer Use acceptance record lists the verified scenarios.
 
 ## Install from the Apexo catalog
 
@@ -23,9 +23,11 @@ The builder downloads the fixed release, verifies a pinned SHA-256, and assemble
 Before activating desktop work, choose the profile matching your configuration loader:
 
 - Native V2 CLI/config: merge `permissions.json` (`permissions` and `agents`).
-- Default Desktop/mixed server or a V1 config: merge `permissions-v1.json` (`permission` and `agent`). The default compatibility config loader explicitly rejects V2 permission fields. Apexo's native Session runtime migrates this V1 profile into the same native rules.
+- Default Desktop/mixed server or a V1 config: merge `permissions-v1.json` (`permission` and `agent`). The profile covers both the compatibility Session tool names and the names used by native V2 after configuration migration.
 
-Both profiles deny this server globally and set only the listed tools to `ask` for `build`. Merge ordered rules and existing agent settings, preserving unrelated configuration; do not blindly replace your config or mix dialects. Review effective rules, saved grants, child restrictions, and automatic review settings in a fresh Session. Host config changes require a new Location/backend; Apply Plugins alone does not rediscover config files.
+Both profiles deny this server globally and set only the listed tools to `ask` for `build`. Merge the rules into the matching config dialect and preserve their order and existing agent settings. Review effective rules, saved grants, child restrictions, and automatic review settings in a fresh Session after reloading the config.
+
+With a blanket tool deny in V1, the agent also needs permission for `search_tool` and `use_tool` to discover and invoke deferred MCP tools. Apexo checks each discovered tool against its own rules. If an older copy of `permissions-v1.json` only lists `mcp_computer-use_desktop_*` names, use the updated profile for V1.
 
 ```sh
 apexo plugins install --source /absolute/path/to/computer-use-darwin-arm64 --trust
@@ -44,6 +46,8 @@ Grant Accessibility to the actual launching app when needed. Grant Screen Record
 - Use a backend in the same local graphical session as the target. Remote/WSL frontend control, parallel workflows, and unattended scheduled desktop actions are outside this release.
 
 ## Lifecycle and troubleshooting
+
+**Computer Use runs locally and requires no Vercel account or OAuth.** If `vercel:vercel` appears in the MCP panel, it belongs to the separately installed Vercel integration. Check the `computer-use:desktop` row for connection status and startup errors.
 
 The bundle uses its adjacent binaries and starts offline; a missing dependency fails visibly without downloads or PATH fallback. `UPSTREAM.json` identifies the archive and pinned digest, and `SHA256SUMS` covers the assembled files. On reconnect, take a new snapshot; old refs are not valid in the new namespace.
 

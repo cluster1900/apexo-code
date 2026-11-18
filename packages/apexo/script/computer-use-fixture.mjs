@@ -68,7 +68,11 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
         snapshot: false,
         compaction: { auto: false },
         permission: { "*": "deny", ...profile.permission },
-        agent: { build: { permission: { skill: "allow", ...profile.agent.build.permission } } },
+        agent: {
+          build: {
+            permission: { skill: "allow", search_tool: "allow", use_tool: "allow", ...profile.agent.build.permission },
+          },
+        },
         provider: {
           "computer-fixture": {
             npm: "@ai-sdk/openai-compatible",

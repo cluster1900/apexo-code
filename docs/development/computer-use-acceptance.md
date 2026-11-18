@@ -111,6 +111,12 @@ This maps the [18 acceptance cases](../computer-use-plugin-acceptance.md) withou
 
 Parallel desktop workflows, app confinement, secret entry, unattended runs, Windows/Linux, Intel graphical execution, and remote frontend control remain outside the supported scope. Existing positive grants do not prove denied-state handling. This record does not declare all 18 cases complete or universal desktop support.
 
+## 2026-11-18 compatibility follow-up
+
+The default packaged Desktop and the Web Client both installed and applied the original catalog bundle, exercised the MCP switch, and displayed the real `desktop_version` result in a Session created before installation. Run `bun script/computer-use-compat.mjs` from `packages/apexo` to exercise the same path through the mixed CLI. The tests used a loopback model fixture and a separate loopback OAuth MCP. [Compatibility bug and verification record](../testing/runtime/computer-use-host-integration.md#bug-20261118-003--the-compatibility-backend-leaves-plugin-data-unresolved)
+
+The compatibility changes passed all 21 typecheck tasks and all six Turbo test tasks, including all 18 Apexo test batches. Client and legacy SDK generation checks produced no diffs. HTTP API coverage, auth, and effect modes each passed all 360 routes. App unit tests passed 114 cases.
+
 ## Failures and fixes retained
 
 - [Bundle hashing](../testing/build/computer-use-bundle.md): fixed Bun byte-array compatibility and reverified assembly.

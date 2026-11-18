@@ -14,10 +14,13 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js"
 import { LayerNode } from "@apexo/core/effect/layer-node"
+import { Global } from "@apexo/core/global"
+import { PluginStore } from "@apexo/core/plugin-store"
 import { Cause, Effect, Exit } from "effect"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { MCP } from "../../src/mcp/index"
 import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
+import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
@@ -181,6 +184,58 @@ function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server:
 }
 
 const remote = (url: string, timeout?: number) => ({ type: "remote" as const, url, oauth: false as const, timeout })
+
+it.instance(
+  "expands and leases plugin data until the legacy MCP process closes",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const mcp = yield* MCP.Service
+      const instances = yield* InstanceStore.Service
+      const source = path.join(test.directory, "bundle")
+      const store = path.join(Global.Path.data, "plugins")
+      const marker = path.join(test.directory, "mcp-data")
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(source, "plugin.json"), JSON.stringify({ name: "leased-mcp" }))
+        await Bun.write(
+          path.join(source, ".mcp.json"),
+          JSON.stringify({
+            mcpServers: {
+              probe: {
+                command: process.execPath,
+                args: [stdioFixture, "--plugin-data-check"],
+                env: { TEST_PLUGIN_DATA: "${CLAUDE_PLUGIN_DATA}", TEST_PLUGIN_MARKER: marker },
+              },
+            },
+          }),
+        )
+      })
+      const install = yield* Effect.promise(() => PluginStore.mutate(store, { action: "install", source, trust: true }))
+      const id = install.items.find((item) => item.name === "leased-mcp")!.id
+      const uninstall = () => PluginStore.mutate(store, { action: "uninstall", id })
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(async () => {
+          if ((await PluginStore.active(store)).some((entry) => entry.item.id === id)) await uninstall()
+        }),
+      )
+
+      expect((yield* mcp.status())["leased-mcp:probe"]).toEqual({ status: "connected" })
+      const file = yield* Effect.promise(() => Bun.file(marker).text())
+      expect(yield* Effect.promise(() => Bun.file(file).text())).toBe("connected")
+      const removed = yield* Effect.promise(uninstall)
+      expect(removed.retainedData).toEqual([{ id, reason: "readers" }])
+      expect(yield* Effect.promise(() => Bun.file(file).exists())).toBe(true)
+
+      yield* Effect.all([instances.disposeDirectory(test.directory), instances.disposeDirectory(test.directory)], {
+        concurrency: 2,
+        discard: true,
+      })
+      expect(yield* Effect.promise(() => Bun.file(marker + ".closed").text())).toBe("true")
+      expect(yield* Effect.promise(() => Bun.file(file).exists())).toBe(false)
+      expect((yield* Effect.promise(() => PluginStore.catalog(store))).retainedData).toBeUndefined()
+    }),
+  15_000,
+)
 
 it.instance("advertises and lists the instance directory as its root", () =>
   Effect.gen(function* () {
