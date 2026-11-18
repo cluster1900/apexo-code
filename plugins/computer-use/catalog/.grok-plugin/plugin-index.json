@@ -1,0 +1,22 @@
+{
+  "plugins": {
+    "computer-use": {
+      "version": "0.1.0",
+      "sha": "0a59c784a1663f6d10029f62a347348325dbe2f5",
+      "components": {
+        "skills": [
+          {
+            "name": "computer-use",
+            "description": "Observe and operate a local macOS app through the installed MCP tools."
+          }
+        ],
+        "mcpServers": [
+          {
+            "name": "desktop",
+            "description": "Pinned agent-desktop 1.3.1 runtime for macOS."
+          }
+        ]
+      }
+    }
+  }
+}

@@ -4,7 +4,13 @@ Optional local macOS desktop tools, backed by `vercel-labs/agent-desktop` 1.3.1.
 
 Use native V2 Sessions. The browser client must connect to the native V2 server. Desktop's native window acceptance uses the existing V2 sidecar (`APEXO_SIDECAR_V2=1`); the default mixed sidecar advertises V1 to the frontend and does not expose native plugin activation there. To assemble the tested Desktop variant, run `APEXO_SIDECAR_V2=1 bun run build` then `APEXO_UNSIGNED=1 bun run package --mac --dir` from `packages/desktop`, and launch it with `APEXO_SIDECAR_V2=1`. Alternatively connect Desktop to a local native V2 server through its existing server settings. A V1 config profile below describes config syntax; it does not certify V1 Session execution. The minimum reviewed host baseline is Apexo 1.18.35 at `d2ca7f0c6f65fd343bb5c7301cc79d85ae4626b1`; the two generic host corrections recorded in the implementation report are also required for the tested V2 Desktop/xAI combination.
 
-## Build and install
+## Install from the Apexo catalog
+
+Open **Plugins**, refresh **Apexo Skills Catalog**, search for `computer-use`, and choose **Install**. Apexo fetches the catalog's pinned bundle after the trust confirmation. The bundle contains both Mac architectures and its launcher selects the executable and helper for the running architecture. Apply the permission profile below before enabling desktop work.
+
+Older Apexo releases can add `https://github.com/cluster1900/apexo-skills.git` from the Plugins **Sources** tab.
+
+## Assemble a standalone bundle
 
 From this directory, with Bun available during assembly:
 
@@ -46,3 +52,15 @@ Update or roll back by installing the selected assembled bundle and applying it 
 Disable/uninstall through existing Plugins controls and apply the change. Keep-data preserves the data epoch as documented by Apexo; ordinary removal respects live readers. To clear retained snapshot data manually, first disconnect all consumers and use Apexo's data-removal controls. Do not delete a live epoch. The plugin adds no background cleanup process.
 
 Source: [agent-desktop v1.3.1](https://github.com/vercel-labs/agent-desktop/releases/tag/v1.3.1), Apache-2.0. The unmodified executable and macOS helper are redistributed with the upstream license. Verify release origin with `gh attestation verify <archive> --repo vercel-labs/agent-desktop` where supported; checksum validation alone does not establish provenance.
+
+## Publish a catalog bundle
+
+From this directory, build a two-architecture artifact in a new output directory.
+
+```sh
+bun script/build-catalog.mjs /path/to/artifact-checkout/computer-use
+```
+
+The script uses the pinned standalone builder for each architecture and records the exact Apexo source revision. It accepts a directory of verified upstream archives as an optional second argument. Verify both upstream attestations and the packaged checksums before publishing the assembled files to the Apexo Skills artifact branch.
+
+Keep the catalog entry and summary together in [catalog/.grok-plugin](catalog/.grok-plugin). Set both pins to the published bundle's full Git commit SHA and sync the entries into the Apexo Skills index through a catalog PR. Run `sh script/verify-catalog.sh` to fetch and validate that exact revision.

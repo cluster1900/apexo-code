@@ -1,0 +1,21 @@
+{
+  "name": "Apexo Skills Catalog",
+  "plugins": [
+    {
+      "name": "computer-use",
+      "version": "0.1.0",
+      "description": "Operate local macOS apps and capture screenshots with native Apexo V2. Requires macOS 13 or later.",
+      "category": "productivity",
+      "author": {
+        "name": "Apexo"
+      },
+      "homepage": "https://github.com/cluster1900/apexo-skills/tree/main/plugins/computer-use",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/cluster1900/apexo-skills.git",
+        "sha": "0a59c784a1663f6d10029f62a347348325dbe2f5",
+        "path": "computer-use"
+      }
+    }
+  ]
+}
