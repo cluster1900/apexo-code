@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { createApexoClient } from "@apexo/sdk/v2/client"
 import { toolName, tools } from "../../../plugins/computer-use/script/build.mjs"
-import { startComputerUseFixture } from "./computer-use-fixture.mjs"
+import { desktopExecutable, startComputerUseFixture } from "./computer-use-fixture.mjs"
 import { poll } from "./grok-shell-fixture.mjs"
 
 const kind = process.argv[2] ?? "cli"
@@ -101,7 +101,7 @@ try {
   })
   state.steps.push({ tool: toolName("desktop_wait"), args: { ms: 60000 } })
   await fixture.prompt(cancel.id, "Wait for the native cancellation test.", false)
-  const nativePath = join(installed.path, "bin/agent-desktop")
+  const nativePath = await desktopExecutable(installed.path)
   const children = await poll(() => {
     const matches = Bun.spawnSync(["/bin/ps", "-axo", "pid=,ppid=,command="])
       .stdout.toString()

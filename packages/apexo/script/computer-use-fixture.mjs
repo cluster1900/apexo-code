@@ -1,10 +1,17 @@
 import assert from "node:assert/strict"
-import { cp, mkdir, writeFile } from "node:fs/promises"
+import { cp, mkdir, realpath, writeFile } from "node:fs/promises"
 import { resolve, join } from "node:path"
 import { spawn } from "node:child_process"
 import { Apexo } from "../../client/src/index.ts"
 import { permissionProfile, legacyPermissionProfile, toolName } from "../../../plugins/computer-use/script/build.mjs"
 import { startShellFixture, poll, deadline } from "./grok-shell-fixture.mjs"
+
+export async function desktopExecutable(bundle) {
+  const standalone = join(bundle, "bin", "agent-desktop")
+  return realpath(
+    (await Bun.file(standalone).exists()) ? standalone : join(bundle, "bin", process.arch, "agent-desktop"),
+  )
+}
 
 export async function startComputerUseFixture(kind = "cli", options = {}) {
   const state = { steps: [], requests: [], results: [], hold: undefined }

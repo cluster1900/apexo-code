@@ -29,3 +29,10 @@ The Web Client rerun passed four checks against the real native backend. It inst
 - Serve the built Web Client over a Bun proxy that fetches the mixed CLI's gzip response and forwards the response unchanged. The same-origin browser should decode the JSON and display the catalog.
 - Bun fetch decoded the upstream body while its response still carried `Content-Encoding: gzip`. The proxy removed the upstream encoding and length headers before forwarding the decoded stream.
 - The Web Client then passed all five compatibility UI checks, including download, apply, MCP toggle, and tool completion in the original Session. The response header trace confirmed that the tested catalog response used gzip.
+
+## BUG-20261118-007 — The release preview omitted a local catalog entry
+
+- Scope is the isolated 0.1.1 catalog preview. Copying only the marketplace and index left `skills/cn-tender-review` absent, so source refresh failed before the Computer Use download.
+- Reproduce by adding a temporary source containing only the current Apexo Skills catalog metadata. A valid preview must provide the relative paths declared in the marketplace.
+- The preview now copies the local skill tree alongside the metadata. Computer Use still resolves through its remote pinned Git source.
+- Default packaged Desktop and the Web Client each passed five checks against the complete preview. In both, clicking Install and confirming trust fetched the exact 0.1.1 pin, enabled its local MCP, and let an existing Session receive the real `desktop_version` result. The separate update test upgraded 0.1.0 to 0.1.1 and preserved the data in a synthetic legacy OpenCode root.

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import { promisify } from "node:util"
 import { Apexo } from "../../client/src/index.ts"
 import { toolName } from "../../../plugins/computer-use/script/build.mjs"
-import { startComputerUseFixture } from "./computer-use-fixture.mjs"
+import { desktopExecutable, startComputerUseFixture } from "./computer-use-fixture.mjs"
 import { deadline, poll } from "./grok-shell-fixture.mjs"
 
 const kind = process.argv[2] ?? "browser"
@@ -219,8 +219,9 @@ try {
   if (!live) {
     await client.sessions.wait({ sessionID: sessionState.id })
     assert.equal(Bun.spawnSync(["/usr/bin/open", "-a", "Calculator"]).exitCode, 0)
+    const executable = await desktopExecutable(fixture.bundle)
     const target = await poll(() => {
-      const result = Bun.spawnSync([join(fixture.bundle, "bin/agent-desktop"), "list-windows", "--app", "Calculator"], {
+      const result = Bun.spawnSync([executable, "list-windows", "--app", "Calculator"], {
         env: { ...process.env, AGENT_DESKTOP_HOME: join(runtime.output, "fixture-setup-state") },
       })
       const envelope = JSON.parse(result.stdout.toString())

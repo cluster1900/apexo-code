@@ -57,6 +57,8 @@ The later restricted-child fixture initially repeated a generated Client shape m
 - Fix: select the exact installed executable with both wait tokens regardless of intervening flags. Join its PID after interruption, then use existing MCP Retry before subsequent lifecycle cases.
 - Verification: the CLI native harness passed eight checks; the real wait descendant settled 15 ms after interruption in that run, and subsequent retry/update/uninstall checks passed. This is a measurement, not a cleanup-time guarantee.
 
+The 0.1.1 catalog release exposed another executable-path assumption in the same harness. With `COMPUTER_USE_BUNDLE` set to the dual-architecture bundle, the wait call started and the fixture timed out while looking for `bin/agent-desktop`. The launcher had selected `bin/arm64/agent-desktop` on the test Mac. The native harness and UI setup scripts now resolve the actual executable from both bundle layouts and canonicalize the path used to observe the wait child. Rerun `bun script/computer-use-native.mjs cli` from `packages/apexo` once for each layout. The dual-architecture and standalone arm64 runs each passed all nine checks, including observed wait-child cleanup.
+
 ## BUG-20261116-011: Ref fixture assumed unsupported schema and stronger delivery guarantees
 
 - Scope: direct-MCP packaging/ref acceptance fixture, not Apexo's permission boundary.

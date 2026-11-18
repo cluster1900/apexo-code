@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFile, writeFile } from "node:fs/promises"
 import { randomInt } from "node:crypto"
 import { join } from "node:path"
-import { startComputerUseFixture } from "./computer-use-fixture.mjs"
+import { desktopExecutable, startComputerUseFixture } from "./computer-use-fixture.mjs"
 import { poll } from "./grok-shell-fixture.mjs"
 
 const kind = process.argv[2] ?? "cli"
@@ -84,9 +84,10 @@ try {
     ])
     assert.equal(created.exitCode, 0, created.stderr.toString())
     const title = created.stdout.toString().trim()
+    const executable = await desktopExecutable(fixture.bundle)
     const window = await poll(
       () => {
-        const result = Bun.spawnSync([join(fixture.bundle, "bin/agent-desktop"), "list-windows", "--app", "TextEdit"], {
+        const result = Bun.spawnSync([executable, "list-windows", "--app", "TextEdit"], {
           env: { ...process.env, AGENT_DESKTOP_HOME: join(runtime.output, "fixture-setup-state") },
         })
         const value = JSON.parse(result.stdout.toString())

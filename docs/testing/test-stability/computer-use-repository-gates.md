@@ -17,3 +17,15 @@
 - Expected: the focused process completes its assertions and cleanup without an additional hook failure.
 - Root cause: unknown. This package's preload has an asynchronous `afterAll` that disposes the legacy AppRuntime and removes test data, but the reported output does not identify the exact stalled operation. Do not label this a Computer Use production defect or infer host-load causality from concurrency alone.
 - Reproduction/verification: the identical command, run after the other checks settled and without any source, timeout, or assertion change, passed three tests and 84 assertions in 2.19 seconds. This is a successful rerun, not proof of a repair. The complete repository gate is recorded separately in the follow-up acceptance report.
+
+## 2026-11-18 catalog release retest
+
+The complete local command `GITHUB_ACTIONS=false bun turbo test --concurrency=2` exercised all 18 Apexo batches on Bun 1.4.4/macOS arm64. Sixteen passed on the first run. Release changes in this pass covered plugin metadata and Computer Use acceptance scripts. Both affected batches passed when rerun from `packages/apexo` with the same test sources.
+
+### BUG-20261118-008 — Concurrent native Goal fixture received HTTP 401
+
+Batch 3 expected HTTP 200 from `POST /api/session` in `test/e2e/v2-goal.e2e.test.ts` and received 401. The root cause is unknown. `GITHUB_ACTIONS=false APEXO_TEST_SHARD=3/18 bun run test` passed the original 30-file batch on retry.
+
+### BUG-20261118-009 — Headless CLI fixture missed the background follow-up output
+
+Batch 15 expected the initial response and the background completion line in `test/cli/run/run-process.test.ts`. The command exited successfully with only the initial response. The root cause is unknown. `GITHUB_ACTIONS=false APEXO_TEST_SHARD=15/18 bun run test` passed the original 29-file batch on retry.
