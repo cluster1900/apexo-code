@@ -6,9 +6,11 @@ Use Apexo with support for installed plugin data in the backend that runs your S
 
 ## Install from the Apexo catalog
 
-Open **Plugins**, refresh **Apexo Skills Catalog**, search for `computer-use`, and choose **Install**. Apexo fetches the catalog's pinned bundle after the trust confirmation. The bundle contains both Mac architectures and its launcher selects the executable and helper for the running architecture. Apply the permission profile below before enabling desktop work.
+Open **Plugins**, refresh **Apexo Skills Catalog**, search for `computer-use`, and choose **Install**. Confirm trust and apply the plugin to your project. Apexo downloads the pinned bundle during installation and selects the appropriate executable and helper at startup. Update an existing installation from the same panel. Apply the permission profile below before enabling desktop work.
 
 Older Apexo releases can add `https://github.com/cluster1900/apexo-skills.git` from the Plugins **Sources** tab.
+
+The **Files** path in Plugins shows Apexo's installed copy. It normally lives under `~/.local/share/apexo/plugins` on macOS. If Apexo is reusing an existing OpenCode data directory, it resolves the installed copy under `~/.local/share/opencode/plugins`. `XDG_DATA_HOME` can change the data root. The project in which you use Computer Use is selected separately from this per-user installation.
 
 ## Assemble a standalone bundle
 
