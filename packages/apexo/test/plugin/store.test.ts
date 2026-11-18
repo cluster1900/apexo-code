@@ -316,3 +316,51 @@ test("HTTP hooks receive real tool input and can deny execution", async () => {
     },
   ])
 })
+
+test("discovers Apexo Skills in new and older registries while preserving manual registration and removal", async () => {
+  await using tmp = await tmpdir()
+  const location = "https://github.com/cluster1900/apexo-skills.git"
+  const fresh = path.join(tmp.path, "fresh")
+  const source = (await PluginStore.catalog(fresh)).sources.find((entry) => entry.location === location)
+  expect(source?.name).toBe("Apexo Skills Catalog")
+  if (!source) throw new Error("Missing built-in Apexo Skills catalog")
+
+  const store = path.join(tmp.path, "existing")
+  await Bun.write(path.join(store, "registry.json"), JSON.stringify({ sources: [], installed: [] }))
+  expect((await PluginStore.catalog(store)).sources).toEqual([source])
+  await PluginStore.mutate(store, { action: "remove-source", id: source.id })
+  expect((await PluginStore.catalog(store)).sources).toEqual([])
+
+  const manual = path.join(tmp.path, "manual")
+  await Bun.write(
+    path.join(manual, "registry.json"),
+    JSON.stringify({
+      sources: [{ info: { ...source, id: "existing-source", location: location.slice(0, -4) }, entries: [] }],
+      installed: [],
+    }),
+  )
+  const catalog = await PluginStore.mutate(manual, { action: "add-source", source: location })
+  expect(catalog.sources.map((entry) => entry.id)).toEqual(["existing-source"])
+})
+
+test("strict marketplace policy prevents the built-in Apexo Skills catalog from refreshing", async () => {
+  await using tmp = await tmpdir()
+  const source = (await PluginStore.catalog(tmp.path)).sources.find((entry) => entry.name === "Apexo Skills Catalog")
+  expect(source).toBeDefined()
+  if (!source) throw new Error("Missing built-in Apexo Skills catalog")
+
+  const requirements = path.join(tmp.path, "requirements.toml")
+  await Bun.write(requirements, "[plugins]\nstrict_known_marketplaces = true\n")
+  const restricted = await PluginStore.mutate(tmp.path, { action: "refresh", id: source.id })
+  expect(restricted.sources.map((entry) => entry.location)).toEqual([
+    "https://github.com/xai-org/plugin-marketplace.git",
+  ])
+  const registry = await Bun.file(path.join(tmp.path, "registry.json")).json()
+  expect(registry.sources.find((entry: { info: { id: string } }) => entry.info.id === source.id)?.info).toEqual(source)
+
+  await Bun.write(
+    requirements,
+    "[plugins]\nstrict_known_marketplaces = [" + JSON.stringify(source.location.slice(0, -4)) + "]\n",
+  )
+  expect((await PluginStore.catalog(tmp.path)).sources.some((entry) => entry.id === source.id)).toBe(true)
+})
