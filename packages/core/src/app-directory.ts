@@ -1,4 +1,14 @@
-import { lstatSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync } from "node:fs"
+import {
+  lstatSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs"
 import path from "node:path"
 import { LEGACY_APP_DIR_NAME } from "./legacy-compat"
 import { Flock } from "./util/flock"
@@ -9,11 +19,19 @@ export async function migrateAppDirectory(base: string, name: string, oldName: s
   const directory = path.join(base, name)
   const legacy = path.join(base, oldName)
   const staged = path.join(base, `.${name}.directory-migration`)
-  if (
-    (lstatSync(directory, { throwIfNoEntry: false }) || !statSync(legacy, { throwIfNoEntry: false })?.isDirectory()) &&
-    !lstatSync(staged, { throwIfNoEntry: false })
-  )
-    return directory
+  const canMove = () => {
+    const current = lstatSync(directory, { throwIfNoEntry: false })
+    if (!current) return statSync(legacy, { throwIfNoEntry: false })?.isDirectory() === true
+    if (!current.isDirectory() || !lstatSync(legacy, { throwIfNoEntry: false })?.isDirectory()) return false
+    try {
+      return readdirSync(directory).length === 0
+    } catch (error) {
+      // A concurrent Windows migration can remove the empty destination while we probe it.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return true
+      throw error
+    }
+  }
+  if (!canMove() && !lstatSync(staged, { throwIfNoEntry: false })) return directory
 
   await using lock = await Flock.acquire(`directory:${name}`, {
     dir: path.join(base, ".apexo-migration-locks"),
@@ -27,25 +45,22 @@ export async function migrateAppDirectory(base: string, name: string, oldName: s
   )
     throw new Error(`Unexpected Apexo directory migration entry: ${staged}`)
 
-  const previous = lstatSync(legacy, { throwIfNoEntry: false })
-  if (lstatSync(directory, { throwIfNoEntry: false })) {
+  if (!canMove()) {
     if (link) {
-      if (previous) unlinkSync(staged)
-      else renameSync(staged, legacy)
+      if (lstatSync(directory, { throwIfNoEntry: false }) && !lstatSync(legacy, { throwIfNoEntry: false }))
+        renameSync(staged, legacy)
+      else unlinkSync(staged)
     }
-    return directory
-  }
-  if (!statSync(legacy, { throwIfNoEntry: false })?.isDirectory()) {
-    if (link) unlinkSync(staged)
     return directory
   }
 
   // Keep references saved with the old absolute path, including Git worktrees and SQLite sidecars.
   // A staged alias also allows recovery if startup stops between the two atomic renames.
+  const windows = process.platform === "win32"
   if (!link) {
-    const windows = process.platform === "win32"
     symlinkSync(windows ? path.resolve(directory) : name, staged, windows ? "junction" : "dir")
   }
+  if (windows && lstatSync(directory, { throwIfNoEntry: false })) rmdirSync(directory)
   renameSync(legacy, directory)
   renameSync(staged, legacy)
   return directory
@@ -68,6 +83,18 @@ export function migratedAppDirectoryAliases(directory: string) {
   } catch {
     return
   }
+}
+
+export function resolveMigratedAppPath(
+  file: string,
+  aliases: NonNullable<ReturnType<typeof migratedAppDirectoryAliases>>,
+  subdirectory: string,
+) {
+  if (!path.isAbsolute(file)) return file
+  const relative = aliases.legacy
+    .map((legacy) => path.relative(path.join(legacy, subdirectory), file))
+    .find((suffix) => !path.isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith(`..${path.sep}`))
+  return relative === undefined ? file : path.join(aliases.current[0], subdirectory, relative)
 }
 
 export function migratedWorktreePaths(data: string, directory: string) {

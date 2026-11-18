@@ -144,7 +144,7 @@ Apexo reads JSON/JSONC config files:
 | Project directory     | `.apexo/` (agents, commands, plugins, themes, tools)                      |
 | Environment variables | `APEXO_*` (for example `APEXO_CONFIG`, `APEXO_CONFIG_CONTENT`)            |
 
-When upgrading, close older Apexo or OpenCode processes before the first launch. Apexo moves an existing per-user `opencode` directory to `apexo` when the new directory is absent. The old path becomes a filesystem alias so saved absolute paths still resolve. An existing `apexo` directory takes precedence. Apexo continues to read legacy project configuration, and `APEXO_APP_DIR_NAME` can select a separate profile.
+When upgrading, close older Apexo or OpenCode processes before the first launch. Apexo moves an existing per-user `opencode` directory to `apexo` when the destination is absent or empty. The old path becomes a filesystem alias so saved absolute paths still resolve. A populated `apexo` directory takes precedence. Apexo continues to read legacy project configuration, and `APEXO_APP_DIR_NAME` can select a separate profile.
 
 Apexo Desktop loads its interface from `apexo://renderer` and copies saved window routes and preferences on first launch. For older remote Apexo servers, pass `--cors apexo://renderer` to allow connections from the updated Desktop app.
 

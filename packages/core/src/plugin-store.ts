@@ -11,7 +11,7 @@ import { Schema } from "effect"
 import { PluginStore } from "@apexo/schema/plugin-store"
 import { Flock } from "./util/flock"
 import { ConfigMarkdown } from "./config/markdown"
-import { migratedAppDirectoryAliases } from "./app-directory"
+import { migratedAppDirectoryAliases, resolveMigratedAppPath } from "./app-directory"
 
 const exec = promisify(execFile)
 const official = "https://github.com/xai-org/plugin-marketplace.git"
@@ -115,13 +115,8 @@ function relocateRegistryPaths(root: string, value: State): State {
   if (path.basename(current) !== "plugins") return value
   const aliases = migratedAppDirectoryAliases(path.dirname(current))
   if (!aliases) return value
-  const relocate = (file: string, folder: "packages" | "sources") => {
-    if (!path.isAbsolute(file)) return file
-    const relative = aliases.legacy
-      .map((legacy) => path.relative(path.join(legacy, "plugins", folder), file))
-      .find((suffix) => !path.isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith(`..${path.sep}`))
-    return relative === undefined ? file : path.join(current, folder, relative)
-  }
+  const relocate = (file: string, folder: "packages" | "sources") =>
+    resolveMigratedAppPath(file, aliases, path.join("plugins", folder))
   const relocateTarget = (target: typeof Location.Type) => {
     const location = relocate(target.location, "sources")
     return location === target.location ? target : { ...target, location }
@@ -141,6 +136,7 @@ function relocateRegistryPaths(root: string, value: State): State {
     sources: value.sources.map((source) => ({
       ...source,
       ...(source.root === undefined ? {} : { root: relocate(source.root, "sources") }),
+      ...(source.target === undefined ? {} : { target: relocateTarget(source.target) }),
       entries: source.entries.map((entry) => ({ ...entry, target: relocateTarget(entry.target) })),
     })),
   }

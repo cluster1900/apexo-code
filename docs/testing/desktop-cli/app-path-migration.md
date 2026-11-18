@@ -35,3 +35,18 @@ Apexo uses the `apexo` directories and Desktop uses `apexo://renderer`. After an
 - `bun run test:httpapi` passed 360 scenarios in each of the coverage, authorization, and Effect modes.
 - The App unit suite passed 114 tests and the Desktop runtime-profile suite passed three tests.
 - `GITHUB_ACTIONS=false bun turbo test --concurrency=2` finished with seven local timeouts. Six cases passed when rerun separately. The remaining command sandbox network and Unix-socket test also timed out on the unmodified `main` baseline. Its timeout cause remains undetermined.
+
+## Follow-up path audit
+
+A profile had a populated legacy state directory beside an empty `apexo` directory. The initial migration skipped the move because it checked only for the destination's existence. Reproduce this by creating the empty destination in the XDG state fixture before starting the two child processes in `app-directory.test.ts`. The regression reproduced a legacy directory left in place. The migration now adopts a real legacy directory when the destination is empty and keeps the precedence of a populated destination.
+
+Local Qwen can persist an absolute model path rooted in the legacy cache. The state reader now resolves the saved path through the verified cache alias for managed models. The regression fixture preserves an external model path and confirms that downloaded weights remain visible. The plugin registry uses the same path resolver for its managed package and catalog locations.
+
+The Web and Desktop theme preload now use `apexo-theme-preload.js`. The embedded Web response computes its CSP hash from the renamed inline script. The shipped theme file also uses its Apexo name and retains the saved theme ID.
+
+On an upgraded local profile, a runtime path probe selected the four `apexo` directories, the canonical global config, and all three installed plugins. The model file retained its filesystem identity. The directory, plugin, Local Qwen, embedded UI, and CORS regression run passed 32 tests.
+
+- Clean startup selected the `apexo` directories and database filename. The real CLI upgrade and both TUI transports preserved the legacy worktree session. Both snapshot implementations restored files from before the migration.
+- The Web and macOS arm64 Desktop production builds shipped the new preload resource. The Web HTML contained the renamed inline script and its CSP hash matched. The packaged Desktop loaded the new URL, returned 404 for the old resource path, and restored the saved window and transcript. The isolated retry used the Chromium test keychain after the first launch stalled in macOS keychain initialization.
+- Both SDK generation checks and all 21 typecheck tasks passed. The App unit suite passed 114 tests. `bun run test:httpapi` passed 360 scenarios in each of the three modes.
+- The local full unit run had two timeouts in the ACP initialization and structured review CLI tests. Both cases passed individually. Replaying their complete batches using `APEXO_TEST_SHARD=1/18` and `APEXO_TEST_SHARD=6/18` with `bun run script/run-tests.ts` also passed.

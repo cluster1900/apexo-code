@@ -25,6 +25,7 @@ test("CLI processes share the migrated XDG directories and can open the existing
   for (const [type, root] of Object.entries(roots)) {
     await Bun.write(path.join(root, "opencode", "fixture.txt"), type)
   }
+  await mkdir(path.join(roots.state, "apexo"))
   const legacyDB = path.join(roots.data, "opencode", "opencode.db")
   const db = new Database(legacyDB, { create: true })
   db.exec("CREATE TABLE fixture (message TEXT); INSERT INTO fixture VALUES ('existing session')")

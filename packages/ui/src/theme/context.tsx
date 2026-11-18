@@ -4,7 +4,7 @@ import { createEffect, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
-import oc2ThemeJson from "./themes/oc-2.json"
+import oc2ThemeJson from "./themes/apexo-v2.json"
 import { resolveThemeVariant, themeToCss } from "./resolve"
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve"
 import type { DesktopTheme } from "./types"
@@ -153,7 +153,7 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   ${v2}
 }`
 
-  document.getElementById("oc-theme-preload")?.remove()
+  document.getElementById("apexo-theme-preload")?.remove()
   ensureThemeStyleElement().textContent = fullCss
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
