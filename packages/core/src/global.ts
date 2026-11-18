@@ -1,6 +1,5 @@
 import path from "path"
 import fs from "fs/promises"
-import { existsSync } from "fs"
 import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
@@ -8,20 +7,20 @@ import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
 import { LEGACY_APP_DIR_NAME } from "./legacy-compat"
+import { APP_DIR_NAME, migrateAppDirectory } from "./app-directory"
 
-// Apexo stores its files under "apexo" directories. If an "apexo" directory does not exist yet
-// but a legacy one does (see legacy-compat.ts), the legacy directory is used so sessions, auth
-// and config are not lost. APEXO_APP_DIR_NAME forces a specific directory name.
-export const APP_DIR_NAME = "apexo"
-export { LEGACY_APP_DIR_NAME }
+export { APP_DIR_NAME, LEGACY_APP_DIR_NAME }
 
 export function resolveAppDir(base: string, forced = process.env.APEXO_APP_DIR_NAME) {
-  if (forced) return path.join(base, forced)
-  const next = path.join(base, APP_DIR_NAME)
-  if (existsSync(next)) return next
-  const legacy = path.join(base, LEGACY_APP_DIR_NAME)
-  if (existsSync(legacy)) return legacy
-  return next
+  return path.join(base, forced || APP_DIR_NAME)
+}
+
+if (!process.env.APEXO_APP_DIR_NAME) {
+  await Promise.all(
+    [...new Set([xdgData!, xdgCache!, xdgConfig!, xdgState!])].map((base) =>
+      migrateAppDirectory(base, APP_DIR_NAME, LEGACY_APP_DIR_NAME),
+    ),
+  )
 }
 
 const data = resolveAppDir(xdgData!)

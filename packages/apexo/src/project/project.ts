@@ -6,6 +6,8 @@ import { ProjectDirectories } from "@apexo/core/project/directories"
 import { SessionTable } from "@apexo/core/session/sql"
 import { WorkspaceTable } from "@apexo/core/control-plane/workspace.sql"
 import { Flag } from "@apexo/core/flag/flag"
+import { Global } from "@apexo/core/global"
+import { migratedWorktreePaths } from "@apexo/core/app-directory"
 import { GlobalBus } from "@/bus/global"
 import { which } from "@apexo/core/util/which"
 import { Command } from "@/command"
@@ -238,10 +240,11 @@ const layer = Layer.effect(
         vcs: data.vcs?.type ?? fakeVcs,
         time: { ...existing.time, updated: Date.now() },
       }
+      const sandboxPaths = migratedWorktreePaths(Global.Path.data, data.directory)
       if (
         projectID !== ProjectV2.ID.global &&
-        data.directory !== result.worktree &&
-        !result.sandboxes.includes(data.directory)
+        !sandboxPaths.includes(result.worktree) &&
+        !result.sandboxes.some((directory) => sandboxPaths.includes(directory))
       )
         result.sandboxes.push(data.directory)
       result.sandboxes = yield* Effect.forEach(
@@ -418,8 +421,9 @@ const layer = Layer.effect(
       const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
       if (!row) throw new Error(`Project not found: ${id}`)
       const sandbox = AbsolutePath.make(directory)
+      const paths = migratedWorktreePaths(Global.Path.data, sandbox)
       const sboxes = [...row.sandboxes]
-      if (!sboxes.includes(sandbox)) sboxes.push(sandbox)
+      if (!sboxes.some((existing) => paths.includes(existing))) sboxes.push(sandbox)
       const result = yield* db
         .update(ProjectTable)
         .set({ sandboxes: sboxes, time_updated: Date.now() })
@@ -434,8 +438,8 @@ const layer = Layer.effect(
     const removeSandbox = Effect.fn("Project.removeSandbox")(function* (id: ProjectV2.ID, directory: string) {
       const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
       if (!row) throw new Error(`Project not found: ${id}`)
-      const sandbox = AbsolutePath.make(directory)
-      const sboxes = row.sandboxes.filter((s) => s !== sandbox)
+      const paths = migratedWorktreePaths(Global.Path.data, directory)
+      const sboxes = row.sandboxes.filter((sandbox) => !paths.includes(sandbox))
       const result = yield* db
         .update(ProjectTable)
         .set({ sandboxes: sboxes, time_updated: Date.now() })

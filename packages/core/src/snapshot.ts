@@ -11,6 +11,7 @@ import { Global } from "./global"
 import { Location } from "./location"
 import { AbsolutePath, RelativePath } from "./schema"
 import { Hash } from "./util/hash"
+import { migratedWorktreePaths } from "./app-directory"
 
 export const ID = Schema.String.pipe(Schema.brand("Snapshot.ID"))
 export type ID = typeof ID.Type
@@ -83,6 +84,25 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@apexo/v2/Snapshot") {}
 
+export const snapshotDirectory = Effect.fnUntraced(function* (
+  fs: FSUtil.Interface,
+  data: string,
+  projectID: string,
+  worktree: string,
+) {
+  const directory = path.join(data, "snapshot", projectID)
+  const current = path.join(directory, Hash.fast(worktree))
+  const aliases = migratedWorktreePaths(data, worktree)
+  if (aliases.length === 1) return current
+
+  // Existing session messages refer to tree hashes in the pre-migration snapshot repository.
+  for (const alias of aliases) {
+    const existing = path.join(directory, Hash.fast(alias))
+    if (yield* fs.existsSafe(path.join(existing, "HEAD"))) return existing
+  }
+  return current
+})
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -95,10 +115,14 @@ const layer = Layer.effect(
     const worktree = source
       ? AbsolutePath.make(yield* fs.realPath(source.worktree).pipe(Effect.orDie))
       : location.project.directory
-    const gitDirectory = AbsolutePath.make(path.join(global.data, "snapshot", location.project.id, Hash.fast(worktree)))
+    const gitDirectory = AbsolutePath.make(yield* snapshotDirectory(fs, global.data, location.project.id, worktree))
 
     const scope = Effect.fnUntraced(function* () {
-      const relative = path.relative(worktree, location.directory)
+      const directory = FSUtil.contains(worktree, location.directory)
+        ? location.directory
+        : (migratedWorktreePaths(global.data, location.directory).find((alias) => FSUtil.contains(worktree, alias)) ??
+          location.directory)
+      const relative = path.relative(worktree, directory)
       if (relative.startsWith("..") || path.isAbsolute(relative))
         return yield* new Error({ operation: "capture", message: "Location is outside the project" })
       return RelativePath.make(relative.replaceAll("\\", "/") || ".")

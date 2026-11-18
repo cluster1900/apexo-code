@@ -4,6 +4,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { PluginStore } from "@apexo/core/plugin-store"
 import { PluginBundle } from "@apexo/core/plugin-bundle"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { tmpdir } from "../fixture/fixture"
 import { loadBundleHooks } from "../../src/plugin/bundle-hooks"
 
@@ -45,6 +46,39 @@ async function fixture(root: string) {
   await Bun.write(path.join(plugin, "README.md"), "# Example\nA plugin for tests.")
   return { source, plugin, store: path.join(root, "store") }
 }
+
+test("moving the Apexo data directory preserves installed plugins, cached sources and data epochs", async () => {
+  await using tmp = await tmpdir()
+  const f = await fixture(tmp.path)
+  const legacy = path.join(tmp.path, "opencode", "plugins")
+  const source = path.join(legacy, "sources", "cached")
+  await fs.mkdir(path.dirname(source), { recursive: true })
+  await fs.rename(f.source, source)
+  const catalog = await PluginStore.mutate(legacy, { action: "add-source", source })
+  const id = catalog.items[0].id
+  await PluginStore.mutate(legacy, { action: "install", id, trust: true })
+  const before = await PluginStore.capture(legacy)
+  const epoch = path.basename(before.plugins[0].data)
+  await Bun.write(path.join(before.plugins[0].data, "retained.txt"), "original state")
+  await before.release()
+
+  const store = path.join(await migrateAppDirectory(tmp.path, "apexo", "opencode"), "plugins")
+  const bundle = (await PluginStore.detail(store, id)).item
+  expect(bundle.status).toBe("enabled")
+  expect(bundle.path).toBe(path.join(store, "packages", path.basename(before.plugins[0].root)))
+  const after = await PluginStore.capture(store)
+  expect(bundle.path).toBe(after.plugins[0].root)
+  expect(after.plugins[0].target.location).toBe(path.join(store, "sources", "cached", "plugins", "example"))
+  expect(after.plugins[0].data).toBe(path.join(store, "data", epoch))
+  expect(await Bun.file(path.join(after.plugins[0].data, "retained.txt")).text()).toBe("original state")
+  await after.release()
+
+  await PluginStore.mutate(store, { action: "update", id, trust: true })
+  const updated = (await PluginStore.detail(store, id)).item
+  expect(updated.path).not.toBe(bundle.path)
+  await PluginStore.mutate(store, { action: "uninstall", id })
+  expect(await fs.stat(updated.path!).catch(() => undefined)).toBeUndefined()
+})
 
 test("browse, download, trust, enable, disable, update and uninstall share one durable registry", async () => {
   await using tmp = await tmpdir()

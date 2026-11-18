@@ -1,9 +1,11 @@
 export * as ProjectDirectories from "./directories"
 
-import { and, asc, desc, eq, isNotNull, isNull, ne, or } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
+import { migratedWorktreePaths } from "../app-directory"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
+import { Global } from "../global"
 import { AbsolutePath, optional } from "../schema"
 import { ProjectSchema } from "./schema"
 import { ProjectDirectoryTable } from "./sql"
@@ -60,12 +62,40 @@ export class Service extends Context.Service<Service, Interface>()("@apexo/Proje
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const db = (yield* Database.Service).db
+    const database = yield* Database.Service
+    const global = yield* Global.Service
+    const db = database.db
+
+    const directoryAliases = (directory: AbsolutePath) =>
+      migratedWorktreePaths(global.data, directory).map((alias) => AbsolutePath.make(alias))
+
+    const byDirectory = (projectID: ProjectSchema.ID, directory: AbsolutePath) =>
+      and(
+        eq(ProjectDirectoryTable.project_id, projectID),
+        inArray(ProjectDirectoryTable.directory, directoryAliases(directory)),
+      )
 
     const create = Effect.fn("ProjectDirectories.create")(function* (input: CreateInput, tx?: Transaction) {
-      const insert = (tx ?? db)
+      const client = tx ?? db
+      const aliases = directoryAliases(input.directory)
+      // Prefer the saved name when a Desktop refresh discovers the canonical spelling of the same worktree.
+      const directory =
+        aliases.length === 1
+          ? input.directory
+          : sql`coalesce((${client
+              .select({ directory: ProjectDirectoryTable.directory })
+              .from(ProjectDirectoryTable)
+              .where(
+                and(
+                  eq(ProjectDirectoryTable.project_id, input.projectID),
+                  inArray(ProjectDirectoryTable.directory, aliases),
+                ),
+              )
+              .orderBy(asc(ProjectDirectoryTable.time_created), asc(ProjectDirectoryTable.directory))
+              .limit(1)}), ${sql.param(input.directory, ProjectDirectoryTable.directory)})`
+      const insert = client
         .insert(ProjectDirectoryTable)
-        .values({ project_id: input.projectID, directory: input.directory, strategy: input.strategy })
+        .values({ project_id: input.projectID, directory, strategy: input.strategy })
       const query =
         input.behavior === "replace"
           ? insert.onConflictDoUpdate({
@@ -85,12 +115,7 @@ const layer = Layer.effect(
       return (
         (yield* (tx ?? db)
           .delete(ProjectDirectoryTable)
-          .where(
-            and(
-              eq(ProjectDirectoryTable.project_id, input.projectID),
-              eq(ProjectDirectoryTable.directory, input.directory),
-            ),
-          )
+          .where(byDirectory(input.projectID, input.directory))
           .returning({ directory: ProjectDirectoryTable.directory })
           .get()
           .pipe(Effect.orDie)) !== undefined
@@ -116,12 +141,7 @@ const layer = Layer.effect(
         (yield* db
           .select({ directory: ProjectDirectoryTable.directory })
           .from(ProjectDirectoryTable)
-          .where(
-            and(
-              eq(ProjectDirectoryTable.project_id, input.projectID),
-              eq(ProjectDirectoryTable.directory, input.directory),
-            ),
-          )
+          .where(byDirectory(input.projectID, input.directory))
           .get()
           .pipe(Effect.orDie)) !== undefined
       )
@@ -134,12 +154,8 @@ const layer = Layer.effect(
       const row = yield* db
         .select({ directory: ProjectDirectoryTable.directory, strategy: ProjectDirectoryTable.strategy })
         .from(ProjectDirectoryTable)
-        .where(
-          and(
-            eq(ProjectDirectoryTable.project_id, input.projectID),
-            eq(ProjectDirectoryTable.directory, input.directory),
-          ),
-        )
+        .where(byDirectory(input.projectID, input.directory))
+        .orderBy(asc(ProjectDirectoryTable.time_created), asc(ProjectDirectoryTable.directory))
         .get()
         .pipe(Effect.orDie)
       return row ? { directory: row.directory, strategy: row.strategy ?? undefined } : undefined
@@ -155,4 +171,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer: layer, deps: [Database.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, Global.node] })
