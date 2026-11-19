@@ -109,7 +109,7 @@ The final harness randomizes both operands. A further live run on the final asse
 
 The November 19 follow-up created a fresh Rich Text document and used MCP to choose File > Save. The sheet showed `Save As` and a default iCloud location. An exact `Where` ref returned `actionability_timeout` with `visible: unknown` and `live offscreen state unavailable`. The receipt said `not_delivered`. An app-targeted shortcut produced an unverified receipt and left the sheet unchanged. A separate plain-text conversion attempt left the app-level confirmation visible when the exact document's sheet lookup returned `ELEMENT_NOT_FOUND`.
 
-A foreground control sent Cmd+Shift+G, typed the owned local folder, and confirmed it with Return. A sheet snapshot with `max_depth: 2` verified the exact destination and exposed the Save controls that the deeper file listing had displaced. MCP then cleared and typed the filename and clicked Save. `textutil -convert txt -stdout` independently recovered the exact English and Chinese text, punctuation, and final newline from the RTF file. This isolates the failing plugin path to dialog navigation and establishes that the native Save action can write the new document after a confirmed destination. The foreground keyboard steps were test-only. Save through the distributed tool profile remains unresolved.
+A foreground control sent Cmd+Shift+G, typed the owned local folder, and confirmed it with Return. A sheet snapshot with `max_depth: 2` verified the exact destination and exposed the Save controls that the deeper file listing had displaced. MCP then cleared and typed the filename and clicked Save. `textutil -convert txt -stdout` independently recovered the exact English and Chinese text, punctuation, and final newline from the RTF file. This established that the native Save action could write the new document after a confirmed destination. The foreground keyboard steps were test-only.
 
 ### Resolution in Computer Use 0.1.2
 
@@ -117,12 +117,27 @@ The exact-window and app-level `Where` refs both reproduced `actionability_timeo
 
 Run `bun script/computer-use-save.mjs cli` or `bun script/computer-use-save.mjs desktop` from `packages/apexo` with `COMPUTER_USE_BUNDLE` pointing at the assembled bundle. A recording provider drives the real installed Skill/MCP through an Apexo Session. The fixture loads the bundle's exact `permissions.json`, enters manual review, and checks the action ID before every one-time reply. `desktop_press` and `desktop_focus_window` stay outside the model's tool catalog. Only the approved Save dialog actions change the destination or write the file. The fixture verifies the confirmed nested folder, filename, original TextEdit window identity, and the English and Chinese text, punctuation, and final newline independently recovered from the new RTF. Coverage is the tested macOS TextEdit sidebar and column layout.
 
+The separate live-model follow-ups selected Downloads. One reached the nested directory, set the filename, and received an unverified Save click before the Session wait failed at the transport boundary. Another lost its exact window during the directory observation and returned `WINDOW_NOT_FOUND`. Neither live run independently verified a saved file. These attempts remain separate from the successful controlled regression.
+
 ## BUG-20261119-016 — The packaged Desktop UI runner did not select the renderer
 
 - Scope covers the packaged macOS Desktop UI acceptance runner. Run `bun script/computer-use-ui.mjs desktop` with the rebuilt app and the catalog bundle. The browser-level CDP connection attempted `Target.createTarget` and received `Not supported` before it could interact with the existing window.
 - Attach to the existing `apexo://renderer/` page through its debugger URL. Wait for the inline image, scroll the lazy attachment into view, and confirm its intrinsic size. The runner now exercises Stop during an actual MCP wait and joins its child process. Use explicit MCP Retry before the following manual approval case because an interrupted native tool can retire the transport.
 - One rerun selected an inaccessible-to-capture Calculator window, although the window enumeration marked it accessible. The tool returned `could not create image from window`. The fixture now opens its own uniquely named TextEdit document, selects its visible window ID, and observes the screenshot tool's terminal result before asserting provider media or renderer state.
 - Verification with 0.1.1 passed seven checks in the rebuilt Desktop and six in Web. The process disappearance and idle Session status followed the Stop click within 96 ms on Desktop and 85 ms on Web. Both runtimes recovered and exercised manual reject and accept. A separate packaged start returned `Failed to start server` while the typecheck was running. The isolated relaunch passed. That startup failure's cause remains undetermined.
+
+## BUG-20261119-024 — The Desktop runner clicked Reload before it was enabled
+
+- Scope is the native Desktop and Web Computer Use acceptance runner. During a packaged Desktop run with 0.1.2, the backend reported the plugin enabled while the renderer's runtime Reload button was still disabled. The test click returned an actionability error before the plugin was applied.
+- The renderer separately tracks pending operations and runtime refresh. The test had waited for backend installation and then clicked Reload without checking its enabled state.
+- The runner now waits for the exact enabled Reload button and still checks the resulting runtime and MCP status. `bun script/computer-use-ui.mjs desktop` and `bun script/computer-use-ui.mjs browser` passed seven and six checks respectively with the 0.1.2 candidate.
+
+## BUG-20261119-025 — The Save fixture created a folder under the redirected Electron home
+
+- Scope is the macOS Save regression setup. Export `CFFIXED_USER_HOME` for a disposable packaged Electron profile, then run both Save regression entrypoints from the same shell. The sheet showed the real TextEdit user's Downloads, and its file list lacked the exact fixture folder. The harness timed out before saving.
+- The system `osascript` path lookup inherited the Electron-only Foundation home override. It created the new fixture directory under that override while the already running TextEdit used the actual user's home. Running the same Downloads lookup with and without the override returned two distinct directories.
+- The fixture's system AppleScript operations now omit the Electron-only setting. The test creates its directory under the actual GUI user's Downloads and still requires fresh UI evidence of the exact destination before saving.
+- With the redirect still exported and `COMPUTER_USE_BUNDLE` pointing at the fetched 0.1.2 catalog artifact, the CLI and Electron backend regressions passed. The exact `ask` profile generated 20 and 23 one-time approvals respectively. Both files were read back successfully.
 
 ## BUG-20261119-018 — The timeout fixture could stop before recording its PID
 

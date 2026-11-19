@@ -147,7 +147,7 @@ try {
   )
   await click(ready)
   await poll(() => Bun.file(document.file).exists(), "TextEdit saves the new file at the selected destination", 15_000)
-  document.verify()
+  await document.verify()
   const saved = await invoke("desktop_list_windows", { app: "TextEdit" })
   assert.ok(saved.some((window) => window.id === target.window_id && window.title.includes(document.name)))
   const advertised = new Set(

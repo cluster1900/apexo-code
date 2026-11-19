@@ -25,6 +25,8 @@ The Web Client rerun passed four checks against the real native backend. It inst
 
 The November 19 MCP retest saw the Mini draft remain in the editor even with bracketed paste and a separate Enter event. The isolated backend database contained the created Session and zero admitted inputs. The same command passed all three checks on an unchanged rerun, and fullscreen passed on its first run. The location of the intermittent failure between terminal input and prompt admission remains unknown.
 
+The 0.1.2 retest again saw the Mini prompt time out before the tool call. The unchanged Mini command passed all three checks on replay, and fullscreen passed on its initial run. Both shared MCP terminal layouts passed nine checks. The initial Mini failure remains open.
+
 ## BUG-20261118-006 — The browser test proxy forwarded stale compression headers
 
 - Scope is the disposable Web Client compatibility harness. The browser showed an empty Plugins catalog with a fetch error although the proxied `GET /plugins` returned HTTP 200.

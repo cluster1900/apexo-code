@@ -82,9 +82,9 @@ try {
     const saved = await fixture.session()
     await fixture.prompt(
       saved.id,
-      `Load the computer-use:computer-use Skill and follow its new-document Save steps. Operate only TextEdit's visible unsaved document titled "${saveDocument.title}" and containing "${saveDocument.marker}". Preserve its existing text and Rich Text format. In the expanded Save sheet, choose Downloads in the sidebar, then its visible child folder "${saveDocument.folder}". Verify the new location and save at ${saveDocument.file}. Use only observed desktop MCP refs for the dialog.`,
+      `Load the computer-use:computer-use Skill and follow its new-document Save steps. Operate only the visible unsaved TextEdit document titled "${saveDocument.title}" and containing "${saveDocument.marker}". Preserve the text and Rich Text format. In the expanded Save sheet, choose Downloads in the sidebar, then its visible child folder "${saveDocument.folder}". Verify the location and save at ${saveDocument.file}. Use only observed semantic refs. Keep snapshots shallow. Finish after the saved window shows the new name.`,
     )
-    saveDocument.verify()
+    await saveDocument.verify()
     checks.push("live-xai-native-save-dialog-new-document-text-match")
     console.log(JSON.stringify({ stage: checks.at(-1) }))
   }

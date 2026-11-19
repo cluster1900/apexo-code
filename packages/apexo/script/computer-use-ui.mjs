@@ -176,7 +176,9 @@ try {
       (await client["server.plugins"].list()).items.find((item) => item.id === plugin.id)?.status === "enabled",
     "UI install",
   )
-  await command("click", '[data-action="plugins-runtime-reload"]')
+  const reload = '[data-action="plugins-runtime-reload"]:enabled'
+  await command("wait", reload)
+  await command("click", reload)
   await poll(
     async () =>
       (await command("get", "text", '[data-component="plugins-activation-status"]')).includes("Active in this project"),

@@ -1,8 +1,8 @@
 {
   "plugins": {
     "computer-use": {
-      "version": "0.1.1",
-      "sha": "b9fdaf2b415b0a09221ff1af7e5203d233a44c67",
+      "version": "0.1.2",
+      "sha": "53c9bdbe21aa58e3081df810337c2b60fd3d58c6",
       "components": {
         "skills": [
           {

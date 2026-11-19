@@ -26,7 +26,8 @@ end tell`)
     name,
     file,
     folder: basename(directory),
-    verify() {
+    async verify() {
+      assert.ok(await Bun.file(file).exists(), "TextEdit did not save at the selected destination")
       const read = Bun.spawnSync(["/usr/bin/textutil", "-convert", "txt", "-stdout", file])
       assert.equal(read.exitCode, 0, read.stderr.toString())
       assert.equal(read.stdout.toString(), expected, "TextEdit's saved file must contain the exact fixture text")
@@ -47,7 +48,9 @@ end tell`)
 }
 
 function appleScript(source) {
-  const child = Bun.spawnSync(["/usr/bin/osascript", "-e", source], { timeout: 15_000 })
+  // A packaged Electron test may redirect Foundation's home without moving the system TextEdit app.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "CFFIXED_USER_HOME"))
+  const child = Bun.spawnSync(["/usr/bin/osascript", "-e", source], { env, timeout: 15_000 })
   assert.equal(child.exitCode, 0, child.stderr.toString())
   return child.stdout.toString().trim()
 }
