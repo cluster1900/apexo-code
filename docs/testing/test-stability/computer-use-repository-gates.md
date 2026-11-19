@@ -39,3 +39,20 @@ Batch 15 expected the initial response and the background completion line in `te
 - Expected behavior is a finished review with a JSON report, the expected exit status, and cleanup within the existing test deadline. The cause of the timeout remains undetermined.
 - Re-run the original batch with `GITHUB_ACTIONS=false APEXO_TEST_SHARD=6/18 bun run test` from `packages/apexo`. All 30 files passed in 191.30 seconds on the unchanged test code. This rerun establishes that the timeout did not recur in the scoped run.
 - The App unit suite passed 114 tests, Turbo type checking passed 21 tasks, and both generated-source checks completed without a diff. `bun run test:httpapi` passed 360 scenarios each in coverage, auth, and effect modes. The two Settings regressions have separate [Web and Desktop acceptance results](../ui/settings-mcp-permission-controls.md).
+
+## Computer Use and path migration consolidation
+
+The merge retained the catalog initialization and relocated the installed registry paths before returning an existing catalog state. An isolated V1 backend moved copies of Computer Use 0.1.0 and 0.1.1 from the legacy directory, kept the installation identity, and returned the real `desktop_version` result after disconnecting and reconnecting. A rebuilt macOS Electron window used `apexo://renderer` and exercised both MCP connection controls and the approval switch in an existing session and a draft. Mini and fullscreen TUI each completed the real version call.
+
+The first repository unit run completed all 18 Apexo batches. Fifteen passed initially, and the remaining three passed on replay. Type checking, both generated-source checks, 72 focused migration and MCP tests, 114 App unit tests, and 1,080 HttpApi scenarios passed on the combined code.
+
+### BUG-20261119-004 — Four runtime test deadlines expired in the aggregate run
+
+- Scope covers the CLI worktree attempts and automatic Dream cases in batch 3 and two provider-list API cases in batch 4. All were expected to complete within their existing deadlines.
+- Reproduce with `GITHUB_ACTIONS=false bun turbo test --concurrency=2` on the combined branch. The worktree attempts case reached its 60-second deadline. Automatic Dream did not settle. The two provider cases hit their test deadlines.
+- The four cases passed together when selected by name. The original 30-file batches passed with `GITHUB_ACTIONS=false APEXO_TEST_SHARD=3/18 bun run test` and `GITHUB_ACTIONS=false APEXO_TEST_SHARD=4/18 bun run test` from `packages/apexo`. The individual causes remain unknown. The tests and deadlines were unchanged for both replays.
+
+### BUG-20261119-005 — Native MCP initialization failed once during a preference test
+
+- In batch 13 of the same aggregate command, the saved-choice test in `test/v2/mcp-preferences-native.test.ts` reported `MCP.Failure` with code `load` while connecting its configured local fixture. The fixture should connect and persist the overridden preference.
+- The reported error did not expose the original cause. The exact saved-choice test passed unchanged on its own. The original 29-file batch passed with `GITHUB_ACTIONS=false APEXO_TEST_SHARD=13/18 bun run test` from `packages/apexo`.
