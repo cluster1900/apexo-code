@@ -71,6 +71,8 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
   name: Schema.String,
 }) {}
 
+class ClosedConnection extends Schema.TaggedErrorClass<ClosedConnection>()("MCP.ClosedConnection", {}) {}
+
 type MCPClient = Client
 
 function createClient(directory: string) {
@@ -106,6 +108,8 @@ export const Status = Schema.Union([
   StatusNeedsClientRegistration,
 ]).annotate({ identifier: "MCPStatus", discriminator: "status" })
 export type Status = Schema.Schema.Type<typeof Status>
+
+const CONNECTION_CLOSED = { status: "failed", error: "Connection closed" } satisfies Status
 
 // Store transports for OAuth servers to allow finishing auth
 type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport
@@ -417,13 +421,33 @@ const layer = Layer.effect(
 
     const closeTransport = (client: MCPClient) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
 
+    function publishClient(
+      s: State,
+      name: string,
+      client: MCPClient,
+      listed: MCPToolDef[],
+      instructions: string | undefined,
+      bridge: EffectBridge.Shape,
+      timeout?: number,
+    ) {
+      // The SDK clears transport before firing onclose. Check and install our handler in the same turn.
+      if (!client.transport) return false
+      s.status[name] = { status: "connected" }
+      s.clients[name] = client
+      s.defs[name] = listed
+      if (instructions) s.instructions[name] = instructions
+      else delete s.instructions[name]
+      watch(s, name, client, bridge, timeout)
+      return true
+    }
+
     function watch(s: State, name: string, client: MCPClient, bridge: EffectBridge.Shape, timeout?: number) {
       client.onclose = () => {
         if (s.clients[name] !== client) return
         delete s.clients[name]
         delete s.defs[name]
         delete s.instructions[name]
-        s.status[name] = { status: "failed", error: "Connection closed" }
+        s.status[name] = CONNECTION_CLOSED
         bridge.fork(
           Effect.logWarning("MCP connection closed", { server: name }).pipe(
             Effect.andThen(events.publish(ToolsChanged, { server: name })),
@@ -521,13 +545,9 @@ const layer = Layer.effect(
               }
 
               const result = yield* create(key, { ...mcp, enabled: true })
-              s.status[key] = result.status
-              if (result.mcpClient) {
-                s.clients[key] = result.mcpClient
-                s.defs[key] = result.defs!
-                if (result.instructions) s.instructions[key] = result.instructions
-                watch(s, key, result.mcpClient, bridge, mcp.timeout)
-              }
+              if (!result.mcpClient) s.status[key] = result.status
+              else if (!publishClient(s, key, result.mcpClient, result.defs!, result.instructions, bridge, mcp.timeout))
+                s.status[key] = CONNECTION_CLOSED
             }),
           { concurrency: "unbounded" },
         )
@@ -536,14 +556,15 @@ const layer = Layer.effect(
       }),
     )
 
-    function closeClient(s: State, name: string) {
+    const storeDisconnected = Effect.fnUntraced(function* (s: State, name: string, status: Status) {
       const client = s.clients[name]
+      s.status[name] = status
       delete s.clients[name]
       delete s.defs[name]
       delete s.instructions[name]
-      if (!client) return Effect.void
-      return closeTransport(client)
-    }
+      if (client) yield* closeTransport(client)
+      return status
+    })
 
     const storeClient = Effect.fnUntraced(function* (
       s: State,
@@ -555,15 +576,16 @@ const layer = Layer.effect(
     ) {
       const bridge = yield* EffectBridge.make()
       const previous = s.clients[name]
-      s.status[name] = { status: "connected" }
-      s.clients[name] = client
-      s.defs[name] = listed
-      if (instructions) s.instructions[name] = instructions
-      else delete s.instructions[name]
-      watch(s, name, client, bridge, timeout)
+      if (!publishClient(s, name, client, listed, instructions, bridge, timeout)) return yield* new ClosedConnection()
       if (previous) yield* closeTransport(previous)
       return s.status[name]
     })
+
+    const recordClosedConnection = (s: State, name: string) =>
+      Effect.sync(() => {
+        if (!s.clients[name]) s.status[name] = CONNECTION_CLOSED
+        return CONNECTION_CLOSED
+      })
 
     const status = Effect.fn("MCP.status")(function* () {
       const s = yield* InstanceState.get(state)
@@ -602,12 +624,7 @@ const layer = Layer.effect(
     })
 
     const storeResult = Effect.fnUntraced(function* (s: State, name: string, result: CreateResult, timeout?: number) {
-      s.status[name] = result.status
-      if (!result.mcpClient) {
-        yield* closeClient(s, name)
-        return result.status
-      }
-
+      if (!result.mcpClient) return yield* storeDisconnected(s, name, result.status)
       return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, timeout)
     })
 
@@ -623,7 +640,9 @@ const layer = Layer.effect(
             saved instanceof McpPreferences.Failure
               ? { status: { status: "failed", error: saved.message } satisfies Status }
               : yield* create(name, { ...mcp, enabled: saved.get(name) ?? mcp.enabled })
-          yield* storeResult(s, name, result, mcp.timeout)
+          yield* storeResult(s, name, result, mcp.timeout).pipe(
+            Effect.catchTag("MCP.ClosedConnection", () => recordClosedConnection(s, name)),
+          )
           return { status: s.status }
         }),
       )
@@ -636,7 +655,9 @@ const layer = Layer.effect(
           if (s.closed) return yield* new McpPreferences.Failure({ kind: "conflict", message: reloaded })
           const mcp = yield* requireMcpConfig(s, name)
           if (!enabled) {
-            yield* s.preferences.change(name, false, () => storeResult(s, name, DISABLED_RESULT).pipe(Effect.asVoid))
+            yield* s.preferences.change(name, false, () =>
+              storeDisconnected(s, name, DISABLED_RESULT.status).pipe(Effect.asVoid),
+            )
             return
           }
           yield* s.preferences.read
@@ -648,6 +669,8 @@ const layer = Layer.effect(
           yield* s.preferences
             .change(name, true, () => storeResult(s, name, candidate, mcp.timeout).pipe(Effect.asVoid))
             .pipe(
+              // Let the failed publication roll back the staged preference before reporting the failure.
+              Effect.catchTag("MCP.ClosedConnection", () => recordClosedConnection(s, name)),
               Effect.ensuring(
                 Effect.suspend(() =>
                   candidate.mcpClient && s.clients[name] !== candidate.mcpClient
@@ -893,6 +916,7 @@ const layer = Layer.effect(
           if (!listed) return { status: "failed", error: "Failed to get tools" } satisfies Status
           return yield* storeClient(s, mcpName, client, listed, client.getInstructions()?.trim(), mcpConfig.timeout)
         }).pipe(
+          Effect.catchTag("MCP.ClosedConnection", () => recordClosedConnection(s, mcpName)),
           s.changes.withPermit,
           Effect.ensuring(Effect.suspend(() => (s.clients[mcpName] === client ? Effect.void : closeTransport(client)))),
         )
@@ -947,7 +971,9 @@ const layer = Layer.effect(
           const blocked = yield* authConnectionBlock(s, mcpName)
           if (blocked) return blocked
           const result = yield* create(mcpName, { ...mcpConfig, enabled: true })
-          return yield* storeResult(s, mcpName, result, mcpConfig.timeout)
+          return yield* storeResult(s, mcpName, result, mcpConfig.timeout).pipe(
+            Effect.catchTag("MCP.ClosedConnection", () => recordClosedConnection(s, mcpName)),
+          )
         }),
       )
     })

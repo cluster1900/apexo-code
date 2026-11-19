@@ -23,6 +23,8 @@ The Web Client rerun passed four checks against the real native backend. It inst
 - The old driver sent Enter in the same PTY write as the entire prompt. The exact input event that the terminal parser produced was not captured. The revised driver writes a bracketed paste, waits for the complete draft in the editor, and sends Enter once as a separate event.
 - The mini and `--fullscreen` runs each passed the three attachment, tool history, and rendered completion checks. Native history recorded the completed `desktop_version` output with version `1.3.1`.
 
+The November 19 MCP retest saw the Mini draft remain in the editor even with bracketed paste and a separate Enter event. The isolated backend database contained the created Session and zero admitted inputs. The same command passed all three checks on an unchanged rerun, and fullscreen passed on its first run. The location of the intermittent failure between terminal input and prompt admission remains unknown.
+
 ## BUG-20261118-006 — The browser test proxy forwarded stale compression headers
 
 - Scope is the disposable Web Client compatibility harness. The browser showed an empty Plugins catalog with a fetch error although the proxied `GET /plugins` returned HTTP 200.

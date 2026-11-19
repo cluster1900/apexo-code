@@ -15,8 +15,11 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Global } from "@apexo/core/global"
+import { McpPreferences } from "@apexo/core/mcp-preferences"
 import { PluginStore } from "@apexo/core/plugin-store"
-import { Cause, Effect, Exit } from "effect"
+import { Flock } from "@apexo/core/util/flock"
+import { AbsolutePath } from "@apexo/schema/schema"
+import { Cause, Effect, Exit, Fiber } from "effect"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { MCP } from "../../src/mcp/index"
 import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
@@ -379,6 +382,66 @@ it.instance("disconnect removes protocol data and reconnect establishes a new se
     yield* mcp.connect("reconnect-server")
     expect((yield* mcp.status())["reconnect-server"]?.status).toBe("connected")
     expect(Object.keys(yield* mcp.tools())).toEqual(["reconnect-server_test_tool"])
+  }),
+)
+
+it.instance("rejects a stdio candidate that exits while its connection choice is locked", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const mcp = yield* MCP.Service
+    const name = "short-lived"
+    const listed = path.join(test.directory, "listed.pid")
+    const location = { directory: AbsolutePath.make(test.directory) }
+    const preference = McpPreferences.file(location, Global.Path.data)
+    yield* mcp.add(name, {
+      type: "local",
+      command: [process.execPath, stdioFixture],
+      environment: { MCP_LIFECYCLE_LISTED_PID: listed },
+      enabled: false,
+    })
+    yield* mcp.disconnect(name)
+    const before = yield* Effect.promise(() => Bun.file(preference).text())
+
+    const connection = yield* Effect.acquireUseRelease(
+      Effect.promise(() => Flock.acquire(preference, { dir: path.join(path.dirname(preference), ".locks") })),
+      () =>
+        Effect.gen(function* () {
+          const connection = yield* Effect.forkChild(mcp.connect(name))
+          const pid = yield* pollWithTimeout(
+            Effect.promise(async () => {
+              const file = Bun.file(listed)
+              const pid = (await file.exists()) ? Number(await file.text()) : 0
+              return Number.isInteger(pid) && pid > 0 ? pid : undefined
+            }),
+            "stdio candidate did not acknowledge tool discovery",
+          )
+          yield* Effect.sync(() => process.kill(pid, "SIGTERM"))
+          yield* pollWithTimeout(
+            Effect.sync(() => {
+              try {
+                process.kill(pid, 0)
+                return undefined
+              } catch {
+                return true
+              }
+            }),
+            "stdio candidate did not exit before unlocking preferences",
+          )
+          return connection
+        }),
+      (lease) => Effect.promise(lease.release),
+    )
+    yield* Fiber.join(connection)
+
+    expect((yield* mcp.status())[name]).toEqual({ status: "failed", error: "Connection closed" })
+    expect((yield* mcp.clients())[name]).toBeUndefined()
+    expect(yield* mcp.tools()).toEqual({})
+    expect(yield* Effect.promise(() => Bun.file(preference).text())).toBe(before)
+
+    yield* mcp.connect(name)
+    expect((yield* mcp.status())[name]).toEqual({ status: "connected" })
+    expect(Object.keys(yield* mcp.tools())).toEqual(["short-lived_current_directory"])
+    expect((yield* McpPreferences.make(location, Global.Path.data).read).get(name)).toBe(true)
   }),
 )
 

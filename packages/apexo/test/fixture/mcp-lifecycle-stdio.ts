@@ -20,8 +20,11 @@ if (process.argv.includes("--plugin-data-check")) {
 
 const server = new Server({ name: "mcp-lifecycle-stdio", version: "1.0.0" }, { capabilities: { tools: {} } })
 
-server.setRequestHandler(ListToolsRequestSchema, () =>
-  Promise.resolve({
+const listed = process.env.MCP_LIFECYCLE_LISTED_PID
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  // A ping round trip after the tools response proves the client received the catalog.
+  if (listed) setImmediate(() => void server.ping().then(() => writeFileSync(listed, String(process.pid))))
+  return {
     tools: [
       {
         name: "current_directory",
@@ -29,7 +32,7 @@ server.setRequestHandler(ListToolsRequestSchema, () =>
         inputSchema: { type: "object", properties: {} },
       },
     ],
-  }),
-)
+  }
+})
 
 await server.connect(new StdioServerTransport())

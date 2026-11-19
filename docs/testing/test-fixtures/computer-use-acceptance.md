@@ -90,6 +90,13 @@ The single intervening screenshot failure's cause remains unknown; subsequent su
 
 The final harness randomizes both operands. A further live run on the final assembled bundle entered `137 × 52` and independently found `7124` in completed tool output. It passed without changing the production profile or the result assertion.
 
+## BUG-20261119-021 — Calculator started with a restored expression
+
+- Scope covers Calculator 12.0 on macOS arm64 with Computer Use 0.1.1 and Agent Desktop 1.3.1.
+- To reproduce, launch a separate Calculator process with a restored display of `1÷(1+2.70.3)`, identify its window by the new process ID, then click `7`, `Multiply`, `9`, and `Equals` without clearing. The display returned `26.84130471` because the new keys continued the restored expression. The expected result of a fresh `7 × 9` is `63`.
+- A separately launched Calculator can restore its previous expression. The test assumed a zero starting display.
+- On the owned Calculator window, take a new snapshot after each distinct Clear action and wait for the display to show `0`. Take a fresh snapshot before choosing each key and read the display after each action. The observed sequence was `7`, `7×`, `7×9`, then `63`. The original Calculator process was left running.
+
 ## BUG-20261116-014: New-document Save dialog did not complete
 
 - Scope: exploratory live xAI TextEdit new-document Save dialog, upstream 1.3.1 on macOS arm64. Existing-file edit/save and scrolling passed separately.
@@ -99,6 +106,10 @@ The final harness randomizes both operands. A further live run on the final asse
 - Root cause: unresolved. The final transcript contains incomplete locator traversal, `actionability_timeout` with `visible: unknown / live offscreen state unavailable` for some Save-sheet targets, and a type action rejected because semantic action was unavailable and focus fallback was denied. Other sheet controls worked. These observations do not establish whether a different workflow, upstream change, or broader tool profile would reliably complete the task.
 - Changes evaluated: exact visible-window readiness, explicit target focus, and native menu/sheet observations. The focus exception remains test-only; the distributed 17-tool profile was not broadened to turn this failed experiment into an accepted workflow.
 - Verification: **not fixed / D02 remains partial**. The final attempt consumed 40 provider turns in 134.251 seconds. No file was saved at the requested destination, and the model explicitly reported the unfinished save. Fixture-owned unsaved documents were discarded after the run. No shell or direct filesystem write completed the measured task.
+
+The November 19 follow-up created a fresh Rich Text document and used MCP to choose File > Save. The sheet showed `Save As` and a default iCloud location. An exact `Where` ref returned `actionability_timeout` with `visible: unknown` and `live offscreen state unavailable`. The receipt said `not_delivered`. An app-targeted shortcut produced an unverified receipt and left the sheet unchanged. A separate plain-text conversion attempt left the app-level confirmation visible when the exact document's sheet lookup returned `ELEMENT_NOT_FOUND`.
+
+A foreground control sent Cmd+Shift+G, typed the owned local folder, and confirmed it with Return. A sheet snapshot with `max_depth: 2` verified the exact destination and exposed the Save controls that the deeper file listing had displaced. MCP then cleared and typed the filename and clicked Save. `textutil -convert txt -stdout` independently recovered the exact English and Chinese text, punctuation, and final newline from the RTF file. This isolates the failing plugin path to dialog navigation and establishes that the native Save action can write the new document after a confirmed destination. The foreground keyboard steps were test-only. Save through the distributed tool profile remains unresolved.
 
 ## BUG-20261119-016 — The packaged Desktop UI runner did not select the renderer
 

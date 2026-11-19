@@ -17,3 +17,10 @@
 - The switch now resolves the current route on its own. It uses the current session's directory and server for a session override, or the active draft's or selected project's directory and server for a project preference. Home without a selected project still requires one before changing approval behavior.
 - Reproduce with `bun script/grok-slash-ui.mjs cli --permission-settings` from `packages/apexo`. On the previous build, the existing-session check passed and the draft assertion found a disabled switch.
 - The rebuilt Web Client passed the session, draft, and unscoped Home checks. The rebuilt Electron window toggled an existing session and a draft. The existing session's effective stored Bash rule changed to allow and then returned to ask.
+
+## BUG-20261119-023 — A native Desktop permission reply failed once
+
+- Scope is the rebuilt macOS arm64 Desktop with the V2 sidecar and the published Computer Use 0.1.1 bundle. Reproduce the sequence with `bun script/computer-use-ui.mjs desktop` from `packages/apexo`, after the screenshot and Stop scenarios in the same run.
+- On the first run, the manual permission request was still visible after the reply click. The renderer showed `Request failed` and `[object Object]`, and the session did not settle. The expected result is a settled session with the tool result matching the selected reply.
+- The failing run did not capture the reply response. The trigger and root cause remain unknown.
+- The same package and unchanged command passed all seven checks on retry, including manual rejection and allow-once. The native Web run also passed both decisions. The failure remains an open observation.

@@ -10,6 +10,10 @@
 - Recovery evaluated: stop only the owned test app/daemon, launch the same signed copy with the isolated V2 configuration again, take a fresh target observation, and issue a new screenshot request. No mutation was repeated.
 - Verification: the controlled relaunch returned granted/granted, the exact snapshot marker, and an inline PNG. Earlier denied/denied and Accessibility-only states produced the expected `PERM_DENIED` errors; Accessibility-only still allowed the document snapshot. These passing cases verify those specific outcomes, not a root-cause repair or all launch identities. See the [dated evidence](../../development/computer-use-permission-transitions.md).
 
+The November 19 follow-up used Computer Use 0.1.1 with the existing macOS grants. The published MCP and `/usr/sbin/screencapture` each returned a non-empty PNG for the same uniquely named TextEdit window when visible, minimized, and restored. The rebuilt Desktop separately rendered the plugin PNG and passed it to the recording provider in the next request. The original `could not create image from window` did not recur. Upstream 1.3.1 reports that detail from the macOS capture subprocess, and the trigger for the original failure remains unknown.
+
+In a separate failure injection, pause only the `screencapture` child started for the owned window, close that window, and resume the child. Agent Desktop returned `WINDOW_NOT_FOUND` after the window identity check. This verifies behavior when the window disappears during capture. The original subprocess error remains an open observation.
+
 ## BUG-20261116-016: Permission fixture lifecycle and attribution assumptions
 
 - Scope: manual OS-permission acceptance harness, not a product permission-parser change.
