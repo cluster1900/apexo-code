@@ -29,3 +29,13 @@ Batch 3 expected HTTP 200 from `POST /api/session` in `test/e2e/v2-goal.e2e.test
 ### BUG-20261118-009 — Headless CLI fixture missed the background follow-up output
 
 Batch 15 expected the initial response and the background completion line in `test/cli/run/run-process.test.ts`. The command exited successfully with only the initial response. The root cause is unknown. `GITHUB_ACTIONS=false APEXO_TEST_SHARD=15/18 bun run test` passed the original 29-file batch on retry.
+
+## 2026-11-19 settings retest
+
+### BUG-20261119-003 — The aggregate structured review CLI test timed out
+
+- Scope is Bun 1.4.4 on macOS arm64 during `GITHUB_ACTIONS=false bun turbo test --concurrency=2`.
+- The structured review CLI test in `test/cli/code-review.test.ts` reached its 60-second deadline in batch 6. The other 17 batches passed. The CLI emitted the running review event before cleanup terminated its pending process.
+- Expected behavior is a finished review with a JSON report, the expected exit status, and cleanup within the existing test deadline. The cause of the timeout remains undetermined.
+- Re-run the original batch with `GITHUB_ACTIONS=false APEXO_TEST_SHARD=6/18 bun run test` from `packages/apexo`. All 30 files passed in 191.30 seconds on the unchanged test code. This rerun establishes that the timeout did not recur in the scoped run.
+- The App unit suite passed 114 tests, Turbo type checking passed 21 tasks, and both generated-source checks completed without a diff. `bun run test:httpapi` passed 360 scenarios each in coverage, auth, and effect modes. The two Settings regressions have separate [Web and Desktop acceptance results](../ui/settings-mcp-permission-controls.md).

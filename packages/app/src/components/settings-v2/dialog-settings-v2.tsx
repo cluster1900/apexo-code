@@ -20,7 +20,6 @@ import { useTabs } from "@/context/tabs"
 import { useServerSync } from "@/context/server-sync"
 
 export const DialogSettings: Component<{
-  sessionID?: string
   defaultValue?: string
 }> = (props) => {
   const language = useLanguage()
@@ -43,7 +42,7 @@ export const DialogSettings: Component<{
   })
 
   const showProviders = () => {
-    void dialog.show(() => <DialogSettings sessionID={props.sessionID} defaultValue="providers" />)
+    void dialog.show(() => <DialogSettings defaultValue="providers" />)
   }
 
   return (
@@ -126,7 +125,7 @@ export const DialogSettings: Component<{
           </div>
         </TabsV2.List>
         <TabsV2.Content value="general" class="settings-v2-panel">
-          <SettingsGeneralV2 sessionID={props.sessionID} />
+          <SettingsGeneralV2 />
         </TabsV2.Content>
         <TabsV2.Content value="shortcuts" class="settings-v2-panel">
           <SettingsKeybinds v2 />
