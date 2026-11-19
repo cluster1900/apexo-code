@@ -1,14 +1,11 @@
-import { existsSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 
-if (process.argv.includes("--hang")) {
-  const pidFile = process.env.MCP_LIFECYCLE_PID_FILE
-  if (!pidFile) throw new Error("MCP_LIFECYCLE_PID_FILE is required")
-  await Bun.write(pidFile, String(process.pid))
-  await new Promise(() => {})
+if (process.env.MCP_LIFECYCLE_START_LOG) {
+  appendFileSync(process.env.MCP_LIFECYCLE_START_LOG, `${process.pid}\n`)
 }
 
 if (process.argv.includes("--plugin-data-check")) {

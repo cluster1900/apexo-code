@@ -2,7 +2,7 @@ import { MCP } from "@/mcp"
 import { Effect, Schema } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { McpServerNotFoundError } from "../errors"
+import { McpServerNotFoundError, ServiceUnavailableError } from "../errors"
 import { AddPayload, AuthCallbackPayload, StatusMap, UnsupportedOAuthError } from "../groups/mcp"
 
 export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handlers) =>
@@ -72,31 +72,15 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
       return { success: true as const }
     })
 
-    const connect = Effect.fn("McpHttpApi.connect")(function* (ctx: { params: { name: string } }) {
-      yield* mcp
-        .connect(ctx.params.name)
-        .pipe(
-          Effect.catchTag("MCP.NotFoundError", (error) =>
-            Effect.fail(
-              new McpServerNotFoundError({ name: error.name, message: `MCP server not found: ${error.name}` }),
-            ),
-          ),
-        )
-      return true
-    })
-
-    const disconnect = Effect.fn("McpHttpApi.disconnect")(function* (ctx: { params: { name: string } }) {
-      yield* mcp
-        .disconnect(ctx.params.name)
-        .pipe(
-          Effect.catchTag("MCP.NotFoundError", (error) =>
-            Effect.fail(
-              new McpServerNotFoundError({ name: error.name, message: `MCP server not found: ${error.name}` }),
-            ),
-          ),
-        )
-      return true
-    })
+    const changeConnection = (action: "connect" | "disconnect", name: string) =>
+      mcp[action](name).pipe(
+        Effect.mapError((error) =>
+          error._tag === "MCP.NotFoundError"
+            ? new McpServerNotFoundError({ name: error.name, message: `MCP server not found: ${error.name}` })
+            : new ServiceUnavailableError({ message: error.message, service: "mcp" }),
+        ),
+        Effect.as(true),
+      )
 
     return handlers
       .handle("status", status)
@@ -105,7 +89,7 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
       .handle("authCallback", authCallback)
       .handle("authAuthenticate", authAuthenticate)
       .handle("authRemove", authRemove)
-      .handle("connect", connect)
-      .handle("disconnect", disconnect)
+      .handle("connect", ({ params }) => changeConnection("connect", params.name))
+      .handle("disconnect", ({ params }) => changeConnection("disconnect", params.name))
   }),
 )

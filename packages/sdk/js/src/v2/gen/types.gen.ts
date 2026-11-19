@@ -12839,6 +12839,10 @@ export type McpConnectErrors = {
    * McpServerNotFoundError
    */
   404: McpServerNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type McpConnectError = McpConnectErrors[keyof McpConnectErrors]
@@ -12873,6 +12877,10 @@ export type McpDisconnectErrors = {
    * McpServerNotFoundError
    */
   404: McpServerNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type McpDisconnectError = McpDisconnectErrors[keyof McpDisconnectErrors]

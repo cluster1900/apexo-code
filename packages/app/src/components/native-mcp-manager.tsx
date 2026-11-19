@@ -92,9 +92,6 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       delete next[name]
       return next
     })
-    await sdk()
-      .client.mcp.disconnect({ name })
-      .catch(() => undefined)
     await serverSync()
       .updateConfig({ mcp: nextMcp })
       .catch(() => undefined)
@@ -146,9 +143,6 @@ export function NativeMcpManager(props: { allowManageConfig?: boolean } = {}) {
       const nextMcp = { ...effectiveConfigMcp() }
       if (state.editingName && state.editingName !== name) {
         delete nextMcp[state.editingName]
-        await sdk()
-          .client.mcp.disconnect({ name: state.editingName })
-          .catch(() => undefined)
       }
       nextMcp[name] = config
       setLocalConfigMcp(nextMcp)

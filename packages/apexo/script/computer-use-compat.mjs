@@ -60,6 +60,11 @@ try {
   )
   await client.mcp.disconnect({ name, directory }, opts)
   assert.equal((await status())[name].status, "disabled")
+  await client.plugins.reload({ directory }, opts)
+  assert.equal((await status())[name].status, "disabled")
+  await runtime.crash()
+  await runtime.reopen()
+  assert.equal((await status())[name].status, "disabled")
   await client.mcp.connect({ name, directory }, opts)
   const connected = await status()
   assert.equal(connected[name].status, "connected")
@@ -90,7 +95,8 @@ try {
       remote: connected[oauthName].status,
       version: "1.3.1",
       sameLegacySession: true,
-      disconnectedAndReconnected: true,
+      disabledAcrossReloadAndRestart: true,
+      explicitlyReconnected: true,
       output: runtime.output,
     }),
   )

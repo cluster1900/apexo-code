@@ -56,3 +56,11 @@ The first repository unit run completed all 18 Apexo batches. Fifteen passed ini
 
 - In batch 13 of the same aggregate command, the saved-choice test in `test/v2/mcp-preferences-native.test.ts` reported `MCP.Failure` with code `load` while connecting its configured local fixture. The fixture should connect and persist the overridden preference.
 - The reported error did not expose the original cause. The exact saved-choice test passed unchanged on its own. The original 29-file batch passed with `GITHUB_ACTIONS=false APEXO_TEST_SHARD=13/18 bun run test` from `packages/apexo`.
+
+## PR 209 compatibility persistence and stdio cleanup retest
+
+### BUG-20261119-019 — The existing-repository Git initialization test returned HTTP 404 once
+
+- Scope is `test/server/project-init-git.test.ts` in batch 5 of the macOS arm64 repository run. `POST /project/git/init` should return HTTP 200 for an existing Git repository and preserve the running instance.
+- On the final aggregate `GITHUB_ACTIONS=false bun turbo test --concurrency=2` run, the existing-repository case received HTTP 404. The other 17 Apexo batches passed. The cause remains unknown.
+- From `packages/apexo`, `bun test test/server/project-init-git.test.ts --timeout 30000` passed both cases. `GITHUB_ACTIONS=false APEXO_TEST_SHARD=5/18 bun run test` then passed all 30 files in the original batch. Neither case required a change to the Git initialization handler or its test.

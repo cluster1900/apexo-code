@@ -382,6 +382,52 @@ it.instance("disconnect removes protocol data and reconnect establishes a new se
   }),
 )
 
+it.instance(
+  "keeps explicit connection choices when the compatibility instance reloads",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const mcp = yield* MCP.Service
+      const instances = yield* InstanceStore.Service
+      const starts = (file: string) =>
+        Effect.promise(async () => {
+          const log = Bun.file(path.join(test.directory, file))
+          return (await log.exists()) ? (await log.text()).trim().split("\n") : []
+        })
+
+      expect((yield* mcp.status())["default-on"]).toEqual({ status: "connected" })
+      expect(yield* starts("on-starts")).toHaveLength(1)
+      expect(yield* starts("off-starts")).toHaveLength(0)
+      yield* mcp.disconnect("default-on")
+      yield* mcp.connect("default-off")
+      yield* instances.reload({ directory: test.directory })
+
+      const status = yield* mcp.status()
+      expect(status["default-on"]).toEqual({ status: "disabled" })
+      expect(status["default-off"]).toEqual({ status: "connected" })
+      expect(Object.keys(yield* mcp.tools())).toEqual(["default-off_current_directory"])
+      expect(yield* starts("on-starts")).toHaveLength(1)
+      expect(yield* starts("off-starts")).toHaveLength(2)
+    }),
+  {
+    config: {
+      mcp: {
+        "default-on": {
+          type: "local",
+          command: [process.execPath, stdioFixture],
+          environment: { MCP_LIFECYCLE_START_LOG: "on-starts" },
+        },
+        "default-off": {
+          type: "local",
+          command: [process.execPath, stdioFixture],
+          environment: { MCP_LIFECYCLE_START_LOG: "off-starts" },
+          enabled: false,
+        },
+      },
+    },
+  },
+)
+
 it.instance("add() closes the old protocol session when replacing a server", () =>
   Effect.gen(function* () {
     const first = yield* lifecycleServer()
@@ -556,16 +602,20 @@ it.instance("local stdio timeout terminates the real server process", () =>
     const mcp = yield* MCP.Service
     const result = yield* mcp.add("hanging-stdio", {
       type: "local",
-      command: [process.execPath, stdioFixture, "--hang"],
-      environment: { MCP_LIFECYCLE_PID_FILE: pidFile },
-      timeout: 100,
+      command: [
+        process.execPath,
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`,
+      ],
+      timeout: 500,
     })
 
     expect(statusName(result.status, "hanging-stdio")).toBe("failed")
     const pid = yield* pollWithTimeout(
       Effect.promise(async () => {
         const file = Bun.file(pidFile)
-        return (await file.exists()) ? Number(await file.text()) : undefined
+        const pid = (await file.exists()) ? Number(await file.text()) : 0
+        return Number.isInteger(pid) && pid > 0 ? pid : undefined
       }),
       "stdio fixture did not publish its pid",
     )

@@ -117,6 +117,24 @@ The default packaged Desktop and the Web Client both installed and applied the o
 
 The compatibility changes passed all 21 typecheck tasks and all six Turbo test tasks, including all 18 Apexo test batches. Client and legacy SDK generation checks produced no diffs. HTTP API coverage, auth, and effect modes each passed all 360 routes. App unit tests passed 114 cases.
 
+## 2026-11-19 follow-up on PR 209
+
+The audit used the published 0.1.1 bundle at revision `b9fdaf2b415b0a09221ff1af7e5203d233a44c67`, upstream agent-desktop 1.3.1, macOS arm64 26.6.2, Bun 1.4.4, and Electron 42.3.3. It used disposable profiles and loopback model fixtures. The one external model check received a reviewed synthetic Preview window capture.
+
+| Surface | Observed evidence |
+| --- | --- |
+| Packaged Desktop | Default sidecar downloaded, trusted, installed, and applied the published pin. The MCP switch closed its process, retained the choice through Apply, and started exactly one process on Connect. A separate remote MCP still required OAuth. The native sidecar rendered real tool output and an inline PNG of a synthetic TextEdit window, settled the wait process on Stop, recovered, and presented manual reject and accept controls. |
+| TUI and clients | Mini and fullscreen rendered actual tool execution and preserved native history. The compatibility TUI rendered an old transcript through each worktree spelling. Built Web exercised the native and compatibility paths. Promise, Effect, and legacy SDK clients accessed the installed server. |
+| Upgrade and permissions | Profiles written by the earlier CLI and Desktop preserved both worktree spellings, Session history, Hook trust and denial, scheduler state, plugin state, and tool decisions. Read-only config startup succeeded. The old Desktop origin migrated to `apexo://renderer`, including the old Session opt-out. The settings switch changed the intended directory choice through both spellings. |
+| Local process and graphical tests | Real Stdio refused missing native files and an incompatible file format. Busy Apply preserved the live generation. Abrupt loss removed the live wait child and recovery used fresh observations, with no wait replay. A stale ref did not change the closed synthetic document. The actual tools scrolled and saved Unicode text in an existing TextEdit file and verified a Calculator result. |
+| Image delivery | Native Desktop and Web rendered inline captures and passed image input to the loopback provider. In a separate one-turn check, live Grok identified three randomized colors in a verified synthetic Preview screenshot. |
+
+The catalog test installed 0.1.0, updated to the real 0.1.1 pin, and switched back to 0.1.0. All three stages used the same plugin ID and retained data. The x64 release also reported upstream version 1.3.1 under Rosetta.
+
+Two runtime regressions were fixed during the audit. The compatibility backend now persists Disconnect across Apply and restart, and stdio cleanup now retires descendants after a spontaneous exit. [Host integration records](../testing/runtime/computer-use-host-integration.md)
+
+The existing-file TextEdit trial using AX value assignment alone showed the new element value but did not persist it. Using clear and type through the actual plugin, followed by Save and an independent byte check, succeeded. New-document Save dialog reliability remains unresolved. This run used existing macOS grants and did not repeat the denied-grant transition matrix, a true incompatible-architecture host, or graphical Intel execution.
+
 ## Failures and fixes retained
 
 - [Bundle hashing](../testing/build/computer-use-bundle.md): fixed Bun byte-array compatibility and reverified assembly.

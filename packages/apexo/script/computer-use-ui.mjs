@@ -15,7 +15,7 @@ const fixture = await startComputerUseFixture("cli", { pure: true, live })
 const { runtime, state } = fixture
 const browserSession = `computer-use-${kind}-${crypto.randomUUID().slice(0, 8)}`
 const checks = []
-const native = { child: undefined, exited: undefined, port: 0, daemonPID: undefined }
+const native = { child: undefined, exited: undefined, port: 0, endpoint: undefined, daemonPID: undefined }
 const logs = []
 const daemons = () =>
   Bun.spawnSync(["/bin/ps", "-axo", "pid=,command="])
@@ -55,7 +55,7 @@ const command = async (...args) => {
       "--session",
       browserSession,
       ...(kind === "desktop"
-        ? ["--cdp", String(native.port)]
+        ? ["--cdp", native.endpoint]
         : ["--executable-path", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]),
       ...args,
     ],
@@ -65,6 +65,7 @@ const command = async (...args) => {
 }
 let client = fixture.client
 let plugin = fixture.plugin
+let screenshotDocument
 const sessionState = { id: "" }
 try {
   if (kind === "desktop") {
@@ -83,15 +84,16 @@ try {
     native.exited = new Promise((resolve) => native.child.once("exit", resolve))
     native.child.stdout.on("data", (chunk) => logs.push(chunk))
     native.child.stderr.on("data", (chunk) => logs.push(chunk))
-    await poll(
+    const renderer = await poll(
       () =>
         fetch(`http://127.0.0.1:${native.port}/json/list`)
           .then((r) => r.json())
-          .then((tabs) => tabs.some((tab) => tab.type === "page"))
+          .then((tabs) => tabs.find((tab) => tab.type === "page" && tab.url.startsWith("apexo://renderer/")))
           .catch(() => false),
       "packaged Desktop window",
       45_000,
     )
+    native.endpoint = renderer.webSocketDebuggerUrl
     await command("wait", "--fn", "!!window.api?.awaitInitialization")
     const connection = JSON.parse(await command("eval", "window.api.awaitInitialization()"))
     const started = daemons().filter((pid) => !priorDaemons.has(pid))
@@ -218,21 +220,45 @@ try {
   await command("screenshot", join(runtime.output, "computer-use-complete.png"))
   if (!live) {
     await client.sessions.wait({ sessionID: sessionState.id })
-    assert.equal(Bun.spawnSync(["/usr/bin/open", "-a", "Calculator"]).exitCode, 0)
+    screenshotDocument = `Computer Use screenshot ${crypto.randomUUID().slice(0, 8)}.txt`
+    const file = join(runtime.directory, screenshotDocument)
+    await writeFile(file, "Synthetic Computer Use screenshot fixture.\n")
+    assert.equal(Bun.spawnSync(["/usr/bin/open", "-a", "TextEdit", file]).exitCode, 0)
     const executable = await desktopExecutable(fixture.bundle)
     const target = await poll(() => {
-      const result = Bun.spawnSync([executable, "list-windows", "--app", "Calculator"], {
+      const result = Bun.spawnSync([executable, "list-windows", "--app", "TextEdit"], {
         env: { ...process.env, AGENT_DESKTOP_HOME: join(runtime.output, "fixture-setup-state") },
       })
       const envelope = JSON.parse(result.stdout.toString())
-      return envelope.ok && envelope.data.find((window) => window.accessible)
+      return (
+        envelope.ok &&
+        envelope.data.find(
+          (window) => window.title?.includes(screenshotDocument) && window.visible && window.accessible,
+        )
+      )
     }, "screenshot fixture window")
     state.steps.push(
-      { tool: toolName("desktop_screenshot"), args: { app: "Calculator", window_id: target.id } },
+      { tool: toolName("desktop_screenshot"), args: { app: "TextEdit", window_id: target.id } },
       { content: "COMPUTER_USE_IMAGE_DONE" },
     )
-    await command("fill", '[data-component="prompt-input"]', "Capture the Calculator fixture window inline.")
+    await command("fill", '[data-component="prompt-input"]', "Capture the synthetic TextEdit window inline.")
     await command("click", '[data-action="prompt-submit"]')
+    const screenshot = await poll(
+      async () => {
+        const history = (await client.messages.list({ sessionID: sessionState.id, order: "asc" })).data
+        return history
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find(
+            (part) =>
+              part.type === "tool" &&
+              part.name === toolName("desktop_screenshot") &&
+              ["completed", "error"].includes(part.state.status),
+          )
+      },
+      "actual screenshot tool settles",
+      30_000,
+    )
+    assert.equal(screenshot.state.status, "completed", screenshot.state.error?.message)
     await client.sessions.wait({ sessionID: sessionState.id })
     await poll(
       async () =>
@@ -241,40 +267,45 @@ try {
         ),
       "provider receives actual image",
     )
-    const imageReady =
-      "[...document.querySelectorAll('[data-component=tool-attachments] img')].some(img=>img.complete&&img.naturalWidth>0)"
-    if (!JSON.parse(await command("eval", imageReady)))
-      await command(
-        "find",
-        "role",
-        "button",
-        "click",
-        "--name",
-        `Called \`${toolName("desktop_screenshot")}\``,
-        "--exact",
-      )
+    const attachment = "[data-component=tool-attachments] img"
+    await command("wait", attachment)
+    await command(
+      "eval",
+      `document.querySelector(${JSON.stringify(attachment)}).scrollIntoView({block:"center"}); true`,
+    )
+    const imageReady = `[...document.querySelectorAll(${JSON.stringify(attachment)})].some(img=>img.complete&&img.naturalWidth>0)`
     await command("wait", "--fn", imageReady)
     checks.push("ui-renders-native-image-and-provider-receives-media")
     await command("screenshot", join(runtime.output, "computer-use-inline-image.png"))
     await client.sessions.switchAgent({ sessionID: sessionState.id, agent: "cancel" })
-    const gate = Promise.withResolvers()
-    state.hold = gate
-    state.steps.push(async () => {
-      state.entered = true
-      await gate.promise
-      return { content: "CANCELED_PROVIDER_RESULT" }
-    })
+    const installed = (await client["server.plugins"].list()).items.find((item) => item.id === plugin.id)
+    const installedExecutable = await desktopExecutable(installed.path)
+    state.steps.push({ tool: toolName("desktop_wait"), args: { ms: 60000 } })
     await command("fill", '[data-component="prompt-input"]', "Wait for the Stop button test.")
     await command("click", '[data-action="prompt-submit"]')
-    await poll(() => state.entered, "held provider request")
+    const waitChildren = await poll(() => {
+      const children = Bun.spawnSync(["/bin/ps", "-axo", "pid=,command="])
+        .stdout.toString()
+        .split("\n")
+        .filter((line) => line.includes(installedExecutable) && /\bwait\b/.test(line) && /\b60000\b/.test(line))
+        .map((line) => Number(line.trim().split(/\s+/)[0]))
+      return children.length && children.every((pid) => Number.isInteger(pid) && pid > 0) ? children : undefined
+    }, "installed plugin wait process starts")
+    const stoppedAt = Date.now()
     await command("find", "role", "button", "click", "--name", "Stop", "--exact")
     await poll(
-      async () => !(await client.sessions.active())[sessionState.id],
-      "Stop removes active Session ownership",
+      async () =>
+        !(await client.sessions.active())[sessionState.id] &&
+        waitChildren.every((pid) => Bun.spawnSync(["/bin/kill", "-0", String(pid)]).exitCode !== 0),
+      "Stop settles the Session and its native wait processes",
       15_000,
     )
-    gate.resolve()
-    checks.push("ui-stop-settles-active-session")
+    checks.push(`ui-stop-settles-native-plugin-wait-${Date.now() - stoppedAt}ms`)
+    await client["server.mcp"].retry({ server: "computer-use:desktop", location: fixture.location })
+    assert.equal(
+      (await client["server.mcp"].status({ location: fixture.location }))["computer-use:desktop"].status,
+      "connected",
+    )
     const confirmed = await client.sessions.create({
       location: fixture.location,
       agent: "confirm",
@@ -323,7 +354,12 @@ try {
   }
   console.log(JSON.stringify({ kind, checks, passed: checks.length, output: runtime.output }))
 } finally {
-  state.hold?.resolve()
+  if (screenshotDocument)
+    Bun.spawnSync([
+      "/usr/bin/osascript",
+      "-e",
+      `tell application "TextEdit" to close (first document whose name is ${JSON.stringify(screenshotDocument)}) saving no`,
+    ])
   await command("snapshot")
     .then((text) => writeFile(join(runtime.output, "computer-use-final.txt"), text))
     .catch(() => {})
