@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test"
+import { $ } from "bun"
 import path from "node:path"
-import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
+import os from "node:os"
 import { Deferred, Effect, Exit, Fiber, Layer, type Scope } from "effect"
 import { AppNodeBuilder } from "@apexo/core/effect/app-node-builder"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { Global } from "@apexo/core/global"
 import { LocationServiceMap } from "@apexo/core/location-service-map"
@@ -15,6 +17,8 @@ import { McpPreferences } from "@apexo/core/mcp-preferences"
 import { SessionV2 } from "@apexo/core/session"
 import { SessionExecution } from "@apexo/core/session/execution"
 import { AbsolutePath } from "@apexo/schema/schema"
+import { WorkspaceID } from "@apexo/schema/workspace-id"
+import { tmpdir } from "../fixture/fixture"
 const fixture = path.join(import.meta.dir, "../fixture/mcp-preferences-native-stdio.ts")
 const trace = async (file: string) =>
   (
@@ -34,13 +38,13 @@ const poll = (check: Effect.Effect<boolean>, label: string) =>
     }
     throw new Error(`Timed out: ${label}`)
   })
-const app = (root: string) =>
+const app = (root: string, data = path.join(root, "data")) =>
   AppNodeBuilder.build(LayerNode.group([SessionV2.node, LocationServiceMap.node, LocationRuntimeGuard.node]), [
     [
       Global.node,
       Layer.succeed(Global.Service)(
         Global.make({
-          data: path.join(root, "data"),
+          data,
           config: path.join(root, "config"),
           home: root,
         }),
@@ -58,7 +62,7 @@ const owner = (directory: string) =>
     return yield* MCP.Service.pipe(Effect.provide(locations.get(session.location)))
   })
 const setup = async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "apexo-mcp-preferences-"))
+  const root = await mkdtemp(path.join(os.tmpdir(), "apexo-mcp-preferences-"))
   const directory = path.join(root, "project"),
     log = path.join(root, "trace"),
     mode = path.join(root, "mode")
@@ -106,7 +110,8 @@ const cleanup = async (root: string, log: string) => {
 const run = <A, E>(
   root: string,
   body: Effect.Effect<A, E, SessionV2.Service | LocationServiceMap.Service | Scope.Scope>,
-) => Effect.runPromise(body.pipe(Effect.scoped, Effect.provide(app(root))))
+  data?: string,
+) => Effect.runPromise(body.pipe(Effect.scoped, Effect.provide(app(root, data))))
 
 test("saved choices survive new Location runtimes and remain isolated by full Location", async () => {
   const f = await setup()
@@ -155,6 +160,110 @@ test("saved choices survive new Location runtimes and remain isolated by full Lo
     await cleanup(f.root, f.log)
   }
 }, 30000)
+
+test("a disabled MCP server stays stopped through both spellings of a migrated Git worktree", async () => {
+  const f = await setup()
+  try {
+    await using repo = await tmpdir({ git: true })
+    const base = await realpath(f.root)
+    const previousData = path.join(base, "opencode")
+    const currentData = path.join(base, "apexo")
+    const previous = path.join(previousData, "worktree", "checkout")
+    const current = path.join(currentData, "worktree", "checkout")
+    await mkdir(path.dirname(previous), { recursive: true })
+    await $`git worktree add --detach ${previous} HEAD`.cwd(repo.path).quiet()
+    await f.config(false, true, previous)
+
+    await run(
+      f.root,
+      Effect.gen(function* () {
+        const mcp = yield* owner(previous)
+        expect((yield* mcp.status).local.status).toBe("connected")
+        yield* mcp.disconnect("local")
+        expect((yield* mcp.status).local).toMatchObject({ status: "disabled", preference: false })
+      }),
+      previousData,
+    )
+    expect((await trace(f.log)).filter((row) => row.event === "start")).toHaveLength(1)
+    expect(await migrateAppDirectory(base, "apexo", "opencode")).toBe(currentData)
+    expect(await realpath(previous)).toBe(await realpath(current))
+
+    const status = (directory: string) =>
+      run(
+        f.root,
+        Effect.gen(function* () {
+          const mcp = yield* owner(directory)
+          return (yield* mcp.status).local
+        }),
+        currentData,
+      )
+    for (const directory of [previous, current])
+      expect(await status(directory)).toMatchObject({ status: "disabled", preference: false })
+
+    // A completed data move can be used while the old symlink is still staged.
+    const staged = path.join(base, ".apexo.directory-migration")
+    await rename(previousData, staged)
+    expect(await status(current)).toMatchObject({ status: "disabled", preference: false })
+    expect((await trace(f.log)).filter((row) => row.event === "start")).toHaveLength(1)
+  } finally {
+    await cleanup(f.root, f.log)
+  }
+}, 30000)
+
+test("verified worktree aliases reconcile conflicting choices without restoring a reset choice", async () => {
+  await using tmp = await tmpdir()
+  const previousData = path.join(tmp.path, "opencode")
+  const currentData = path.join(tmp.path, "apexo")
+  const previous = { directory: AbsolutePath.make(path.join(previousData, "worktree", "checkout")) }
+  const current = { directory: AbsolutePath.make(path.join(currentData, "worktree", "checkout")) }
+  await mkdir(previous.directory, { recursive: true })
+  const before = McpPreferences.make(previous, previousData)
+  const split = McpPreferences.make(current, previousData)
+  await Effect.runPromise(before.change("local", false, () => Effect.void))
+  await Effect.runPromise(split.change("local", true, () => Effect.void))
+  await Effect.runPromise(split.change("other", false, () => Effect.void))
+  const oldName = path.basename(McpPreferences.file(previous, previousData))
+  await migrateAppDirectory(tmp.path, "apexo", "opencode")
+
+  const left = McpPreferences.make(previous, previousData)
+  const right = McpPreferences.make(current, currentData)
+  const target = McpPreferences.file(current, currentData)
+  const legacyFile = path.join(path.dirname(target), oldName)
+  expect(McpPreferences.file(previous, previousData)).toBe(target)
+  expect(await Effect.runPromise(left.read)).toEqual(
+    new Map([
+      ["local", false],
+      ["other", false],
+    ]),
+  )
+  expect(await Effect.runPromise(right.read)).toEqual(await Effect.runPromise(left.read))
+  const unrelated = McpPreferences.make({ ...current, workspaceID: WorkspaceID.create() }, currentData)
+  expect(await Effect.runPromise(unrelated.read)).toEqual(new Map())
+
+  const legacy = await readFile(legacyFile, "utf8")
+  await writeFile(legacyFile, "{")
+  expect(await Effect.runPromise(right.read.pipe(Effect.flip))).toMatchObject({ kind: "invalid" })
+  await writeFile(legacyFile, legacy)
+
+  const saved = await readFile(target, "utf8")
+  expect(
+    await Effect.runPromise(right.change("local", undefined, () => Effect.fail("activation failed")).pipe(Effect.flip)),
+  ).toBe("activation failed")
+  expect(await readFile(target, "utf8")).toBe(saved)
+  expect((await Effect.runPromise(left.read)).get("local")).toBe(false)
+
+  await Promise.all([
+    Effect.runPromise(right.change("local", undefined, () => Effect.void)),
+    Effect.runPromise(left.change("new", true, () => Effect.void)),
+  ])
+  const reconciled = new Map([
+    ["other", false],
+    ["new", true],
+  ])
+  expect(await Effect.runPromise(left.read)).toEqual(reconciled)
+  expect(await Effect.runPromise(right.read)).toEqual(reconciled)
+  expect(await readFile(legacyFile, "utf8")).toBe(legacy)
+})
 
 test("saved choice overrides disabled default until reset and cannot create a removed definition", async () => {
   const f = await setup()

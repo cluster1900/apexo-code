@@ -15,19 +15,23 @@ export function resolveAppDir(base: string, forced = process.env.APEXO_APP_DIR_N
   return path.join(base, forced || APP_DIR_NAME)
 }
 
-if (!process.env.APEXO_APP_DIR_NAME) {
+const forced = process.env.APEXO_APP_DIR_NAME
+const directories = new Map(
   await Promise.all(
-    [...new Set([xdgData!, xdgCache!, xdgConfig!, xdgState!])].map((base) =>
-      migrateAppDirectory(base, APP_DIR_NAME, LEGACY_APP_DIR_NAME),
-    ),
-  )
-}
+    [...new Set([xdgData!, xdgCache!, xdgConfig!, xdgState!])].map(async (base) => {
+      const directory = forced
+        ? resolveAppDir(base, forced)
+        : await migrateAppDirectory(base, APP_DIR_NAME, LEGACY_APP_DIR_NAME)
+      return [base, directory] as const
+    }),
+  ),
+)
 
-const data = resolveAppDir(xdgData!)
-const cache = resolveAppDir(xdgCache!)
-const config = resolveAppDir(xdgConfig!)
-const state = resolveAppDir(xdgState!)
-const tmp = path.join(os.tmpdir(), process.env.APEXO_APP_DIR_NAME || APP_DIR_NAME)
+const data = directories.get(xdgData!)!
+const cache = directories.get(xdgCache!)!
+const config = directories.get(xdgConfig!)!
+const state = directories.get(xdgState!)!
+const tmp = path.join(os.tmpdir(), forced || APP_DIR_NAME)
 
 const paths = {
   get home() {

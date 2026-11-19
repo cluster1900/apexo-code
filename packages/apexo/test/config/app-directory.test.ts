@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
-import { lstat, mkdir, realpath, rename, symlink } from "node:fs/promises"
+import { chmod, lstat, mkdir, realpath, rename, symlink } from "node:fs/promises"
 import path from "node:path"
 import { migrateAppDirectory, migratedWorktreePaths } from "@apexo/core/app-directory"
 import { tmpdir } from "../fixture/fixture"
@@ -75,6 +75,102 @@ test("CLI processes share the migrated XDG directories and can open the existing
   env.APEXO_APP_DIR_NAME = "custom"
   expect((await inspectPaths()).data).toBe(path.join(roots.data, "custom"))
 })
+
+test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "the CLI loads readable legacy config when its parent is read-only, then migrates it once writable",
+  async () => {
+    await using tmp = await tmpdir()
+    const parent = path.join(tmp.path, "config")
+    const legacy = path.join(parent, "opencode")
+    const current = path.join(parent, "apexo")
+    await Bun.write(path.join(legacy, "opencode.json"), JSON.stringify({ username: "legacy-readonly-config" }))
+    const debug = async (command: string) => {
+      const child = Bun.spawn(
+        [process.execPath, "run", path.join(import.meta.dir, "../../src/index.ts"), "debug", command],
+        {
+          cwd: tmp.path,
+          env: {
+            PATH: process.env.PATH,
+            HOME: tmp.path,
+            TMPDIR: tmp.path,
+            APEXO_TEST_HOME: tmp.path,
+            APEXO_TEST_MANAGED_CONFIG_DIR: path.join(tmp.path, "managed"),
+            APEXO_DISABLE_MODELS_FETCH: "1",
+            APEXO_DISABLE_PROJECT_CONFIG: "1",
+            APEXO_PURE: "1",
+            APEXO_DB: ":memory:",
+            XDG_DATA_HOME: path.join(tmp.path, "data"),
+            XDG_CONFIG_HOME: parent,
+            XDG_CACHE_HOME: path.join(tmp.path, "cache"),
+            XDG_STATE_HOME: path.join(tmp.path, "state"),
+          },
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 15_000,
+        },
+      )
+      const [stdout, stderr, exit] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      expect(exit, stderr).toBe(0)
+      return stdout
+    }
+
+    await chmod(parent, 0o555)
+    try {
+      expect(await debug("paths")).toContain(`config     ${legacy}`)
+      expect(JSON.parse(await debug("config")).username).toBe("legacy-readonly-config")
+      expect((await lstat(legacy)).isDirectory()).toBe(true)
+      expect(await lstat(current).catch(() => undefined)).toBeUndefined()
+    } finally {
+      await chmod(parent, 0o755)
+    }
+
+    expect(await debug("paths")).toContain(`config     ${current}`)
+    expect((await lstat(legacy)).isSymbolicLink()).toBe(true)
+    expect(JSON.parse(await debug("config")).username).toBe("legacy-readonly-config")
+
+    const staged = path.join(parent, ".apexo.directory-migration")
+    await rename(legacy, staged)
+    await chmod(parent, 0o555)
+    try {
+      expect(await debug("paths")).toContain(`config     ${current}`)
+      expect((await lstat(staged)).isSymbolicLink()).toBe(true)
+    } finally {
+      await chmod(parent, 0o755)
+    }
+    expect(await debug("paths")).toContain(`config     ${current}`)
+    expect(await realpath(legacy)).toBe(await realpath(current))
+  },
+  60_000,
+)
+
+test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "migration falls back to the readable source when publishing fails beside an empty destination",
+  async () => {
+    await using tmp = await tmpdir()
+    const legacy = path.join(tmp.path, "opencode")
+    const current = path.join(tmp.path, "apexo")
+    await Bun.write(path.join(legacy, "state"), "legacy")
+    await mkdir(current)
+    await mkdir(path.join(tmp.path, ".apexo-migration-locks"))
+    await chmod(tmp.path, 0o555)
+    try {
+      expect(await migrateAppDirectory(tmp.path, "apexo", "opencode")).toBe(legacy)
+      expect(await Bun.file(path.join(legacy, "state")).text()).toBe("legacy")
+      await chmod(legacy, 0o000)
+      await expect(migrateAppDirectory(tmp.path, "apexo", "opencode")).rejects.toMatchObject({ code: "EACCES" })
+    } finally {
+      await chmod(legacy, 0o755)
+      await chmod(tmp.path, 0o755)
+    }
+    expect(await migrateAppDirectory(tmp.path, "apexo", "opencode")).toBe(current)
+    expect(await Bun.file(path.join(current, "state")).text()).toBe("legacy")
+  },
+)
 
 test("directory migration keeps an existing Apexo directory and can finish an interrupted move", async () => {
   await using tmp = await tmpdir()

@@ -1,4 +1,6 @@
 import {
+  accessSync,
+  constants,
   lstatSync,
   readdirSync,
   readlinkSync,
@@ -15,10 +17,20 @@ import { Flock } from "./util/flock"
 
 export const APP_DIR_NAME = "apexo"
 
+const stagingPath = (directory: string) =>
+  path.join(path.dirname(directory), `.${path.basename(directory)}.directory-migration`)
+
+function pointsToDirectory(link: string, directory: string) {
+  return !path.relative(
+    path.toNamespacedPath(directory),
+    path.toNamespacedPath(path.resolve(path.dirname(link), readlinkSync(link))),
+  )
+}
+
 export async function migrateAppDirectory(base: string, name: string, oldName: string) {
   const directory = path.join(base, name)
   const legacy = path.join(base, oldName)
-  const staged = path.join(base, `.${name}.directory-migration`)
+  const staged = stagingPath(directory)
   const canMove = () => {
     const current = lstatSync(directory, { throwIfNoEntry: false })
     if (!current) return statSync(legacy, { throwIfNoEntry: false })?.isDirectory() === true
@@ -31,39 +43,51 @@ export async function migrateAppDirectory(base: string, name: string, oldName: s
       throw error
     }
   }
-  if (!canMove() && !lstatSync(staged, { throwIfNoEntry: false })) return directory
+  try {
+    if (!canMove() && !lstatSync(staged, { throwIfNoEntry: false })) return directory
 
-  await using lock = await Flock.acquire(`directory:${name}`, {
-    dir: path.join(base, ".apexo-migration-locks"),
-    reclaimDeadOwner: true,
-  })
-  const link = lstatSync(staged, { throwIfNoEntry: false })
-  if (
-    link &&
-    (!link.isSymbolicLink() ||
-      path.relative(path.toNamespacedPath(directory), path.toNamespacedPath(path.resolve(base, readlinkSync(staged)))))
-  )
-    throw new Error(`Unexpected Apexo directory migration entry: ${staged}`)
+    await using lock = await Flock.acquire(`directory:${name}`, {
+      dir: path.join(base, ".apexo-migration-locks"),
+      reclaimDeadOwner: true,
+    })
+    const link = lstatSync(staged, { throwIfNoEntry: false })
+    if (link && (!link.isSymbolicLink() || !pointsToDirectory(staged, directory)))
+      throw new Error(`Unexpected Apexo directory migration entry: ${staged}`)
 
-  if (!canMove()) {
-    if (link) {
-      if (lstatSync(directory, { throwIfNoEntry: false }) && !lstatSync(legacy, { throwIfNoEntry: false }))
-        renameSync(staged, legacy)
-      else unlinkSync(staged)
+    if (!canMove()) {
+      if (link) {
+        if (lstatSync(directory, { throwIfNoEntry: false }) && !lstatSync(legacy, { throwIfNoEntry: false }))
+          renameSync(staged, legacy)
+        else unlinkSync(staged)
+      }
+      return directory
     }
-    return directory
-  }
 
-  // Keep references saved with the old absolute path, including Git worktrees and SQLite sidecars.
-  // A staged alias also allows recovery if startup stops between the two atomic renames.
-  const windows = process.platform === "win32"
-  if (!link) {
-    symlinkSync(windows ? path.resolve(directory) : name, staged, windows ? "junction" : "dir")
+    // Keep references saved with the old absolute path, including Git worktrees and SQLite sidecars.
+    // A staged alias also allows recovery if startup stops between the two atomic renames.
+    const windows = process.platform === "win32"
+    if (!link) {
+      symlinkSync(windows ? path.resolve(directory) : name, staged, windows ? "junction" : "dir")
+    }
+    if (windows && lstatSync(directory, { throwIfNoEntry: false })) rmdirSync(directory)
+    renameSync(legacy, directory)
+    renameSync(staged, legacy)
+    return directory
+  } catch (error) {
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      !("code" in error) ||
+      (error.code !== "EACCES" && error.code !== "EPERM" && error.code !== "EROFS")
+    )
+      throw error
+
+    // The move may have completed before publishing the alias failed. Keep using the directory that owns the data.
+    const available = canMove() ? legacy : directory
+    if (!statSync(available, { throwIfNoEntry: false })?.isDirectory()) throw error
+    accessSync(available, constants.R_OK | constants.X_OK)
+    return available
   }
-  if (windows && lstatSync(directory, { throwIfNoEntry: false })) rmdirSync(directory)
-  renameSync(legacy, directory)
-  renameSync(staged, legacy)
-  return directory
 }
 
 export function migratedAppDirectoryAliases(directory: string) {
@@ -71,9 +95,16 @@ export function migratedAppDirectoryAliases(directory: string) {
   const base = path.dirname(directory)
   const legacy = path.join(base, LEGACY_APP_DIR_NAME)
   try {
-    if (!lstatSync(legacy, { throwIfNoEntry: false })?.isSymbolicLink()) return
+    const previous = lstatSync(legacy, { throwIfNoEntry: false })
+    if (previous && !previous.isSymbolicLink()) return
+    if (!previous) {
+      // An interrupted move can leave the old spelling recorded only in the staged alias.
+      const staged = stagingPath(directory)
+      if (!lstatSync(staged, { throwIfNoEntry: false })?.isSymbolicLink() || !pointsToDirectory(staged, directory))
+        return
+    }
     const resolved = realpathSync(directory)
-    if (realpathSync(legacy) !== resolved) return
+    if (previous && realpathSync(legacy) !== resolved) return
 
     // The XDG base itself can be a symlink, while persisted paths may already have been resolved.
     return {
@@ -98,13 +129,24 @@ export function resolveMigratedAppPath(
 }
 
 export function migratedWorktreePaths(data: string, directory: string) {
-  if (!path.isAbsolute(directory)) return [directory]
-  const aliases = migratedAppDirectoryAliases(data)
-  if (!aliases) return [directory]
+  return migratedWorktreeAliases(data, directory)?.paths ?? [directory]
+}
+
+export function migratedWorktreeAliases(data: string, directory: string) {
+  if (!path.isAbsolute(directory)) return
+  const aliases = migratedAppDirectoryAliases(
+    path.basename(data) === LEGACY_APP_DIR_NAME ? path.join(path.dirname(data), APP_DIR_NAME) : data,
+  )
+  if (!aliases) return
   const roots = [...aliases.current, ...aliases.legacy].map((root) => path.join(root, "worktree"))
   const relative = roots
     .map((root) => path.relative(root, directory))
     .find((suffix) => !path.isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith(`..${path.sep}`))
-  if (relative === undefined) return [directory]
-  return [...new Set([directory, ...roots.map((root) => path.join(root, relative))])]
+  if (relative === undefined) return
+  const canonicalData = aliases.current.at(-1)!
+  return {
+    data: canonicalData,
+    directory: path.join(canonicalData, "worktree", relative),
+    paths: [...new Set([directory, ...roots.map((root) => path.join(root, relative))])],
+  }
 }
