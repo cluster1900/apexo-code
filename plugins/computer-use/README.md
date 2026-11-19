@@ -10,7 +10,7 @@ Open **Plugins**, refresh **Apexo Skills Catalog**, search for `computer-use`, a
 
 Older Apexo releases can add `https://github.com/cluster1900/apexo-skills.git` from the Plugins **Sources** tab.
 
-The **Files** path in Plugins shows Apexo's installed copy. It normally lives under `~/.local/share/apexo/plugins` on macOS. If Apexo is reusing an existing OpenCode data directory, it resolves the installed copy under `~/.local/share/opencode/plugins`. `XDG_DATA_HOME` can change the data root. The project in which you use Computer Use is selected separately from this per-user installation.
+The **Files** path in Plugins shows Apexo's installed copy. It normally lives under `~/.local/share/apexo/plugins` on macOS. Apexo migrates eligible OpenCode data directories to the Apexo path and keeps a compatibility link for saved paths. `XDG_DATA_HOME` can change the data root. The project in which you use Computer Use is selected separately from this per-user installation.
 
 ## Assemble a standalone bundle
 

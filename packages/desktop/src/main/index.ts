@@ -2,7 +2,8 @@ import { createRuntimeProfile } from "./runtime-profile"
 import { RUNTIME_PROFILE_KEY } from "./store-keys"
 import { getStore } from "./store"
 import { randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { mkdirSync, rmSync } from "node:fs"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { LEGACY_DESKTOP_APP_ID } from "@apexo/core/legacy-compat"
 import * as http from "node:http"
 import { createServer } from "node:net"
@@ -51,6 +52,7 @@ import { spawnWslSidecar } from "./wsl/sidecar"
 import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
+import { migrateRendererStorage } from "./renderer-storage"
 
 const APP_NAMES: Record<string, string> = {
   dev: "Apexo Dev",
@@ -63,13 +65,6 @@ const APP_IDS: Record<string, string> = {
   prod: "com.apexolab.desktop",
 }
 
-// Reuse the previous desktop app's data directory (legacy-compat.ts) until an Apexo one exists.
-function userDataDir(appId: string) {
-  const next = join(app.getPath("appData"), appId)
-  const legacy = join(app.getPath("appData"), appId.replace(/^com\.apexolab\.desktop/, LEGACY_DESKTOP_APP_ID))
-  return !existsSync(next) && existsSync(legacy) ? legacy : next
-}
-
 const TEST_ONBOARDING = process.env.APEXO_TEST_ONBOARDING === "1"
 const SIDECAR_VERSION = process.env.APEXO_SIDECAR_V2 === "1" ? "v2" : "v1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
@@ -77,7 +72,15 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let server: SidecarListener | null = null
 
-const pendingDeepLinks: string[] = []
+const deepLinksFromArgs = (argv: string[]) => argv.filter((arg) => arg.startsWith("apexo://"))
+const pendingDeepLinks = process.platform === "darwin" ? [] : deepLinksFromArgs(process.argv)
+
+// Launch Services can deliver a URL while the profile directory is still migrating.
+app.on("open-url", (event: Event, url: string) => {
+  event.preventDefault()
+  logger?.log("deep link received via open-url", { url })
+  emitDeepLinks([url])
+})
 
 function useEnvProxy() {
   try {
@@ -150,7 +153,16 @@ const main = Effect.gen(function* () {
   })()
   app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "Apexo Dev")
   app.setAppUserModelId(appId)
-  app.setPath("userData", onboardingTestRoot ? join(onboardingTestRoot, "desktop") : userDataDir(appId))
+  const userData = onboardingTestRoot
+    ? join(onboardingTestRoot, "desktop")
+    : yield* Effect.promise(() =>
+        migrateAppDirectory(
+          app.getPath("appData"),
+          appId,
+          appId.replace(/^com\.apexolab\.desktop/, LEGACY_DESKTOP_APP_ID),
+        ),
+      )
+  app.setPath("userData", userData)
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
   initializeOldLayoutEligibility(app.getPath("userData"))
   logger = initLogging()
@@ -204,12 +216,7 @@ const main = Effect.gen(function* () {
     const cacheRoot =
       process.env.XDG_CACHE_HOME ??
       join(app.getPath("home"), process.platform === "darwin" ? "Library/Caches" : ".cache")
-    const candidateIds = [
-      ...Object.values(APP_IDS),
-      ...Object.values(APP_IDS).map((id) => id.replace(/^com\.apexolab\.desktop/, LEGACY_DESKTOP_APP_ID)),
-      ...Object.values(APP_NAMES),
-      "Electron",
-    ]
+    const candidateIds = [...Object.values(APP_IDS), ...Object.values(APP_NAMES), "Electron"]
     const roots = new Set<string>([
       app.getPath("userData"),
       app.getPath("sessionData"),
@@ -245,7 +252,7 @@ const main = Effect.gen(function* () {
   if (activeProfile) process.env.APEXO_RUNTIME_PROFILE = activeProfile
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
-    const urls = argv.filter((arg: string) => arg.startsWith("apexo://"))
+    const urls = deepLinksFromArgs(argv)
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls })
       emitDeepLinks(urls)
@@ -255,12 +262,6 @@ const main = Effect.gen(function* () {
       win.show()
       win.focus()
     }
-  })
-
-  app.on("open-url", (event: Event, url: string) => {
-    event.preventDefault()
-    logger.log("deep link received via open-url", { url })
-    emitDeepLinks([url])
   })
 
   app.on("before-quit", () => {
@@ -312,6 +313,9 @@ const main = Effect.gen(function* () {
   )
   app.setAsDefaultProtocolClient("apexo")
   registerRendererProtocol()
+  yield* Effect.tryPromise(() => migrateRendererStorage()).pipe(
+    Effect.catch((error) => Effect.sync(() => logger.warn("failed to migrate renderer storage", error))),
+  )
   setDockIcon()
   app.setAboutPanelOptions({
     applicationName: app.getName(),

@@ -5,5 +5,6 @@ export const OLD_LAYOUT_ELIGIBLE_KEY = "oldLayoutEligible"
 export const WSL_SERVERS_KEY = "wslServers"
 export const PINCH_ZOOM_ENABLED_KEY = "pinchZoomEnabled"
 export const WINDOW_IDS_KEY = "windowIds"
+export const RENDERER_STORAGE_MIGRATED_KEY = "rendererStorageMigrated"
 
 export const RUNTIME_PROFILE_KEY = "runtimeProfile"

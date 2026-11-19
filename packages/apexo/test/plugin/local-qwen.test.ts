@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import os from "os"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { LocalQwenPlugin, createDynamicLocalQwenFetch } from "../../src/plugin/local-qwen"
 import {
   LOCAL_QWEN_MODEL_ID,
@@ -51,6 +52,25 @@ function stubPluginInput(directory: string): PluginInput {
 }
 
 describe("LocalQwenPlugin lifecycle and auto-takeover", () => {
+  test("uses the canonical path for a model saved under the migrated cache", async () => {
+    await withTempDirs(async (dirs) => {
+      const base = await fs.realpath(dirs.root)
+      const modelPath = path.join(base, "opencode", "models", "fixture.gguf")
+      const cacheDir = path.join(base, "apexo", "models")
+      const options = { ...dirs, cacheDir }
+      await Bun.write(modelPath, "model fixture")
+      await writeLocalQwenState({ enabled: true, modelPath }, options)
+
+      await migrateAppDirectory(base, "apexo", "opencode")
+      expect((await readLocalQwenState(options)).modelPath).toBe(path.join(cacheDir, "fixture.gguf"))
+      expect(await isLocalQwenModelDownloaded(options)).toBe(true)
+
+      const external = path.join(base, "models", "fixture.gguf")
+      await writeLocalQwenState({ enabled: true, modelPath: external }, options)
+      expect((await readLocalQwenState(options)).modelPath).toBe(external)
+    })
+  })
+
   test("remains dormant by default before user downloads model", async () => {
     await withTempDirs(async (dirs) => {
       expect(await isLocalQwenModelDownloaded(dirs)).toBe(false)

@@ -1,3 +1,9 @@
+import {
+  desktopRendererHost,
+  desktopRendererOrigin,
+  desktopRendererScheme,
+  legacyDesktopRendererScheme,
+} from "@apexo/core/desktop-origin"
 import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@apexo/ui/theme/resolve"
 import type { DesktopTheme } from "@apexo/ui/theme/types"
@@ -16,11 +22,10 @@ import { nativeT } from "./native-translations"
 import { createWindowRegistry } from "./window-registry"
 import { safeWindowURL } from "./window-state"
 import { resolveExternalURL, resolveLocalFilePath } from "./external-url"
+import { rendererStoragePage } from "./renderer-storage"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
-const rendererProtocol = "oc"
-const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
 const notificationPermission = "notifications"
 const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
@@ -35,7 +40,7 @@ const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: rendererProtocol,
+    scheme: desktopRendererScheme,
     privileges: {
       secure: true,
       standard: true,
@@ -43,6 +48,7 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  { scheme: legacyDesktopRendererScheme, privileges: { secure: true, standard: true } },
 ])
 
 let backgroundColor: string | undefined
@@ -293,11 +299,13 @@ function windowDataFile(id: string) {
 }
 
 export function registerRendererProtocol() {
-  if (protocol.isProtocolHandled(rendererProtocol)) return
+  if (protocol.isProtocolHandled(desktopRendererScheme)) return
 
-  protocol.handle(rendererProtocol, async (request) => {
+  protocol.handle(desktopRendererScheme, async (request) => {
+    const storage = rendererStoragePage(request.url, desktopRendererOrigin)
+    if (storage) return storage
     const url = new URL(request.url)
-    if (url.host !== rendererHost) {
+    if (url.host !== desktopRendererHost) {
       writeLog("protocol", "rejected host", { url: request.url }, "warn")
       return new Response("Not found", { status: 404 })
     }
@@ -343,7 +351,7 @@ function loadWindow(win: BrowserWindow, html: string) {
     return
   }
 
-  void win.loadURL(`${rendererProtocol}://${rendererHost}/${html}`)
+  void win.loadURL(`${desktopRendererOrigin}/${html}`)
 }
 
 function wireWindowRecovery(win: BrowserWindow, name: string) {
@@ -513,7 +521,7 @@ function isRendererUrl(value?: string, html = false) {
   if (!value || !URL.canParse(value)) return false
   const url = new URL(value)
   if (html && !url.pathname.endsWith(".html")) return false
-  if (url.protocol === `${rendererProtocol}:` && url.host === rendererHost) return true
+  if (url.protocol === `${desktopRendererScheme}:` && url.host === desktopRendererHost) return true
   const devUrl = process.env.ELECTRON_RENDERER_URL
   if (!devUrl || !URL.canParse(devUrl)) return false
   return url.origin === new URL(devUrl).origin

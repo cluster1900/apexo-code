@@ -1,3 +1,4 @@
+import { desktopRendererOrigin } from "@apexo/core/desktop-origin"
 import * as http from "node:http"
 import * as tls from "node:tls"
 
@@ -61,7 +62,7 @@ async function start(command: StartCommand) {
       hostname: command.hostname,
       username: "apexo",
       password: command.password,
-      cors: ["oc://renderer"],
+      cors: [desktopRendererOrigin],
     })
     parentPort.postMessage({ type: "ready" })
   } catch (error) {

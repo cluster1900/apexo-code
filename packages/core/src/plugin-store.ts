@@ -11,6 +11,7 @@ import { Schema } from "effect"
 import { PluginStore } from "@apexo/schema/plugin-store"
 import { Flock } from "./util/flock"
 import { ConfigMarkdown } from "./config/markdown"
+import { migratedAppDirectoryAliases, resolveMigratedAppPath } from "./app-directory"
 
 const exec = promisify(execFile)
 const official = "https://github.com/xai-org/plugin-marketplace.git"
@@ -113,7 +114,7 @@ async function state(root: string): Promise<State> {
           sources: [{ info: { id: hash(official), name: "xAI", location: official, official: true }, entries: [] }],
           installed: [],
         }
-      : Schema.decodeUnknownSync(State)(stored)
+      : relocateRegistryPaths(root, Schema.decodeUnknownSync(State)(stored))
   if (value.apexoCatalogInitialized) return value
   return {
     ...value,
@@ -133,6 +134,39 @@ async function state(root: string): Promise<State> {
             entries: [],
           },
         ],
+  }
+}
+
+function relocateRegistryPaths(root: string, value: State): State {
+  if (!value.installed.length && !value.sources.some((source) => source.root)) return value
+  const current = path.resolve(root)
+  if (path.basename(current) !== "plugins") return value
+  const aliases = migratedAppDirectoryAliases(path.dirname(current))
+  if (!aliases) return value
+  const relocate = (file: string, folder: "packages" | "sources") =>
+    resolveMigratedAppPath(file, aliases, path.join("plugins", folder))
+  const relocateTarget = (target: typeof Location.Type) => {
+    const location = relocate(target.location, "sources")
+    return location === target.location ? target : { ...target, location }
+  }
+  // Local packages and cached catalog checkouts are store-owned. External source identities stay stable.
+  return {
+    ...value,
+    installed: value.installed.map((entry) => {
+      const directory = relocate(entry.root, "packages")
+      return {
+        ...entry,
+        root: directory,
+        item: directory === entry.root ? entry.item : { ...entry.item, path: directory },
+        target: relocateTarget(entry.target),
+      }
+    }),
+    sources: value.sources.map((source) => ({
+      ...source,
+      ...(source.root === undefined ? {} : { root: relocate(source.root, "sources") }),
+      ...(source.target === undefined ? {} : { target: relocateTarget(source.target) }),
+      entries: source.entries.map((entry) => ({ ...entry, target: relocateTarget(entry.target) })),
+    })),
   }
 }
 async function save(root: string, value: State) {

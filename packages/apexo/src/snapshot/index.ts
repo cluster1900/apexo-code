@@ -6,7 +6,8 @@ import path from "path"
 import { AppProcess } from "@apexo/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { FSUtil } from "@apexo/core/fs-util"
-import { Hash } from "@apexo/core/util/hash"
+import { migratedWorktreePaths } from "@apexo/core/app-directory"
+import { snapshotDirectory } from "@apexo/core/snapshot"
 import { Config } from "@/config/config"
 import { Global } from "@apexo/core/global"
 import { Info } from "@apexo/schema/file-diff"
@@ -68,7 +69,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
         const state = {
           directory: ctx.directory,
           worktree: ctx.worktree,
-          gitdir: path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree)),
+          gitdir: yield* snapshotDirectory(fs, Global.Path.data, ctx.project.id, ctx.worktree),
           vcs: ctx.project.vcs,
         }
 
@@ -414,7 +415,12 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               const ops: { hash: string; file: string; rel: string }[] = []
               const seen = new Set<string>()
               for (const item of patches) {
-                for (const file of item.files) {
+                for (const saved of item.files) {
+                  const file = FSUtil.contains(state.worktree, saved)
+                    ? saved
+                    : (migratedWorktreePaths(Global.Path.data, saved).find((alias) =>
+                        FSUtil.contains(state.worktree, alias),
+                      ) ?? saved)
                   if (seen.has(file)) continue
                   seen.add(file)
                   ops.push({

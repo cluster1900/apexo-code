@@ -8,6 +8,7 @@ import net from "node:net"
 import launch from "cross-spawn"
 import { Option, Schema } from "effect"
 import { Global } from "./global"
+import { migratedAppDirectoryAliases, resolveMigratedAppPath } from "./app-directory"
 import { Flock } from "./util/flock"
 import { which } from "./util/which"
 
@@ -175,8 +176,16 @@ export async function readLocalQwenState(options?: LocalQwenOptions): Promise<Lo
   const raw = await fs.readFile(paths.stateFile, "utf8").catch(() => "")
   const decoded = Schema.decodeUnknownOption(StateJsonSchema)(raw)
   if (Option.isNone(decoded)) return { enabled: false }
+  const cache = path.resolve(paths.cacheDir)
+  const aliases =
+    decoded.value.modelPath && path.basename(cache) === "models"
+      ? migratedAppDirectoryAliases(path.dirname(cache))
+      : undefined
   return {
     ...decoded.value,
+    ...(aliases && decoded.value.modelPath
+      ? { modelPath: resolveMigratedAppPath(decoded.value.modelPath, aliases, "models") }
+      : {}),
     ...(options?.endpoint ? { endpoint: options.endpoint } : {}),
   }
 }

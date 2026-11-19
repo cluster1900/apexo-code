@@ -1,5 +1,5 @@
 import type { DesktopTheme } from "./types"
-import oc2ThemeJson from "./themes/oc-2.json"
+import oc2ThemeJson from "./themes/apexo-v2.json"
 import amoledThemeJson from "./themes/amoled.json"
 import auraThemeJson from "./themes/aura.json"
 import ayuThemeJson from "./themes/ayu.json"

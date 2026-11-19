@@ -4,10 +4,13 @@ import path from "path"
 import { eq } from "drizzle-orm"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@apexo/core/cross-spawn-spawner"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { Hash } from "@apexo/core/util/hash"
 import { AbsolutePath } from "@apexo/core/schema"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { Database } from "@apexo/core/database/database"
+import { Global } from "@apexo/core/global"
+import { ProjectDirectories } from "@apexo/core/project/directories"
 import { ProjectDirectoryTable, ProjectTable } from "@apexo/core/project/sql"
 import { ProjectV2 } from "@apexo/core/project"
 import { Project } from "@/project/project"
@@ -82,6 +85,39 @@ describe("Project directory persistence", () => {
           { directory: AbsolutePath.make(worktree), strategy: undefined },
         ].toSorted((a, b) => a.directory.localeCompare(b.directory)),
       )
+    }),
+  )
+
+  it.live("refreshes a migrated worktree by updating its existing directory registration", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const project = yield* Project.Service
+      const result = yield* project.fromDirectory(tmp)
+      const database = yield* Database.Service
+      const base = path.join(tmp, "data")
+      const data = path.join(base, "apexo")
+      const legacy = AbsolutePath.make(path.join(base, "opencode", "worktree", "copy"))
+      const current = AbsolutePath.make(path.join(data, "worktree", "copy"))
+      const registry = LayerNode.compile(ProjectDirectories.node, [
+        [Global.node, Global.layerWith({ data })],
+        [Database.node, Layer.succeed(Database.Service, database)],
+      ]).pipe(Layer.fresh)
+
+      yield* Effect.promise(() => Bun.write(path.join(legacy, "marker"), "existing worktree"))
+      yield* Effect.gen(function* () {
+        const registered = yield* ProjectDirectories.Service
+        const location = { projectID: result.project.id, directory: current }
+        expect(yield* registered.create({ ...location, directory: legacy })).toBe(true)
+        yield* Effect.promise(() => migrateAppDirectory(base, "apexo", "opencode"))
+        expect((yield* registered.get(location))?.directory).toBe(legacy)
+        expect(yield* registered.create({ ...location, strategy: "git_worktree", behavior: "replace" })).toBe(true)
+        expect(yield* registered.get(location)).toEqual({ directory: legacy, strategy: "git_worktree" })
+        expect((yield* registered.list(location.projectID)).filter((item) => item.directory !== tmp)).toEqual([
+          { directory: legacy, strategy: "git_worktree" },
+        ])
+        expect(yield* registered.remove(location)).toBe(true)
+        expect(yield* registered.contains({ ...location, directory: legacy })).toBe(false)
+      }).pipe(Effect.provide(registry))
     }),
   )
 

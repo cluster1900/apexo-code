@@ -52,6 +52,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import { SessionMessage } from "@apexo/schema/session-message"
+import { migratedWorktreePaths } from "@apexo/core/app-directory"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -592,7 +593,8 @@ const layer: Layer.Layer<
 
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
       const conditions: SQL[] = []
-      if (input?.directory) conditions.push(eq(SessionTable.directory, input.directory))
+      if (input?.directory)
+        conditions.push(inArray(SessionTable.directory, migratedWorktreePaths(Global.Path.data, input.directory)))
       if (input?.roots) conditions.push(isNull(SessionTable.parent_id))
       if (input?.start) conditions.push(gte(SessionTable.time_updated, input.start))
       if (input?.cursor) conditions.push(lt(SessionTable.time_updated, input.cursor))
@@ -1017,6 +1019,7 @@ function listByProject(
   if (input.workspaceID) {
     conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
   }
+  const directories = input.directory ? migratedWorktreePaths(Global.Path.data, input.directory) : undefined
   if (input.path !== undefined) {
     if (input.path) {
       const conds = [
@@ -1025,15 +1028,13 @@ function listByProject(
       ]
 
       conditions.push(
-        input.directory
-          ? or(...conds, and(isNull(SessionTable.path), eq(SessionTable.directory, input.directory))!)!
+        directories
+          ? or(...conds, and(isNull(SessionTable.path), inArray(SessionTable.directory, directories))!)!
           : or(...conds)!,
       )
     }
-  } else if (input.scope !== "project") {
-    if (input.directory) {
-      conditions.push(eq(SessionTable.directory, input.directory))
-    }
+  } else if (input.scope !== "project" && directories) {
+    conditions.push(inArray(SessionTable.directory, directories))
   }
   if (input.roots) {
     conditions.push(isNull(SessionTable.parent_id))
