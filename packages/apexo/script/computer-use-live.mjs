@@ -2,15 +2,16 @@ import assert from "node:assert/strict"
 import { readFile, writeFile } from "node:fs/promises"
 import { randomInt } from "node:crypto"
 import { join } from "node:path"
-import { desktopExecutable, startComputerUseFixture } from "./computer-use-fixture.mjs"
-import { poll } from "./grok-shell-fixture.mjs"
+import { startComputerUseFixture } from "./computer-use-fixture.mjs"
+import { prepareTextEditSave } from "./computer-use-save-fixture.mjs"
 
 const kind = process.argv[2] ?? "cli"
 const scenario = process.argv[3] ?? "all"
 assert.ok(["all", "textedit", "calculator", "vision", "scroll", "save-dialog", "smoke"].includes(scenario))
-const fixture = await startComputerUseFixture(kind, { live: true, focus: scenario === "save-dialog" })
+const fixture = await startComputerUseFixture(kind, { live: true })
 const checks = []
 const { client, runtime } = fixture
+let saveDocument
 try {
   await fixture.install()
   const session = await fixture.session()
@@ -77,35 +78,14 @@ try {
     console.log(JSON.stringify({ stage: checks.at(-1) }))
   }
   if (scenario === "save-dialog") {
-    const created = Bun.spawnSync([
-      "/usr/bin/osascript",
-      "-e",
-      'tell application "TextEdit"\nactivate\nset testDocument to make new document with properties {text:"Unsaved Computer Use fixture."}\nreturn name of testDocument\nend tell',
-    ])
-    assert.equal(created.exitCode, 0, created.stderr.toString())
-    const title = created.stdout.toString().trim()
-    const executable = await desktopExecutable(fixture.bundle)
-    const window = await poll(
-      () => {
-        const result = Bun.spawnSync([executable, "list-windows", "--app", "TextEdit"], {
-          env: { ...process.env, AGENT_DESKTOP_HOME: join(runtime.output, "fixture-setup-state") },
-        })
-        const value = JSON.parse(result.stdout.toString())
-        return value.ok && value.data.find((window) => window.title === title && window.visible && window.accessible)
-      },
-      "new unsaved fixture is visible and accessible",
-      15_000,
-    )
-    const filename = `Saved fixture ${crypto.randomUUID().slice(0, 8)}.txt`
-    const file = join(runtime.directory, filename)
-    const expected = "Apexo new document.\n中文保存测试！\n"
+    saveDocument = await prepareTextEditSave()
     const saved = await fixture.session()
     await fixture.prompt(
       saved.id,
-      `Load the computer-use:computer-use Skill. Operate ONLY TextEdit's newly created visible unsaved document titled "${title}" (initial window ${window.id}; refresh if it changes). desktop_focus_window is explicitly permitted for this test: use it to make this exact window active before native menu/save actions. Replace its content with the exact text below, including the final newline, then use the native File > Save menu and native save dialog to save it at ${file}. Use plain text. desktop_press is denied; use observed menu/dialog refs. Do not use shell or filesystem tools, and do not modify other documents. Exact content:\n${expected}`,
+      `Load the computer-use:computer-use Skill and follow its new-document Save steps. Operate only TextEdit's visible unsaved document titled "${saveDocument.title}" and containing "${saveDocument.marker}". Preserve its existing text and Rich Text format. In the expanded Save sheet, choose Downloads in the sidebar, then its visible child folder "${saveDocument.folder}". Verify the new location and save at ${saveDocument.file}. Use only observed desktop MCP refs for the dialog.`,
     )
-    assert.equal(await readFile(file, "utf8"), expected)
-    checks.push("live-xai-native-save-dialog-new-document-byte-match")
+    saveDocument.verify()
+    checks.push("live-xai-native-save-dialog-new-document-text-match")
     console.log(JSON.stringify({ stage: checks.at(-1) }))
   }
   if (["all", "textedit"].includes(scenario)) {
@@ -198,5 +178,5 @@ try {
     join(runtime.output, "live-result.json"),
     JSON.stringify({ kind, checks, scenario, model: "xai/grok-4.7" }, null, 2),
   )
-  await runtime.close()
+  await Promise.all([saveDocument?.close(), runtime.close()])
 }

@@ -1,5 +1,5 @@
 {
   "name": "computer-use",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local macOS desktop tools through pinned agent-desktop MCP. Use one desktop task at a time."
 }

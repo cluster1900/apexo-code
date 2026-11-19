@@ -28,7 +28,12 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
     },
   })
   try {
-    const profile = permissionProfile("allow")
+    const bundle = resolve(
+      process.env.COMPUTER_USE_BUNDLE ?? "../../plugins/computer-use/dist/computer-use-darwin-arm64",
+    )
+    const profile = options.releasePermissions
+      ? await Bun.file(join(bundle, "permissions.json")).json()
+      : permissionProfile("allow")
     const config = {
       model: "computer-fixture/model",
       snapshots: false,
@@ -64,11 +69,10 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
       },
       ...options.config,
     }
-    // Exploratory Save-dialog test only; the distributed profile does not permit this extra tool.
-    if (options.focus)
-      config.agents.build.permissions.push({ action: toolName("desktop_focus_window"), resource: "*", effect: "allow" })
     if (options.legacy) {
-      const profile = legacyPermissionProfile("allow")
+      const profile = options.releasePermissions
+        ? await Bun.file(join(bundle, "permissions-v1.json")).json()
+        : legacyPermissionProfile("allow")
       Object.keys(config).forEach((key) => delete config[key])
       Object.assign(config, {
         model: "computer-fixture/model",
@@ -153,9 +157,6 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
     const client = Apexo.make({ baseUrl: runtime.url })
     const plugins = client["server.plugins"]
     const mcp = client["server.mcp"]
-    const bundle = resolve(
-      process.env.COMPUTER_USE_BUNDLE ?? "../../plugins/computer-use/dist/computer-use-darwin-arm64",
-    )
     const source = join(runtime.output, "catalog")
     await mkdir(join(source, ".grok-plugin"), { recursive: true })
     await cp(bundle, join(source, "computer-use"), { recursive: true })

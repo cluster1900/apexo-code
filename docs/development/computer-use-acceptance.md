@@ -68,7 +68,7 @@ The final launcher pins its helper path as well as its executable path. The full
 
 The final live xAI smoke also created a one-step agent with no permitted tools. Its text-only final turn completed with `TOOLLESS_XAI_DONE`, providing live-provider verification of the no-tools Responses regression fix.
 
-The new-document Save-dialog experiment failed independently of the passing existing-file save. Even with a test-only `desktop_focus_window` exception, the model opened the Save sheet but did not reach the destination before its turn allowance ended. The target file was absent. The distributed profile does not include that extra tool, and this experiment provides no acceptance of new-document Save navigation. See [BUG-20261116-014](../testing/test-fixtures/computer-use-acceptance.md#bug-20261116-014-new-document-save-dialog-did-not-complete).
+The original new-document Save-dialog experiment reached the Save sheet and stopped during directory navigation. Computer Use 0.1.2 guides the model through the sidebar and a visible directory column. The controlled regression uses the release permission file and verifies a new RTF in a selected subfolder through independent readback. See [BUG-20261116-014](../testing/test-fixtures/computer-use-acceptance.md#bug-20261116-014-new-document-save-dialog-did-not-complete).
 
 ### Individual live-run measurements
 
@@ -103,7 +103,7 @@ This maps the [18 acceptance cases](../computer-use-plugin-acceptance.md) withou
 | I07  | partial                   | Idle update, failed staging retention, busy reload via existing suite, disable and reconnect tested; no distinct older published Computer Use release exists for a version rollback test |
 | I08  | pass, tested lifecycle    | Normal/keep-data uninstall/reinstall and existing live-reader data contract tests; connection authority is fresh after restart                                                           |
 | D01  | partial                   | Separate Desktop: denied/Accessibility-only/granted verified. CLI denied/granted passed; its grant attribution and Accessibility-only stage remain uncertified.                          |
-| D02  | partial; dialog failed    | Live Unicode edit/save/byte comparison and long-document scrolling passed. Three new-document Save attempts did not produce the destination file; root cause remains unresolved          |
+| D02  | pass on tested TextEdit path | Live Unicode edit/save and scrolling passed. The controlled 0.1.2 Save regression selected a nested folder, saved a new RTF, and matched exact decoded text under the release `ask` profile. |
 | D03  | pass, tested app          | Calculator workflow independently observed with other fixture windows present                                                                                                            |
 | D04  | partial                   | Exact-window/closed-target recovery and host-denied launch covered; a live screenshot/AX prompt-injection experiment is not certified                                                    |
 | D05  | partial                   | UI Stop, real native wait cancellation and reconnection tested; crash during a delivered real edit is not certified                                                                      |
@@ -133,13 +133,13 @@ The catalog test installed 0.1.0, updated to the real 0.1.1 pin, and switched ba
 
 Two runtime regressions were fixed during the audit. The compatibility backend now persists Disconnect across Apply and restart, and stdio cleanup now retires descendants after a spontaneous exit. [Host integration records](../testing/runtime/computer-use-host-integration.md)
 
-The existing-file TextEdit trial using AX value assignment alone showed the new element value but did not persist it. Using clear and type through the actual plugin, followed by Save and an independent byte check, succeeded. New-document Save dialog reliability remains unresolved. This run used existing macOS grants and did not repeat the denied-grant transition matrix, a true incompatible-architecture host, or graphical Intel execution.
+The existing-file TextEdit trial using AX value assignment alone showed the new element value but did not persist it. Using clear and type through the actual plugin, followed by Save and an independent byte check, succeeded. The 0.1.2 follow-up verified new RTF creation through the TextEdit sidebar and column view. These runs used existing macOS grants. The denied-grant transition matrix, a true incompatible-architecture host, and graphical Intel execution were outside this follow-up.
 
 ## Failures and fixes retained
 
 - [Bundle hashing](../testing/build/computer-use-bundle.md): fixed Bun byte-array compatibility and reverified assembly.
 - [Host integration](../testing/runtime/computer-use-host-integration.md): fixed actual V2 CLI startup and xAI no-tool request failures.
-- [Fixture failures](../testing/test-fixtures/computer-use-acceptance.md): catalog/Client shape, local-provider routing, TSX preload, runtime selection, UI readiness, rejected-drain sequencing, ref assumptions, and the initial Calculator allowance failure are recorded separately. The initial TextEdit menu timeouts and the unsuccessful new-document Save dialog remain unresolved.
+- [Fixture failures](../testing/test-fixtures/computer-use-acceptance.md) records the catalog/Client shape, local-provider routing, TSX preload, runtime selection, UI readiness, rejected-drain sequencing, ref assumptions, and initial Calculator allowance failure. It also records the initial TextEdit menu timeouts and the 0.1.2 Save dialog follow-up.
 - [Full repository gate](../testing/test-stability/computer-use-repository-gates.md): the first full test gate had three lifecycle timeouts. The unchanged focused rerun passed 87 tests with one skip. The final full-gate rerun passed all 18 batches; this passing rerun does not establish the original root cause.
 - [Native permission transitions](../testing/permissions/computer-use-transitions.md): a first post-grant Desktop capture failed; a controlled relaunch succeeded, with root cause still unknown. Fixture lifecycle/state and CLI attribution limits are recorded separately.
 
@@ -182,7 +182,7 @@ bun script/computer-use-live.mjs cli smoke
 bun script/computer-use-permissions.mjs
 ```
 
-The separate exploratory `bun script/computer-use-live.mjs cli save-dialog` currently reproduces the incomplete new-document Save workflow; it is not a passing release gate.
+Run `bun script/computer-use-save.mjs cli` and `bun script/computer-use-save.mjs desktop` for the controlled new-document Save regression. Both read the assembled bundle's distributed permission profile. `bun script/computer-use-live.mjs cli save-dialog` exercises the same dialog with the configured live model.
 
 The Desktop commands require the rebuilt V2-sidecar package; browser commands require the built App. Live commands use existing xAI credentials and incur provider usage. Desktop control scenarios must be run sequentially. Isolated child processes and created daemon PIDs are cleaned up by the harness; a pre-existing user app/server must not be stopped.
 
