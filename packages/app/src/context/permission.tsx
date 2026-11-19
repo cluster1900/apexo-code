@@ -23,7 +23,9 @@ import {
   directoryAcceptKey,
   isDirectoryAutoAccepting,
   autoRespondsPermission,
+  migrateAutoAccept,
   sessionAutoAccept,
+  setSessionAutoAccept,
 } from "./permission-auto-respond"
 
 type PermissionRespondFn = (input: {
@@ -205,14 +207,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
         if (!value || typeof value !== "object" || Array.isArray(value)) return value
 
         const data = value as Record<string, unknown>
-        if (data.autoAccept) return value
-
         return {
           ...data,
-          autoAccept:
-            typeof data.autoAcceptEdits === "object" && data.autoAcceptEdits && !Array.isArray(data.autoAcceptEdits)
-              ? data.autoAcceptEdits
-              : {},
+          autoAccept: migrateAutoAccept(data.autoAccept ?? data.autoAcceptEdits),
         }
       },
     },
@@ -481,8 +478,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     const version = bumpEnableVersion(sessionID, directory)
     setStore(
       produce((draft) => {
-        draft.autoAccept[key] = true
-        delete draft.autoAccept[sessionID]
+        setSessionAutoAccept(draft.autoAccept, sessionID, true, directory)
       }),
     )
 
@@ -516,12 +512,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   function disable(sessionID: string, directory?: string) {
     if (meta.disposed) return
     bumpEnableVersion(sessionID, directory)
-    const key = directory ? acceptKey(sessionID, directory) : sessionID
     setStore(
       produce((draft) => {
-        draft.autoAccept[key] = false
-        if (!directory) return
-        delete draft.autoAccept[sessionID]
+        setSessionAutoAccept(draft.autoAccept, sessionID, false)
       }),
     )
     if (directory) {

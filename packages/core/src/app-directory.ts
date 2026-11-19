@@ -96,15 +96,12 @@ export function migratedAppDirectoryAliases(directory: string) {
   const legacy = path.join(base, LEGACY_APP_DIR_NAME)
   try {
     const previous = lstatSync(legacy, { throwIfNoEntry: false })
-    if (previous && !previous.isSymbolicLink()) return
-    if (!previous) {
-      // An interrupted move can leave the old spelling recorded only in the staged alias.
-      const staged = stagingPath(directory)
-      if (!lstatSync(staged, { throwIfNoEntry: false })?.isSymbolicLink() || !pointsToDirectory(staged, directory))
-        return
-    }
+    // An interrupted move can leave the old spelling recorded only in the staged alias.
+    const link = previous ? legacy : stagingPath(directory)
+    if (!(previous ?? lstatSync(link, { throwIfNoEntry: false }))?.isSymbolicLink()) return
+    if (!previous && !pointsToDirectory(link, directory)) return
     const resolved = realpathSync(directory)
-    if (previous && realpathSync(legacy) !== resolved) return
+    if (realpathSync(link) !== resolved) return
 
     // The XDG base itself can be a symlink, while persisted paths may already have been resolved.
     return {

@@ -101,6 +101,7 @@ export type WaitResult = {
 export type ResumeInput = {
   id: string
   run: Effect.Effect<string, unknown>
+  onCancel?: Effect.Effect<void>
 }
 
 export interface Interface {
@@ -420,6 +421,7 @@ export const make = Effect.gen(function* () {
         type: existing?.type ?? "resume",
         ...(existing?.title === undefined ? {} : { title: existing.title }),
         ...(existing?.metadata === undefined ? {} : { metadata: existing.metadata }),
+        ...(input.onCancel ? { onCancel: input.onCancel } : {}),
         run: input.run,
       })
     })
@@ -708,6 +710,7 @@ export const makeDurable = Effect.gen(function* () {
       type: row.type,
       ...(row.title === null ? {} : { title: row.title }),
       metadata,
+      ...(input.onCancel ? { onCancel: input.onCancel } : {}),
       onSettled: (info) => persistFinished(row.id, generation, info),
       run: input.run,
     })
@@ -826,6 +829,7 @@ const makeOwnedFor = <R>(create: Effect.Effect<Interface, never, R>) =>
                 const result = yield* jobs.resume({
                   ...input,
                   run: work(claims, input.run),
+                  ...(input.onCancel ? { onCancel: owned(claims, input.onCancel) } : {}),
                 })
                 if (!result) return undefined
                 const owner = { claims, releases: [] as (() => void)[] }

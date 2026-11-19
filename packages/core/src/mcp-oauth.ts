@@ -6,6 +6,8 @@ import type { OAuthClientProvider, OAuthDiscoveryState } from "@modelcontextprot
 import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js"
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js"
 import type { Mcp } from "@apexo/schema/mcp"
+import { AbsolutePath } from "@apexo/schema/schema"
+import { migratedWorktreeAliases } from "./app-directory"
 import type { ConfigMCP } from "./config/mcp"
 import type { Location } from "./location"
 import { McpOAuthStore } from "./mcp-oauth-store"
@@ -255,7 +257,18 @@ export function make(input: {
   publish: (name: string, active: () => boolean) => Promise<"connected" | "credentials_ready" | "retry_required">
   timeout?: number
 }) {
-  const store = McpOAuthStore.make(input.data)
+  const worktree = migratedWorktreeAliases(input.data, input.location.directory)
+  const location = worktree ? { ...input.location, directory: AbsolutePath.make(worktree.directory) } : input.location
+  const previous =
+    worktree?.paths
+      .filter((directory) => directory !== location.directory)
+      .toSorted()
+      .map((directory) => ({ ...input.location, directory: AbsolutePath.make(directory) })) ?? []
+  // Keep the full server signature and workspace ID on every candidate. A rotation publishes
+  // to the canonical identity so either worktree spelling observes the same token revision.
+  const identities = (name: string, server: ConfigMCP.Remote) =>
+    [identity(location, name, server), ...previous.map((alias) => identity(alias, name, server))] as const
+  const store = McpOAuthStore.make(worktree?.data ?? input.data)
   const lifetime = new AbortController()
   const flows = new Map<string, Flow>()
   const saved = new Set<string>()
@@ -264,15 +277,16 @@ export function make(input: {
     if (lifetime.signal.aborted || flow.controller.signal.aborted || flows.get(name) !== flow || !supported(definition))
       return false
     try {
-      return identity(input.location, name, definition) === flow.identity
+      return identity(location, name, definition) === flow.identity
     } catch {
       return false
     }
   }
   const issues = new Map<string, Mcp.AuthenticationError>()
-  const read = async (name: string, key: string) => {
+  const read = async (name: string, keys: ReturnType<typeof identities>) => {
+    const key = keys[0]
     try {
-      const result = await store.read(key)
+      const result = await store.read(keys)
       if (issues.delete(key)) input.notify(name)
       return result
     } catch (error) {
@@ -286,15 +300,15 @@ export function make(input: {
   }
   const observe = async (name: string, server: typeof ConfigMCP.Server.Type) => {
     if (!supported(server)) return
-    const key = identity(input.location, name, server)
-    if ((await read(name, key)).credentials) saved.add(key)
-    else saved.delete(key)
+    const keys = identities(name, server)
+    if ((await read(name, keys)).credentials) saved.add(keys[0])
+    else saved.delete(keys[0])
   }
   const status = (name: string, server: typeof ConfigMCP.Server.Type | undefined): Status => {
     if (!eligible(server)) return { supported: false, credentials: "missing" }
     try {
       configuration(server)
-      const key = identity(input.location, name, server)
+      const key = identity(location, name, server)
       const flow = flows.get(name)
       return {
         supported: true,
@@ -325,7 +339,8 @@ export function make(input: {
     if (!server) throw new Failure("not_found")
     if (!eligible(server)) throw new Failure("unsupported")
     const { config, redirect } = configuration(server)
-    const key = identity(input.location, name, server)
+    const keys = identities(name, server)
+    const key = keys[0]
     const previous = flows.get(name)
     if (["waiting", "exchanging"].includes(previous?.phase ?? "")) throw new Failure("conflict")
     if (previous) {
@@ -409,7 +424,7 @@ export function make(input: {
       const address = listener.address()
       if (!address || typeof address === "string") throw new Failure("load")
       const url = `http://127.0.0.1:${address.port}${pathname}`
-      const initial = await read(name, key)
+      const initial = await read(name, keys)
       const pending = provider(server, url, nonce, initial.credentials, false)
       const { auth, extractWWWAuthenticateParams } = await import("@modelcontextprotocol/sdk/client/auth.js")
       const fetchFn = boundedFetch(flow.controller.signal)
@@ -446,7 +461,7 @@ export function make(input: {
       )
         throw new Failure("auth")
       await store.transaction(
-        key,
+        keys,
         flow.controller.signal,
         () => active(name, flow),
         async (latest, commit) => {
@@ -496,9 +511,9 @@ export function make(input: {
   const fetchFor =
     (name: string, server: ConfigMCP.Remote, alive: () => boolean): FetchLike =>
     async (url, init) => {
-      const key = identity(input.location, name, server)
+      const keys = identities(name, server)
       const signal = AbortSignal.any([lifetime.signal, ...(init?.signal ? [init.signal] : [])])
-      const snapshot = await read(name, key)
+      const snapshot = await read(name, keys)
       const send = (credentials?: McpOAuthStore.Credentials) => {
         if (!alive() || signal.aborted) throw new Failure("cancelled")
         // SSE announces a separate message endpoint. Delegate within the configured
@@ -508,13 +523,13 @@ export function make(input: {
         if (credentials) headers.set("authorization", `Bearer ${credentials.accessToken}`)
         return fetch(url, { ...init, headers, signal, redirect: "error" })
       }
-      if (snapshot.credentials) saved.add(key)
+      if (snapshot.credentials) saved.add(keys[0])
       const response = await send(snapshot.credentials)
       if (response.status !== 401 || !snapshot.credentials) return response
       const { auth, extractWWWAuthenticateParams } = await import("@modelcontextprotocol/sdk/client/auth.js")
       const challenge = extractWWWAuthenticateParams(response)
       await response.body?.cancel()
-      const credentials = await store.transaction(key, signal, alive, async (latest, commit) => {
+      const credentials = await store.transaction(keys, signal, alive, async (latest, commit) => {
         if (!latest.credentials) throw new Failure("auth")
         if (latest.revision !== snapshot.revision) return latest.credentials
         if (!latest.credentials.refreshToken) throw new Failure("auth")

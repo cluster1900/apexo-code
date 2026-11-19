@@ -71,8 +71,32 @@ Both generated-source checks passed, and `bun turbo typecheck --concurrency=2` p
 
 The first `GITHUB_ACTIONS=false bun turbo test --concurrency=2` run passed 17 of 18 Apexo batches. In batch 14, the missing-session `tui.selectSession` test expected HTTP 404 and received HTTP 401 (BUG-20261119-008). From `packages/apexo`, `bun test test/server/session-select.test.ts --timeout 30000` passed all three tests, and `GITHUB_ACTIONS=false APEXO_TEST_SHARD=14/18 bun run test` passed the original 29-file batch. The cause of the single aggregate failure remains undetermined.
 
-### Related findings from the path audit
+## BUG-20261119-009. Native MCP OAuth required repeat authorization after worktree migration
 
-- Native MCP OAuth credentials still use a checkout-path-specific identity. After a real OAuth exchange against a loopback fixture and migration of the worktree, the original spelling reported `available` and the canonical spelling reported `missing` for the same server definition. Credential reconciliation is unresolved.
-- The compatibility scheduler still hashes the checkout path. A persisted synthetic schedule was recovered as `running` through the original path, while the canonical path found no matching record to recover. This finding concerns the compatibility scheduler. Native schedules are keyed by Session ID.
-- The App permission evaluator keeps per-session overrides under directory-specific keys. For one Session with a saved `false` at its original path and a directory-level allow at the canonical path, the evaluator returned `false` for the original path and `true` for the canonical path. This result came from synthetic inputs to the actual evaluator. Delivery of a permission reply from a live Desktop session remains unverified.
+Authorize a remote native MCP server from a managed worktree under the legacy root, migrate the data directory, and open the same checkout through the canonical root. A loopback OAuth server reproduced `available` through the old spelling and `missing` through the new spelling for the same server definition. Both spellings should reuse the same authorization and serialize refreshes when the provider rotates a token.
+
+The credential identity included the exact worktree path. The native manager now reads historical identities for verified aliases of the checkout and keeps the same workspace ID, server name, URL, and OAuth configuration fingerprint. The canonical credential record and its lock take precedence for writes and refreshes. The store still validates the ownership, access mode, and contents of each historical file it reads.
+
+The regression in `test/v2/mcp-oauth-flow.test.ts` failed with `missing` before the change. It now completes one real loopback authorization, uses the original credentials through both spellings, then issues parallel requests and observes one token refresh. A different workspace or OAuth client still has a separate identity.
+
+## BUG-20261119-010. Compatibility schedules did not resume in migrated worktrees
+
+Create a durable compatibility schedule in a Session under a managed legacy worktree. Stop the backend, migrate the data directory, and open the Session at the canonical worktree. The original scheduler storage ignored the old worktree hash. The live CLI also found an exact-path check in the compatibility Hook adapter and a persisted background-job row that reported `running` without a worker after a crash. The recovered schedule should keep its task ID and execute once at its next due time. Cancellation should persist across either path and later restarts.
+
+The compatibility scheduler shares one store and writer lease across verified aliases. It checks the original record when a canonical per-Session file is absent. A canonical empty record retains cancellation. Recovery rereads the task under the lease, verifies the Session incarnation, and explicitly resumes a matching persisted background job with its cancellation callback. The compatibility Hook adapter uses the stored Session location for verified aliases and retains the explicit workspace check. Native schedules continue to use their Session-owned store.
+
+The regression in `test/tool/scheduler-persistence.test.ts` recovered and ran an overdue task against a stale durable background row, rejected a competing alias owner, and confirmed cancellation from the other spelling. From `packages/apexo`, `bun script/grok-scheduler-restart.mjs cli --migrate-worktree` passed across three real backend processes. The same schedule fired once, woke its parent once, and remained absent after cancellation through the task API and a restart using the original path.
+
+## BUG-20261119-011. A saved Session opt-out was lost when the App received the canonical path
+
+Save a Session-level automatic-approval opt-out at the original path, then open the same checkout with directory-level automatic approval enabled at the canonical path. The previous permission evaluator returned `true` for that Session at the canonical path. The Session opt-out should take precedence while other Sessions can still inherit the directory setting.
+
+The App migrates path-scoped opt-outs to the Session ID within the same saved server scope. A Session opt-out takes precedence over its directory setting. An explicit re-enable clears the old Session entries and records the grant for the chosen directory. Existing directory settings keep their own scope.
+
+The App unit tests cover a migrated opt-out, descendant behavior, explicit re-enable, and persistence after reload. A production Web build and a rebuilt macOS Desktop window each used a real local backend and two Sessions in the same migrated worktree. The opted-out Session retained a real permission request until the user-facing approval action. The other Session accepted the same request automatically under the directory setting.
+
+### Follow-up verification
+
+- The focused Apexo run passed 58 tests across 11 files covering OAuth, scheduler persistence, durable background jobs, Hook ownership, and directory migration. An earlier parallel run reached a child CLI deadline in the read-only configuration test. The unchanged test passed in the final focused run.
+- `bun run test:unit` in `packages/app` passed 116 tests. Both generated-source checks passed, and `bun turbo typecheck --concurrency=2` passed all 21 tasks.
+- `GITHUB_ACTIONS=false bun turbo test --concurrency=2` passed all six Turbo tasks and all 18 Apexo batches. `bun run test:httpapi` passed all 360 scenarios in each of coverage, authorization, and Effect modes.

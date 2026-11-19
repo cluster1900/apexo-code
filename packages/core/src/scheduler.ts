@@ -128,7 +128,11 @@ export function make(background: BackgroundJob.Interface, store?: SchedulerStore
     return output
   })
 
-  const start = Effect.fn("Scheduler.start")(function* (schedule: Schedule, run: Entry["run"]) {
+  const start = Effect.fn("Scheduler.start")(function* (schedule: Schedule, run: Entry["run"], recovering = false) {
+    const previous = recovering ? yield* background.get(schedule.id) : undefined
+    const restart = previous?.status === "running" && previous.metadata?.blockedReason === "process_restart"
+    if (restart && (previous.type !== "scheduler" || previous.metadata?.ownerSessionId !== schedule.ownerSessionId))
+      return yield* new SchedulerError({ message: "The saved background job belongs to a different schedule owner" })
     const entry: Entry = {
       schedule,
       changed: yield* Deferred.make<void>(),
@@ -137,7 +141,7 @@ export function make(background: BackgroundJob.Interface, store?: SchedulerStore
       done: yield* Deferred.make<void>(),
     }
     entries.set(schedule.id, entry)
-    return yield* background.start({
+    const job = {
       id: schedule.id,
       type: "scheduler",
       title: schedule.prompt.slice(0, 60),
@@ -160,7 +164,23 @@ export function make(background: BackgroundJob.Interface, store?: SchedulerStore
         Effect.ensuring(Effect.sync(() => entries.delete(schedule.id))),
         Effect.ensuring(Deferred.succeed(entry.done, undefined)),
       ),
-    })
+    }
+    return yield* Effect.gen(function* () {
+      if (!restart) return yield* background.start(job)
+      // The scheduler's workspace lease and Session proof fence this explicit restart.
+      const resumed = yield* background.resume({ id: job.id, run: job.run, onCancel: job.onCancel })
+      if (!resumed) return yield* new SchedulerError({ message: "The saved background job changed during recovery" })
+      yield* background.report({ id: job.id, metadata: job.metadata })
+      return resumed
+    }).pipe(
+      Effect.onExit((exit) =>
+        Exit.isFailure(exit)
+          ? Effect.sync(() => {
+              entries.delete(schedule.id)
+            })
+          : Effect.void,
+      ),
+    )
   })
 
   const create = Effect.fn("Scheduler.create")(function* (input: {
@@ -263,12 +283,15 @@ export function make(background: BackgroundJob.Interface, store?: SchedulerStore
     const saved = loaded.value
     yield* Effect.forEach(
       saved,
-      (schedule) =>
+      (listed) =>
         lock
           .withPermit(
             Effect.gen(function* () {
-              if (entries.has(schedule.id)) return
-              yield* store.claim(schedule.ownerSessionId)
+              if (entries.has(listed.id)) return
+              yield* store.claim(listed.ownerSessionId)
+              // Another runtime may have changed or removed the task before releasing its lease.
+              const schedule = (yield* store.load(listed.ownerSessionId)).find((item) => item.id === listed.id)
+              if (!schedule) return
               if (
                 schedule.expiresAt <= (yield* Clock.currentTimeMillis) ||
                 (!schedule.recurring && schedule.lastFireAt !== undefined)
@@ -287,13 +310,13 @@ export function make(background: BackgroundJob.Interface, store?: SchedulerStore
                 yield* forget(owner)
                 return
               }
-              yield* start(owner, run)
+              yield* start(owner, run, true)
             }),
           )
           .pipe(
             Effect.catchCause((cause) =>
               Effect.sync(() => {
-                recoveryErrors.set(schedule.ownerSessionId, String(Cause.squash(cause)))
+                recoveryErrors.set(listed.ownerSessionId, String(Cause.squash(cause)))
               }),
             ),
           ),

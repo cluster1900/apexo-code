@@ -9,7 +9,36 @@ export function directoryAcceptKey(directory: string) {
   return `${base64Encode(directory)}/*`
 }
 
+export function migrateAutoAccept(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const choices = Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"),
+  )
+  for (const [key, enabled] of Object.entries(choices)) {
+    if (enabled) continue
+    const sessionID = /^[-_A-Za-z0-9]+\/(ses[^/]*)$/.exec(key)?.[1]
+    if (!sessionID) continue
+    delete choices[key]
+    choices[sessionID] = false
+  }
+  return choices
+}
+
+export function setSessionAutoAccept(
+  choices: Record<string, boolean>,
+  sessionID: string,
+  enabled: boolean,
+  directory?: string,
+) {
+  for (const key of Object.keys(choices)) {
+    if (key === sessionID || key.endsWith(`/${sessionID}`)) delete choices[key]
+  }
+  // Persist the opt-out by Session ID. An opt-in applies to the explicitly chosen directory.
+  choices[enabled ? acceptKey(sessionID, directory) : sessionID] = enabled
+}
+
 function accepted(autoAccept: Record<string, boolean>, sessionID: string, directory?: string) {
+  if (autoAccept[sessionID] === false) return false
   const key = acceptKey(sessionID, directory)
   return autoAccept[key] ?? autoAccept[sessionID]
 }

@@ -3,12 +3,14 @@ import { Deferred, Effect, Exit, Scope } from "effect"
 import { LayerNode } from "@apexo/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@apexo/core/cross-spawn-spawner"
 import { BackgroundJob } from "@apexo/core/background-job"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
+import { Database } from "@apexo/core/database/database"
 import { Scheduler } from "@apexo/core/scheduler"
 import { SchedulerStore } from "@apexo/core/scheduler-store"
 import { ProviderV2 } from "@apexo/core/provider"
 import { ModelV2 } from "@apexo/core/model"
 import path from "node:path"
-import { readdir, readFile, writeFile, utimes } from "node:fs/promises"
+import { mkdir, realpath, readdir, readFile, writeFile, utimes } from "node:fs/promises"
 import { tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 
@@ -28,12 +30,12 @@ const input = {
   run: () => Effect.succeed("ok"),
 }
 
-const launch = (root: string) =>
+const launch = (root: string, workspace = "/workspace", durableJobs?: BackgroundJob.Interface) =>
   Effect.gen(function* () {
     const scope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
     const runtime = yield* Effect.gen(function* () {
-      const jobs = yield* BackgroundJob.make
-      const store = yield* SchedulerStore.make("/workspace", root)
+      const jobs = durableJobs ?? (yield* BackgroundJob.make)
+      const store = yield* SchedulerStore.make(workspace, root)
       const scheduler = Scheduler.make(jobs, store)
       return { jobs, store, scheduler }
     }).pipe(Effect.provideService(Scope.Scope, scope))
@@ -68,6 +70,55 @@ it.live("scheduler persists creation and updates, resumes with the same identity
     yield* third.scheduler.recover(() => Effect.succeed(input.run))
     expect(yield* third.jobs.list()).toEqual([])
   }),
+)
+
+it.live("migrated worktree aliases recover one schedule and share its cancellation", () =>
+  Effect.gen(function* () {
+    const base = yield* tmpdirScoped()
+    const previousData = path.join(base, "opencode")
+    const currentData = path.join(base, "apexo")
+    const previous = path.join(previousData, "worktree", "checkout")
+    const current = path.join(currentData, "worktree", "checkout")
+    yield* Effect.promise(() => mkdir(previous, { recursive: true }))
+    const first = yield* launch(path.join(previousData, "scheduler"), previous)
+    const created = yield* first.scheduler.create(input)
+    yield* first.store.save({ ...created.schedule, createdAt: created.schedule.createdAt - 61_000 })
+    // Simulate the durable job row that remains after the original process exits abruptly.
+    const staleJobs = yield* BackgroundJob.makeDurable
+    yield* staleJobs.start({
+      id: created.job.id,
+      type: "scheduler",
+      metadata: { ownerSessionId: input.ownerSessionId },
+      run: Effect.never,
+    })
+    yield* first.stop
+    yield* Effect.promise(() => migrateAppDirectory(base, "apexo", "opencode"))
+    expect(yield* Effect.promise(() => realpath(previous))).toBe(yield* Effect.promise(() => realpath(current)))
+
+    const jobs = yield* BackgroundJob.makeDurable
+    const opened = yield* launch(path.join(currentData, "scheduler"), current, jobs)
+    expect((yield* jobs.get(created.job.id))?.metadata?.blockedReason).toBe("process_restart")
+    const fired = yield* Deferred.make<void>()
+    yield* opened.scheduler.recover(() =>
+      Effect.succeed(() => Deferred.succeed(fired, undefined).pipe(Effect.andThen(input.run()))),
+    )
+    yield* awaitWithTimeout(Deferred.await(fired), "the recovered schedule did not run")
+    expect((yield* opened.jobs.get(created.job.id))?.status).toBe("running")
+    expect((yield* opened.jobs.get(created.job.id))?.metadata?.blockedReason).toBeUndefined()
+
+    const competing = yield* launch(path.join(previousData, "scheduler"), previous)
+    yield* competing.scheduler.recover(() => Effect.succeed(input.run))
+    expect(yield* competing.jobs.list()).toEqual([])
+    expect(competing.scheduler.recoveryError(input.ownerSessionId)).toContain("ownership")
+
+    yield* opened.jobs.cancel(created.job.id)
+    yield* opened.stop
+    yield* competing.scheduler.recover(() => Effect.succeed(input.run))
+    expect(competing.scheduler.recoveryError(input.ownerSessionId)).toBeUndefined()
+    expect(yield* competing.jobs.list()).toEqual([])
+    expect(yield* competing.store.load()).toEqual([])
+    yield* competing.stop
+  }).pipe(Effect.provide(Database.layerFromPath(":memory:"))),
 )
 
 it.live("scheduler does not replay an interrupted fire after restart", () =>
