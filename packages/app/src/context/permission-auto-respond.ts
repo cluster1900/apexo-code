@@ -37,15 +37,17 @@ export function setSessionAutoAccept(
   choices[enabled ? acceptKey(sessionID, directory) : sessionID] = enabled
 }
 
-function accepted(autoAccept: Record<string, boolean>, sessionID: string, directory?: string) {
-  if (autoAccept[sessionID] === false) return false
-  const key = acceptKey(sessionID, directory)
-  return autoAccept[key] ?? autoAccept[sessionID]
+export function scopedPermissionChoice(choices: Record<string, boolean>, keys: readonly string[]) {
+  const values = keys.map((key) => choices[key])
+  return values.includes(false) ? false : values.find((value) => value !== undefined)
 }
 
-export function isDirectoryAutoAccepting(autoAccept: Record<string, boolean>, directory: string) {
-  const key = directoryAcceptKey(directory)
-  return autoAccept[key] ?? false
+export function directoryAutoAccept(
+  autoAccept: Record<string, boolean>,
+  directory: string,
+  aliases: readonly string[] = [],
+) {
+  return scopedPermissionChoice(autoAccept, [directory, ...aliases].map(directoryAcceptKey))
 }
 
 function sessionLineage(session: { id: string; parentID?: string }[], sessionID: string) {
@@ -71,10 +73,11 @@ export function autoRespondsPermission(
   session: { id: string; parentID?: string }[],
   permission: { sessionID: string },
   directory?: string,
+  aliases?: readonly string[],
 ) {
-  const value = sessionAutoAccept(autoAccept, session, permission, directory)
+  const value = sessionAutoAccept(autoAccept, session, permission, directory, aliases)
   if (value !== undefined) return value
-  return directory ? isDirectoryAutoAccepting(autoAccept, directory) : false
+  return directory ? (directoryAutoAccept(autoAccept, directory, aliases) ?? false) : false
 }
 
 export function sessionAutoAccept(
@@ -82,8 +85,15 @@ export function sessionAutoAccept(
   session: { id: string; parentID?: string }[],
   permission: { sessionID: string },
   directory?: string,
+  aliases: readonly string[] = [],
 ) {
   return sessionLineage(session, permission.sessionID)
-    .map((id) => accepted(autoAccept, id, directory))
+    .map((id) =>
+      scopedPermissionChoice(autoAccept, [
+        id,
+        acceptKey(id, directory),
+        ...aliases.map((alias) => acceptKey(id, alias)),
+      ]),
+    )
     .find((item): item is boolean => item !== undefined)
 }

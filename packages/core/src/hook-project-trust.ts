@@ -7,6 +7,7 @@ import path from "node:path"
 import { Schema } from "effect"
 import { parse } from "toml"
 import type { Git } from "./git"
+import { migratedWorktreeAliases, verifiedMigratedWorktreePaths } from "./app-directory"
 import { Flock } from "./util/flock"
 
 const Record = Schema.Struct({ identity: Schema.String, revision: Schema.String, trusted: Schema.Boolean })
@@ -68,7 +69,7 @@ export async function directoryIdentity(directory: string) {
   return digest([info.dev, info.ino])
 }
 
-async function identity(proof: Omit<Proof, "identity">) {
+async function identity(proof: Omit<Proof, "identity">, spelling = (directory: string) => directory) {
   if ((await realpath(proof.workspace)) !== proof.workspace || (await realpath(proof.root)) !== proof.root)
     throw new Failure()
   // A new nearer .git boundary invalidates the captured repository capability.
@@ -98,11 +99,11 @@ async function identity(proof: Omit<Proof, "identity">) {
   if ((await realpath(common === undefined ? proof.git : path.resolve(proof.git, common.trim()))) !== proof.common)
     throw new Failure()
   return digest([
-    proof.root,
+    spelling(proof.root),
     await directoryIdentity(proof.root),
-    proof.git,
+    spelling(proof.git),
     await directoryIdentity(proof.git),
-    proof.common,
+    spelling(proof.common),
     await directoryIdentity(proof.common),
     info.dev,
     info.ino,
@@ -171,24 +172,39 @@ async function read(data: string) {
 }
 
 export async function inspect(data: string, proof: Proof, home?: string): Promise<Preview> {
-  if ((await identity(proof)) !== proof.identity) throw new Failure()
-  const saved = (await read(data)).repositories[proof.root]
+  const saved = await decision(data, proof)
   return {
     root: proof.root,
     token: digest([proof.identity, saved?.revision ?? ""]),
-    trusted: saved?.identity === proof.identity && saved.trusted,
-    allowed:
-      saved?.identity === proof.identity &&
-      saved.trusted &&
-      !(home && (await legacy(home, proof.workspace, proof.root)).denied),
+    trusted: saved?.trusted === true,
+    allowed: saved?.trusted === true && !(home && (await legacy(data, home, proof.workspace, proof.root)).denied),
   }
 }
 
 export async function decision(data: string, proof: Proof) {
   if ((await identity(proof)) !== proof.identity) throw new Failure()
-  const saved = (await read(data)).repositories[proof.root]
-  // A stale grant never authorizes a replacement repository. A denial stays restrictive.
-  return saved?.trusted === false ? saved : saved?.identity === proof.identity ? saved : undefined
+  const { repositories } = await read(data)
+  const roots = [...new Set([proof.root, ...verifiedMigratedWorktreePaths(data, proof.root)])]
+  const denial = roots.map((root) => repositories[root]).find((record) => record?.trusted === false)
+  if (denial) return denial
+  const current = repositories[proof.root]
+  if (current?.identity === proof.identity) return current
+
+  const migration = migratedWorktreeAliases(data, proof.root)
+  if (!migration) return
+  const suffix = path.relative(migration.data, proof.root)
+  for (const root of roots.slice(1)) {
+    const saved = repositories[root]
+    if (!saved?.trusted) continue
+    const previousData = root.slice(0, -(suffix.length + 1))
+    // Compare the old digest with the same live Git directories, marker and inodes.
+    // A new checkout at the same path cannot inherit the saved grant.
+    const spelling = (directory: string) =>
+      contains(migration.data, directory)
+        ? path.join(previousData, path.relative(migration.data, directory))
+        : directory
+    if (saved.identity === (await identity(proof, spelling))) return saved
+  }
 }
 
 export async function change(data: string, proof: Proof, input: Consent, current?: () => boolean) {
@@ -208,10 +224,12 @@ export async function change(data: string, proof: Proof, input: Consent, current
     if (input.root !== preview.root || input.token !== preview.token)
       throw new Failure("Repository identity or trust changed; refresh before retrying")
     const document = await read(data)
+    const repositories = { ...document.repositories }
+    for (const root of verifiedMigratedWorktreePaths(data, proof.root)) delete repositories[root]
     const next = {
       version: 1 as const,
       repositories: {
-        ...document.repositories,
+        ...repositories,
         [proof.root]: { identity: proof.identity, revision: randomUUID(), trusted: input.trusted },
       },
     }
@@ -259,7 +277,7 @@ export async function authorize(authority: Authority) {
   const saved = authority.repository ? await decision(authority.data, authority.repository) : undefined
   if (saved?.trusted === false) throw new Failure("Repository Hook trust was revoked")
   if (saved?.revision !== authority.revision) throw new Failure("Repository Hook grant changed; reload Hooks")
-  const previous = await legacy(authority.home, authority.workspace, authority.repository?.root)
+  const previous = await legacy(authority.data, authority.home, authority.workspace, authority.repository?.root)
   if (previous.denied) throw new Failure("Host folder Hook trust is denied or unavailable")
   if (authority.mode === "repository") {
     if (!saved?.trusted || saved.revision !== authority.revision)
@@ -269,7 +287,7 @@ export async function authorize(authority: Authority) {
   if (!previous.exact) throw new Failure("Exact folder Hook trust was revoked")
 }
 
-export async function legacy(home: string, workspace: string, root?: string) {
+export async function legacy(data: string, home: string, workspace: string, root?: string) {
   return await bounded(path.join(home, "trusted_folders.toml"))
     .catch((error) => {
       if (missing(error)) return ""
@@ -282,9 +300,11 @@ export async function legacy(home: string, workspace: string, root?: string) {
         const entry = typeof folders === "object" && folders !== null ? Reflect.get(folders, key) : undefined
         return typeof entry === "object" && entry !== null ? Reflect.get(entry, "trusted") : undefined
       }
+      const exact = [workspace, ...verifiedMigratedWorktreePaths(data, workspace)].map(decision)
+      const repository = root && root !== workspace ? [root, ...verifiedMigratedWorktreePaths(data, root)] : []
       return {
-        exact: decision(workspace) === true,
-        denied: decision(workspace) === false || (root !== undefined && decision(root) === false),
+        exact: exact.includes(true),
+        denied: exact.includes(false) || repository.some((root) => decision(root) === false),
       }
     })
     .catch(() => ({ exact: false, denied: true }))

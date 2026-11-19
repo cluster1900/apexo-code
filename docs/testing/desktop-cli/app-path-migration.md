@@ -100,3 +100,38 @@ The App unit tests cover a migrated opt-out, descendant behavior, explicit re-en
 - The focused Apexo run passed 58 tests across 11 files covering OAuth, scheduler persistence, durable background jobs, Hook ownership, and directory migration. An earlier parallel run reached a child CLI deadline in the read-only configuration test. The unchanged test passed in the final focused run.
 - `bun run test:unit` in `packages/app` passed 116 tests. Both generated-source checks passed, and `bun turbo typecheck --concurrency=2` passed all 21 tasks.
 - `GITHUB_ACTIONS=false bun turbo test --concurrency=2` passed all six Turbo tasks and all 18 Apexo batches. `bun run test:httpapi` passed all 360 scenarios in each of coverage, authorization, and Effect modes.
+
+## BUG-20261119-012. Worktree path aliases changed file permission decisions
+
+This affected compatibility and native tool permissions for migrated managed worktrees. On the pre-migration build, create two managed worktrees, save an absolute `external_directory` deny for the other worktree, and save a relative `read` deny for a file in the active worktree. In a separate Session, save an absolute `edit` deny for a new file under a managed worktree. Confirm the tools refuse all three operations. Upgrade with the same database and repeat through both spellings. The initial upgrade opened the external file through the canonical path, opened the internal file through the legacy spelling, and created the denied new file through the canonical path. The denials should apply to the same targets after migration.
+
+The external resource matched rules by absolute spelling. The internal resource was classified as external when its spelling differed from the active worktree, so it no longer matched the relative rule. Relative resource checks now use the worktree's live, verified aliases. Absolute file and directory rules match verified historical spellings in their existing rule order. For new files, the closest existing entry must pass the same identity check before matching the remaining path. A staged migration link retains stored rules while publishing the old root is blocked. Shell-command strings keep literal matching.
+
+The old and upgraded CLI processes exercised real tool calls with synthetic files. Both compatibility and native permission handlers blocked the reads across the two spellings and kept the denied new files absent. `test/config/app-directory.test.ts` also covers a staged link, an unrelated path, an escaping symlink, and a command string that must retain its literal scope.
+
+## BUG-20261119-013. Repository Hook consent disappeared on the same checkout
+
+Save an explicit repository Hook consent from an old CLI Session in a managed worktree. Run a harmless Stop Hook and confirm its trace. Save a denial in another worktree with the same Hook. After upgrade, inspect the decisions and run the same prompts through both paths. The initial upgrade reported the approved worktree as untrusted and skipped its Hook. The grant and denial should survive the rename, and a different checkout at that path should require fresh consent.
+
+The Hook trust lookup used the checkout's canonical path as both the record key and part of the saved identity digest. The new lookup checks the known spellings and recomputes the original digest against the live Git metadata and filesystem identity. A denial stays restrictive. An explicit new decision replaces the verified alias records together. Legacy exact-folder trust uses the same verified spellings.
+
+The real native CLI reproduced the lost grant and verified that the upgraded runtime ran the approved Hook under each spelling and kept the denied Hook stopped. The linked-worktree regression in `test/plugin/hook-repository-trust.test.ts` also exercises revocation, regrant, and replacement with a separate checkout. Its replacement fixture uses `git worktree move` to update the original Git registration before making the second checkout.
+
+## BUG-20261119-014. Directory-level automatic approval followed the saved spelling
+
+Store one directory-level opt-in and one opt-out under the legacy paths. Reopen each managed worktree through both paths after upgrade and submit the same tool request in fresh Sessions. On the initial upgrade, the canonical path lost the opt-in and showed a manual approval request. If an account already contains differing values for the two spellings, an explicit opt-out must take precedence.
+
+The App stored the directory preference and scoped review preference under the path string. It now reads the aliases from the owning server's Location response before answering a permission request or seeding a configured default. Only the server's verified worktree aliases share choices. An explicit directory toggle updates them together. The per-Session opt-out continues to override a directory opt-in.
+
+The macOS Desktop upgrade used the old Desktop storage API to write historical directory choices and the actual old UI command to turn approval off for one Session. The upgraded Desktop kept the manual request pending for the Session opt-out and for the directory opt-out, even with a conflicting opt-in under the new spelling. The opted-in directory completed the same tool request automatically through both paths. Activating the upgraded Settings switch applied the new choice to both paths. The App unit tests also preserve the distinction between matching aliases and unrelated directories.
+
+## Actual old-build upgrade verification
+
+The starting CLI and macOS Desktop were built from `04f591c3`. They created real Git worktrees, SQLite transcripts, plugin installations, MCP state, OAuth credentials, and Hook decisions in isolated legacy profiles. The Desktop wrote the draft route to `oc://renderer`. The upgrade reopened that profile at `apexo://renderer` with the same window, draft route, and transcript. A real compatibility TUI opened the saved transcript through each path. The generated Client resolved both aliases and omitted alias metadata for the main checkout.
+
+- The local MCP fixture recorded one process start before the saved disable. Both paths and a second CLI restart kept the server disabled. The OAuth fixture recorded one consent and one refresh across the upgrade.
+- The upgraded registry retained the downloaded Computer Use 0.1.1 installation as disabled and a separate fixture plugin as enabled.
+- The old compatibility schedule fired once and woke its parent once. It stayed cancelled after a further restart. Under a read-only configuration parent, `apexo debug paths` selected the legacy config and the upgraded server loaded the old settings and transcript. After write access returned, the CLI moved and loaded the same configuration from the canonical path.
+- `bun turbo typecheck --concurrency=2` passed all 21 tasks. Both packages passed `bun run check:generated`. From `packages/app`, `bun run test:unit` passed 118 tests.
+- From `packages/apexo`, `bun run test:httpapi` passed all 360 scenarios in each of coverage, authorization, and Effect modes.
+- The local `GITHUB_ACTIONS=false APEXO_TEST_SHARDS=4 bun turbo test --concurrency=2` run completed all 18 Apexo batches and reported 17 failed cases, including deadlines and a loopback test that received an HTTP 500 SOAP response. Two focused `bun test --timeout 30000` reruns from `packages/apexo` passed 99 tests across 14 files, including all 17 previously failing cases and the directory, repository trust, and native MCP regressions. The aggregate failures' causes remain unconfirmed.

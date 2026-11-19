@@ -107,6 +107,7 @@ export function migratedAppDirectoryAliases(directory: string) {
     return {
       current: [...new Set([directory, resolved])],
       legacy: [...new Set([legacy, path.join(realpathSync(base), LEGACY_APP_DIR_NAME)])],
+      staged: !previous,
     }
   } catch {
     return
@@ -129,6 +130,47 @@ export function migratedWorktreePaths(data: string, directory: string) {
   return migratedWorktreeAliases(data, directory)?.paths ?? [directory]
 }
 
+export function verifiedMigratedWorktreePaths(data: string, directory: string, options?: { liveOnly?: boolean }) {
+  const worktree = migratedWorktreeAliases(data, directory)
+  if (!worktree) return []
+  const live = worktree.paths.filter((candidate) => {
+    try {
+      return realpathSync(candidate) === worktree.directory
+    } catch {
+      return false
+    }
+  })
+  if (!live.length || options?.liveOnly) return live
+  // An unpublished legacy alias is still relevant when looking up stored state.
+  return [...new Set([...live, ...worktree.stagedPaths])]
+}
+
+function containedRelative(directory: string, target: string) {
+  const relative = path.relative(directory, target)
+  if (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`)) return relative
+}
+
+export function existingAncestor(target: string) {
+  try {
+    const normalized = path.normalize(target)
+    const root = path.parse(normalized).root
+    for (let candidate = normalized; candidate !== root; candidate = path.dirname(candidate)) {
+      if (lstatSync(candidate, { throwIfNoEntry: false })) return candidate
+    }
+  } catch {
+    return
+  }
+}
+
+export function worktreeRelativePath(data: string, directory: string, target: string) {
+  return (
+    containedRelative(directory, target) ??
+    verifiedMigratedWorktreePaths(data, directory, { liveOnly: true })
+      .map((alias) => containedRelative(alias, target))
+      .find((relative) => relative !== undefined)
+  )
+}
+
 export function migratedWorktreeAliases(data: string, directory: string) {
   if (!path.isAbsolute(directory)) return
   const aliases = migratedAppDirectoryAliases(
@@ -136,14 +178,13 @@ export function migratedWorktreeAliases(data: string, directory: string) {
   )
   if (!aliases) return
   const roots = [...aliases.current, ...aliases.legacy].map((root) => path.join(root, "worktree"))
-  const relative = roots
-    .map((root) => path.relative(root, directory))
-    .find((suffix) => !path.isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith(`..${path.sep}`))
+  const relative = roots.map((root) => containedRelative(root, directory)).find((suffix) => suffix !== undefined)
   if (relative === undefined) return
   const canonicalData = aliases.current.at(-1)!
   return {
     data: canonicalData,
     directory: path.join(canonicalData, "worktree", relative),
     paths: [...new Set([directory, ...roots.map((root) => path.join(root, relative))])],
+    stagedPaths: aliases.staged ? aliases.legacy.map((root) => path.join(root, "worktree", relative)) : [],
   }
 }

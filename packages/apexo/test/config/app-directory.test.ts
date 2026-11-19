@@ -2,7 +2,13 @@ import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { chmod, lstat, mkdir, realpath, rename, symlink } from "node:fs/promises"
 import path from "node:path"
-import { migrateAppDirectory, migratedWorktreePaths } from "@apexo/core/app-directory"
+import {
+  migrateAppDirectory,
+  migratedWorktreePaths,
+  verifiedMigratedWorktreePaths,
+  worktreeRelativePath,
+} from "@apexo/core/app-directory"
+import { permissionResourcePaths } from "@apexo/core/permission/resource-paths"
 import { tmpdir } from "../fixture/fixture"
 
 test("CLI processes share the migrated XDG directories and can open the existing database", async () => {
@@ -212,4 +218,26 @@ test("only the worktrees of a shared Apexo data directory use both path spelling
   expect(migratedWorktreePaths(data, config)).toEqual([config])
   const other = path.join(tmp.path, "separate", "apexo", "worktree", "copy")
   expect(migratedWorktreePaths(data, other)).toEqual([other])
+  expect(verifiedMigratedWorktreePaths(data, current)).toEqual([current, legacy])
+  expect(verifiedMigratedWorktreePaths(data, other)).toEqual([])
+  const scope = path.join(current, "*").replaceAll("\\", "/")
+  const previousScope = path.join(legacy, "*").replaceAll("\\", "/")
+  expect(permissionResourcePaths(data, "external_directory", scope)).toContain(previousScope)
+  expect(permissionResourcePaths(data, "bash", scope)).toEqual([scope])
+  const newFile = path.join(current, "new", "file.txt").replaceAll("\\", "/")
+  expect(permissionResourcePaths(data, "edit", newFile)).toContain(
+    path.join(legacy, "new", "file.txt").replaceAll("\\", "/"),
+  )
+  await symlink(tmp.path, path.join(current, "outside"), process.platform === "win32" ? "junction" : "dir")
+  const redirected = path.join(current, "outside", "file.txt")
+  expect(permissionResourcePaths(data, "edit", redirected)).toEqual([redirected])
+  const candidate = path.join(legacy, "new.txt")
+  expect(worktreeRelativePath(data, current, candidate)).toBe("new.txt")
+  expect(worktreeRelativePath(data, current, path.join(other, "new.txt"))).toBeUndefined()
+  await rename(path.join(tmp.path, "opencode"), path.join(tmp.path, ".apexo.directory-migration"))
+  expect(permissionResourcePaths(data, "external_directory", scope)).toContain(previousScope)
+  expect(permissionResourcePaths(data, "edit", newFile)).toContain(
+    path.join(legacy, "new", "file.txt").replaceAll("\\", "/"),
+  )
+  expect(worktreeRelativePath(data, current, candidate)).toBeUndefined()
 })

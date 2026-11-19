@@ -5,6 +5,7 @@ import { createEffect, createMemo, createRoot, getOwner, onCleanup } from "solid
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@apexo/ui/context"
 import type { PermissionRequest } from "@apexo/sdk/v2/client"
+import { ClientError } from "@apexo/client/promise"
 import { Persist, persisted } from "@/utils/persist"
 import type { ServerSDK } from "@/context/server-sdk"
 import type { ServerSync } from "./server-sync"
@@ -21,9 +22,10 @@ import { autoReview } from "@apexo/sdk/v2/grok-commands"
 import {
   acceptKey,
   directoryAcceptKey,
-  isDirectoryAutoAccepting,
+  directoryAutoAccept,
   autoRespondsPermission,
   migrateAutoAccept,
+  scopedPermissionChoice,
   sessionAutoAccept,
   setSessionAutoAccept,
 } from "./permission-auto-respond"
@@ -220,18 +222,50 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     }),
   )
 
+  const [aliases, setAliases] = createStore<Record<string, readonly string[] | undefined>>({})
+  const aliasReads = new Map<string, Promise<readonly string[] | undefined>>()
+  const readAliases = (directory: string) => {
+    if (aliases[directory]) return Promise.resolve(aliases[directory])
+    const pending = aliasReads.get(directory)
+    if (pending) return pending
+    const request = input.sdk.currentApi.location
+      .get({ location: { directory } })
+      .then((location) => {
+        const value = "aliases" in location ? location.aliases : undefined
+        return Array.isArray(value) ? value.filter((alias): alias is string => typeof alias === "string") : []
+      })
+      .catch((error: unknown) => {
+        // Older compatibility servers omit the native Location endpoint.
+        if (!(error instanceof ClientError) || error.reason !== "UnexpectedStatus") return
+        const cause: unknown = error.cause
+        if (typeof cause === "object" && cause && "status" in cause && cause.status === 404) return []
+      })
+      .then((value) => {
+        if (!meta.disposed && value) {
+          for (const alias of [directory, ...value]) setAliases(alias, value)
+        }
+        return value
+      })
+      .finally(() => aliasReads.delete(directory))
+    aliasReads.set(directory, request)
+    return request
+  }
+
+  function directoryAliases(directory: string) {
+    const related = aliases[directory]
+    if (!related) void readAliases(directory)
+    return related
+  }
+
   function enableConfiguredDirectory(directory: string) {
-    if (input.sdk.protocolKind() !== "v1") return
     if (meta.disposed || !ready()) return
+    const related = directoryAliases(directory)
+    if (!related) return
+    if (input.sdk.protocolKind() !== "v1") return
     const [childStore] = input.sync.child(directory)
     if (childStore.config.permission !== "allow") return
-    const key = directoryAcceptKey(directory)
-    if (store.autoAccept[key] !== undefined) return
-    setStore(
-      produce((draft) => {
-        draft.autoAccept[key] = true
-      }),
-    )
+    if (directoryAutoAccept(store.autoAccept, directory, related) !== undefined) return
+    setStore("autoAccept", directoryAcceptKey(directory), true)
   }
 
   const MAX_RESPONDED = 1000
@@ -305,15 +339,21 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function isAutoAccepting(sessionID: string, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory)
+    return shouldAutoRespond({ sessionID }, directory)
   }
 
   function isAutoAcceptingDirectory(directory: string) {
-    return isDirectoryAutoAccepting(store.autoAccept, directory)
+    return directoryAutoAccept(store.autoAccept, directory, directoryAliases(directory)) ?? false
   }
 
-  function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+  function shouldAutoRespond(permission: { sessionID: string }, directory?: string) {
+    return autoRespondsPermission(
+      store.autoAccept,
+      sessions(directory),
+      permission,
+      directory,
+      directory ? directoryAliases(directory) : undefined,
+    )
   }
 
   function isPending(permission: PermissionRequest) {
@@ -322,12 +362,21 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
-    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+    const override = sessionAutoAccept(
+      store.autoAccept,
+      sessions(directory),
+      permission,
+      directory,
+      directory ? aliases[directory] : undefined,
+    )
     if (override !== undefined) return override
-    if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
-    const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
+    const lineage =
+      input.sync.session.lineage.peek(permission.sessionID) ??
+      (await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined))
     if (meta.disposed || !lineage) return false
-    return shouldAutoRespond(permission, directory)
+    const location = directory ?? lineage.session.directory
+    if (location && !(await readAliases(location))) return false
+    return shouldAutoRespond(permission, location)
   }
 
   const [nativeModes, setNativeModes] = createStore<
@@ -369,7 +418,12 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       if (parent && !lineage.includes(parent)) lineage.push(parent)
     }
     for (const id of lineage) {
-      const value = store.review?.[acceptKey(id, directory)] ?? store.review?.[id]
+      const related = directory ? (aliases[directory] ?? []) : []
+      const value = scopedPermissionChoice(store.review ?? {}, [
+        id,
+        acceptKey(id, directory),
+        ...related.map((alias) => acceptKey(id, alias)),
+      ])
       if (value !== undefined) return value
     }
     if (!directory || isAutoAccepting(sessionID, directory)) return false
@@ -394,6 +448,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     current: () => boolean = () => true,
   ) {
     if (!current() || !isPending(permission)) return
+    if (directory && !(await readAliases(directory))) return
     await loadMode(permission.sessionID)
     const native = nativeSession(permission.sessionID) || permission.metadata?.nativePermission === true
     const reviewed = !native && isReviewing(permission.sessionID, directory) && (await classify(permission, directory))
@@ -442,14 +497,14 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     unsubscribe()
   })
 
-  function enableDirectory(directory: string) {
+  function setDirectory(directory: string, enabled: boolean, related: readonly string[]) {
     if (meta.disposed) return
-    const key = directoryAcceptKey(directory)
     setStore(
       produce((draft) => {
-        draft.autoAccept[key] = true
+        for (const alias of [directory, ...related]) draft.autoAccept[directoryAcceptKey(alias)] = enabled
       }),
     )
+    if (!enabled) return
 
     list(directory)
       .then((permissions) => {
@@ -460,16 +515,6 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
         }
       })
       .catch(() => undefined)
-  }
-
-  function disableDirectory(directory: string) {
-    if (meta.disposed) return
-    const key = directoryAcceptKey(directory)
-    setStore(
-      produce((draft) => {
-        draft.autoAccept[key] = false
-      }),
-    )
   }
 
   function enable(sessionID: string, directory: string) {
@@ -546,7 +591,8 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     setStore(
       produce((draft) => {
         draft.review ??= {}
-        draft.review[acceptKey(sessionID, directory)] = value
+        for (const alias of [directory, ...(aliases[directory] ?? [])])
+          draft.review[acceptKey(sessionID, alias)] = value
       }),
     )
     if (!value) return
@@ -593,11 +639,15 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     },
     toggleAutoAcceptDirectory(directory: string) {
       if (meta.disposed) return
-      if (isAutoAcceptingDirectory(directory)) {
-        disableDirectory(directory)
+      const enabled = !isAutoAcceptingDirectory(directory)
+      const related = aliases[directory]
+      if (related) {
+        setDirectory(directory, enabled, related)
         return
       }
-      enableDirectory(directory)
+      void readAliases(directory).then((value) => {
+        if (value && enabled !== isAutoAcceptingDirectory(directory)) setDirectory(directory, enabled, value)
+      })
     },
     enableAutoAccept(sessionID: string, directory: string) {
       if (meta.disposed) return

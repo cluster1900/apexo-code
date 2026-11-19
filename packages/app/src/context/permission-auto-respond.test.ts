@@ -4,6 +4,7 @@ import {
   acceptKey,
   autoRespondsPermission,
   directoryAcceptKey,
+  directoryAutoAccept,
   migrateAutoAccept,
   setSessionAutoAccept,
 } from "./permission-auto-respond"
@@ -42,4 +43,32 @@ test("a new opt-out clears the older path-scoped grant and stays off after reloa
   const reloaded = migrateAutoAccept(choices)
   expect(reloaded[acceptKey(sessionID, previous)]).toBeUndefined()
   expect(autoRespondsPermission(reloaded, [{ id: sessionID }], { sessionID }, current)).toBe(false)
+})
+
+test("verified worktree aliases share approval choices with an explicit opt-out taking precedence", () => {
+  const sessionID = SessionID.create()
+  const choices = { [directoryAcceptKey(previous)]: true }
+  expect(autoRespondsPermission(choices, [], { sessionID }, current, [previous])).toBe(true)
+  expect(autoRespondsPermission(choices, [], { sessionID }, current)).toBe(false)
+
+  const conflicting = { ...choices, [directoryAcceptKey(current)]: false }
+  expect(directoryAutoAccept(conflicting, previous, [current])).toBe(false)
+  expect(directoryAutoAccept(conflicting, current, [previous])).toBe(false)
+  expect(directoryAutoAccept(conflicting, current + "-other")).toBeUndefined()
+})
+
+test("a session opt-in follows only its verified worktree aliases", () => {
+  const sessionID = SessionID.create()
+  const choices = { [acceptKey(sessionID, previous)]: true }
+  expect(autoRespondsPermission(choices, [], { sessionID }, current, [previous])).toBe(true)
+  expect(autoRespondsPermission(choices, [], { sessionID }, current)).toBe(false)
+  expect(
+    autoRespondsPermission(
+      migrateAutoAccept({ ...choices, [acceptKey(sessionID, current)]: false }),
+      [],
+      { sessionID },
+      previous,
+      [current],
+    ),
+  ).toBe(false)
 })

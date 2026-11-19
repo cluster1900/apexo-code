@@ -5370,6 +5370,19 @@ export type ProjectCurrent = {
   directory: string
 }
 
+export type LocationDetails = {
+  directory: string
+  workspaceID?: string
+  project: {
+    id: string
+    directory: string
+  }
+  /**
+   * Verified spellings of the requested migrated worktree.
+   */
+  aliases?: Array<string>
+}
+
 export type LocationInfo = {
   directory: string
   workspaceID?: string
@@ -15522,9 +15535,9 @@ export type V2LocationGetError = V2LocationGetErrors[keyof V2LocationGetErrors]
 
 export type V2LocationGetResponses = {
   /**
-   * Location.Info
+   * Location.Details
    */
-  200: LocationInfo
+  200: LocationDetails
 }
 
 export type V2LocationGetResponse = V2LocationGetResponses[keyof V2LocationGetResponses]
