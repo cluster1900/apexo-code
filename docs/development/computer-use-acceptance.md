@@ -145,9 +145,9 @@ The catalog verifier fetched `49d774693f277aa1048d8c497aec535f064556ee` and chec
 
 ### Computer Use 0.1.4 Save-sheet follow-up
 
-The Save flow keeps the current panel layout after directory selection and uses a shallow sheet snapshot for the filename and Save button. The live fixture rejects mutations based on refs observed before the test operator last restored the window. It checks that the destination contains exactly the intended RTF. Two consecutive live CLI runs passed, and a third success was observed in a later series. The controlled CLI and Electron regressions passed. Window loss on the shared macOS desktop still interrupted an additional run before Save. [Run evidence](../testing/test-fixtures/computer-use-acceptance.md#bug-20261120-001-an-extra-save-sheet-disclosure-action-coincided-with-a-default-name-write)
+The Save flow keeps the current panel layout after directory selection and uses a shallow sheet snapshot for the filename and Save button. The live fixture rejects mutations based on refs observed before the test operator last restored the window. It checks that the destination contains exactly the intended RTF. The Git-pinned 0.1.4 bundle passed three consecutive live CLI runs under its distributed `ask` profile in 44.610 to 68.469 seconds. The controlled CLI and Electron regressions also passed. Earlier attempts on the shared macOS desktop lost the original window before Save. [Run evidence](../testing/test-fixtures/computer-use-acceptance.md#bug-20261120-001-an-extra-save-sheet-disclosure-action-coincided-with-a-default-name-write)
 
-The verifier fetched the 0.1.4 bundle at `7fc8fb70aff5e0cabdbe1666b52bdfe17e82180b` and checked all 17 files. The two distributed permission profiles match 0.1.2 byte for byte. Fullscreen and Mini TUI, the native and compatibility Client runs, and 109 focused MCP tests passed.
+The verifier fetched the 0.1.4 bundle at `7fc8fb70aff5e0cabdbe1666b52bdfe17e82180b` and checked all 17 files. The two distributed permission profiles match 0.1.2 byte for byte. The rebuilt Desktop and Web each passed their native UI suite, with seven and six checks respectively. Fullscreen and Mini TUI, the native and compatibility Client runs, and 109 focused MCP tests passed.
 
 ## Failures and fixes retained
 

@@ -58,6 +58,7 @@ export async function runLiveTextEditSave(fixture, run) {
   let savedWindow = false
   let skillLoaded = false
   let windowRestorations = 0
+  let lastReportedRestoration = 0
   let observedActive = false
   let submitted = false
   let settled = false
@@ -179,6 +180,16 @@ export async function runLiveTextEditSave(fixture, run) {
           }
           const stale = mutations.has(action) && ref?.windowRestorations !== windowRestorations
           const reply = stale ? "reject" : "once"
+          if (stale && lastReportedRestoration !== windowRestorations) {
+            // A denied tool receipt does not tell the model why the operator declined it.
+            await fixture.prompt(
+              session.id,
+              "I brought the same TextEdit window back into view. Discard the earlier refs. Continue the original Save task by listing TextEdit windows and observing the same document's current surface again before taking another action.",
+              false,
+            )
+            lastReportedRestoration = windowRestorations
+            record({ stage: "operator-reported-restoration" })
+          }
           await client.permissions.reply(
             {
               sessionID: session.id,
