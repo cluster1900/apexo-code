@@ -8,11 +8,20 @@ if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--restore" {
     typealias WindowNumber = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
 
     guard let pid = pid_t(CommandLine.arguments[2]), pid > 0,
-          let number = CGWindowID(CommandLine.arguments[3]), number > 0,
-          let app = NSRunningApplication(processIdentifier: pid), app.bundleIdentifier == "com.apple.TextEdit",
-          AXIsProcessTrusted(),
-          let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_AXUIElementGetWindow") else {
-        fputs("Unable to resolve the owned TextEdit accessibility window\n", stderr)
+          let number = CGWindowID(CommandLine.arguments[3]), number > 0 else {
+        fputs("Invalid TextEdit window identity\n", stderr)
+        exit(2)
+    }
+    guard let app = NSRunningApplication(processIdentifier: pid), app.bundleIdentifier == "com.apple.TextEdit" else {
+        fputs("Original TextEdit process \(pid) exited before window \(number) could be restored\n", stderr)
+        exit(2)
+    }
+    guard AXIsProcessTrusted() else {
+        fputs("Accessibility permission is required by the TextEdit window restoration helper\n", stderr)
+        exit(2)
+    }
+    guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_AXUIElementGetWindow") else {
+        fputs("Unable to match accessibility windows by WindowServer ID\n", stderr)
         exit(2)
     }
 
