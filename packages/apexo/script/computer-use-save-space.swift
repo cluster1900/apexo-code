@@ -1,7 +1,47 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import Darwin
 import Foundation
+
+if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--restore" {
+    typealias WindowNumber = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
+
+    guard let pid = pid_t(CommandLine.arguments[2]), pid > 0,
+          let number = CGWindowID(CommandLine.arguments[3]), number > 0,
+          let app = NSRunningApplication(processIdentifier: pid), app.bundleIdentifier == "com.apple.TextEdit",
+          AXIsProcessTrusted(),
+          let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_AXUIElementGetWindow") else {
+        fputs("Unable to resolve the owned TextEdit accessibility window\n", stderr)
+        exit(2)
+    }
+
+    let accessibility = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(accessibility, 0.5)
+    // Activation can make an off-Space AX window discoverable on the next attempt.
+    app.unhide()
+    let activated = app.activate(options: [])
+    var value: CFTypeRef?
+    let status = AXUIElementCopyAttributeValue(accessibility, kAXWindowsAttribute as CFString, &value)
+    let windowNumber = unsafeBitCast(symbol, to: WindowNumber.self)
+    let window = (value as? [AXUIElement])?.first { element in
+        var candidate: CGWindowID = 0
+        return windowNumber(element, &candidate) == .success && candidate == number
+    }
+    guard let window else {
+        print("activate=\(activated), AXWindows=\(status.rawValue), owned window absent")
+        exit(0)
+    }
+
+    var minimized: CFTypeRef?
+    AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimized)
+    if minimized as? Bool == true {
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+    }
+    let raised = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    print("activate=\(activated), AXRaise=\(raised.rawValue)")
+    exit(0)
+}
 
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--probe" {
     typealias MainConnection = @convention(c) () -> Int32
@@ -26,12 +66,16 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--probe" {
               let spaces = row["Spaces"] as? [[String: Any]] else { return nil }
         return ["current": current, "spaces": spaces.compactMap(spaceID)]
     }
-    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+    let windows = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID)
         as? [[String: Any]] ?? []
-    let onscreen = windows
-        .filter { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.intValue == pid }
+    let owned = windows.filter { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.intValue == pid }
+    let all = owned.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.intValue }
+    let onscreen = owned
+        .filter { ($0[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true }
         .compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.intValue }
-    print(String(decoding: try JSONSerialization.data(withJSONObject: ["displays": displays, "onscreen": onscreen]), as: UTF8.self))
+    let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+    let result: [String: Any] = ["displays": displays, "windows": all, "onscreen": onscreen, "foregroundApp": front]
+    print(String(decoding: try JSONSerialization.data(withJSONObject: result), as: UTF8.self))
     exit(0)
 }
 

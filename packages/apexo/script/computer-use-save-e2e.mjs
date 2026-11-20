@@ -7,7 +7,7 @@ import { legacyPermissionProfile, permissionProfile } from "../../../plugins/com
 import { startComputerUseFixture } from "./computer-use-fixture.mjs"
 import { startPackagedSaveDesktop } from "./computer-use-save-desktop.mjs"
 import { runLiveTextEditSave } from "./computer-use-save-live.mjs"
-import { prepareSaveSpaceSwitch } from "./computer-use-save-spaces.mjs"
+import { prepareSaveSpaces } from "./computer-use-save-spaces.mjs"
 import { openSaveTerminal } from "./computer-use-save-terminal.mjs"
 
 const surfaces = ["desktop", "cli", "tui"]
@@ -41,8 +41,8 @@ const legacyProfile = await Bun.file(join(bundle, "permissions-v1.json")).json()
 assert.deepEqual(legacyProfile, legacyPermissionProfile())
 assert.deepEqual(await Bun.file(join(bundle, "permissions.json")).json(), permissionProfile())
 const release = { catalog, bundle, legacyProfile, version: entry.version, sha: entry.source.sha }
-const switchSpace = scenario === "series" ? undefined : await prepareSaveSpaceSwitch(output)
-const cases = [...(scenario === "recovery" ? [] : [1, 2, 3]), ...(switchSpace ? ["recovery"] : [])]
+const spaces = await prepareSaveSpaces(output)
+const cases = [...(scenario === "recovery" ? [] : [1, 2, 3]), ...(scenario === "series" ? [] : ["recovery"])]
 const results = []
 const failures = []
 
@@ -83,7 +83,8 @@ for (const kind of target === "all" ? surfaces : [target]) {
       try {
         const result = await runLiveTextEditSave(fixture, run, {
           openInput: fixture.openInput ?? ((id) => openSaveTerminal(kind, fixture, cli, id, run)),
-          switchSpace: run === "recovery" ? switchSpace : undefined,
+          windows: spaces,
+          switchSpace: run === "recovery" ? spaces.switchSpace : undefined,
         })
         results.push({ kind, ...result })
       } catch (error) {

@@ -126,12 +126,14 @@ export async function startPackagedSaveDesktop(app, release, suiteOutput) {
     assert.equal(installed.items.find((item) => item.id === plugin.id)?.installedRevision, release.sha)
     assert.equal(installed.items.find((item) => item.id === plugin.id)?.installedVersion, release.version)
     assert.equal((await legacy.plugins.reload({ directory }, request())).data, true)
-    await poll(
-      async () =>
-        (await legacy.mcp.status({ directory }, request())).data["computer-use:desktop"]?.status === "connected",
-      "default packaged MCP connection",
-      25_000,
-    )
+    const server = "computer-use:desktop"
+    const status = async () => (await legacy.mcp.status({ directory }, request())).data[server]
+    const initialStatus = await status()
+    if (initialStatus?.status === "failed") {
+      console.log(JSON.stringify({ stage: "packaged-mcp-connect-retry", status: initialStatus.status, output }))
+      await legacy.mcp.connect({ directory, name: server }, request())
+    }
+    await poll(async () => (await status())?.status === "connected", "default packaged MCP connection", 25_000)
 
     // Map V1 direct and deferred calls to the same Session evidence used by the native runner.
     const sessionStatus = async (options) => (await legacy.session.status({ directory }, request(options))).data
@@ -212,6 +214,7 @@ export async function startPackagedSaveDesktop(app, release, suiteOutput) {
         ),
       openInput: async (sessionID) => {
         const route = `/server/${Buffer.from("sidecar").toString("base64url")}/session/${sessionID}`
+        await browser("eval", "window.api.showWindow()")
         await browser(
           "eval",
           `(async()=>{const id=await window.api.getWindowID();localStorage.setItem('apexo.desktop.window.'+id+'.last-active-url',${JSON.stringify(route)});return true})()`,
@@ -223,6 +226,16 @@ export async function startPackagedSaveDesktop(app, release, suiteOutput) {
             await browser("fill", '[data-component="prompt-input"]', text)
             await browser("wait", '[data-action="prompt-submit"]:enabled')
             await browser("click", '[data-action="prompt-submit"]')
+            await poll(
+              async () => {
+                const history = await client.messages.list({ sessionID, order: "asc", limit: 10 })
+                return history.data.some((message) => message.type === "user" && message.text?.trimEnd() === text)
+              },
+              "packaged renderer admitted the exact Save prompt",
+              10_000,
+            )
+            // Keep the fixture renderer out of the way while the model operates the native sheet.
+            await browser("eval", 'window.api.runDesktopMenuAction("window.minimize")')
           },
           close() {},
         }

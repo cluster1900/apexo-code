@@ -64,14 +64,14 @@ end tell`)
   }
 }
 
-export function waitForTextEditWindow(observe, label) {
+export function waitForTextEditWindow(observe, label, present = presentTextEdit) {
   let nextPresentation = 0
   return poll(
     () => {
       const window = observe()
       if (window) return window
       if (performance.now() >= nextPresentation) {
-        presentTextEdit()
+        present()
         nextPresentation = performance.now() + 2500
       }
       return undefined

@@ -38,7 +38,7 @@ export async function runLiveTextEditSave(fixture, run, options = {}) {
   const reviewed = new Map()
   const completed = new Set()
   const refs = new Map()
-  const windows = () => {
+  const readWindows = () => {
     const child = Bun.spawnSync([executable, "list-windows", "--app", "TextEdit"], {
       env: {
         ...runtime.env,
@@ -47,9 +47,13 @@ export async function runLiveTextEditSave(fixture, run, options = {}) {
       },
       timeout: 4_000,
     })
-    if (child.exitCode !== 0) return []
-    const result = JSON.parse(child.stdout.toString())
-    return result.ok ? result.data.filter((window) => window.visible && window.accessible) : []
+    const result = child.stdout.length ? JSON.parse(child.stdout.toString()) : undefined
+    return {
+      windows: result?.ok ? result.data.filter((window) => window.visible && window.accessible) : [],
+      code: result?.error?.code,
+      exitCode: child.exitCode,
+      signal: child.signalCode,
+    }
   }
   const start = performance.now()
   const record = (event) => events.push({ ...event, elapsedMs: Math.round(performance.now() - start) })
@@ -72,16 +76,53 @@ export async function runLiveTextEditSave(fixture, run, options = {}) {
     inputSurface = await options.openInput?.(session.id)
     document = await prepareTextEditSave()
     const initial = await waitForTextEditWindow(() => {
-      const matches = windows().filter((window) => window.title === document.title)
+      const matches = readWindows().windows.filter((window) => window.title === document.title)
       assert.ok(matches.length <= 1, "The fixture document must have a unique accessible window")
       return matches[0]
     }, "owned TextEdit window is visible and accessible")
     const sameWindow = (window) => window.id === initial.id && window.pid === initial.pid
+    const observeWindow = () => {
+      const { windows, ...probe } = readWindows()
+      const physical = options.windows?.observe(initial)
+      return { ...probe, ...physical, accessible: windows.some(sameWindow) }
+    }
+    const restoreWindow = () => {
+      if (!options.windows) return document.present()
+      const receipt = options.windows.restore(initial)
+      record({ stage: "window-restore-requested", windowID: initial.id, receipt })
+      return undefined
+    }
+    const ready = (state) => state.accessible && state.onscreen !== false
+    const ensureWindow = async (action, needsForeground) => {
+      let state = observeWindow()
+      const wasUnavailable = !ready(state)
+      if (wasUnavailable) record({ stage: "window-unavailable", windowID: initial.id, action, ...state })
+      if (!wasUnavailable && (!needsForeground || state.foregroundApp === "com.apple.TextEdit")) return
+      if (!options.windows && !wasUnavailable) {
+        document.present()
+        return
+      }
+      await waitForTextEditWindow(
+        () => {
+          state = observeWindow()
+          return ready(state) && (!needsForeground || !options.windows || state.foregroundApp === "com.apple.TextEdit")
+        },
+        `original TextEdit window ${initial.id} is visible and accessible again`,
+        restoreWindow,
+      ).catch((error) => {
+        record({ stage: "window-restoration-failed", windowID: initial.id, action, ...state })
+        throw error
+      })
+      if (wasUnavailable) {
+        windowRestorations++
+        record({ stage: "window-restored-by-operator", windowID: initial.id, action, ...state })
+      }
+    }
     await document.assertUnsaved()
     record({ stage: "window-ready", windowID: initial.id, pid: initial.pid })
     const filename = `${document.name}.rtf`
     const exactName = (value) => value === document.name || value === filename
-    const task = `Load the computer-use:computer-use Skill. Save the unsaved TextEdit document titled "${document.title}", containing "${document.marker}", as ${filename} in the Downloads subfolder "${document.folder}". Preserve its Rich Text contents. Use only the installed desktop MCP tools, with search_tool and use_tool if needed. List windows scoped to TextEdit. Snapshot its menubar at depth 1, then snapshot the File ref using only root and max_depth: 2. Click the Save menu item directly from that File subtree. Follow the Skill for directory selection and the shallow Save sheet. Take one action at a time and verify the saved name in the window list.`
+    const task = `Load the computer-use:computer-use Skill. Save the unsaved TextEdit document titled "${document.title}", containing "${document.marker}", as ${filename} in the Downloads subfolder "${document.folder}". Preserve its Rich Text contents. Use only the installed desktop MCP tools, with search_tool and use_tool if needed. List windows scoped to TextEdit. Snapshot its menubar at depth 1, then snapshot the File ref using only root and max_depth: 2. Click the Save menu item directly from that File subtree. Use surface "sheet" and the exact window ID when observing Save controls, or use a root obtained from that sheet. Follow the Skill for directory selection. Set Save As with desktop_set_value and verify the filename and Where together in a shallow sheet snapshot. Take one action at a time and verify the saved name in the window list.`
     submitted = true
     if (inputSurface) await inputSurface.submit(task)
     if (!inputSurface) await fixture.prompt(session.id, task, false)
@@ -190,7 +231,6 @@ export async function runLiveTextEditSave(fixture, run, options = {}) {
           }
         }
 
-        let checkedWindow = false
         for (const request of requests) {
           const key = `${request.source?.messageID}/${request.source?.callID}`
           const call = calls.get(key)
@@ -205,25 +245,17 @@ export async function runLiveTextEditSave(fixture, run, options = {}) {
               !(saveApproved && mutations.has(action)),
             `Model requested an action outside the save fixture: ${action ?? request.action} (${ref?.surface ?? "unscoped"}/${ref?.node.role ?? "no ref"})`,
           )
-          if (!checkedWindow && !["status", "permissions", "version", "skills_get", "list_apps"].includes(action)) {
-            checkedWindow = true
-            if (!windows().some(sameWindow)) {
-              // The operator can restore the fixture's visibility after a Space change.
-              await waitForTextEditWindow(() => windows().find(sameWindow), "original TextEdit window is visible again")
-              windowRestorations++
-              record({ stage: "window-restored-by-operator" })
-            }
-            // TextEdit's native menu actions need its foreground app, including when the renderer submitted the task.
-            if (action === "click" && ["menubar", "menu"].includes(ref?.surface)) document.present()
-          }
+          if (!["status", "permissions", "version", "skills_get", "list_apps"].includes(action))
+            await ensureWindow(action, action === "click" && ["menubar", "menu"].includes(ref?.surface))
           if (options.switchSpace && !recovery && finalSave && ref.epoch === windowRestorations) {
             assert.ok(selectedDirectory && !saveApproved)
             assert.equal(requests.length, 1, "The pre-switch Save must be the sole pending permission request")
             await document.assertUnsaved()
-            const spaces = await options.switchSpace(initial, document.present)
+            const spaces = await options.switchSpace(initial)
             await waitForTextEditWindow(
-              () => windows().find(sameWindow),
+              () => ready(observeWindow()),
               "same TextEdit window is accessible after the Space switch",
+              restoreWindow,
             )
             const pending = await client.permissions.list({ sessionID: session.id }, requestOptions())
             assert.deepEqual(
@@ -236,7 +268,7 @@ export async function runLiveTextEditSave(fixture, run, options = {}) {
             record({ stage: "actual-space-switch", ...spaces, callID: call.id, refID: input.ref_id })
             await document.assertUnsaved()
           }
-          const stale = mutations.has(action) && ref?.epoch !== windowRestorations
+          const stale = ref && ref.epoch !== windowRestorations
           const reply = stale ? "reject" : "once"
           if (recovery && mutations.has(action) && !stale) {
             assert.ok(recovery.rejected, "The held Save must reach its rejected terminal state before another mutation")
@@ -391,6 +423,7 @@ function isFixtureAction(action, input, ref, windowID, document, exactName) {
     return (ref.menu === "File" || ref.surface === "menu") && /^Save[.…]*$/.test(name)
   }
   if (ref.surface !== "sheet" || ref.windowID !== windowID) return false
+  if (name === "Save As:") return ref.node.role === "textfield"
   if (name === "Cancel") return ref.node.role === "button"
   if (name === "Save") return ref.node.role === "button" && ref.location === document.folder && exactName(ref.name)
   return ["Downloads", "show more options", document.folder].includes(name) || clean(ref.node.value) === document.folder
