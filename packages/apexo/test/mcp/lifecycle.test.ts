@@ -14,10 +14,16 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js"
 import { LayerNode } from "@apexo/core/effect/layer-node"
-import { Cause, Effect, Exit } from "effect"
+import { Global } from "@apexo/core/global"
+import { McpPreferences } from "@apexo/core/mcp-preferences"
+import { PluginStore } from "@apexo/core/plugin-store"
+import { Flock } from "@apexo/core/util/flock"
+import { AbsolutePath } from "@apexo/schema/schema"
+import { Cause, Effect, Exit, Fiber } from "effect"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { MCP } from "../../src/mcp/index"
 import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
+import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
@@ -182,6 +188,58 @@ function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server:
 
 const remote = (url: string, timeout?: number) => ({ type: "remote" as const, url, oauth: false as const, timeout })
 
+it.instance(
+  "expands and leases plugin data until the legacy MCP process closes",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const mcp = yield* MCP.Service
+      const instances = yield* InstanceStore.Service
+      const source = path.join(test.directory, "bundle")
+      const store = path.join(Global.Path.data, "plugins")
+      const marker = path.join(test.directory, "mcp-data")
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(source, "plugin.json"), JSON.stringify({ name: "leased-mcp" }))
+        await Bun.write(
+          path.join(source, ".mcp.json"),
+          JSON.stringify({
+            mcpServers: {
+              probe: {
+                command: process.execPath,
+                args: [stdioFixture, "--plugin-data-check"],
+                env: { TEST_PLUGIN_DATA: "${CLAUDE_PLUGIN_DATA}", TEST_PLUGIN_MARKER: marker },
+              },
+            },
+          }),
+        )
+      })
+      const install = yield* Effect.promise(() => PluginStore.mutate(store, { action: "install", source, trust: true }))
+      const id = install.items.find((item) => item.name === "leased-mcp")!.id
+      const uninstall = () => PluginStore.mutate(store, { action: "uninstall", id })
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(async () => {
+          if ((await PluginStore.active(store)).some((entry) => entry.item.id === id)) await uninstall()
+        }),
+      )
+
+      expect((yield* mcp.status())["leased-mcp:probe"]).toEqual({ status: "connected" })
+      const file = yield* Effect.promise(() => Bun.file(marker).text())
+      expect(yield* Effect.promise(() => Bun.file(file).text())).toBe("connected")
+      const removed = yield* Effect.promise(uninstall)
+      expect(removed.retainedData).toEqual([{ id, reason: "readers" }])
+      expect(yield* Effect.promise(() => Bun.file(file).exists())).toBe(true)
+
+      yield* Effect.all([instances.disposeDirectory(test.directory), instances.disposeDirectory(test.directory)], {
+        concurrency: 2,
+        discard: true,
+      })
+      expect(yield* Effect.promise(() => Bun.file(marker + ".closed").text())).toBe("true")
+      expect(yield* Effect.promise(() => Bun.file(file).exists())).toBe(false)
+      expect((yield* Effect.promise(() => PluginStore.catalog(store))).retainedData).toBeUndefined()
+    }),
+  15_000,
+)
+
 it.instance("advertises and lists the instance directory as its root", () =>
   Effect.gen(function* () {
     const server = yield* lifecycleServer({ requestRoots: true })
@@ -325,6 +383,112 @@ it.instance("disconnect removes protocol data and reconnect establishes a new se
     expect((yield* mcp.status())["reconnect-server"]?.status).toBe("connected")
     expect(Object.keys(yield* mcp.tools())).toEqual(["reconnect-server_test_tool"])
   }),
+)
+
+it.instance("rejects a stdio candidate that exits while its connection choice is locked", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const mcp = yield* MCP.Service
+    const name = "short-lived"
+    const listed = path.join(test.directory, "listed.pid")
+    const location = { directory: AbsolutePath.make(test.directory) }
+    const preference = McpPreferences.file(location, Global.Path.data)
+    yield* mcp.add(name, {
+      type: "local",
+      command: [process.execPath, stdioFixture],
+      environment: { MCP_LIFECYCLE_LISTED_PID: listed },
+      enabled: false,
+    })
+    yield* mcp.disconnect(name)
+    const before = yield* Effect.promise(() => Bun.file(preference).text())
+
+    const connection = yield* Effect.acquireUseRelease(
+      Effect.promise(() => Flock.acquire(preference, { dir: path.join(path.dirname(preference), ".locks") })),
+      () =>
+        Effect.gen(function* () {
+          const connection = yield* Effect.forkChild(mcp.connect(name))
+          const pid = yield* pollWithTimeout(
+            Effect.promise(async () => {
+              const file = Bun.file(listed)
+              const pid = (await file.exists()) ? Number(await file.text()) : 0
+              return Number.isInteger(pid) && pid > 0 ? pid : undefined
+            }),
+            "stdio candidate did not acknowledge tool discovery",
+          )
+          yield* Effect.sync(() => process.kill(pid, "SIGTERM"))
+          yield* pollWithTimeout(
+            Effect.sync(() => {
+              try {
+                process.kill(pid, 0)
+                return undefined
+              } catch {
+                return true
+              }
+            }),
+            "stdio candidate did not exit before unlocking preferences",
+          )
+          return connection
+        }),
+      (lease) => Effect.promise(lease.release),
+    )
+    yield* Fiber.join(connection)
+
+    expect((yield* mcp.status())[name]).toEqual({ status: "failed", error: "Connection closed" })
+    expect((yield* mcp.clients())[name]).toBeUndefined()
+    expect(yield* mcp.tools()).toEqual({})
+    expect(yield* Effect.promise(() => Bun.file(preference).text())).toBe(before)
+
+    yield* mcp.connect(name)
+    expect((yield* mcp.status())[name]).toEqual({ status: "connected" })
+    expect(Object.keys(yield* mcp.tools())).toEqual(["short-lived_current_directory"])
+    expect((yield* McpPreferences.make(location, Global.Path.data).read).get(name)).toBe(true)
+  }),
+)
+
+it.instance(
+  "keeps explicit connection choices when the compatibility instance reloads",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const mcp = yield* MCP.Service
+      const instances = yield* InstanceStore.Service
+      const starts = (file: string) =>
+        Effect.promise(async () => {
+          const log = Bun.file(path.join(test.directory, file))
+          return (await log.exists()) ? (await log.text()).trim().split("\n") : []
+        })
+
+      expect((yield* mcp.status())["default-on"]).toEqual({ status: "connected" })
+      expect(yield* starts("on-starts")).toHaveLength(1)
+      expect(yield* starts("off-starts")).toHaveLength(0)
+      yield* mcp.disconnect("default-on")
+      yield* mcp.connect("default-off")
+      yield* instances.reload({ directory: test.directory })
+
+      const status = yield* mcp.status()
+      expect(status["default-on"]).toEqual({ status: "disabled" })
+      expect(status["default-off"]).toEqual({ status: "connected" })
+      expect(Object.keys(yield* mcp.tools())).toEqual(["default-off_current_directory"])
+      expect(yield* starts("on-starts")).toHaveLength(1)
+      expect(yield* starts("off-starts")).toHaveLength(2)
+    }),
+  {
+    config: {
+      mcp: {
+        "default-on": {
+          type: "local",
+          command: [process.execPath, stdioFixture],
+          environment: { MCP_LIFECYCLE_START_LOG: "on-starts" },
+        },
+        "default-off": {
+          type: "local",
+          command: [process.execPath, stdioFixture],
+          environment: { MCP_LIFECYCLE_START_LOG: "off-starts" },
+          enabled: false,
+        },
+      },
+    },
+  },
 )
 
 it.instance("add() closes the old protocol session when replacing a server", () =>
@@ -501,16 +665,20 @@ it.instance("local stdio timeout terminates the real server process", () =>
     const mcp = yield* MCP.Service
     const result = yield* mcp.add("hanging-stdio", {
       type: "local",
-      command: [process.execPath, stdioFixture, "--hang"],
-      environment: { MCP_LIFECYCLE_PID_FILE: pidFile },
-      timeout: 100,
+      command: [
+        process.execPath,
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`,
+      ],
+      timeout: 500,
     })
 
     expect(statusName(result.status, "hanging-stdio")).toBe("failed")
     const pid = yield* pollWithTimeout(
       Effect.promise(async () => {
         const file = Bun.file(pidFile)
-        return (await file.exists()) ? Number(await file.text()) : undefined
+        const pid = (await file.exists()) ? Number(await file.text()) : 0
+        return Number.isInteger(pid) && pid > 0 ? pid : undefined
       }),
       "stdio fixture did not publish its pid",
     )

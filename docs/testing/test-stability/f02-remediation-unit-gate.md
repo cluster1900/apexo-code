@@ -9,6 +9,8 @@
 - **Fix:** None claimed. No MCP behavior, test deadline or concurrency setting was changed before the unchanged focused rerun.
 - **Verification:** `bun test --timeout 60000 test/cli/run/run-process.test.ts test/cli/mcp-serve.test.ts` from `packages/apexo` passed **29 tests / 144 assertions** in 157.19 seconds. The outer worker case passed in 7.79 seconds. This narrows reproducibility and verifies the individual scenarios; it is not a causal repair of the aggregate failure. The complete gate was then rerun unchanged, with its final result recorded in the F02 implementation report.
 
+During the Computer Use 0.1.3 retest on macOS arm64, the complete gate again reported `MCP.Failure` with code `load` for `worker` in batch 18. The other 17 batches passed. The unchanged focused case passed in 2.66 seconds. From `packages/apexo`, `GITHUB_ACTIONS=false APEXO_TEST_SHARD=18/18 bun run test` passed the original 29-file batch in 92.46 seconds. The initial failure's cause remains unknown.
+
 ## Separate CLI duration symptom
 
 Batch 15 produced the background-exit case's expected exit code 1, exact stdout and expected cleanup message, then failed its wall-time assertion: **25,959 ms** versus **less than 25,000 ms**. The unchanged focused rerun passed that case in 4.40 seconds. This is additional symptom evidence for [BUG-20261015-325](cli-process-aggregate-timeouts.md); it does not establish the earlier record's unknown cause, a new production defect or a verified repair. No timeout was increased and no occurrence count or recurring rule was promoted.

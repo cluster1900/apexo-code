@@ -415,6 +415,11 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                     <For each={mcpNames()}>
                       {(name) => {
                         const status = () => mcpStatus(name)
+                        const error = () => {
+                          const connection = sync().data.mcp?.[name]
+                          if (connection?.status === "failed" || connection?.status === "needs_client_registration")
+                            return connection.error
+                        }
                         const enabled = () => status() === "connected"
                         return (
                           <button
@@ -440,6 +445,13 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                               <span class="flex items-center gap-2 min-w-0">
                                 <span class="text-14-regular text-text-base truncate">{name}</span>
                               </span>
+                              <Show when={error()}>
+                                {(message) => (
+                                  <span class="text-11-regular text-text-weaker truncate" title={message()} dir="auto">
+                                    {message()}
+                                  </span>
+                                )}
+                              </Show>
                               <Show when={status() === "needs_auth"}>
                                 <span class="text-11-regular text-text-weaker truncate">
                                   {language.t("mcp.auth.clickToAuthenticate")}

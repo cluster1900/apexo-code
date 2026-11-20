@@ -87,6 +87,14 @@ jobs:
         working-directory: packages/app
         run: bun run test:unit
 
+      - name: Run Computer Use packaging tests
+        working-directory: plugins/computer-use
+        run: bun test test
+
+      - name: Verify the pinned Computer Use catalog bundle
+        working-directory: plugins/computer-use
+        run: sh script/verify-catalog.sh
+
   generated:
     name: generated code
     runs-on: ubuntu-latest

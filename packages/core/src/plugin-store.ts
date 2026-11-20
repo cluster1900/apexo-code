@@ -11,9 +11,15 @@ import { Schema } from "effect"
 import { PluginStore } from "@apexo/schema/plugin-store"
 import { Flock } from "./util/flock"
 import { ConfigMarkdown } from "./config/markdown"
+import { migratedAppDirectoryAliases, resolveMigratedAppPath } from "./app-directory"
 
 const exec = promisify(execFile)
 const official = "https://github.com/xai-org/plugin-marketplace.git"
+const apexoCatalog = "https://github.com/cluster1900/apexo-skills.git"
+
+function isApexoCatalog(location: string) {
+  return location === apexoCatalog || location === apexoCatalog.slice(0, -4)
+}
 const namePattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$/
 const kinds = ["skills", "commands", "agents", "mcpServers", "lspServers", "hooks"] as const
 const Location = Schema.Struct({
@@ -45,6 +51,7 @@ const Data = Schema.Struct({
 const State = Schema.Struct({
   sources: Schema.Array(Source),
   installed: Schema.Array(Installed),
+  apexoCatalogInitialized: Schema.optional(Schema.Boolean),
   data: Schema.optional(Schema.Array(Data)),
 })
 type State = typeof State.Type
@@ -100,11 +107,66 @@ async function json(file: string): Promise<unknown> {
   return Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(text)
 }
 async function state(root: string): Promise<State> {
-  const value = await json(path.join(root, "registry.json"))
-  if (value !== undefined) return Schema.decodeUnknownSync(State)(value)
+  const stored = await json(path.join(root, "registry.json"))
+  const value: State =
+    stored === undefined
+      ? {
+          sources: [{ info: { id: hash(official), name: "xAI", location: official, official: true }, entries: [] }],
+          installed: [],
+        }
+      : relocateRegistryPaths(root, Schema.decodeUnknownSync(State)(stored))
+  if (value.apexoCatalogInitialized) return value
   return {
-    sources: [{ info: { id: hash(official), name: "xAI", location: official, official: true }, entries: [] }],
-    installed: [],
+    ...value,
+    // Persist initialization on the next mutation so an explicit removal stays removed.
+    apexoCatalogInitialized: true,
+    sources: value.sources.some((source) => isApexoCatalog(source.info.location))
+      ? value.sources
+      : [
+          ...value.sources,
+          {
+            info: {
+              id: hash(JSON.stringify({ location: apexoCatalog })),
+              name: "Apexo Skills Catalog",
+              location: apexoCatalog,
+              official: false,
+            },
+            entries: [],
+          },
+        ],
+  }
+}
+
+function relocateRegistryPaths(root: string, value: State): State {
+  if (!value.installed.length && !value.sources.some((source) => source.root)) return value
+  const current = path.resolve(root)
+  if (path.basename(current) !== "plugins") return value
+  const aliases = migratedAppDirectoryAliases(path.dirname(current))
+  if (!aliases) return value
+  const relocate = (file: string, folder: "packages" | "sources") =>
+    resolveMigratedAppPath(file, aliases, path.join("plugins", folder))
+  const relocateTarget = (target: typeof Location.Type) => {
+    const location = relocate(target.location, "sources")
+    return location === target.location ? target : { ...target, location }
+  }
+  // Local packages and cached catalog checkouts are store-owned. External source identities stay stable.
+  return {
+    ...value,
+    installed: value.installed.map((entry) => {
+      const directory = relocate(entry.root, "packages")
+      return {
+        ...entry,
+        root: directory,
+        item: directory === entry.root ? entry.item : { ...entry.item, path: directory },
+        target: relocateTarget(entry.target),
+      }
+    }),
+    sources: value.sources.map((source) => ({
+      ...source,
+      ...(source.root === undefined ? {} : { root: relocate(source.root, "sources") }),
+      ...(source.target === undefined ? {} : { target: relocateTarget(source.target) }),
+      entries: source.entries.map((entry) => ({ ...entry, target: relocateTarget(entry.target) })),
+    })),
   }
 }
 async function save(root: string, value: State) {
@@ -114,9 +176,10 @@ async function save(root: string, value: State) {
 }
 
 export async function catalog(root: string): Promise<PluginStore.Catalog> {
-  const value = await state(root)
+  const [value, policy] = await Promise.all([state(root), loadPolicy(root)])
+  const sources = value.sources.filter((source) => isMarketplaceAllowed(policy, source.info.location))
   const installed = new Map(value.installed.map((v) => [v.item.id, v]))
-  const entries = value.sources.flatMap((source) =>
+  const entries = sources.flatMap((source) =>
     source.entries.map((entry) => {
       const current = installed.get(entry.item.id)
       installed.delete(entry.item.id)
@@ -135,7 +198,7 @@ export async function catalog(root: string): Promise<PluginStore.Catalog> {
     }),
   )
   return {
-    sources: value.sources.map((source) => ({ ...source.info, name: cleanBranding(source.info.name) })),
+    sources: sources.map((source) => ({ ...source.info, name: cleanBranding(source.info.name) })),
     ...(value.data?.some((entry) => entry.retired)
       ? {
           retainedData: value.data
@@ -318,6 +381,7 @@ function isMarketplaceAllowed(policy: Policy, location: string) {
   if (!policy.strictMarketplaces) return true
   if (policy.allowedMarketplaces.has(location)) return true
   for (const allowed of policy.allowedMarketplaces) {
+    if (isApexoCatalog(location) && isApexoCatalog(allowed)) return true
     if (path.isAbsolute(allowed) && path.isAbsolute(location) && location.startsWith(`${allowed}${path.sep}`)) {
       return true
     }
@@ -454,7 +518,14 @@ export async function mutate(root: string, input: PluginStore.Action) {
     if (!isMarketplaceAllowed(policy, target.location))
       throw new Error("invalid", "Plugin source is blocked by strict_known_marketplaces policy")
     const id = hash(JSON.stringify(target))
-    if (value.sources.some((s) => s.info.location === target.location)) return catalog(root)
+    if (
+      value.sources.some(
+        (source) =>
+          source.info.location === target.location ||
+          (isApexoCatalog(source.info.location) && isApexoCatalog(target.location)),
+      )
+    )
+      return catalog(root)
     const source = await refresh(
       root,
       {
@@ -479,7 +550,7 @@ export async function mutate(root: string, input: PluginStore.Action) {
   if (input.action === "refresh") {
     const sources = await Promise.all(
       value.sources.map(async (s) => {
-        if (input.id && s.info.id !== input.id) return s
+        if ((input.id && s.info.id !== input.id) || !isMarketplaceAllowed(policy, s.info.location)) return s
         return refresh(root, s).catch((error: unknown) => ({
           ...s,
           info: { ...s.info, error: error instanceof globalThis.Error ? error.message : String(error) },
@@ -724,7 +795,7 @@ async function refresh(
           homepage: string(item.homepage),
           version: string(item.version) ?? string(summary.version),
           revision: ref ?? fetched.revision,
-          recommended: source.info.official,
+          recommended: source.info.official || isApexoCatalog(source.info.location),
           status: "available",
           warnings: [],
           components: kinds.flatMap((kind) =>

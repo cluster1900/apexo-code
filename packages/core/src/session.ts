@@ -16,7 +16,7 @@ import { SessionInputAdmission } from "./session/input-admission"
 import { SessionLifecycle } from "./session/lifecycle"
 import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
 import { ListAnchor } from "@apexo/schema/session"
-import { and, asc, desc, eq, gt, like, lt, or, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, like, lt, or, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
@@ -51,6 +51,8 @@ import { SessionRevert } from "./session/revert"
 import { Revert } from "@apexo/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@apexo/schema/durable-event-manifest"
+import { migratedWorktreePaths } from "./app-directory"
+import { Global } from "./global"
 
 export const RevertState = Revert.State
 export type RevertState = Revert.State
@@ -248,6 +250,7 @@ const layer = Layer.effect(
     const lifecycle = yield* SessionLifecycle.Service
     const inputAdmission = yield* SessionInputAdmission.Service
     const database = yield* Database.Service
+    const global = yield* Global.Service
     const db = database.db
     const events = yield* EventV2.Service
     const projects = yield* ProjectV2.Service
@@ -518,7 +521,8 @@ const layer = Layer.effect(
         const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder
         const sortColumn = SessionTable.time_created
         const conditions: SQL[] = []
-        if ("directory" in input) conditions.push(eq(SessionTable.directory, input.directory))
+        if ("directory" in input)
+          conditions.push(inArray(SessionTable.directory, migratedWorktreePaths(global.data, input.directory)))
         if (input.workspaceID) conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
         if ("project" in input) conditions.push(eq(SessionTable.project_id, input.project))
         if (input.search) conditions.push(like(SessionTable.title, `%${input.search}%`))
@@ -789,6 +793,7 @@ export const node = makeGlobalNode({
     SessionCommandSandbox.node,
     SessionRemoval.node,
     Database.node,
+    Global.node,
     EventV2.node,
     ProjectV2.node,
     SessionExecution.node,

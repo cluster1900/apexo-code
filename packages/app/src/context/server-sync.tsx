@@ -774,7 +774,16 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       manage: async (directory: string, name: string, action: McpAction) => {
         const key = directoryKey(directory)
         const sdk = sdkFor(key)
-        if ((await serverSDK.protocol) !== "v2") return
+        if ((await serverSDK.protocol) === "v1") {
+          if (action === "resetPreference") return
+          const result = await sdk.mcp[action === "retry" ? "connect" : action]({ name }, { throwOnError: false })
+          await Promise.all([
+            queryClient.refetchQueries(queryOptionsApi.mcp(key)),
+            queryClient.refetchQueries(queryOptionsApi.mcpResources(key)),
+          ])
+          if (!result.response.ok) throw new Error(language.t("common.requestFailed"))
+          return
+        }
         const result = await sdk.v2.mcp[action]({ server: name, location: { directory: key } }, { throwOnError: false })
         if (!result.response.ok && result.response.status === 404 && (action === "connect" || action === "disconnect")) {
           const fallback = await sdk.mcp[action]({ name }, { throwOnError: false })

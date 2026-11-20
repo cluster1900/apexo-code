@@ -39,6 +39,7 @@ const moveFlow = process.argv.includes("--move") || process.argv.includes("--mov
 const moveNew = process.argv.includes("--move-new")
 // --mode-cycle: Shift+Tab cycles Normal → Plan → Auto → Always-approve like Grok Build.
 const cycleFlow = process.argv.includes("--mode-cycle")
+const permissionSettingsFlow = process.argv.includes("--permission-settings")
 // --dashboard: /dashboard roster, peek, reply, permission answer, dispatch, search, delete (Grok Build agent dashboard).
 const dashFlow = process.argv.includes("--dashboard")
 // --bash-prefix: bash asks; the dock shows the Grok Build scoped "Allow always" prefix, which then covers chained reuse.
@@ -66,7 +67,7 @@ const { runtime, control } = await startGoalFixture(
     ? editFixture
     : prefixFlow
     ? bashPrefixFixture
-    : autoFlow || cycleFlow
+    : autoFlow || cycleFlow || permissionSettingsFlow
     ? autoReviewFixture
     : vimConfig
       ? { config: { ui: { vim_mode: true } } }
@@ -175,7 +176,57 @@ const userTexts = async () =>
 try {
   await command("open", url)
   await command("wait", editor)
-  if (dashFlow) {
+  if (permissionSettingsFlow) {
+    const row = '[data-action="settings-auto-accept-permissions"]'
+    const input = row + ' [data-slot="switch-input"]'
+    const read = async (prop) =>
+      JSON.parse(await command("eval", `document.querySelector(${JSON.stringify(input)})?.${prop} ?? null`))
+    const openSettings = async () => {
+      await command("press", `${mod}+,`)
+      await command("wait", row)
+      return read("disabled")
+    }
+    const set = async (checked) => {
+      await command("click", row + ' [data-slot="switch-control"]')
+      await poll(async () => (await read("checked")) === checked, `settings switch is ${checked}`)
+    }
+    const bashRule = async () =>
+      (await runtime.api(`/session/${session.id}`)).permission?.findLast((rule) => rule.permission === "bash")?.action
+
+    assert.equal(await openSettings(), false, "the current Session supplies a permission scope")
+    assert.equal(await read("checked"), false)
+    await set(true)
+    await poll(async () => (await bashRule()) === "allow", "session permission persisted")
+    await set(false)
+    await poll(async () => (await bashRule()) === "ask", "session permission restored")
+    checks.push("settings-switch-updates-the-active-session")
+
+    await command("open", url.slice(0, url.lastIndexOf("/")))
+    await command("wait", "--url", "**/new-session?draftId=*")
+    await command("wait", editor)
+    assert.equal(await openSettings(), false, "an unsent draft supplies its project directory")
+    await set(true)
+    const projectKey = Buffer.from(runtime.directory).toString("base64url") + "/*"
+    const projectPreference = async () =>
+      JSON.parse(
+        await command(
+          "eval",
+          `Object.keys(localStorage).filter(key => key.includes("permission")).map(key => JSON.parse(localStorage.getItem(key)).autoAccept?.[${JSON.stringify(projectKey)}]).find(value => value !== undefined) ?? null`,
+        ),
+      )
+    await poll(async () => (await projectPreference()) === true, "project preference persisted")
+    assert.equal(await bashRule(), "ask", "the existing Session override remains scoped to its Session")
+    await set(false)
+    await poll(async () => (await projectPreference()) === false, "project preference disabled")
+    checks.push("settings-switch-updates-the-draft-project")
+
+    await command("open", new URL("/", url).href)
+    await command("find", "role", "button", "click", "--name", "Settings", "--exact")
+    await command("wait", row)
+    assert.equal(await read("disabled"), true, "Home has no approval scope before choosing a project")
+    checks.push("settings-switch-requires-a-project-on-home")
+    console.log(JSON.stringify({ kind, passed: checks.length, checks }))
+  } else if (dashFlow) {
     // Mirrors the --dashboard TUI flow in grok-slash-tui.mjs step for step.
     const dash = "[data-dashboard]"
     const view = () => command("get", "text", "body")
@@ -321,6 +372,19 @@ try {
     checks.push("esc-steps-back-then-exits")
     console.log(JSON.stringify({ kind, passed: checks.length, checks }))
   } else if (mcpFlow) {
+    await command("press", `${mod}+,`)
+    await command("wait", ".settings-v2-dialog")
+    await command("find", "role", "tab", "click", "--name", "MCP", "--exact")
+    const row = '[data-mcp-server="linear"]'
+    for (const [action, status] of [
+      ["disconnect", "disabled"],
+      ["connect", "connected"],
+    ]) {
+      await command("click", `${row} [data-action="${action}"]`)
+      await poll(async () => (await runtime.api("/mcp")).linear?.status === status, `MCP settings ${action}`)
+    }
+    await command("press", "Escape")
+    checks.push("mcp-settings-disconnects-and-reconnects-real-stdio-server")
     const send = async (text) => {
       await command("click", editor)
       await command("keyboard", "type", text)

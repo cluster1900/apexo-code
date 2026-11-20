@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises"
 import path from "node:path"
 import { Effect, Schema, Scope, Semaphore } from "effect"
+import { migratedWorktreeAliases } from "./app-directory"
 import { Global } from "./global"
 import { Flock } from "./util/flock"
 import { ModelV2 } from "./model"
@@ -44,28 +45,56 @@ export class StorageError extends Schema.TaggedErrorClass<StorageError>()("Sched
 export function directory(workspace: string, root = path.join(Global.Path.data, "scheduler")) {
   return path.join(root, createHash("sha256").update(path.resolve(workspace)).digest("hex"))
 }
+const missing = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
 
 /** The lease lives for the instance scope, including idle intervals between fires. */
-export const make = Effect.fn("SchedulerStore.make")(function* (workspace: string, root?: string) {
+export const make = Effect.fn("SchedulerStore.make")(function* (
+  workspace: string,
+  root = path.join(Global.Path.data, "scheduler"),
+) {
   const scope = yield* Scope.Scope
   const mutex = yield* Semaphore.make(1)
   const leases = new Set<string>()
-  const dir = directory(workspace, root)
-  const file = (owner: string) => path.join(dir, `${createHash("sha256").update(owner).digest("hex")}.json`)
+  const worktree = migratedWorktreeAliases(path.dirname(root), path.resolve(workspace))
+  const storage = worktree ? path.join(worktree.data, path.basename(root)) : root
+  const dir = directory(worktree?.directory ?? workspace, storage)
+  const directories = [
+    dir,
+    ...new Set(
+      worktree?.paths
+        .map((alias) => directory(alias, storage))
+        .filter((alias) => alias !== dir)
+        .toSorted(),
+    ),
+  ]
+  const name = (owner: string) => `${createHash("sha256").update(owner).digest("hex")}.json`
   const io = <A>(run: (signal: AbortSignal) => Promise<A>) =>
     Effect.tryPromise({ try: run, catch: (error) => new StorageError({ message: String(error) }) })
 
-  const read = (target: string) =>
-    io(() =>
-      readFile(target, "utf8").catch((error: unknown) => {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
-          return '{"version":1,"tasks":[]}'
-        throw error
-      }),
-    ).pipe(
+  const read = (nameOfFile: string) =>
+    io(async () => {
+      // A canonical record with zero tasks is authoritative after deletion.
+      for (const dir of directories) {
+        const raw = await readFile(path.join(dir, nameOfFile), "utf8").catch((error: unknown) => {
+          if (missing(error)) return undefined
+          throw error
+        })
+        if (raw !== undefined) return raw
+      }
+      return '{"version":1,"tasks":[]}'
+    }).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(File)),
-      Effect.map((data) => data.tasks),
-      Effect.mapError((error) => new StorageError({ message: `Cannot read scheduler state ${target}: ${error}` })),
+      Effect.mapError(
+        (error) => new StorageError({ message: `Cannot read scheduler state ${path.join(dir, nameOfFile)}: ${error}` }),
+      ),
+      Effect.flatMap(({ tasks }) =>
+        tasks.some((task) => name(task.ownerSessionId) !== nameOfFile)
+          ? Effect.fail(
+              new StorageError({ message: `Scheduler state has conflicting session ownership: ${nameOfFile}` }),
+            )
+          : Effect.succeed(tasks),
+      ),
     )
 
   const claim = (owner: string) =>
@@ -74,7 +103,12 @@ export const make = Effect.fn("SchedulerStore.make")(function* (workspace: strin
         if (leases.has(owner)) return
         yield* Effect.acquireRelease(
           io((signal) =>
-            Flock.acquire(file(owner), { dir: path.join(dir, ".locks"), timeoutMs: 0, signal, reclaimDeadOwner: true }),
+            Flock.acquire(path.join(dir, name(owner)), {
+              dir: path.join(dir, ".locks"),
+              timeoutMs: 0,
+              signal,
+              reclaimDeadOwner: true,
+            }),
           ),
           (lease) => Effect.promise(() => lease.release()),
         ).pipe(
@@ -95,13 +129,9 @@ export const make = Effect.fn("SchedulerStore.make")(function* (workspace: strin
       Effect.andThen(
         mutex.withPermit(
           Effect.gen(function* () {
-            const target = file(owner)
-            const current = yield* read(target)
-            if (current.some((task) => task.ownerSessionId !== owner))
-              return yield* new StorageError({
-                message: `Scheduler state has conflicting session ownership: ${target}`,
-              })
-            const tasks = update(current)
+            const nameOfFile = name(owner)
+            const target = path.join(dir, nameOfFile)
+            const tasks = update(yield* read(nameOfFile))
             yield* io(async () => {
               await mkdir(dir, { recursive: true, mode: 0o700 })
               const temporary = `${target}.${randomUUID()}.tmp`
@@ -127,30 +157,22 @@ export const make = Effect.fn("SchedulerStore.make")(function* (workspace: strin
       Effect.asVoid,
     )
 
-  const load = () =>
-    io(() =>
-      readdir(dir).catch((error: unknown) => {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return []
-        throw error
-      }),
+  const load = (owner?: string) => {
+    if (owner !== undefined) return read(name(owner))
+    return Effect.forEach(directories, (dir) =>
+      io(() =>
+        readdir(dir).catch((error: unknown) => {
+          if (missing(error)) return []
+          throw error
+        }),
+      ),
     ).pipe(
       Effect.flatMap((files) =>
-        Effect.forEach(
-          files.filter((name) => /^[a-f0-9]{64}\.json$/.test(name)),
-          (name) =>
-            read(path.join(dir, name)).pipe(
-              Effect.flatMap((tasks) =>
-                tasks.some((task) => path.basename(file(task.ownerSessionId)) !== name)
-                  ? Effect.fail(
-                      new StorageError({ message: `Scheduler state has conflicting session ownership: ${name}` }),
-                    )
-                  : Effect.succeed(tasks),
-              ),
-            ),
-        ),
+        Effect.forEach(new Set(files.flat().filter((name) => /^[a-f0-9]{64}\.json$/.test(name))), read),
       ),
       Effect.map((groups) => groups.flat()),
     )
+  }
 
   return {
     load,

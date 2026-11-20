@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import { desktopRendererOrigin } from "@apexo/core/desktop-origin"
 import { createServer } from "node:net"
 import { app } from "electron"
 import { checkHealth } from "../server"
@@ -35,7 +36,7 @@ export async function spawnWslSidecar(
     `export APEXO_SERVER_USERNAME=${shellEscape(username)}`,
     `export APEXO_SERVER_PASSWORD=${shellEscape(password)}`,
     'export XDG_STATE_HOME="$HOME/.local/state"',
-    `exec ${shellEscape(apexo)} --print-logs --log-level ${app.isPackaged ? "WARN" : "INFO"} serve --hostname 0.0.0.0 --port ${port}`,
+    `exec ${shellEscape(apexo)} --print-logs --log-level ${app.isPackaged ? "WARN" : "INFO"} serve --hostname 0.0.0.0 --port ${port} --cors ${shellEscape(desktopRendererOrigin)}`,
   ].join("\n")
   const child = spawn("wsl", wslArgs(["bash", "-se"], distro), {
     stdio: ["pipe", "pipe", "pipe"],

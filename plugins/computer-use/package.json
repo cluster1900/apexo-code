@@ -1,0 +1,10 @@
+{
+  "name": "apexo-computer-use",
+  "version": "0.1.4",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun script/build.mjs",
+    "test": "bun test test"
+  }
+}

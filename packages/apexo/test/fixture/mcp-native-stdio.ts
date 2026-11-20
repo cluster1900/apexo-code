@@ -16,7 +16,9 @@ if (process.env.MCP_NATIVE_MODE_FILE) {
 }
 if (process.env.MCP_NATIVE_HANG) await new Promise(() => {})
 if (process.env.MCP_NATIVE_DESCENDANT) {
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: process.env.MCP_NATIVE_DESCENDANT === "inherit" ? ["ignore", "inherit", "inherit"] : "ignore",
+  })
   record({ event: "descendant", child: child.pid })
 }
 const server = new Server({ name: "native-mcp-fixture", version: "1" }, { capabilities: { tools: {} } })

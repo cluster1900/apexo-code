@@ -20,6 +20,12 @@ export class Info extends Schema.Class<Info>("Location.Info")({
   }),
 }) {}
 
+export class Details extends Info.extend<Details>("Location.Details")({
+  aliases: optional(
+    Schema.Array(AbsolutePath).annotate({ description: "Verified spellings of the requested migrated worktree." }),
+  ),
+}) {}
+
 export function response<S extends Schema.Top>(data: S) {
   return Schema.Struct({ location: Info, data })
 }

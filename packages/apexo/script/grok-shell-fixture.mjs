@@ -24,7 +24,7 @@ if (process.argv[2] === "--desktop-worker") {
 
 export async function startShellFixture(kind, options = {}) {
   assert.ok(["cli", "desktop"].includes(kind))
-  const output = await mkdtemp(join(tmpdir(), `apexo-shell-${kind}-`))
+  const output = await mkdtemp(join(options.outputRoot ?? tmpdir(), `apexo-shell-${kind}-`))
   await mkdir(join(output, "workspace"))
   const directory = await realpath(join(output, "workspace"))
   // options.git: make the workspace a git repo with one commit and a second worktree (for /move flows).
@@ -265,7 +265,7 @@ export async function startShellFixture(kind, options = {}) {
           "packages/desktop/node_modules/electron/dist",
           (await readFile(join(repo, "packages/desktop/node_modules/electron/path.txt"), "utf8")).trim(),
         )
-      : "bun"
+      : (options.executable ?? "bun")
   const logs = []
   const launch = () => {
     const child = spawn(
@@ -273,8 +273,7 @@ export async function startShellFixture(kind, options = {}) {
       kind === "desktop"
         ? [script, "--desktop-worker"]
         : [
-            ...(options.bunArgs ?? []),
-            join(repo, "packages/apexo/src/index.ts"),
+            ...(options.executable ? [] : [...(options.bunArgs ?? []), join(repo, "packages/apexo/src/index.ts")]),
             "serve",
             "--hostname",
             "127.0.0.1",

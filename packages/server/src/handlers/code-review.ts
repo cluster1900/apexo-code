@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { SessionCodeReview } from "@apexo/core/session/code-review"
 import { SessionSchema } from "@apexo/core/session/schema"
+import { codeReviewInputFields } from "@apexo/protocol/groups/code-review"
 import {
   ConflictError,
   InvalidRequestError,
@@ -9,6 +10,10 @@ import {
   SessionNotFoundError,
 } from "@apexo/protocol/errors"
 import { Api } from "../api"
+
+export const CodeReviewCapabilitiesHandler = HttpApiBuilder.group(Api, "server.codeReviewCapabilities", (handlers) =>
+  handlers.handle("codeReview.capabilities", () => Effect.succeed({ inputFields: codeReviewInputFields })),
+)
 
 const boundary = <A, E>(sessionID: SessionSchema.ID, work: Effect.Effect<A, E>) =>
   work.pipe(

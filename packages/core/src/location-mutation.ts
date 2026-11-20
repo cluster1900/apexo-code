@@ -4,7 +4,9 @@ import { makeLocationNode } from "./effect/app-node"
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FSUtil } from "./fs-util"
+import { Global } from "./global"
 import { Location } from "./location"
+import { worktreeRelativePath } from "./app-directory"
 
 export const Kind = Schema.Literals(["file", "directory"])
 export type Kind = typeof Kind.Type
@@ -80,6 +82,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
+    const global = yield* Global.Service
     const location = yield* Location.Service
     const locationRoot = yield* fs.realPath(location.directory)
 
@@ -120,7 +123,7 @@ const layer = Layer.effect(
     const resolve = Effect.fn("LocationMutation.resolve")(function* (input: ResolveInput) {
       const relative = !path.isAbsolute(input.path)
       const absolute = path.resolve(location.directory, input.path)
-      const lexicallyInternal = FSUtil.contains(location.directory, absolute)
+      const lexicallyInternal = worktreeRelativePath(global.data, location.directory, absolute) !== undefined
       if (relative && !lexicallyInternal) return yield* new PathError({ path: input.path, reason: "relative_escape" })
 
       const resolved = yield* resolvePath(absolute)
@@ -158,5 +161,5 @@ export const locationLayer = layer
 export const node = makeLocationNode({
   service: Service,
   layer: layer.pipe(Layer.orDie),
-  deps: [FSUtil.node, Location.node],
+  deps: [FSUtil.node, Global.node, Location.node],
 })

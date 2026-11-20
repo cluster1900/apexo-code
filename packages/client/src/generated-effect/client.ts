@@ -1871,6 +1871,11 @@ const adaptGroup35 = (raw: RawClient["server.projectCopy"]) => ({
   refresh: Endpoint35_2(raw),
 })
 
+const Endpoint36_0 = (raw: RawClient["server.codeReviewCapabilities"]) => () =>
+  raw["codeReview.capabilities"]({}).pipe(Effect.mapError(mapClientError))
+
+const adaptGroup36 = (raw: RawClient["server.codeReviewCapabilities"]) => ({ capabilities: Endpoint36_0(raw) })
+
 const adaptClient = (raw: RawClient) => ({
   health: adaptGroup0(raw["server.health"]),
   "server.project": adaptGroup1(raw["server.project"]),
@@ -1908,6 +1913,7 @@ const adaptClient = (raw: RawClient) => ({
   questions: adaptGroup33(raw["server.question"]),
   references: adaptGroup34(raw["server.reference"]),
   projectCopies: adaptGroup35(raw["server.projectCopy"]),
+  "server.codeReviewCapabilities": adaptGroup36(raw["server.codeReviewCapabilities"]),
 })
 
 export const make = (options?: { readonly baseUrl?: URL | string }) =>

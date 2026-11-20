@@ -1,3 +1,8 @@
+import { mkdir, unlink } from "node:fs/promises"
+import path from "node:path"
+import { Global } from "@apexo/core/global"
+import { McpPreferences } from "@apexo/core/mcp-preferences"
+import { AbsolutePath } from "@apexo/schema/schema"
 import { describe, expect } from "bun:test"
 import { Context, Effect, Layer } from "effect"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
@@ -56,6 +61,47 @@ const readResponse = Effect.fnUntraced(function* (input: { app: TestApp; path: s
 })
 
 describe("mcp HttpApi", () => {
+  it.instance(
+    "reports unreadable MCP choices without starting the configured process",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const preference = McpPreferences.file({ directory: AbsolutePath.make(tmp.directory) }, Global.Path.data)
+        yield* Effect.acquireRelease(
+          Effect.promise(async () => {
+            await mkdir(path.dirname(preference), { recursive: true })
+            await Bun.write(preference, "malformed")
+          }),
+          () => Effect.promise(() => unlink(preference)),
+        )
+        const handler = HttpApiApp.webHandler()
+        const response = yield* request(handler, McpPaths.status, tmp.directory)
+        expect(response.status).toBe(200)
+        expect(yield* json(response)).toEqual({
+          demo: { status: "failed", error: "Saved MCP connection choices are invalid" },
+        })
+
+        const connect = yield* request(handler, "/mcp/demo/connect", tmp.directory, { method: "POST" })
+        expect(connect.status).toBe(503)
+        expect(yield* json(connect)).toEqual({
+          _tag: "ServiceUnavailableError",
+          service: "mcp",
+          message: "Saved MCP connection choices are invalid",
+        })
+        expect(yield* Effect.promise(() => Bun.file(path.join(tmp.directory, "process-started")).exists())).toBe(false)
+      }),
+    {
+      config: {
+        mcp: {
+          demo: {
+            type: "local",
+            command: [process.execPath, "-e", 'await Bun.write("process-started", "yes")'],
+          },
+        },
+      },
+    },
+  )
+
   it.instance(
     "serves status endpoint",
     () =>

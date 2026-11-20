@@ -124,7 +124,8 @@ export async function discover(
     systemDir ?? process.env.GROK_SYSTEM_CONFIG_DIR ?? (home === defaultHome ? "/etc/grok" : path.join(home, "system"))
   const diagnostics: string[] = []
   const workspace = await realpath(directory)
-  const legacy = await HookProjectTrust.legacy(home, workspace, repository?.proof.root)
+  const data = repository?.data ?? Global.Path.data
+  const legacy = await HookProjectTrust.legacy(data, home, workspace, repository?.proof.root)
   const saved = repository ? await HookProjectTrust.decision(repository.data, repository.proof) : undefined
   const denied = saved?.trusted === false || legacy.denied
   const exactTrusted = !denied && legacy.exact
@@ -133,7 +134,7 @@ export async function discover(
   const authority = {
     workspace,
     home,
-    data: repository?.data ?? Global.Path.data,
+    data,
     directoryIdentity: await HookProjectTrust.directoryIdentity(workspace),
     ...(repository ? { repository: repository.proof } : {}),
     ...(saved ? { revision: saved.revision } : {}),

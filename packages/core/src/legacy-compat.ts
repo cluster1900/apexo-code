@@ -1,8 +1,7 @@
 // Compatibility with existing OpenCode installs (Apexo is derived from OpenCode).
 //
 // Every place that still accepts the old "opencode" names reads them from this module, so
-// files and settings already on users' machines keep working after the rename. New code and
-// new files always use the Apexo names; these are read-only fallbacks.
+// files and settings already on users' machines keep working after the rename.
 export const LEGACY_NAME = "opencode"
 
 // ~/.config/opencode, ~/.local/share/opencode, ~/.cache/opencode, ~/.local/state/opencode

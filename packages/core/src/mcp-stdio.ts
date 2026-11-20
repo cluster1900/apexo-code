@@ -22,10 +22,13 @@ export function make(input: { command: string[]; cwd: string; environment?: Reco
           windowsHide: true,
         })
         state.process = child
+        // An abruptly exited MCP process can leave descendants holding its pipes
+        // open. Retire the group on exit and publish onclose only after cleanup.
+        child.once("exit", retire)
         state.closed = new Promise<void>((done) =>
           child.once("close", () => {
-            transport.onclose?.()
             done()
+            retire()
           }),
         )
         child.once("spawn", resolve)
@@ -33,6 +36,13 @@ export function make(input: { command: string[]; cwd: string; environment?: Reco
           transport.onerror?.(error)
           reject(error)
         })
+        for (const pipe of [child.stdin, child.stdout, child.stderr]) {
+          pipe?.on("error", (error) => {
+            if (state.closing) return
+            transport.onerror?.(error)
+            retire()
+          })
+        }
         // Drain stderr without exposing server-provided secrets or filling its pipe.
         child.stderr?.resume()
         child.stdout?.on("data", (chunk: Buffer) => {
@@ -43,11 +53,7 @@ export function make(input: { command: string[]; cwd: string; environment?: Reco
             }
           } catch (error) {
             transport.onerror?.(error instanceof Error ? error : new Error("Invalid MCP message"))
-            void transport
-              .close()
-              .catch((error: unknown) =>
-                transport.onerror?.(error instanceof Error ? error : new Error("MCP cleanup failed")),
-              )
+            retire()
           }
         })
       }),
@@ -60,39 +66,50 @@ export function make(input: { command: string[]; cwd: string; environment?: Reco
       (state.closing ??= (async () => {
         const child = state.process
         if (!child) return
-        child.stdin?.end()
-        await Promise.race([state.closed, new Promise<void>((resolve) => setTimeout(resolve, 100))])
-        if (child.pid && process.platform === "win32") {
-          await new Promise<void>((resolve) =>
-            execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => resolve()),
-          )
-        }
-        if (child.pid && process.platform !== "win32") {
-          // The group can outlive its leader; kill it even if the direct child exited.
-          for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-            try {
-              process.kill(-child.pid, signal)
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw new Error("MCP process cleanup failed")
-            }
-            if (signal === "SIGTERM")
-              await Promise.race([state.closed, new Promise<void>((resolve) => setTimeout(resolve, 100))])
+        try {
+          child.stdin?.end()
+          await Promise.race([state.closed, new Promise<void>((resolve) => setTimeout(resolve, 100))])
+          if (child.pid && process.platform === "win32") {
+            await new Promise<void>((resolve) =>
+              execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => resolve()),
+            )
           }
+          if (child.pid && process.platform !== "win32") {
+            // The group can outlive its leader; kill it even if the direct child exited.
+            for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+              try {
+                process.kill(-child.pid, signal)
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw new Error("MCP process cleanup failed")
+              }
+              if (signal === "SIGTERM")
+                await Promise.race([state.closed, new Promise<void>((resolve) => setTimeout(resolve, 100))])
+            }
+          }
+          if (state.closed)
+            await new Promise<void>((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error("MCP child did not close after forced shutdown")), 2_000)
+              state.closed!.then(() => {
+                clearTimeout(timer)
+                resolve()
+              }, reject)
+            })
+        } finally {
+          child.stdout?.destroy()
+          child.stderr?.destroy()
+          buffer.clear()
+          transport.onclose?.()
         }
-        if (state.closed)
-          await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error("MCP child did not close after forced shutdown")), 2_000)
-            state.closed!.then(() => {
-              clearTimeout(timer)
-              resolve()
-            }, reject)
-          })
-        child.stdout?.destroy()
-        child.stderr?.destroy()
-        buffer.clear()
       })()),
   }
   return transport
+
+  function retire() {
+    if (state.closing) return
+    void transport
+      .close()
+      .catch((error: unknown) => transport.onerror?.(error instanceof Error ? error : new Error("MCP cleanup failed")))
+  }
 }
 
 /** Bound each wire frame, including a partial frame following a complete one. */

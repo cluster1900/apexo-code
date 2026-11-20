@@ -26,7 +26,7 @@
   var css = localStorage.getItem("apexo-theme-css-" + mode)
   if (css) {
     var style = document.createElement("style")
-    style.id = "oc-theme-preload"
+    style.id = "apexo-theme-preload"
     style.textContent =
       ":root{color-scheme:" +
       mode +

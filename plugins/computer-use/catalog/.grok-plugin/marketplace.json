@@ -1,0 +1,21 @@
+{
+  "name": "Apexo Skills Catalog",
+  "plugins": [
+    {
+      "name": "computer-use",
+      "version": "0.1.4",
+      "description": "Operate local macOS apps and capture screenshots through Apexo's local MCP server. Requires macOS 13 or later.",
+      "category": "productivity",
+      "author": {
+        "name": "Apexo"
+      },
+      "homepage": "https://github.com/cluster1900/apexo-skills/tree/main/plugins/computer-use",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/cluster1900/apexo-skills.git",
+        "sha": "7fc8fb70aff5e0cabdbe1666b52bdfe17e82180b",
+        "path": "computer-use"
+      }
+    }
+  ]
+}

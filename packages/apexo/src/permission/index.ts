@@ -13,6 +13,8 @@ import { Database } from "@apexo/core/database/database"
 import { SessionTable } from "@apexo/core/session/sql"
 import { eq } from "drizzle-orm"
 import { BashApproval } from "@apexo/core/tool/bash-approval"
+import { Global } from "@apexo/core/global"
+import { permissionResourcePaths } from "@apexo/core/permission/resource-paths"
 
 const offeredChoice = BashApproval.offered
 
@@ -41,13 +43,14 @@ interface State {
 
 export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
   const canonical = PermissionV1.canonicalPermission(permission)
+  const patterns = permissionResourcePaths(Global.Path.data, canonical, pattern)
   return (
     rulesets
       .flat()
       .findLast(
         (rule) =>
           Wildcard.match(canonical, PermissionV1.canonicalPermission(rule.permission)) &&
-          Wildcard.match(pattern, rule.pattern),
+          patterns.some((pattern) => Wildcard.match(pattern, rule.pattern)),
       ) ?? {
       action: "ask",
       permission: canonical,

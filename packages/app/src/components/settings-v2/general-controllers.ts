@@ -1,8 +1,11 @@
 import { createMemo, createResource, onMount, type Accessor } from "solid-js"
 import type { ColorScheme } from "@apexo/ui/theme/context"
 import { useTheme } from "@apexo/ui/theme/context"
+import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
+import { ServerConnection } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import {
@@ -23,29 +26,46 @@ import { createSoundPreviewController, type ShellOption } from "./general-contro
 export { createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
 export type { ShellOption, ShellSelectOption } from "./general-controller-behavior"
 
-export function createPermissionScopeController(sessionID: Accessor<string | undefined>) {
+export function createPermissionScopeController() {
+  const global = useGlobal()
+  const layout = useLayout()
   const permission = usePermission()
-  const serverSync = useServerSync()
-  const directory = createMemo(() => {
-    const id = sessionID()
-    if (!id) return undefined
-    return serverSync().session.lineage.peek(id)?.session.directory
+  const scope = createMemo(() => {
+    const route = layout.route()
+    const target = route.type === "home" ? layout.home.selection().server : route.server
+    if (!target) return
+    const connection = global.servers.list().find((item) => ServerConnection.key(item) === target)
+    if (!connection) return
+
+    const sessionID = route.type === "session" ? route.sessionId : undefined
+    const directory =
+      route.type === "home"
+        ? layout.home.selection().directory
+        : route.type === "session"
+          ? global.ensureServerCtx(connection).sync.session.get(route.sessionId)?.directory
+          : route.dir
+    if (directory) return { state: permission.ensureServerState(target), directory, sessionID }
   })
 
   return {
     accepting: createMemo(() => {
-      const id = sessionID()
-      const dir = directory()
-      if (!id || !dir) return false
-      return permission.isAutoAccepting(id, dir)
+      const current = scope()
+      if (!current) return false
+      return current.sessionID
+        ? current.state.isAutoAccepting(current.sessionID, current.directory)
+        : current.state.isAutoAcceptingDirectory(current.directory)
     }),
-    enabled: createMemo(() => !!directory()),
+    enabled: () => !!scope(),
     set: (checked: boolean) => {
-      const id = sessionID()
-      const dir = directory()
-      if (!id || !dir) return
-      if (checked) return permission.enableAutoAccept(id, dir)
-      permission.disableAutoAccept(id, dir)
+      const current = scope()
+      if (!current) return
+      if (current.sessionID) {
+        if (checked) return current.state.enableAutoAccept(current.sessionID, current.directory)
+        return current.state.disableAutoAccept(current.sessionID, current.directory)
+      }
+      if (current.state.isAutoAcceptingDirectory(current.directory) !== checked) {
+        current.state.toggleAutoAcceptDirectory(current.directory)
+      }
     },
   }
 }

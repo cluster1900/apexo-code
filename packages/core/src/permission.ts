@@ -21,6 +21,8 @@ import { PermissionSaved } from "./permission/saved"
 import { BashApproval } from "./tool/bash-approval"
 import { HookObserver } from "./hook-observer"
 import { PermissionV1 } from "./v1/permission"
+import { Global } from "./global"
+import { permissionResourcePaths } from "./permission/resource-paths"
 
 export { Effect, Rule, Ruleset } from "@apexo/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
@@ -87,14 +89,17 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Per
 export type Error = BlockedError | CorrectedError
 
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
-  const canonical = PermissionV1.canonicalPermission(action)
+  return evaluateResources(PermissionV1.canonicalPermission(action), [resource], rulesets)
+}
+
+function evaluateResources(canonical: string, resources: string[], rulesets: Permission.Ruleset[]): Permission.Rule {
   return (
     rulesets
       .flat()
       .findLast(
         (rule) =>
           Wildcard.match(canonical, PermissionV1.canonicalPermission(rule.action)) &&
-          Wildcard.match(resource, rule.resource),
+          resources.some((resource) => Wildcard.match(resource, rule.resource)),
       ) ?? {
       action: canonical,
       resource: "*",
@@ -183,6 +188,7 @@ const layer = Layer.effect(
   Service,
   EffectRuntime.gen(function* () {
     const hookSnapshots = yield* SessionHookSnapshot.Service
+    const global = yield* Global.Service
     const events = yield* EventV2.Service
     const location = yield* Location.Service
     const agents = yield* AgentV2.Service
@@ -194,6 +200,11 @@ const layer = Layer.effect(
     const database = yield* Database.Service
     const pending = new Map<ID, Pending>()
     const scope = yield* Scope.Scope
+
+    function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]) {
+      const canonical = PermissionV1.canonicalPermission(action)
+      return evaluateResources(canonical, permissionResourcePaths(global.data, canonical, resource), rulesets)
+    }
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
@@ -765,6 +776,7 @@ export const node = makeLocationNode({
     SessionHookSnapshot.node,
     EventV2.node,
     Location.node,
+    Global.node,
     AgentV2.node,
     SessionStore.node,
     PermissionSaved.node,

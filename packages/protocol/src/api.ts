@@ -19,7 +19,7 @@ import { LspGroup } from "./groups/lsp"
 import { SandboxGroup } from "./groups/sandbox"
 import { WorkflowGroup } from "./groups/workflow"
 import { SideQuestionGroup } from "./groups/side-question"
-import { CodeReviewGroup } from "./groups/code-review"
+import { CodeReviewCapabilitiesGroup, CodeReviewGroup } from "./groups/code-review"
 import { McpElicitationGroup } from "./groups/mcp-elicitation"
 import { makeSessionGroup } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
@@ -89,6 +89,7 @@ const makeApiFromGroup = <
     .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
     .add(ProjectCopyGroup.middleware(locationMiddleware))
+    .add(CodeReviewCapabilitiesGroup)
     .annotateMerge(
       OpenApi.annotations({
         title: "apexo HttpApi",

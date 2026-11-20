@@ -1,11 +1,15 @@
 import path from "node:path"
+import { mkdir, realpath } from "node:fs/promises"
 import { Flock } from "@apexo/core/util/flock"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { McpOAuthStore } from "@apexo/core/mcp-oauth-store"
 import { Schema } from "effect"
 import { Mcp } from "@apexo/schema/mcp"
 import { test, expect } from "bun:test"
 import { createConnection } from "node:net"
 import { McpOAuth } from "@apexo/core/mcp-oauth"
+import { AbsolutePath } from "@apexo/schema/schema"
+import { WorkspaceID } from "@apexo/schema/workspace-id"
 const wait = async (check: () => boolean | Promise<boolean>) => {
   const until = Date.now() + 5000
   while (Date.now() < until) {
@@ -118,6 +122,66 @@ test("passive reuse and serialized refresh do not initiate consent or registrati
     await f.close()
   }
 })
+
+test("migrated worktree aliases reuse OAuth consent and serialize token rotation", async () => {
+  const f = await setup()
+  const base = await realpath(f.root)
+  const previousData = path.join(base, "opencode")
+  const currentData = path.join(base, "apexo")
+  const previous = { directory: AbsolutePath.make(path.join(previousData, "worktree", "checkout")) }
+  const current = { directory: AbsolutePath.make(path.join(currentData, "worktree", "checkout")) }
+  const managers: ReturnType<typeof McpOAuth.make>[] = []
+  const open = (location: Parameters<typeof McpOAuth.make>[0]["location"], data: string) => {
+    const manager = McpOAuth.make({
+      location,
+      data,
+      definition: () => f.definition,
+      notify: () => {},
+      publish: async () => "connected",
+    })
+    managers.push(manager)
+    return manager
+  }
+  try {
+    await mkdir(previous.directory, { recursive: true })
+    const original = open(previous, previousData)
+    const start = await original.start("reference", new AbortController().signal)
+    await fetch(start.authorizationUrl)
+    await wait(() => original.status("reference", f.definition).flow?.phase === "connected")
+    await original.close()
+    await migrateAppDirectory(base, "apexo", "opencode")
+    expect(await realpath(previous.directory)).toBe(await realpath(current.directory))
+
+    const aliases = [open(previous, previousData), open(current, currentData)]
+    for (const manager of aliases) {
+      await manager.observe("reference", f.definition)
+      expect(manager.status("reference", f.definition).credentials).toBe("available")
+    }
+    f.state.reject = true
+    const responses = await Promise.all(
+      aliases.map((manager) =>
+        manager.fetchFor("reference", f.definition, () => true)(f.definition.url, { method: "POST", body: "{}" }),
+      ),
+    )
+    expect(responses.map((response) => response.status)).toEqual([200, 200])
+    await Promise.all(responses.map((response) => response.body?.cancel()))
+    expect(f.state.refresh).toBe(1)
+    expect(f.state.authorize).toBe(1)
+    const canonical = await McpOAuthStore.make(currentData).read(McpOAuth.identity(current, "reference", f.definition))
+    expect(canonical.credentials?.refreshToken).toBe("refresh-1")
+
+    const unrelated = open({ ...current, workspaceID: WorkspaceID.create() }, currentData)
+    await unrelated.observe("reference", f.definition)
+    expect(unrelated.status("reference", f.definition).credentials).toBe("missing")
+    const changed = { ...f.definition, oauth: { client_id: "another-client" } }
+    await aliases[1].observe("reference", changed)
+    expect(aliases[1].status("reference", changed).credentials).toBe("missing")
+  } finally {
+    await Promise.all(managers.map((manager) => manager.close()))
+    await f.close()
+  }
+})
+
 test("known refresh rotation survives retired runtime and never reactivates it", async () => {
   const f = await setup()
   try {

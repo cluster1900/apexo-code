@@ -4,6 +4,8 @@ import { createHash, randomUUID } from "node:crypto"
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises"
 import path from "node:path"
 import { Effect, Exit, Schema } from "effect"
+import { AbsolutePath } from "@apexo/schema/schema"
+import { migratedWorktreeAliases } from "./app-directory"
 import type { Location } from "./location"
 import { Flock } from "./util/flock"
 
@@ -16,6 +18,7 @@ const Document = Schema.fromJsonString(
     version: Schema.Literal(1),
     revision: Schema.String.check(Schema.isMinLength(1)),
     location: Schema.String,
+    aliasesReconciled: Schema.optionalKey(Schema.Literal(true)),
     servers: Schema.Array(Entry).check(Schema.isMaxLength(10000)),
   }),
 )
@@ -28,6 +31,7 @@ export class Failure extends Schema.TaggedErrorClass<Failure>()("McpPreferences.
 type Snapshot = {
   raw?: string
   revision?: string
+  aliasesReconciled?: true
   values: Map<string, boolean>
 }
 const missing = (error: unknown) =>
@@ -36,73 +40,26 @@ export const key = (location: Location.Ref) =>
   createHash("sha256")
     .update(JSON.stringify([path.resolve(location.directory), location.workspaceID ?? null]))
     .digest("hex")
-export const file = (location: Location.Ref, data: string) =>
-  path.join(data, "mcp-preferences", `${key(location)}.json`)
+export const file = (location: Location.Ref, data: string) => preferenceFiles(location, data).target
 
 /** Pure user preferences: definitions, credentials, and shared project files never enter this store. */
 export function make(location: Location.Ref, data: string) {
-  const target = file(location, data)
-  const directory = path.dirname(target)
-  const identity = key(location)
-  const read = Effect.tryPromise({
-    try: async () => {
-      const info = await stat(target).catch((error) => {
-        if (missing(error)) return undefined
-        throw error
-      })
-      if (!info) return undefined
-      if (!info.isFile() || info.size > MAX_BYTES)
-        throw new Failure({
-          kind: "invalid",
-          message: "Saved MCP connection choices are invalid",
-        })
-      const raw = await readFile(target, "utf8")
-      if (Buffer.byteLength(raw) > MAX_BYTES)
-        throw new Failure({
-          kind: "invalid",
-          message: "Saved MCP connection choices exceed their limit",
-        })
-      return raw
-    },
-    catch: (error) =>
-      error instanceof Failure
-        ? error
-        : new Failure({
-            kind: "read",
-            message: "Could not read saved MCP connection choices",
-          }),
-  }).pipe(
-    Effect.flatMap((raw) => {
-      if (raw === undefined)
-        return Effect.succeed({
-          values: new Map<string, boolean>(),
-        } as Snapshot)
-      return Schema.decodeUnknownEffect(Document)(raw).pipe(
-        Effect.mapError(
-          () =>
-            new Failure({
-              kind: "invalid",
-              message: "Saved MCP connection choices are invalid",
-            }),
-        ),
-        Effect.flatMap((value) => {
-          const values = new Map(value.servers.map((entry) => [entry.server, entry.enabled]))
-          if (value.location !== identity || values.size !== value.servers.length)
-            return Effect.fail(
-              new Failure({
-                kind: "invalid",
-                message: "Saved MCP connection choices have conflicting ownership or identifiers",
-              }),
-            )
-          return Effect.succeed({
-            raw,
-            revision: value.revision,
-            values,
-          } as Snapshot)
-        }),
-      )
-    }),
-  )
+  const { target, directory, identity, alternates } = preferenceFiles(location, data)
+  const readPrimary = readDocument(target, identity)
+  const read = Effect.gen(function* () {
+    const primary = yield* readPrimary
+    if (primary.aliasesReconciled || !alternates.length) return primary
+    const values = new Map(primary.values)
+    for (const alternate of alternates) {
+      const previous = yield* readDocument(path.join(directory, `${alternate}.json`), alternate)
+      for (const [server, enabled] of previous.values) {
+        // Older builds could save conflicting choices under both spellings. Keep a saved disable
+        // until the user explicitly changes or resets the reconciled preferences.
+        if (!enabled || !values.has(server)) values.set(server, enabled)
+      }
+    }
+    return { ...primary, values }
+  })
   const write = (raw: string | undefined) =>
     Effect.tryPromise({
       try: async () => {
@@ -196,6 +153,7 @@ export function make(location: Location.Ref, data: string) {
           version: 1,
           revision,
           location: identity,
+          ...(previous.aliasesReconciled || alternates.length ? { aliasesReconciled: true } : {}),
           servers: [...values]
             .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
             .map(([server, enabled]) => ({ server, enabled })),
@@ -219,7 +177,7 @@ export function make(location: Location.Ref, data: string) {
           Effect.gen(function* () {
             const result = yield* write(raw).pipe(Effect.andThen(commit(values)), Effect.exit)
             if (Exit.isSuccess(result)) return values
-            const observed = yield* read.pipe(
+            const observed = yield* readPrimary.pipe(
               Effect.mapError(
                 () =>
                   new Failure({
@@ -253,4 +211,78 @@ export function make(location: Location.Ref, data: string) {
     inspect,
     change,
   }
+}
+
+function preferenceFiles(location: Location.Ref, data: string) {
+  const aliases = migratedWorktreeAliases(data, path.resolve(location.directory))
+  const directory = path.join(aliases?.data ?? data, "mcp-preferences")
+  const identity = aliases ? key({ ...location, directory: AbsolutePath.make(aliases.directory) }) : key(location)
+  const alternates =
+    aliases?.paths
+      .map((directory) => key({ ...location, directory: AbsolutePath.make(directory) }))
+      .filter((identityOfAlias) => identityOfAlias !== identity) ?? []
+  return { target: path.join(directory, `${identity}.json`), directory, identity, alternates }
+}
+
+function readDocument(target: string, identity: string) {
+  return Effect.tryPromise({
+    try: async () => {
+      const info = await stat(target).catch((error) => {
+        if (missing(error)) return undefined
+        throw error
+      })
+      if (!info) return undefined
+      if (!info.isFile() || info.size > MAX_BYTES)
+        throw new Failure({
+          kind: "invalid",
+          message: "Saved MCP connection choices are invalid",
+        })
+      const raw = await readFile(target, "utf8")
+      if (Buffer.byteLength(raw) > MAX_BYTES)
+        throw new Failure({
+          kind: "invalid",
+          message: "Saved MCP connection choices exceed their limit",
+        })
+      return raw
+    },
+    catch: (error) =>
+      error instanceof Failure
+        ? error
+        : new Failure({
+            kind: "read",
+            message: "Could not read saved MCP connection choices",
+          }),
+  }).pipe(
+    Effect.flatMap((raw) => {
+      if (raw === undefined)
+        return Effect.succeed<Snapshot>({
+          values: new Map<string, boolean>(),
+        })
+      return Schema.decodeUnknownEffect(Document)(raw).pipe(
+        Effect.mapError(
+          () =>
+            new Failure({
+              kind: "invalid",
+              message: "Saved MCP connection choices are invalid",
+            }),
+        ),
+        Effect.flatMap((value) => {
+          const values = new Map(value.servers.map((entry) => [entry.server, entry.enabled]))
+          if (value.location !== identity || values.size !== value.servers.length)
+            return Effect.fail(
+              new Failure({
+                kind: "invalid",
+                message: "Saved MCP connection choices have conflicting ownership or identifiers",
+              }),
+            )
+          return Effect.succeed<Snapshot>({
+            raw,
+            revision: value.revision,
+            ...(value.aliasesReconciled ? { aliasesReconciled: true } : {}),
+            values,
+          })
+        }),
+      )
+    }),
+  )
 }

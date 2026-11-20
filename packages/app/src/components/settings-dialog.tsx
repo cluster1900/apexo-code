@@ -1,6 +1,5 @@
 import { usePluginsDialog } from "./plugins-dialog"
 import { useHelpDialog } from "./dialog-help-v2"
-import { useParams } from "@solidjs/router"
 import { onCleanup } from "solid-js"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -12,7 +11,6 @@ import { useTheme } from "@apexo/ui/theme/context"
 
 export function useSettingsDialog(defaultValue?: string) {
   const dialog = useDialog()
-  const params = useParams<{ id?: string }>()
   let run = 0
   let dead = false
 
@@ -22,10 +20,9 @@ export function useSettingsDialog(defaultValue?: string) {
 
   return () => {
     const current = ++run
-    const sessionID = params.id
     void import("@/components/settings-v2").then((module) => {
       if (dead || run !== current) return
-      void dialog.show(() => <module.DialogSettings sessionID={sessionID} defaultValue={defaultValue} />)
+      void dialog.show(() => <module.DialogSettings defaultValue={defaultValue} />)
     })
   }
 }

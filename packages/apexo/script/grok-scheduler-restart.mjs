@@ -1,9 +1,9 @@
-// bun script/grok-scheduler-restart.mjs cli|desktop
+// bun script/grok-scheduler-restart.mjs cli|desktop [--migrate-worktree]
 // Real process restarts; the local model fixture drives production scheduler tools.
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { spawn } from "node:child_process"
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -38,9 +38,34 @@ if (process.argv[2] === "--desktop-worker") {
 async function main() {
   const kind = process.argv[2] ?? "cli"
   assert.ok(["cli", "desktop"].includes(kind))
+  const migrate = process.argv.includes("--migrate-worktree")
   const output = await mkdtemp(join(tmpdir(), `apexo-scheduler-restart-${kind}-`))
-  const directory = join(output, "workspace")
-  await mkdir(directory)
+  const directory = migrate ? join(output, "data/opencode/worktree/checkout") : join(output, "workspace")
+  const migratedDirectory = join(output, "data/apexo/worktree/checkout")
+  await mkdir(migrate ? dirname(directory) : directory, { recursive: true })
+  if (migrate) {
+    const repository = join(output, "repository")
+    await mkdir(repository)
+    const git = (...args) => {
+      const result = Bun.spawnSync(
+        [
+          "git",
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          ...args,
+        ],
+        { cwd: repository },
+      )
+      assert.equal(result.exitCode, 0, result.stderr.toString())
+    }
+    git("init")
+    git("commit", "--allow-empty", "-m", "fixture")
+    git("worktree", "add", "--detach", directory, "HEAD")
+  }
   const calls = []
   const state = { taskID: "", fires: 0, wakes: 0 }
   const fixture = createServer(async (request, response) => {
@@ -55,26 +80,24 @@ async function main() {
       .slice(lastUser + 1)
       .some((item) => item.role === "tool" || item.type === "function_call_output")
     const ancillary = !body.tools?.length
-    const wake = !ancillary && text.includes("Scheduled task completed:")
-    const child = !ancillary && !wake && text.includes("RESTART_CHILD")
+    // The model may receive a synthetic wake and the next user instruction together.
+    const instruction = Array.from(text.matchAll(/RESTART_(CREATE|LIST)/g)).at(-1)?.[1]
+    const wake = !ancillary && !instruction && text.includes("Scheduled task completed:")
+    const child = !ancillary && !instruction && !wake && text.includes("RESTART_CHILD")
     const action =
       !ancillary && !child && !wake && !finished
-        ? text.includes("RESTART_CREATE")
+        ? instruction === "CREATE"
           ? "scheduler_create"
-          : text.includes("RESTART_LIST")
+          : instruction === "LIST"
             ? "scheduler_list"
-            : text.includes("RESTART_DELETE")
-              ? "scheduler_delete"
-              : undefined
+            : undefined
         : undefined
     if (child) state.fires++
     if (wake) state.wakes++
     const args =
       action === "scheduler_create"
         ? { interval: "1m", prompt: "RESTART_CHILD", durable: true, fire_immediately: false }
-        : action === "scheduler_delete"
-          ? { task_id: state.taskID }
-          : {}
+        : {}
     const content = child ? "RESTART_CHILD_OK" : wake ? "RESTART_WAKE_OK" : "RESTART_ACK"
     calls.push({ action, child, wake, ancillary })
     const id = `restart_${calls.length}`
@@ -163,9 +186,12 @@ async function main() {
   for (const name of ["DATA", "CACHE", "CONFIG", "STATE"]) env[`XDG_${name}_HOME`] = join(output, name.toLowerCase())
   Object.assign(env, {
     APEXO_RUNTIME_PROFILE: "grok-build",
-    APEXO_APP_DIR_NAME: "apexo",
+    APEXO_APP_DIR_NAME: migrate ? "opencode" : "apexo",
     APEXO_CLIENT: kind,
+    APEXO_PURE: "1",
+    APEXO_PRINT_LOGS: "1",
     APEXO_TEST_HOME: join(output, "home"),
+    GROK_HOME: join(output, ".grok"),
     APEXO_TEST_MANAGED_CONFIG_DIR: join(output, "managed"),
     APEXO_MODELS_PATH: join(output, "models.json"),
     APEXO_DISABLE_MODELS_FETCH: "1",
@@ -192,7 +218,7 @@ async function main() {
   await mkdir(env.APEXO_TEST_HOME)
   await writeFile(env.APEXO_MODELS_PATH, "{}")
   const processes = []
-  const start = async () => {
+  const start = async (workspace = directory) => {
     const desktop = kind === "desktop"
     // Kill the actual backend, not Electron's JS launcher (SIGKILL cannot be forwarded).
     const executable = desktop
@@ -234,7 +260,7 @@ async function main() {
     child.once("exit", (code) => ready.reject(new Error(`Backend exited ${code}: ${Buffer.concat(logs)}`)))
     const address = await deadline(ready.promise, 30_000, "backend readiness")
     const api = async (endpoint, body, method = body ? "POST" : "GET") => {
-      const url = `${endpoint}?directory=${encodeURIComponent(directory)}`
+      const url = `${endpoint}?directory=${encodeURIComponent(workspace)}`
       if (!desktop) {
         const response = await fetch(`${address}${url}`, {
           method,
@@ -242,6 +268,7 @@ async function main() {
           signal: AbortSignal.timeout(30_000),
         })
         const text = await response.text()
+        if (!response.ok) await writeFile(join(output, "failed-process.log"), Buffer.concat(logs))
         assert.ok(response.ok, text)
         return text ? JSON.parse(text) : undefined
       }
@@ -281,7 +308,9 @@ async function main() {
     const original = creation.state.metadata
     await writeFile(join(output, "created.json"), JSON.stringify(creation, null, 2))
     await first.stop("SIGKILL")
-    const second = await start()
+    if (migrate) delete env.APEXO_APP_DIR_NAME
+    const second = await start(migrate ? migratedDirectory : directory)
+    if (migrate) assert.equal(await realpath(directory), await realpath(migratedDirectory))
     await prompt(second, "RESTART_LIST")
     const resumed = await second.api(`/session/${session.id}/message`)
     const list = resumed
@@ -294,12 +323,14 @@ async function main() {
     while (!state.wakes && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 100))
     assert.equal(state.fires, 1, "Recovered schedule did not fire exactly once")
     assert.equal(state.wakes, 1, "Recovered schedule did not wake its parent exactly once")
-    await prompt(second, "RESTART_DELETE")
-    await prompt(second, "RESTART_LIST")
-    await writeFile(
-      join(output, "resumed.json"),
-      JSON.stringify(await second.api(`/session/${session.id}/message`), null, 2),
+    const cancelled = await second.api(
+      `/experimental/session/${session.id}/task/${state.taskID}/cancel`,
+      undefined,
+      "POST",
     )
+    assert.equal(cancelled.status, "cancelled")
+    const afterDelete = await second.api(`/session/${session.id}/message`)
+    await writeFile(join(output, "resumed.json"), JSON.stringify(afterDelete, null, 2))
     await second.stop()
     const third = await start()
     await prompt(third, "RESTART_LIST")
@@ -317,6 +348,7 @@ async function main() {
       JSON.stringify({
         result: "pass",
         kind,
+        migratedWorktree: migrate,
         output,
         processes: processes.length,
         fires: state.fires,

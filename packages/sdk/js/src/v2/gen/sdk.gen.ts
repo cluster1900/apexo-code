@@ -382,6 +382,8 @@ import type {
   V2AgentListResponses,
   V2CodeReviewCancelErrors,
   V2CodeReviewCancelResponses,
+  V2CodeReviewCapabilitiesErrors,
+  V2CodeReviewCapabilitiesResponses,
   V2CodeReviewDiffErrors,
   V2CodeReviewDiffResponses,
   V2CodeReviewGetErrors,
@@ -10289,6 +10291,14 @@ export class CodeReview extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  public capabilities<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2CodeReviewCapabilitiesResponses,
+      V2CodeReviewCapabilitiesErrors,
+      ThrowOnError
+    >({ url: "/api/review/capabilities", ...options })
   }
 }
 

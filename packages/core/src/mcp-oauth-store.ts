@@ -30,6 +30,7 @@ export type Snapshot = {
   readonly revision?: string
   readonly credentials?: Credentials
 }
+type Identity = string | readonly [string, ...string[]]
 export class Failure extends Error {
   constructor(readonly code: "storage" | "conflict") {
     super(
@@ -45,10 +46,11 @@ const missing = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
 export const key = (identity: string) => createHash("sha256").update(identity).digest("hex")
 export const file = (data: string, identity: string) => path.join(data, "mcp-oauth", `${key(identity)}.json`)
+const canonical = (identity: Identity) => (typeof identity === "string" ? identity : identity[0])
 
 /** Every write belongs to one locked identity; tokens never travel through public status. */
 export function make(data: string) {
-  const read = async (identity: string): Promise<Snapshot> => {
+  const readOne = async (identity: string): Promise<Snapshot> => {
     const handle = await open(file(data, identity), constants.O_RDONLY | constants.O_NOFOLLOW).catch(
       (error: unknown) => {
         if (missing(error)) return undefined
@@ -82,8 +84,16 @@ export function make(data: string) {
       })
       .finally(() => handle.close())
   }
+  const read = async (identity: Identity): Promise<Snapshot> => {
+    if (typeof identity === "string") return readOne(identity)
+    for (const candidate of identity) {
+      const snapshot = await readOne(candidate)
+      if (snapshot.revision) return snapshot
+    }
+    return {}
+  }
   const write = async (
-    identity: string,
+    identity: Identity,
     credentials: Credentials,
     active: () => boolean,
     revision: string | undefined,
@@ -92,13 +102,13 @@ export function make(data: string) {
     if (Option.isNone(checked)) throw new Failure("storage")
     const snapshot = {
       version: 1 as const,
-      identity: key(identity),
+      identity: key(canonical(identity)),
       revision: randomUUID(),
       credentials: checked.value,
     }
     const raw = Schema.encodeSync(Document)(snapshot)
     if (Buffer.byteLength(raw) > MAX_BYTES) throw new Failure("storage")
-    const target = file(data, identity)
+    const target = file(data, canonical(identity))
     await mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
     const temporary = `${target}.${randomUUID()}.tmp`
     const handle = await open(temporary, "wx", 0o600)
@@ -123,7 +133,7 @@ export function make(data: string) {
     return { revision: snapshot.revision, credentials: checked.value }
   }
   const transaction = async <A>(
-    identity: string,
+    identity: Identity,
     signal: AbortSignal,
     active: () => boolean,
     operation: (
@@ -133,7 +143,7 @@ export function make(data: string) {
   ) => {
     // Flock owns the acquisition abort race; finally joins release, including when
     // the signal becomes aborted immediately after acquisition wins.
-    const lease = await Flock.acquire(file(data, identity), {
+    const lease = await Flock.acquire(file(data, canonical(identity)), {
       dir: path.join(data, "mcp-oauth", ".locks"),
       signal,
       timeoutMs: 10000,

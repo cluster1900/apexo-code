@@ -188,6 +188,7 @@ export type LocationGetOutput = {
   readonly directory: string
   readonly workspaceID?: string
   readonly project: { readonly id: string; readonly directory: string }
+  readonly aliases?: ReadonlyArray<string>
 }
 
 export type AgentsListInput = {
@@ -8202,3 +8203,5 @@ export type ProjectCopiesRefreshInput = {
 }
 
 export type ProjectCopiesRefreshOutput = void
+
+export type ServerCodeReviewCapabilitiesCapabilitiesOutput = { readonly inputFields: ReadonlyArray<string> }

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+case "$(/usr/bin/uname -sm)" in
+  'Darwin arm64') arch=arm64 ;;
+  'Darwin x86_64') arch=x64 ;;
+  *) printf '%s\n' 'Computer Use requires macOS on Apple Silicon or Intel.' >&2
+     exit 1 ;;
+esac
+
+root=$(CDPATH='' cd -- "$(/usr/bin/dirname -- "$0")" && /bin/pwd -P)
+exec "$root/$arch/mcp"

@@ -5370,6 +5370,19 @@ export type ProjectCurrent = {
   directory: string
 }
 
+export type LocationDetails = {
+  directory: string
+  workspaceID?: string
+  project: {
+    id: string
+    directory: string
+  }
+  /**
+   * Verified spellings of the requested migrated worktree.
+   */
+  aliases?: Array<string>
+}
+
 export type LocationInfo = {
   directory: string
   workspaceID?: string
@@ -12826,6 +12839,10 @@ export type McpConnectErrors = {
    * McpServerNotFoundError
    */
   404: McpServerNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type McpConnectError = McpConnectErrors[keyof McpConnectErrors]
@@ -12860,6 +12877,10 @@ export type McpDisconnectErrors = {
    * McpServerNotFoundError
    */
   404: McpServerNotFoundError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
 }
 
 export type McpDisconnectError = McpDisconnectErrors[keyof McpDisconnectErrors]
@@ -15522,9 +15543,9 @@ export type V2LocationGetError = V2LocationGetErrors[keyof V2LocationGetErrors]
 
 export type V2LocationGetResponses = {
   /**
-   * Location.Info
+   * Location.Details
    */
-  200: LocationInfo
+  200: LocationDetails
 }
 
 export type V2LocationGetResponse = V2LocationGetResponses[keyof V2LocationGetResponses]
@@ -22271,6 +22292,38 @@ export type V2ProjectCopyRefreshResponses = {
 }
 
 export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
+
+export type V2CodeReviewCapabilitiesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/review/capabilities"
+}
+
+export type V2CodeReviewCapabilitiesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CodeReviewCapabilitiesError = V2CodeReviewCapabilitiesErrors[keyof V2CodeReviewCapabilitiesErrors]
+
+export type V2CodeReviewCapabilitiesResponses = {
+  /**
+   * Success
+   */
+  200: {
+    inputFields: Array<string>
+  }
+}
+
+export type V2CodeReviewCapabilitiesResponse =
+  V2CodeReviewCapabilitiesResponses[keyof V2CodeReviewCapabilitiesResponses]
 
 export type PtyConnectData = {
   body?: never

@@ -163,9 +163,8 @@ export async function read(root: string, namespace?: string, options?: { native?
   return { config, skills, hooks: await component(root, inspected.manifest.hooks, "hooks/hooks.json", "hooks") }
 }
 
-export async function configuration(store: string) {
-  const entries = await PluginStore.active(store)
-  const bundles = await Promise.all(entries.map((entry) => read(entry.root, entry.item.name)))
+export async function configuration(plugins: Awaited<ReturnType<typeof PluginStore.capture>>["plugins"]) {
+  const bundles = await Promise.all(plugins.map((plugin) => read(plugin.root, plugin.item.name, { data: plugin.data })))
   return bundles.reduce<ConfigV1.Info>(
     (out, bundle) => ({
       ...out,

@@ -7,6 +7,20 @@ import { ConflictError, InvalidRequestError, ServiceUnavailableError, SessionNot
 const root = "/api/session/:sessionID/review"
 const params = { sessionID: SessionID, reviewID: CodeReview.ID }
 const error = [ConflictError, InvalidRequestError, ServiceUnavailableError, SessionNotFoundError]
+
+export const CodeReviewCapabilities = Schema.Struct({ inputFields: Schema.Array(Schema.String) })
+export const codeReviewInputFields = Object.keys(CodeReview.Input.fields)
+export const CodeReviewCapabilitiesEndpoint = HttpApiEndpoint.get(
+  "codeReview.capabilities",
+  "/api/review/capabilities",
+  {
+    success: CodeReviewCapabilities,
+  },
+).annotateMerge(OpenApi.annotations({ identifier: "v2.codeReview.capabilities" }))
+export const CodeReviewCapabilitiesGroup = HttpApiGroup.make("server.codeReviewCapabilities").add(
+  CodeReviewCapabilitiesEndpoint,
+)
+
 export const CodeReviewGroup = HttpApiGroup.make("server.codeReview")
   .add(
     HttpApiEndpoint.post("codeReview.start", root, {

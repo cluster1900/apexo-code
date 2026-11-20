@@ -3,7 +3,7 @@
 import { V2_PRIMITIVES_DEFAULT } from "../src/theme/v2/default-primitives"
 import type { DesktopTheme } from "../src/theme/types"
 
-const themePath = import.meta.dir + "/../src/theme/themes/oc-2.json"
+const themePath = import.meta.dir + "/../src/theme/themes/apexo-v2.json"
 const theme = (await Bun.file(themePath).json()) as DesktopTheme
 const css = await Bun.file(import.meta.dir + "/../src/v2/styles/theme.css").text()
 
@@ -17,7 +17,7 @@ const next: DesktopTheme = {
 }
 
 await Bun.write(themePath, JSON.stringify(next, null, 2) + "\n")
-console.log("Updated oc-2.json v2Overrides", Object.keys(light).length, "tokens per mode")
+console.log("Updated apexo-v2.json v2Overrides", Object.keys(light).length, "tokens per mode")
 
 function readTokens(mode: "light" | "dark") {
   const selector = mode === "light" ? ":root" : `\\[data-color-scheme="${mode}"\\]`

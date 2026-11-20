@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
+import { $ } from "bun"
 import path from "node:path"
 import { mkdir, readFile, rename, rm, symlink } from "node:fs/promises"
+import { migrateAppDirectory } from "@apexo/core/app-directory"
 import { HookProjectTrust } from "@apexo/core/hook-project-trust"
 import { HostHooks } from "@apexo/core/hooks"
 import { HookDispatch } from "@apexo/core/hook-dispatch"
@@ -221,6 +223,47 @@ test("explicit repository denial fences legacy exact sources without rewriting t
   await grant(input, false)
   await expect(HookProjectTrust.authorize(source.projectAuthority!)).rejects.toThrow()
   expect(await readFile(target, "utf8")).toBe(legacy)
+})
+
+test("migrated worktree Hook decisions retain the original checkout identity", async () => {
+  await using tmp = await tmpdir({ git: true })
+  const base = path.join(tmp.path, "data")
+  const legacy = path.join(base, "opencode")
+  const data = path.join(base, "apexo")
+  const previous = path.join(legacy, "worktree", "copy")
+  const current = path.join(data, "worktree", "copy")
+  await mkdir(path.dirname(previous), { recursive: true })
+  await $`git worktree add --detach ${previous} HEAD`.cwd(tmp.path).quiet()
+  const proof = async (worktree: string) => {
+    const gitDirectory = (await $`git rev-parse --absolute-git-dir`.cwd(worktree).quiet()).text().trim()
+    const result = await HookProjectTrust.capture(
+      worktree,
+      tmp.path,
+      new Git.Repository({
+        worktree: AbsolutePath.make(worktree),
+        gitDirectory: AbsolutePath.make(gitDirectory),
+        commonDirectory: AbsolutePath.make(path.join(tmp.path, ".git")),
+      }),
+    )
+    if (!result) throw new Error("Fixture worktree was not captured")
+    return result
+  }
+
+  const original = await proof(previous)
+  await HookProjectTrust.change(legacy, original, {
+    ...(await HookProjectTrust.inspect(legacy, original)),
+    trusted: true,
+  })
+  await migrateAppDirectory(base, "apexo", "opencode")
+  const migrated = await proof(current)
+  expect(await proof(previous)).toEqual(migrated)
+  expect((await HookProjectTrust.inspect(data, migrated)).allowed).toBe(true)
+  await HookProjectTrust.change(data, migrated, { ...(await HookProjectTrust.inspect(data, migrated)), trusted: false })
+  expect((await HookProjectTrust.inspect(data, await proof(previous))).allowed).toBe(false)
+  await HookProjectTrust.change(data, migrated, { ...(await HookProjectTrust.inspect(data, migrated)), trusted: true })
+  await $`git worktree move ${current} ${path.join(data, "retired")}`.cwd(tmp.path).quiet()
+  await $`git worktree add --detach ${current} HEAD`.cwd(tmp.path).quiet()
+  expect((await HookProjectTrust.inspect(data, await proof(current))).allowed).toBe(false)
 })
 
 test("home and filesystem roots cannot become repository Hook grants", async () => {

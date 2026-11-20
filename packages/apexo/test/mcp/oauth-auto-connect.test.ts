@@ -248,6 +248,28 @@ mcpTest.instance("successful reauthentication commits replacement credentials", 
   }),
 )
 
+mcpTest.instance("a pending OAuth callback cannot reconnect an explicitly disconnected server", () =>
+  Effect.gen(function* () {
+    yield* stopOAuthCallback
+    const server = yield* serveOAuthMcp()
+    const mcp = yield* MCP.Service
+    const auth = yield* McpAuth.Service
+    const name = "test-oauth-disconnect"
+    yield* mcp.add(name, remote(server.url))
+    expect((yield* mcp.startAuth(name)).authorizationUrl).toContain("/authorize")
+    yield* mcp.disconnect(name)
+
+    expect(yield* mcp.finishAuth(name, "valid-code")).toEqual({ status: "disabled" })
+    expect((yield* mcp.status())[name]).toEqual({ status: "disabled" })
+    expect((yield* auth.get(name))?.tokens?.accessToken).toBe("replacement-token")
+    expect(server.listToolsCalls()).toBe(0)
+
+    yield* mcp.connect(name)
+    expect((yield* mcp.status())[name]).toEqual({ status: "connected" })
+    expect(server.listToolsCalls()).toBe(1)
+  }),
+)
+
 mcpTest.instance("auth status only reports credentials stored for the configured server URL", () =>
   Effect.gen(function* () {
     const mcp = yield* MCP.Service

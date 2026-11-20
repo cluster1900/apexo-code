@@ -26,7 +26,7 @@ function preflight(origin: string) {
 
 describe("native Server CORS", () => {
   test("Desktop and local browser preflights preserve origin and header cache keys", async () => {
-    for (const origin of ["oc://renderer", "http://localhost:3000"]) {
+    for (const origin of ["apexo://renderer", "oc://renderer", "http://localhost:3000"]) {
       const response = await app.handler(preflight(origin))
       expect(response.status).toBe(204)
       expect(response.headers.get("access-control-allow-origin")).toBe(origin)
@@ -44,30 +44,36 @@ describe("native Server CORS", () => {
 
   test("native responses are readable from the Desktop renderer", async () => {
     const response = await app.handler(
-      new Request("http://localhost/api/health", { headers: { origin: "oc://renderer" } }),
+      new Request("http://localhost/api/health", { headers: { origin: "apexo://renderer" } }),
     )
     expect(response.status).toBe(200)
-    expect(response.headers.get("access-control-allow-origin")).toBe("oc://renderer")
+    expect(response.headers.get("access-control-allow-origin")).toBe("apexo://renderer")
     expect(await response.json()).toEqual({ healthy: true })
   })
 
   test("untrusted origins receive no CORS access", async () => {
-    const response = await app.handler(preflight("https://untrusted.example"))
-    expect(response.headers.get("access-control-allow-origin")).toBeNull()
+    for (const origin of [
+      "https://untrusted.example",
+      "apexo://renderer.untrusted.example",
+      "oc://renderer.untrusted.example",
+    ]) {
+      const response = await app.handler(preflight(origin))
+      expect(response.headers.get("access-control-allow-origin")).toBeNull()
+    }
   })
 
   test("successful preflight does not authorize the subsequent mutation", async () => {
-    const response = await protectedApp.handler(preflight("oc://renderer"))
+    const response = await protectedApp.handler(preflight("apexo://renderer"))
     expect(response.status).toBe(204)
-    expect(response.headers.get("access-control-allow-origin")).toBe("oc://renderer")
+    expect(response.headers.get("access-control-allow-origin")).toBe("apexo://renderer")
     const mutation = await protectedApp.handler(
       new Request("http://localhost/api/session", {
         method: "POST",
-        headers: { origin: "oc://renderer", "content-type": "application/json" },
+        headers: { origin: "apexo://renderer", "content-type": "application/json" },
         body: "{}",
       }),
     )
     expect(mutation.status).toBe(401)
-    expect(mutation.headers.get("access-control-allow-origin")).toBe("oc://renderer")
+    expect(mutation.headers.get("access-control-allow-origin")).toBe("apexo://renderer")
   })
 })

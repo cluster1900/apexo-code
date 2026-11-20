@@ -23,7 +23,7 @@ import { SessionMessage } from "@apexo/core/session/message"
 import { SessionExecution } from "@apexo/core/session/execution"
 import { AbsolutePath } from "@apexo/schema/schema"
 import { tmpdirScoped } from "../fixture/fixture"
-import { pollWithTimeout, testEffect } from "../lib/effect"
+import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 
 const it = testEffect(AppNodeBuilder.build(CrossSpawnSpawner.node))
 const fixture = path.join(import.meta.dir, "../fixture/mcp-native-stdio.ts")
@@ -223,6 +223,53 @@ it.live("stdio shutdown waits for a forced child close", () =>
     expect(() => process.kill(pid, 0)).toThrow()
   }),
 )
+
+if (process.platform !== "win32")
+  it.live("abrupt stdio leader exit retires a live descendant without a client close request", () =>
+    Effect.gen(function* () {
+      const root = yield* tmpdirScoped()
+      const log = path.join(root, "trace")
+      const transport = McpStdio.make({
+        command: [process.execPath, fixture],
+        cwd: root,
+        environment: { MCP_NATIVE_TRACE: log, MCP_NATIVE_DESCENDANT: "inherit" },
+      })
+      const closed = Promise.withResolvers<void>()
+      transport.onclose = () => closed.resolve()
+      yield* Effect.acquireRelease(
+        Effect.promise(() => transport.start()),
+        () => Effect.promise(() => transport.close()),
+      )
+      const processTree = yield* pollWithTimeout(
+        trace(log).pipe(
+          Effect.map((rows) => {
+            const row = rows.find((entry) => entry.event === "descendant")
+            if (row?.child === undefined || !Number.isInteger(row.child) || row.child <= 0) return
+            return { pid: row.pid, child: row.child }
+          }),
+        ),
+        "MCP descendant started",
+      )
+      const child = processTree.child
+      expect(() => process.kill(child, 0)).not.toThrow()
+      yield* Effect.sync(() => process.kill(processTree.pid, "SIGKILL"))
+      yield* awaitWithTimeout(
+        Effect.promise(() => closed.promise),
+        "stdio transport reports close",
+      )
+      yield* pollWithTimeout(
+        Effect.sync(() => {
+          try {
+            process.kill(child, 0)
+            return undefined
+          } catch {
+            return true
+          }
+        }),
+        "orphaned process group is retired",
+      )
+    }),
+  )
 
 it.live(
   "installed MCP candidates retain working tools on failure and expose no private registrations",

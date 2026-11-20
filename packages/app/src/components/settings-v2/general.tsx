@@ -73,7 +73,9 @@ const PermissionScopeSetting: Component<{ controller: PermissionScopeController 
   return (
     <SettingsRowV2
       title={language.t("command.permissions.autoaccept.enable")}
-      description={language.t("toast.permissions.autoaccept.on.description")}
+      description={language.t(
+        props.controller.enabled() ? "toast.permissions.autoaccept.on.description" : "sidebar.empty.description",
+      )}
     >
       <div data-action="settings-auto-accept-permissions">
         <Switch
@@ -270,15 +272,13 @@ const LanguageSetting = () => {
   )
 }
 
-export const SettingsGeneralV2: Component<{
-  sessionID?: string
-}> = (props) => {
+export const SettingsGeneralV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const dialog = useDialog()
   const settings = useSettings()
   const mobile = createMediaQuery("(max-width: 767px)")
-  const permissionScope = createPermissionScopeController(() => props.sessionID)
+  const permissionScope = createPermissionScopeController()
   const shell = createShellSettingsController()
   const appearance = createAppearanceSettingsController()
   const sounds = createSoundSettingsController()

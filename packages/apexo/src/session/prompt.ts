@@ -65,6 +65,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@apexo/core/database/database"
+import { migratedWorktreePaths } from "@apexo/core/app-directory"
+import { Global } from "@apexo/core/global"
 import { ModelV2 } from "@apexo/core/model"
 import { ProviderV2 } from "@apexo/core/provider"
 import { eq } from "drizzle-orm"
@@ -284,12 +286,13 @@ const layer = Layer.effect(
     const scheduledState = yield* InstanceState.make((ctx) =>
       Effect.gen(function* () {
         if (flags.runtimeProfile !== "grok-build") return
+        const directories = migratedWorktreePaths(Global.Path.data, ctx.directory)
         const scheduler = yield* registry.scheduler()
         yield* scheduler
           .recover((schedule) =>
             Effect.gen(function* () {
               const parent = yield* sessions.get(SessionID.make(schedule.ownerSessionId)).pipe(Effect.option)
-              if (parent._tag === "None" || parent.value.directory !== ctx.directory || !schedule.resume) return
+              if (parent._tag === "None" || !directories.includes(parent.value.directory) || !schedule.resume) return
               return executeSchedule
             }),
           )
