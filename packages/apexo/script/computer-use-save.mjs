@@ -138,14 +138,7 @@ try {
     (data) => where(data) === document.folder && data,
     "selected nested fixture directory",
   )
-  await click(named(selected, "show less options"))
-
-  const compact = await observe(
-    sheet,
-    (data) => where(data) === document.folder && named(data, "show more options") && data,
-    "the selected location survives collapsing the dialog",
-  )
-  await invoke("desktop_set_value", { ref_id: named(compact, "Save As:").ref_id, value: document.name })
+  await invoke("desktop_set_value", { ref_id: named(selected, "Save As:").ref_id, value: document.name })
   const ready = await observe(
     sheet,
     (data) =>

@@ -139,6 +139,14 @@ The controlled CLI and Electron regressions each passed with 21 one-time approva
 
 The Electron backend also passed with the Git-pinned 0.1.3 bundle in 64.552 seconds and 22 approvals. The original window stayed visible during that run. An earlier Electron trial ended when the TextEdit process exited. The exit's cause remains unknown.
 
+### BUG-20261120-001: An extra Save-sheet disclosure action coincided with a default-name write
+
+- Scope covers the 0.1.3 live-model Save flow with Agent Desktop 1.3.1 on macOS arm64. The fixture had restored the original window after it went offscreen.
+- To reproduce the observed sequence, select the owned subfolder in TextEdit's expanded Save sheet and observe `Where` at that folder. Then invoke the observed **show less options** disclosure control. The tool reported `ACTION_FAILED` with uncertain delivery from `AXPress`, and the window became unavailable. A new RTF at the selected folder had the original `Untitled` name and the exact synthetic text. Its modification time fell during the disclosure call. The fixture had issued no approval for the final **Save** button.
+- The expected state is an open Save sheet until the operator approves a fresh **Save** ref with the exact filename and folder. The native cause of the unexpected write remains unknown. The captured sequence shows an unnecessary disclosure action and exposure to window visibility changes between observation and approval.
+- Computer Use 0.1.4 keeps the expanded layout after selection and uses the shallow sheet observation to set and verify the filename. The live fixture rejects mutation refs observed before its most recent window restoration. Readback requires one RTF with the intended name and exact text. Cleanup checks fixture contents before removing an unexpected default-name file.
+- The controlled CLI and Electron commands passed with 19 and 18 one-time approvals respectively. Two consecutive `xai/grok-4.7` CLI runs with the 0.1.4 bundle passed in 55.720 and 60.690 seconds with 22 and 21 one-time approvals. Both verified the one expected RTF and the original window's new title. A third run returned `APP_UNRESPONSIVE` and then lost the original window before the filename and Save actions. In an earlier 0.1.4 attempt, two pre-restoration clicks were rejected and both tool receipts recorded an error.
+
 ## BUG-20261119-016 — The packaged Desktop UI runner did not select the renderer
 
 - Scope covers the packaged macOS Desktop UI acceptance runner. Run `bun script/computer-use-ui.mjs desktop` with the rebuilt app and the catalog bundle. The browser-level CDP connection attempted `Target.createTarget` and received `Not supported` before it could interact with the existing window.

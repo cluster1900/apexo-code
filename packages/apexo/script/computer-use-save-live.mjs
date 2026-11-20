@@ -25,6 +25,7 @@ const desktopActions = new Map(
   ].map((action) => [toolName(`desktop_${action}`), action]),
 )
 const clean = (value) => String(value ?? "").replace(/\p{Cf}/gu, "")
+const mutations = new Set(["click", "scroll", "set_value"])
 
 export async function runLiveTextEditSave(fixture, run) {
   const { client, runtime } = fixture
@@ -33,7 +34,7 @@ export async function runLiveTextEditSave(fixture, run) {
   const executable = await desktopExecutable(fixture.bundle)
   const document = await prepareTextEditSave()
   const events = []
-  const reviewed = new Set()
+  const reviewed = new Map()
   const completed = new Set()
   const refs = new Map()
   const windows = () => {
@@ -100,7 +101,9 @@ export async function runLiveTextEditSave(fixture, run) {
             calls.set(`${message.id}/${part.id}`, part)
             const action = desktopActions.get(part.name)
             if (!action || completed.has(part.id) || !["completed", "error"].includes(part.state.status)) continue
-            assert.ok(reviewed.has(part.id), `Desktop action ${action} did not enter the released approval flow`)
+            const review = reviewed.get(part.id)
+            assert.ok(review, `Desktop action ${action} did not enter the released approval flow`)
+            if (review.reply === "reject") assert.equal(part.state.status, "error")
             completed.add(part.id)
             const result = toolReceipt(part)
             record({ stage: "tool", action, status: part.state.status, code: result?.error?.code })
@@ -133,7 +136,13 @@ export async function runLiveTextEditSave(fixture, run) {
                 record({ stage: "destination-confirmed" })
               }
               for (const ref of nodes)
-                refs.set(ref.node.ref_id ?? ref.node.ref, { ...ref, surface, location: clean(location), name })
+                refs.set(ref.node.ref_id ?? ref.node.ref, {
+                  ...ref,
+                  surface,
+                  location: clean(location),
+                  name,
+                  windowRestorations: review.windowRestorations,
+                })
             }
             if (action === "click") {
               const target = refs.get(input.ref_id)
@@ -156,7 +165,7 @@ export async function runLiveTextEditSave(fixture, run) {
           const ref = refs.get(input.root ?? input.ref_id)
           assert.ok(
             isFixtureAction(action, input, ref, initial.id, document.folder, exactName) &&
-              !(saveApproved && ["click", "set_value", "scroll"].includes(action)),
+              !(saveApproved && mutations.has(action)),
             `Model requested an action outside the save fixture: ${action ?? request.action} (${ref?.surface ?? "unscoped"}/${ref?.node.role ?? "no ref"})`,
           )
           if (!checkedWindow && !["status", "permissions", "version", "skills_get", "list_apps"].includes(action)) {
@@ -168,13 +177,23 @@ export async function runLiveTextEditSave(fixture, run) {
               record({ stage: "window-restored-by-operator" })
             }
           }
+          const stale = mutations.has(action) && ref?.windowRestorations !== windowRestorations
+          const reply = stale ? "reject" : "once"
           await client.permissions.reply(
-            { sessionID: session.id, requestID: request.id, reply: "once" },
+            {
+              sessionID: session.id,
+              requestID: request.id,
+              reply,
+              ...(stale && {
+                message: "TextEdit changed visibility. Observe the same window again to get a fresh ref.",
+              }),
+            },
             requestOptions(),
           )
-          reviewed.add(call.id)
+          reviewed.set(call.id, { reply, windowRestorations })
+          record({ stage: stale ? "rejected-stale-ref" : "approved-once", action })
+          if (stale) continue
           if (action === "click" && ref?.surface === "sheet" && ref.node.name === "Save") saveApproved = true
-          record({ stage: "approved-once", action })
         }
 
         if (!active && (observedActive || assistants.length > 0) && requests.length === 0) {
@@ -187,8 +206,9 @@ export async function runLiveTextEditSave(fixture, run) {
       360_000,
     )
     settled = true
+    const approvals = [...reviewed.values()].filter((review) => review.reply === "once").length
     assert.equal(last.assistant?.finish, "stop", "The real model must finish the Save task normally")
-    assert.ok(skillLoaded && reviewed.size > 0, "The model must load the released Skill and use the ask profile")
+    assert.ok(skillLoaded && approvals > 0, "The model must load the released Skill and use the ask profile")
     assert.ok(
       selectedDirectory && saveReceipt && savedWindow,
       "Missing proof of directory selection, Save, or the saved window name",
@@ -198,7 +218,7 @@ export async function runLiveTextEditSave(fixture, run) {
     const result = {
       run,
       model: "xai/grok-4.7",
-      approvals: reviewed.size,
+      approvals,
       selectedDirectory,
       savedWindow,
       exactReadback: true,
@@ -251,9 +271,7 @@ function isFixtureAction(action, input, ref, windowID, folder, exactName) {
   if (ref.surface !== "sheet") return false
   if (name === "Cancel") return ref.node.role === "button"
   if (name === "Save") return ref.node.role === "button" && ref.location === folder && exactName(ref.name)
-  return (
-    ["Downloads", "show more options", "show less options", folder].includes(name) || clean(ref.node.value) === folder
-  )
+  return ["Downloads", "show more options", folder].includes(name) || clean(ref.node.value) === folder
 }
 
 function observedNodes(value, insideFileMenu = false) {

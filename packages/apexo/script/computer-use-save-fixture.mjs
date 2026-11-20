@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, realpath, rm, rmdir } from "node:fs/promises"
+import { mkdtemp, readdir, realpath, rm, rmdir } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { poll } from "./grok-shell-fixture.mjs"
 
@@ -30,13 +30,14 @@ end tell`)
     present: presentTextEdit,
     async verify() {
       await poll(
-        async () => {
-          if (!(await Bun.file(file).exists())) return
-          const read = Bun.spawnSync(["/usr/bin/textutil", "-convert", "txt", "-stdout", file], { timeout: 3000 })
-          return read.exitCode === 0 && read.stdout.toString() === expected
-        },
+        async () => (await Bun.file(file).exists()) && readRichText(file) === expected,
         "TextEdit saved an RTF at the selected destination with the exact fixture text",
         15_000,
+      )
+      assert.deepEqual(
+        (await readdir(directory)).filter((name) => name.endsWith(".rtf")),
+        [basename(file)],
+        "TextEdit must save exactly one RTF in the selected destination",
       )
     },
     async close() {
@@ -51,6 +52,9 @@ end repeat
 end tell`)
       } finally {
         await rm(file, { force: true })
+        const implicitFile = join(directory, basename(`${title}.rtf`))
+        if (implicitFile !== file && (await Bun.file(implicitFile).exists()) && readRichText(implicitFile) === expected)
+          await rm(implicitFile)
         await rmdir(directory)
       }
     },
@@ -84,6 +88,11 @@ if (!app.isNil()) {
 }`,
     "JavaScript",
   )
+}
+
+function readRichText(file) {
+  const read = Bun.spawnSync(["/usr/bin/textutil", "-convert", "txt", "-stdout", file], { timeout: 3000 })
+  if (read.exitCode === 0) return read.stdout.toString()
 }
 
 function runScript(source, language = "AppleScript") {
