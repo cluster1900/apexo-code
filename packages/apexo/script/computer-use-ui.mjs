@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 import { Apexo } from "../../client/src/index.ts"
 import { toolName } from "../../../plugins/computer-use/script/build.mjs"
 import { desktopExecutable, startComputerUseFixture } from "./computer-use-fixture.mjs"
+import { waitForTextEditWindow } from "./computer-use-save-fixture.mjs"
 import { deadline, poll } from "./grok-shell-fixture.mjs"
 
 const kind = process.argv[2] ?? "browser"
@@ -227,20 +228,26 @@ try {
     await writeFile(file, "Synthetic Computer Use screenshot fixture.\n")
     assert.equal(Bun.spawnSync(["/usr/bin/open", "-a", "TextEdit", file]).exitCode, 0)
     const executable = await desktopExecutable(fixture.bundle)
-    const target = await poll(() => {
-      const result = Bun.spawnSync([executable, "list-windows", "--app", "TextEdit"], {
-        env: { ...process.env, AGENT_DESKTOP_HOME: join(runtime.output, "fixture-setup-state") },
-      })
-      const envelope = JSON.parse(result.stdout.toString())
-      return (
-        envelope.ok &&
-        envelope.data.find(
-          (window) => window.title?.includes(screenshotDocument) && window.visible && window.accessible,
+    const visibleDocument = () =>
+      waitForTextEditWindow(() => {
+        const result = Bun.spawnSync([executable, "list-windows", "--app", "TextEdit"], {
+          env: { ...process.env, AGENT_DESKTOP_HOME: join(runtime.output, "fixture-setup-state") },
+        })
+        const envelope = JSON.parse(result.stdout.toString())
+        return (
+          envelope.ok &&
+          envelope.data.find(
+            (window) => window.title?.includes(screenshotDocument) && window.visible && window.accessible,
+          )
         )
-      )
-    }, "screenshot fixture window")
+      }, "screenshot fixture window")
+    const target = await visibleDocument()
     state.steps.push(
-      { tool: toolName("desktop_screenshot"), args: { app: "TextEdit", window_id: target.id } },
+      async () => {
+        const current = await visibleDocument()
+        assert.equal(current.id, target.id, "Capture must target the original TextEdit fixture window")
+        return { tool: toolName("desktop_screenshot"), args: { app: "TextEdit", window_id: current.id } }
+      },
       { content: "COMPUTER_USE_IMAGE_DONE" },
     )
     await command("fill", '[data-component="prompt-input"]', "Capture the synthetic TextEdit window inline.")

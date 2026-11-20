@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { toolName } from "../../../plugins/computer-use/script/build.mjs"
 import { desktopExecutable } from "./computer-use-fixture.mjs"
-import { prepareTextEditSave } from "./computer-use-save-fixture.mjs"
+import { prepareTextEditSave, waitForTextEditWindow } from "./computer-use-save-fixture.mjs"
 import { poll } from "./grok-shell-fixture.mjs"
 
 const desktopActions = new Map(
@@ -51,21 +51,6 @@ export async function runLiveTextEditSave(fixture, run) {
   }
   const start = performance.now()
   const record = (event) => events.push({ ...event, elapsedMs: Math.round(performance.now() - start) })
-  function waitForWindow(select, label) {
-    let nextPresentation = 0
-    return poll(
-      () => {
-        const window = select(windows())
-        if (window) return window
-        if (performance.now() >= nextPresentation) {
-          document.present()
-          nextPresentation = performance.now() + 2500
-        }
-      },
-      label,
-      15_000,
-    )
-  }
   let selectedDirectory = false
   let saveApproved = false
   let saveReceipt = false
@@ -77,8 +62,8 @@ export async function runLiveTextEditSave(fixture, run) {
   let settled = false
 
   try {
-    const initial = await waitForWindow((windows) => {
-      const matches = windows.filter((window) => window.title === document.title)
+    const initial = await waitForTextEditWindow(() => {
+      const matches = windows().filter((window) => window.title === document.title)
       assert.ok(matches.length <= 1, "The fixture document must have a unique accessible window")
       return matches[0]
     }, "owned TextEdit window is visible and accessible")
@@ -178,7 +163,7 @@ export async function runLiveTextEditSave(fixture, run) {
             checkedWindow = true
             if (!windows().some(sameWindow)) {
               // The operator can restore the fixture's visibility after a Space change.
-              await waitForWindow((windows) => windows.find(sameWindow), "original TextEdit window is visible again")
+              await waitForTextEditWindow(() => windows().find(sameWindow), "original TextEdit window is visible again")
               windowRestorations++
               record({ stage: "window-restored-by-operator" })
             }

@@ -27,17 +27,7 @@ end tell`)
     name,
     file,
     folder: basename(directory),
-    present() {
-      // Activating the running app avoids a reopen event while its Save sheet is up.
-      runScript(
-        `ObjC.import("AppKit")
-const app = $.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.apple.TextEdit").firstObject
-if (app.isNil()) throw Error("TextEdit is not running")
-app.unhide
-app.activateWithOptions($.NSApplicationActivateIgnoringOtherApps)`,
-        "JavaScript",
-      )
-    },
+    present: presentTextEdit,
     async verify() {
       await poll(
         async () => {
@@ -65,6 +55,35 @@ end tell`)
       }
     },
   }
+}
+
+export function waitForTextEditWindow(observe, label) {
+  let nextPresentation = 0
+  return poll(
+    () => {
+      const window = observe()
+      if (window) return window
+      if (performance.now() >= nextPresentation) {
+        presentTextEdit()
+        nextPresentation = performance.now() + 2500
+      }
+    },
+    label,
+    15_000,
+  )
+}
+
+function presentTextEdit() {
+  // Activating the running app avoids a reopen event while its Save sheet is up.
+  runScript(
+    `ObjC.import("AppKit")
+const app = $.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.apple.TextEdit").firstObject
+if (!app.isNil()) {
+  app.unhide
+  app.activateWithOptions($.NSApplicationActivateIgnoringOtherApps)
+}`,
+    "JavaScript",
+  )
 }
 
 function runScript(source, language = "AppleScript") {

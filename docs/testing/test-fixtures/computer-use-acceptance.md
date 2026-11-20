@@ -97,6 +97,8 @@ The final harness randomizes both operands. A further live run on the final asse
 - A separately launched Calculator can restore its previous expression. The test assumed a zero starting display.
 - On the owned Calculator window, take a new snapshot after each distinct Clear action and wait for the display to show `0`. Take a fresh snapshot before choosing each key and read the display after each action. The observed sequence was `7`, `7×`, `7×9`, then `63`. The original Calculator process was left running.
 
+The Git-pinned 0.1.3 live retest started in Scientific mode. The model switched to Basic, cleared the restored expression, and entered the first operand before reaching the fixture's existing 40-turn ceiling. On an unchanged replay with Basic mode already selected, `bun script/computer-use-live.mjs cli calculator` passed the randomized calculation and found its product in completed tool output.
+
 ## BUG-20261116-014: New-document Save dialog did not complete
 
 - Scope: exploratory live xAI TextEdit new-document Save dialog, upstream 1.3.1 on macOS arm64. Existing-file edit/save and scrolling passed separately.
@@ -135,12 +137,16 @@ The controlled CLI and Electron regressions each passed with 21 one-time approva
 | 2 | 68.393 s | 21 | 1 |
 | 3 | 55.900 s | 23 | 1 |
 
+The Electron backend also passed with the Git-pinned 0.1.3 bundle in 64.552 seconds and 22 approvals. The original window stayed visible during that run. An earlier Electron trial ended when the TextEdit process exited. The exit's cause remains unknown.
+
 ## BUG-20261119-016 — The packaged Desktop UI runner did not select the renderer
 
 - Scope covers the packaged macOS Desktop UI acceptance runner. Run `bun script/computer-use-ui.mjs desktop` with the rebuilt app and the catalog bundle. The browser-level CDP connection attempted `Target.createTarget` and received `Not supported` before it could interact with the existing window.
 - Attach to the existing `apexo://renderer/` page through its debugger URL. Wait for the inline image, scroll the lazy attachment into view, and confirm its intrinsic size. The runner now exercises Stop during an actual MCP wait and joins its child process. Use explicit MCP Retry before the following manual approval case because an interrupted native tool can retire the transport.
 - One rerun selected an inaccessible-to-capture Calculator window, although the window enumeration marked it accessible. The tool returned `could not create image from window`. The fixture now opens its own uniquely named TextEdit document, selects its visible window ID, and observes the screenshot tool's terminal result before asserting provider media or renderer state.
 - Verification with 0.1.1 passed seven checks in the rebuilt Desktop and six in Web. The process disappearance and idle Session status followed the Stop click within 96 ms on Desktop and 85 ms on Web. Both runtimes recovered and exercised manual reject and accept. A separate packaged start returned `Failed to start server` while the typecheck was running. The isolated relaunch passed. That startup failure's cause remains undetermined.
+
+With the rebuilt Desktop and Git-pinned 0.1.3 bundle, the first screenshot attempt returned `could not create image from window`. The Web runner also timed out while waiting for its visible fixture window. The runners now wait for the exact accessible window again when the test provider receives the UI prompt, immediately before dispatching the actual MCP capture. They can restore the fixture window's visibility during that wait. The subsequent Desktop and Web runs passed seven and six checks. Both rendered the native image and verified delivery to the provider. Whether the first capture failure shared the Web readiness failure's cause remains unknown.
 
 ## BUG-20261119-024 — The Desktop runner clicked Reload before it was enabled
 
