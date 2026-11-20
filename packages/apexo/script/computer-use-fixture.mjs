@@ -17,6 +17,8 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
   const state = { steps: [], requests: [], results: [], hold: undefined }
   const runtime = await startShellFixture(kind, {
     deferBackend: true,
+    executable: options.executable,
+    outputRoot: options.outputRoot,
     async next({ body, input, ancillary }) {
       if (ancillary) return { content: "Computer Use test" }
       state.requests.push(body)
@@ -29,7 +31,7 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
   })
   try {
     const bundle = resolve(
-      process.env.COMPUTER_USE_BUNDLE ?? "../../plugins/computer-use/dist/computer-use-darwin-arm64",
+      options.bundle ?? process.env.COMPUTER_USE_BUNDLE ?? "../../plugins/computer-use/dist/computer-use-darwin-arm64",
     )
     const profile = options.releasePermissions
       ? await Bun.file(join(bundle, "permissions.json")).json()
@@ -157,23 +159,26 @@ export async function startComputerUseFixture(kind = "cli", options = {}) {
     const client = Apexo.make({ baseUrl: runtime.url })
     const plugins = client["server.plugins"]
     const mcp = client["server.mcp"]
-    const source = join(runtime.output, "catalog")
-    await mkdir(join(source, ".grok-plugin"), { recursive: true })
-    await cp(bundle, join(source, "computer-use"), { recursive: true })
-    await writeFile(
-      join(source, ".grok-plugin/marketplace.json"),
-      JSON.stringify({
-        name: "Computer Use acceptance",
-        plugins: [{ name: "computer-use", source: "./computer-use" }],
-      }),
-    )
+    const source = options.catalog ?? join(runtime.output, "catalog")
+    if (!options.catalog) {
+      await mkdir(join(source, ".grok-plugin"), { recursive: true })
+      await cp(bundle, join(source, "computer-use"), { recursive: true })
+      await writeFile(
+        join(source, ".grok-plugin/marketplace.json"),
+        JSON.stringify({
+          name: "Computer Use acceptance",
+          plugins: [{ name: "computer-use", source: "./computer-use" }],
+        }),
+      )
+    }
     const catalog = await plugins.manage({ action: "add-source", source })
     const plugin = catalog.items.find((item) => item.name === "computer-use")
     assert.ok(plugin, "Computer Use bundle discovered")
     const install = async () => {
-      await plugins.manage({ action: "install", id: plugin.id, trust: true })
+      const installed = await plugins.manage({ action: "install", id: plugin.id, trust: true })
       await plugins.reload({ location })
       assert.equal((await mcp.status({ location }))["computer-use:desktop"].status, "connected")
+      return installed.items.find((item) => item.id === plugin.id)
     }
     const session = () =>
       client.sessions.create({

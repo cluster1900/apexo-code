@@ -200,6 +200,29 @@ Run `bun script/computer-use-save.mjs cli` and `bun script/computer-use-save.mjs
 
 The Desktop commands require the rebuilt V2-sidecar package; browser commands require the built App. Live commands use existing xAI credentials and incur provider usage. Desktop control scenarios must be run sequentially. Isolated child processes and created daemon PIDs are cleaned up by the harness; a pre-existing user app/server must not be stopped.
 
+### Repeated Save and Space recovery in packaged builds
+
+Use Bun 1.4.4, a logged-in macOS graphical session with one Space-bearing display, and an existing xAI sign-in. Grant the macOS Accessibility and TextEdit Automation permissions needed by the test launcher and packaged Desktop. Use English TextEdit menus. The recovery case builds a temporary full-screen AppKit app with `xcrun swiftc`. The catalog verifier uses `git`, `jq`, and `shasum`, and the Desktop test uses a cached `agent-browser` available through `bunx --no-install`.
+
+Build the standalone CLI from `packages/apexo` with `bun script/build.ts --single --skip-install --skip-embed-web-ui`. Build and package Desktop from the same checkout. The default Desktop path is the unpacked `Apexo Dev.app` under `packages/desktop/dist`. Set `COMPUTER_USE_DESKTOP_APP` to an alternate `.app` and `COMPUTER_USE_CLI` to an alternate built CLI executable if needed.
+
+Run the packaged regression from `packages/apexo`.
+
+```sh
+bun script/computer-use-save-e2e.mjs
+bun script/computer-use-save-e2e.mjs desktop series
+bun script/computer-use-save-e2e.mjs cli recovery
+bun script/computer-use-save-e2e.mjs tui recovery
+```
+
+The default invocation runs Desktop, CLI, and TUI serially. Each entrypoint runs three normal saves and one Space recovery. `series` and `recovery` run those groups separately. Desktop submits through its packaged renderer and default V1 sidecar. CLI uses `run --interactive --attach`, and TUI submits from full-screen `attach` through a PTY. Both terminal commands use the built CLI and its native Session API. The harness fetches and checks the catalog pin, installs it through the actual backend, and uses the corresponding distributed `ask` profile. The live Grok model performs the UI actions. The harness responds to the session's bound permission requests once per call.
+
+The recovery case waits for the exact final Save request, makes a new full-screen Space active, and checks that WindowServer no longer lists the original TextEdit window on-screen. After the original Space and window return, it rejects the held request through Apexo's permission API and checks the call's terminal error and empty destination. The model must list the same TextEdit window ID and PID and observe the exact Save sheet before issuing a new ref for one Save. Every case requires the renamed original window and an independent `textutil` read of the only file in the destination folder, including Chinese text and the final newline. Keep the graphical desktop available throughout the suite.
+
+The script prints the location of its private evidence directory. `result.json` summarizes passes and failures. `live-save-*.json` records the permission calls, Space transitions, and readback in order. Failed cases produce a nonzero exit status and retain their transcript privately for diagnosis.
+
+The 0.1.4 verification passed all nine regular saves and covered the three controlled Space recoveries. The first Desktop recovery timed out before the scheduled switch when the window became unavailable. The separate Desktop recovery run passed. [Packaged Save and Space results](../testing/test-fixtures/computer-use-acceptance.md#packaged-save-and-space-regression)
+
 ## UI evidence
 
 The screenshots contain only synthetic fixture state. Raw transcripts/authentication data remain private.

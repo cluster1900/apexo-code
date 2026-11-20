@@ -14,8 +14,14 @@ jq -e --arg sha "$sha" --arg version "$version" '
   .plugins["computer-use"] | .sha == $sha and .version == $version
 ' "$catalog/plugin-index.json" >/dev/null
 
-checkout=$(mktemp -d)
-trap 'rm -rf "$checkout"' EXIT
+if [ "$#" -eq 0 ]; then
+  checkout=$(mktemp -d)
+  trap 'rm -rf "$checkout"' EXIT
+else
+  test "$#" -eq 1
+  checkout=$1
+  mkdir "$checkout"
+fi
 git -C "$checkout" init -q
 git -C "$checkout" fetch --no-tags --depth 1 "$url" "$sha"
 git -C "$checkout" -c core.hooksPath=/dev/null checkout -q --detach FETCH_HEAD

@@ -28,6 +28,9 @@ end tell`)
     file,
     folder: basename(directory),
     present: presentTextEdit,
+    async assertUnsaved() {
+      assert.deepEqual(await readdir(directory), [], "The destination must be empty before Save")
+    },
     async verify() {
       await poll(
         async () => (await Bun.file(file).exists()) && readRichText(file) === expected,
@@ -35,7 +38,7 @@ end tell`)
         15_000,
       )
       assert.deepEqual(
-        (await readdir(directory)).filter((name) => name.endsWith(".rtf")),
+        await readdir(directory),
         [basename(file)],
         "TextEdit must save exactly one RTF in the selected destination",
       )
@@ -44,7 +47,7 @@ end tell`)
       try {
         runScript(`tell application "TextEdit"
 repeat with candidate in (documents whose name is ${JSON.stringify(title)} or name starts with ${JSON.stringify(name)})
-if text of candidate starts with ${JSON.stringify(marker)} then
+if text of candidate contains ${JSON.stringify(marker)} then
 close candidate saving no
 exit repeat
 end if
@@ -71,6 +74,7 @@ export function waitForTextEditWindow(observe, label) {
         presentTextEdit()
         nextPresentation = performance.now() + 2500
       }
+      return undefined
     },
     label,
     15_000,
@@ -92,7 +96,7 @@ if (!app.isNil()) {
 
 function readRichText(file) {
   const read = Bun.spawnSync(["/usr/bin/textutil", "-convert", "txt", "-stdout", file], { timeout: 3000 })
-  if (read.exitCode === 0) return read.stdout.toString()
+  return read.exitCode === 0 ? read.stdout.toString() : undefined
 }
 
 function runScript(source, language = "AppleScript") {

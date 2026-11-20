@@ -176,3 +176,27 @@ With the rebuilt Desktop and Git-pinned 0.1.3 bundle, the first screenshot attem
 - The compatibility stdio timeout test expected a launched MCP child to record its PID before it was terminated. A 100 ms startup bound included the fixture's SDK import time and could terminate the child before it wrote the PID. The PID file was absent during the failing parallel run.
 - Reproduce with the old `local stdio timeout terminates the real server process` test during a busy aggregate run. The new command records its PID before waiting, without importing the MCP SDK. The fixture allows 500 ms and requires a positive integer PID before checking exit.
 - From `packages/apexo`, run `bun test test/mcp test/server/httpapi-mcp.test.ts test/v2/mcp-native.test.ts test/v2/mcp-preferences-native.test.ts --timeout 30000`. The final focused run passed 106 tests, including the real timeout and inherited-pipe crash regressions.
+
+## BUG-20261120-002 — Full-screen Save acceptance waited for the wrong draft state
+
+- Scope covers prompt submission through full-screen `apexo attach` against a fresh native Session. A packaged CLI composer probe opened the Session and waited for the `Ask anything` placeholder. The composer was ready with the `>` chat marker and an empty body. A second probe waited for the full text after pasting and timed out while the composer displayed `[Pasted ~1 lines]`.
+- The full-screen Session view renders the chat marker without the startup placeholder. It folds a long bracketed paste into a summary and appends a trailing space when expanding that draft for submission. The fixture now waits for the visible composer and draft in their rendered forms. It sends one Enter and checks the authoritative user message for the complete text, allowing trailing whitespace from the composer.
+- Reproduce from `packages/apexo` with `bun script/computer-use-save-e2e.mjs tui recovery`. The packaged PTY probe passed for both terminal entrypoints. Each admitted the full draft exactly once after the composer displayed it. The harness verifies the actual RTF separately with exact text and final newline.
+
+### Packaged Save and Space regression
+
+The initial packaged Desktop harness trials stopped on a missing window, a request to fall back to Bash, and a request to click the document ruler. The initial recovery trial received a timeout from a File-menu Save action and then tried to select the exact fixture from TextEdit's Window menu. The missing window and menu timeout retain unknown root causes.
+
+The packaged runner uses the File ref alone with a depth of two and directs the model to the observed Save menu item. The operator presents TextEdit before an approved native menu action and can approve selection of the uniquely titled fixture from the Window menu. One aborted trial left an owned document open after leading punctuation appeared before the synthetic marker. The cleanup guard now matches its title and unique marker anywhere in the document text.
+
+The first packaged CLI series used `run --interactive --attach` and produced a Save delivery receipt at 346.576 seconds. The model observed the renamed original window at 362.083 seconds while the previous 360-second wait expired. The older harness reached cleanup before independent readback. The current harness reads the RTF as soon as the model observes the saved window and records model settlement separately. Its live bound is 480 seconds. Two subsequent CLI saves completed in 55.070 and 64.565 seconds. The dedicated CLI Space case finished in 120.305 seconds. WindowServer confirmed the window left and returned. The stale Save was rejected, the destination stayed empty, and the model listed the same window and used a fresh sheet ref for the single delivered Save. Independent readback matched the fixture.
+
+The checked-in runner used macOS arm64 26.6.2, Bun 1.4.4, Desktop 1.18.35 with the default V1 sidecar, and the compiled standalone CLI for the native terminal paths. It installed the published Computer Use 0.1.4 revision `7fc8fb70aff5e0cabdbe1666b52bdfe17e82180b` and used the matching distributed `ask` profiles with `xai/grok-4.7`.
+
+| Entry point | Consecutive saves in seconds | Space recovery in seconds | Readback after restoration in seconds |
+| --- | --- | ---: | ---: |
+| Packaged Desktop renderer | 157.512, 186.023, 241.156 | 144.795 | 17.750 |
+| Packaged CLI `run --interactive --attach` | 62.050, 70.192, 74.175 | 81.738 | 12.358 |
+| Packaged full-screen TUI `attach` | 128.261, 188.305, 121.155 | 126.220 | 19.798 |
+
+`bun script/computer-use-save-e2e.mjs` passed 11 of 12 cases. The Desktop recovery case timed out while restoring unplanned loss of window visibility in the Save sheet, before the scheduled switch. Its root cause remains unresolved. `bun script/computer-use-save-e2e.mjs desktop recovery` passed on a separate run. Across the three successful recovery runs, the evidence ties the held permission rejection to the old call and checks the empty destination before the model lists the same window ID and PID, observes the exact Save sheet, and receives approval for a distinct ref. Each run has one delivered Save, the renamed original window, and an independent exact RTF readback including the final newline.

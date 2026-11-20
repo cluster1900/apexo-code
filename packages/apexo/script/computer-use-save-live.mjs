@@ -21,18 +21,19 @@ const desktopActions = new Map(
     "is",
     "click",
     "scroll",
+    "screenshot",
     "set_value",
   ].map((action) => [toolName(`desktop_${action}`), action]),
 )
 const clean = (value) => String(value ?? "").replace(/\p{Cf}/gu, "")
 const mutations = new Set(["click", "scroll", "set_value"])
 
-export async function runLiveTextEditSave(fixture, run) {
+export async function runLiveTextEditSave(fixture, run, options = {}) {
   const { client, runtime } = fixture
   const session = await fixture.session()
-  assert.equal((await client.permissions.getReview({ sessionID: session.id })).mode, "manual")
+  if (client.permissions.getReview)
+    assert.equal((await client.permissions.getReview({ sessionID: session.id }, requestOptions())).mode, "manual")
   const executable = await desktopExecutable(fixture.bundle)
-  const document = await prepareTextEditSave()
   const events = []
   const reviewed = new Map()
   const completed = new Set()
@@ -53,42 +54,47 @@ export async function runLiveTextEditSave(fixture, run) {
   const start = performance.now()
   const record = (event) => events.push({ ...event, elapsedMs: Math.round(performance.now() - start) })
   let selectedDirectory = false
-  let saveApproved = false
-  let saveReceipt = false
+  let saveApproved
+  let saveReceipt
   let savedWindow = false
+  let readback = false
   let skillLoaded = false
   let windowRestorations = 0
   let lastReportedRestoration = 0
-  let observedActive = false
+  let recovery
+  let rediscoveredAt
+  let inputSurface
+  let document
   let submitted = false
   let settled = false
 
   try {
+    inputSurface = await options.openInput?.(session.id)
+    document = await prepareTextEditSave()
     const initial = await waitForTextEditWindow(() => {
       const matches = windows().filter((window) => window.title === document.title)
       assert.ok(matches.length <= 1, "The fixture document must have a unique accessible window")
       return matches[0]
     }, "owned TextEdit window is visible and accessible")
     const sameWindow = (window) => window.id === initial.id && window.pid === initial.pid
-    assert.equal(await Bun.file(document.file).exists(), false)
-    record({ stage: "window-ready", windowID: initial.id })
+    await document.assertUnsaved()
+    record({ stage: "window-ready", windowID: initial.id, pid: initial.pid })
     const filename = `${document.name}.rtf`
     const exactName = (value) => value === document.name || value === filename
+    const task = `Load the computer-use:computer-use Skill. Save the unsaved TextEdit document titled "${document.title}", containing "${document.marker}", as ${filename} in the Downloads subfolder "${document.folder}". Preserve its Rich Text contents. Use only the installed desktop MCP tools, with search_tool and use_tool if needed. List windows scoped to TextEdit. Snapshot its menubar at depth 1, then snapshot the File ref using only root and max_depth: 2. Click the Save menu item directly from that File subtree. Follow the Skill for directory selection and the shallow Save sheet. Take one action at a time and verify the saved name in the window list.`
     submitted = true
-    await fixture.prompt(
-      session.id,
-      `Load the computer-use:computer-use Skill. Save the unsaved TextEdit document titled "${document.title}", containing "${document.marker}", as ${filename} inside the Downloads subfolder "${document.folder}". Keep the existing Rich Text contents. Use app-scoped TextEdit window discovery and verify the saved window name using the installed Skill.`,
-      false,
-    )
+    if (inputSurface) await inputSurface.submit(task)
+    if (!inputSurface) await fixture.prompt(session.id, task, false)
 
     const last = await poll(
       async () => {
         const requests = await client.permissions.list({ sessionID: session.id }, requestOptions())
         const active = Boolean((await client.sessions.active(requestOptions()))[session.id])
-        observedActive ||= active
-        const assistants = (
-          await client.messages.list({ sessionID: session.id, order: "asc", limit: 150 }, requestOptions())
-        ).data.filter((message) => message.type === "assistant")
+        const { data: history } = await client.messages.list(
+          { sessionID: session.id, order: "asc", limit: 150 },
+          requestOptions(),
+        )
+        const assistants = history.filter((message) => message.type === "assistant")
         const calls = new Map()
         for (const message of assistants) {
           assert.equal(message.model.providerID, "xai")
@@ -99,71 +105,101 @@ export async function runLiveTextEditSave(fixture, run) {
               if (part.state.input.name === "computer-use:computer-use") skillLoaded = true
               continue
             }
-            calls.set(`${message.id}/${part.id}`, part)
+            const key = `${message.id}/${part.id}`
+            calls.set(key, part)
             const action = desktopActions.get(part.name)
-            if (!action || completed.has(part.id) || !["completed", "error"].includes(part.state.status)) continue
-            const review = reviewed.get(part.id)
+            if (!action || completed.has(key) || !["completed", "error"].includes(part.state.status)) continue
+            const review = reviewed.get(key)
             assert.ok(review, `Desktop action ${action} did not enter the released approval flow`)
             if (review.reply === "reject") assert.equal(part.state.status, "error")
-            completed.add(part.id)
+            completed.add(key)
             const result = toolReceipt(part)
-            record({ stage: "tool", action, status: part.state.status, code: result?.error?.code })
+            record({ stage: "tool", action, callID: part.id, status: part.state.status, code: result?.error?.code })
+            if (recovery?.staleCall === key) {
+              assert.equal(review.reply, "reject")
+              assert.match(part.state.error.message, /permission.*(?:denied|rejected)|rejected.*permission/i)
+              assert.equal(result, undefined, "A rejected Save must not have a desktop dispatch receipt")
+              await document.assertUnsaved()
+              recovery.rejected = true
+              record({ stage: "stale-save-rejection-confirmed", callID: part.id, destinationEmpty: true })
+            }
             if (part.state.status !== "completed" || !result?.ok) continue
             const input = part.state.input
-            if (
-              action === "list_windows" &&
-              saveReceipt &&
-              !savedWindow &&
-              result.data.some(
-                (window) =>
-                  window.id === initial.id &&
-                  window.pid === initial.pid &&
-                  window.visible &&
-                  window.accessible &&
-                  exactName(window.title),
-              )
-            ) {
-              savedWindow = true
-              record({ stage: "saved-window-observed" })
+            if (action === "list_windows") {
+              const observed = result.data.find((window) => sameWindow(window) && window.visible && window.accessible)
+              if (
+                observed &&
+                recovery?.rejected &&
+                !saveApproved &&
+                review.epoch === windowRestorations &&
+                rediscoveredAt !== review.epoch
+              ) {
+                rediscoveredAt = review.epoch
+                record({
+                  stage: "restored-window-observed-by-model",
+                  callID: part.id,
+                  windowID: observed.id,
+                  pid: observed.pid,
+                })
+              }
+              if (saveReceipt && !savedWindow && exactName(observed?.title)) {
+                savedWindow = true
+                record({ stage: "saved-window-observed", callID: part.id, windowID: observed.id, pid: observed.pid })
+              }
             }
             if (action === "snapshot" || action === "find") {
               const parent = refs.get(input.root)
               const surface = input.root ? parent?.surface : (input.surface ?? "window")
-              const nodes = observedNodes(result.data, parent?.fileMenu)
-              const location = nodes.find((ref) => ref.node.name === "Where:")?.node.value
+              const windowID = parent?.windowID ?? input.window_id
+              const nodes = observedNodes(result.data, parent?.menu)
+              const location = clean(nodes.find((ref) => ref.node.name === "Where:")?.node.value)
               const name = nodes.find((ref) => ref.node.name === "Save As:")?.node.value
-              if (!selectedDirectory && surface === "sheet" && clean(location) === document.folder) {
+              const correctDirectory = surface === "sheet" && windowID === initial.id && location === document.folder
+              if (!selectedDirectory && correctDirectory) {
                 selectedDirectory = true
-                record({ stage: "destination-confirmed" })
+                record({ stage: "destination-confirmed", callID: part.id })
               }
+              const freshSheet =
+                action === "snapshot" && correctDirectory && exactName(name) && rediscoveredAt === review.epoch
+              const freshSave = freshSheet && nodes.find((ref) => isSaveButton(surface, ref.node))
+              if (freshSave)
+                record({
+                  stage: "restored-sheet-observed-by-model",
+                  callID: part.id,
+                  windowID,
+                  refID: freshSave.node.ref_id ?? freshSave.node.ref,
+                })
               for (const ref of nodes)
                 refs.set(ref.node.ref_id ?? ref.node.ref, {
                   ...ref,
                   surface,
-                  location: clean(location),
+                  windowID,
+                  location,
                   name,
-                  windowRestorations: review.windowRestorations,
+                  epoch: review.epoch,
+                  freshSheet,
                 })
             }
-            if (action === "click") {
-              const target = refs.get(input.ref_id)
-              if (target?.surface === "sheet" && target.node.role === "button" && target.node.name === "Save") {
-                assert.ok(["delivered_unverified", "delivered_verified"].includes(result.data.disposition?.delivery))
-                saveReceipt = true
-                record({ stage: "save-click", delivery: result.data.disposition.delivery })
-              }
+            if (review.finalSave) {
+              assert.equal(key, saveApproved)
+              assert.equal(saveReceipt, undefined, "Only one Save click may be delivered")
+              saveReceipt = result.data.disposition?.delivery
+              assert.ok(["delivered_unverified", "delivered_verified"].includes(saveReceipt))
+              record({ stage: "save-click", callID: part.id, delivery: saveReceipt })
             }
           }
         }
 
         let checkedWindow = false
         for (const request of requests) {
-          const call = calls.get(`${request.source?.messageID}/${request.source?.callID}`)
-          if (!call || call.state.status === "pending" || reviewed.has(call.id)) continue
+          const key = `${request.source?.messageID}/${request.source?.callID}`
+          const call = calls.get(key)
+          if (!call || call.state.status === "pending" || reviewed.has(key)) continue
           const action = desktopActions.get(request.action)
           assert.equal(request.action, call.name, "Permission request must belong to the observed call")
           const input = call.state.input
           const ref = refs.get(input.root ?? input.ref_id)
+          const finalSave = action === "click" && isSaveButton(ref?.surface, ref?.node)
           assert.ok(
             isFixtureAction(action, input, ref, initial.id, document, exactName) &&
               !(saveApproved && mutations.has(action)),
@@ -177,9 +213,43 @@ export async function runLiveTextEditSave(fixture, run) {
               windowRestorations++
               record({ stage: "window-restored-by-operator" })
             }
+            // TextEdit's native menu actions need its foreground app, including when the renderer submitted the task.
+            if (action === "click" && ["menubar", "menu"].includes(ref?.surface)) document.present()
           }
-          const stale = mutations.has(action) && ref?.windowRestorations !== windowRestorations
+          if (options.switchSpace && !recovery && finalSave && ref.epoch === windowRestorations) {
+            assert.ok(selectedDirectory && !saveApproved)
+            assert.equal(requests.length, 1, "The pre-switch Save must be the sole pending permission request")
+            await document.assertUnsaved()
+            const spaces = await options.switchSpace(initial, document.present)
+            await waitForTextEditWindow(
+              () => windows().find(sameWindow),
+              "same TextEdit window is accessible after the Space switch",
+            )
+            const pending = await client.permissions.list({ sessionID: session.id }, requestOptions())
+            assert.deepEqual(
+              pending.map((item) => item.id),
+              [request.id],
+              "The exact Save is still pending after restoration",
+            )
+            windowRestorations++
+            recovery = { ...spaces, staleCall: key, staleRef: input.ref_id }
+            record({ stage: "actual-space-switch", ...spaces, callID: call.id, refID: input.ref_id })
+            await document.assertUnsaved()
+          }
+          const stale = mutations.has(action) && ref?.epoch !== windowRestorations
           const reply = stale ? "reject" : "once"
+          if (recovery && mutations.has(action) && !stale) {
+            assert.ok(recovery.rejected, "The held Save must reach its rejected terminal state before another mutation")
+            assert.equal(rediscoveredAt, windowRestorations, "The model must list the restored TextEdit window")
+          }
+          if (finalSave && !stale) {
+            await document.assertUnsaved()
+            if (recovery) {
+              assert.ok(ref.freshSheet, "The model must observe the exact Save sheet after listing the restored window")
+              assert.notEqual(key, recovery.staleCall)
+              assert.notEqual(input.ref_id, recovery.staleRef, "Save must use a newly issued ref")
+            }
+          }
           if (stale && lastReportedRestoration !== windowRestorations) {
             // A denied tool receipt does not tell the model why the operator declined it.
             await fixture.prompt(
@@ -201,31 +271,53 @@ export async function runLiveTextEditSave(fixture, run) {
             },
             requestOptions(),
           )
-          reviewed.set(call.id, { reply, windowRestorations })
-          record({ stage: stale ? "rejected-stale-ref" : "approved-once", action })
-          if (stale) continue
-          if (action === "click" && ref?.surface === "sheet" && ref.node.name === "Save") saveApproved = true
+          reviewed.set(key, { reply, epoch: windowRestorations, finalSave: finalSave && !stale })
+          record({
+            stage: stale ? "rejected-stale-ref" : "approved-once",
+            action,
+            callID: call.id,
+            requestID: request.id,
+            refID: input.ref_id,
+          })
+          if (finalSave && !stale) {
+            saveApproved = key
+            if (recovery) record({ stage: "fresh-save-approved-after-recovery", callID: call.id, refID: input.ref_id })
+          }
         }
 
-        if (!active && (observedActive || assistants.length > 0) && requests.length === 0) {
+        if (savedWindow && !readback) {
+          await document.verify()
+          readback = true
+          record({ stage: "independent-readback" })
+        }
+        const assistant = assistants.at(-1)
+        if (!active && assistant?.time.completed && requests.length === 0) {
           await client.sessions.wait({ sessionID: session.id }, requestOptions())
-          return { assistant: assistants.at(-1) }
+          assert.equal(
+            history.filter((message) => message.type === "user" && message.text?.trimEnd() === task).length,
+            1,
+            "The original prompt must be admitted exactly once",
+          )
+          return assistant
         }
         await Bun.sleep(250)
+        return undefined
       },
       "live model selects, saves and settles",
-      360_000,
+      480_000,
     )
     settled = true
     const approvals = [...reviewed.values()].filter((review) => review.reply === "once").length
-    assert.equal(last.assistant?.finish, "stop", "The real model must finish the Save task normally")
+    assert.equal(last.error, undefined, "The real model must finish without a provider error")
+    assert.equal(last.finish, "stop", "The real model must finish the Save task normally")
+    if (options.switchSpace)
+      assert.ok(recovery?.rejected, "The controlled Space switch and stale Save rejection must be exercised")
     assert.ok(skillLoaded && approvals > 0, "The model must load the released Skill and use the ask profile")
     assert.ok(
-      selectedDirectory && saveReceipt && savedWindow,
-      "Missing proof of directory selection, Save, or the saved window name",
+      selectedDirectory && saveReceipt && savedWindow && readback,
+      "Missing proof of directory selection, Save, the saved window name, or independent readback",
     )
-    await document.verify()
-    record({ stage: "independent-readback" })
+    record({ stage: "model-settled" })
     const result = {
       run,
       model: "xai/grok-4.7",
@@ -234,12 +326,20 @@ export async function runLiveTextEditSave(fixture, run) {
       savedWindow,
       exactReadback: true,
       windowRestorations,
+      ...(recovery && { spaceRecovery: recovery }),
       elapsedMs: events.at(-1).elapsedMs,
     }
     console.log(JSON.stringify(result))
     return result
   } catch (error) {
     record({ stage: "failure", message: error.message })
+    const transcript = await client.messages
+      .list({ sessionID: session.id, order: "asc", limit: 150 }, requestOptions())
+      .catch(() => undefined)
+    if (transcript)
+      await writeFile(join(runtime.output, `live-save-${run}-failure.json`), JSON.stringify(transcript.data, null, 2), {
+        mode: 0o600,
+      })
     throw error
   } finally {
     if (submitted && !settled) {
@@ -251,9 +351,14 @@ export async function runLiveTextEditSave(fixture, run) {
         join(runtime.output, `live-save-${run}.json`),
         JSON.stringify({ sessionID: session.id, events }, null, 2),
       ),
-      document.close(),
+      document?.close(),
+      inputSurface?.close(),
     ])
   }
+}
+
+function isSaveButton(surface, node) {
+  return surface === "sheet" && node?.role === "button" && clean(node.name) === "Save"
 }
 
 function isFixtureAction(action, input, ref, windowID, document, exactName) {
@@ -261,6 +366,7 @@ function isFixtureAction(action, input, ref, windowID, document, exactName) {
   const app = input.app === "TextEdit" || input.app === "com.apple.TextEdit"
   if (input.app && !app) return false
   if (input.window_id && input.window_id !== windowID) return false
+  if (action === "screenshot") return app && input.window_id === windowID && !input.output_path
   if (["list_apps", "list_windows"].includes(action)) return app
   if (action === "list_surfaces") return app || input.window_id === windowID
   if (["snapshot", "find"].includes(action)) {
@@ -281,26 +387,35 @@ function isFixtureAction(action, input, ref, windowID, document, exactName) {
     )
   if (ref.node.role === "menuitem") {
     if (ref.surface === "menubar" && name === "File") return true
-    return (ref.fileMenu || ref.surface === "menu") && /^Save[.…]*$/.test(name)
+    if (ref.menu === "Window" && name === document.title) return true
+    return (ref.menu === "File" || ref.surface === "menu") && /^Save[.…]*$/.test(name)
   }
-  if (ref.surface !== "sheet") return false
+  if (ref.surface !== "sheet" || ref.windowID !== windowID) return false
   if (name === "Cancel") return ref.node.role === "button"
   if (name === "Save") return ref.node.role === "button" && ref.location === document.folder && exactName(ref.name)
   return ["Downloads", "show more options", document.folder].includes(name) || clean(ref.node.value) === document.folder
 }
 
-function observedNodes(value, insideFileMenu = false) {
+function observedNodes(value, parentMenu) {
   if (!value || typeof value !== "object") return []
-  const fileMenu = insideFileMenu || (value.name === "File" && ["menu", "menuitem"].includes(value.role))
+  const menu =
+    ["File", "Window"].includes(value.name) && ["menu", "menuitem"].includes(value.role) ? value.name : parentMenu
   return [
-    ...(value.ref_id || value.ref ? [{ node: value, fileMenu }] : []),
-    ...Object.values(value).flatMap((child) => observedNodes(child, fileMenu)),
+    ...(value.ref_id || value.ref ? [{ node: value, menu }] : []),
+    ...Object.values(value).flatMap((child) => observedNodes(child, menu)),
   ]
 }
 
 function toolReceipt(part) {
   const text = part.state.content?.find((item) => item.type === "text")?.text ?? part.state.error?.message
-  if (text?.startsWith("{")) return JSON.parse(text)
+  if (!text?.startsWith("{")) return undefined
+  // Legacy tool output may be truncated. Only complete JSON proves delivery or observation.
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error
+    return undefined
+  }
 }
 
 function requestOptions() {
