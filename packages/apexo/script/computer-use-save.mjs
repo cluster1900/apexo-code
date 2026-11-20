@@ -16,6 +16,7 @@ const nodes = (node) =>
 const named = (data, name) => nodes(data).find((node) => node.name === name)
 let document
 let approvals = 0
+let representedWindow = false
 try {
   await fixture.install()
   const session = await fixture.session()
@@ -38,7 +39,13 @@ try {
       .flatMap((message) => (!before.has(message.id) && message.type === "assistant" ? message.content : []))
       .find((part) => part.type === "tool" && part.name === action)
     assert.ok(tool, `Missing session receipt for ${name}`)
-    if (observation && tool.state.status === "error") return
+    if (observation && tool.state.status === "error") {
+      if (!representedWindow && tool.state.error?.message?.includes('"code":"WINDOW_NOT_FOUND"')) {
+        document.present()
+        representedWindow = true
+      }
+      return
+    }
     assert.equal(tool.state.status, "completed", JSON.stringify(tool.state))
     const receipt = tool.state.content.find((part) => part.type === "text")?.text
     assert.ok(receipt, `Missing tool result for ${name}`)
@@ -61,6 +68,7 @@ try {
   const skill = await invoke("skill", { name: "computer-use:computer-use" })
   assert.match(skill, /Save a new macOS document/)
   document = await prepareTextEditSave()
+  document.present()
   assert.equal(await Bun.file(document.file).exists(), false)
   const window = await poll(
     async () => {
@@ -84,11 +92,10 @@ try {
     (data) => named(data, "File"),
     "File menu",
   )
-  await click(file)
   const save = await observe(
-    { app: target.app, surface: "menu", max_depth: 2 },
-    (data) => nodes(data).find((node) => /^Save[.…]*$/.test(node.name ?? "")),
-    "File > Save",
+    { root: file.ref_id, max_depth: 2 },
+    (data) => nodes(data).find((node) => node.role === "menuitem" && /^Save[.…]*$/.test(node.name ?? "")),
+    "File > Save in the menubar subtree",
   )
   await click(save)
   const sheet = { ...target, surface: "sheet", max_depth: 2 }
@@ -146,7 +153,6 @@ try {
     "exact destination and filename",
   )
   await click(ready)
-  await poll(() => Bun.file(document.file).exists(), "TextEdit saves the new file at the selected destination", 15_000)
   await document.verify()
   const saved = await invoke("desktop_list_windows", { app: "TextEdit" })
   assert.ok(saved.some((window) => window.id === target.window_id && window.title.includes(document.name)))
@@ -158,7 +164,14 @@ try {
   assert.equal(advertised.has(toolName("desktop_focus_window")), false)
   assert.ok(approvals > 0)
   console.log(
-    JSON.stringify({ kind, releaseProfile: "ask", approvals, savedAtSelectedDirectory: true, exactText: true }),
+    JSON.stringify({
+      kind,
+      releaseProfile: "ask",
+      approvals,
+      savedAtSelectedDirectory: true,
+      exactText: true,
+      representedWindow,
+    }),
   )
 } finally {
   await Promise.all([document?.close(), fixture.runtime.close()])

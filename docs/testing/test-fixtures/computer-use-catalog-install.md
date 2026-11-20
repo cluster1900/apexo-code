@@ -27,6 +27,8 @@ The November 19 MCP retest saw the Mini draft remain in the editor even with bra
 
 The 0.1.2 retest again saw the Mini prompt time out before the tool call. The unchanged Mini command passed all three checks on replay, and fullscreen passed on its initial run. Both shared MCP terminal layouts passed nine checks. The initial Mini failure remains open.
 
+The 0.1.3 retest again timed out while waiting for the Mini prompt's real tool call. The unchanged Mini replay passed all three checks. Fullscreen and both nine-check MCP layouts passed. The cause of the intermittent Mini submission failure remains unknown.
+
 ## BUG-20261118-006 — The browser test proxy forwarded stale compression headers
 
 - Scope is the disposable Web Client compatibility harness. The browser showed an empty Plugins catalog with a fetch error although the proxied `GET /plugins` returned HTTP 200.

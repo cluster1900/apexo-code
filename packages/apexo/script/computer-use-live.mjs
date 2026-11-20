@@ -3,36 +3,43 @@ import { readFile, writeFile } from "node:fs/promises"
 import { randomInt } from "node:crypto"
 import { join } from "node:path"
 import { startComputerUseFixture } from "./computer-use-fixture.mjs"
-import { prepareTextEditSave } from "./computer-use-save-fixture.mjs"
+import { runLiveTextEditSave } from "./computer-use-save-live.mjs"
 
 const kind = process.argv[2] ?? "cli"
 const scenario = process.argv[3] ?? "all"
 assert.ok(["all", "textedit", "calculator", "vision", "scroll", "save-dialog", "smoke"].includes(scenario))
-const fixture = await startComputerUseFixture(kind, { live: true })
+const runs = Number(process.argv[4] ?? 1)
+assert.ok(
+  Number.isSafeInteger(runs) && runs > 0 && (runs === 1 || scenario === "save-dialog"),
+  "Invalid Save run count",
+)
+const fixture = await startComputerUseFixture(kind, { live: true, releasePermissions: scenario === "save-dialog" })
 const checks = []
 const { client, runtime } = fixture
-let saveDocument
+const saves = []
 try {
   await fixture.install()
-  const session = await fixture.session()
   const model = (await client.models.list({ location: fixture.location })).data.find(
     (item) => item.id === "grok-4.7" && item.providerID === "xai",
   )
   assert.ok(model)
-  await fixture.prompt(
-    session.id,
-    "Load the computer-use:computer-use Skill. Call the installed desktop_version and desktop_permissions tools, then report their actual results. Do not use shell or write files.",
-  )
-  const history = (await client.messages.list({ sessionID: session.id, order: "asc" })).data
-  const parts = history.flatMap((item) => (item.type === "assistant" ? item.content : []))
-  assert.ok(
-    parts.some(
-      (part) => part.type === "tool" && part.name.includes("desktop_version") && part.state.status === "completed",
-    ),
-    "live xAI called the real plugin",
-  )
-  checks.push("live-xai-authentication-skill-and-native-tool-use")
-  console.log(JSON.stringify({ stage: checks.at(-1) }))
+  if (scenario !== "save-dialog") {
+    const session = await fixture.session()
+    await fixture.prompt(
+      session.id,
+      "Load the computer-use:computer-use Skill. Call the installed desktop_version and desktop_permissions tools, then report their actual results. Do not use shell or write files.",
+    )
+    const history = (await client.messages.list({ sessionID: session.id, order: "asc" })).data
+    const parts = history.flatMap((item) => (item.type === "assistant" ? item.content : []))
+    assert.ok(
+      parts.some(
+        (part) => part.type === "tool" && part.name.includes("desktop_version") && part.state.status === "completed",
+      ),
+      "live xAI called the real plugin",
+    )
+    checks.push("live-xai-authentication-skill-and-native-tool-use")
+    console.log(JSON.stringify({ stage: checks.at(-1) }))
+  }
   if (scenario === "smoke") {
     const final = await client.sessions.create({
       location: fixture.location,
@@ -78,13 +85,7 @@ try {
     console.log(JSON.stringify({ stage: checks.at(-1) }))
   }
   if (scenario === "save-dialog") {
-    saveDocument = await prepareTextEditSave()
-    const saved = await fixture.session()
-    await fixture.prompt(
-      saved.id,
-      `Load the computer-use:computer-use Skill and follow its new-document Save steps. Operate only the visible unsaved TextEdit document titled "${saveDocument.title}" and containing "${saveDocument.marker}". Preserve the text and Rich Text format. In the expanded Save sheet, choose Downloads in the sidebar, then its visible child folder "${saveDocument.folder}". Verify the location and save at ${saveDocument.file}. Use only observed semantic refs. Keep snapshots shallow. Finish after the saved window shows the new name.`,
-    )
-    await saveDocument.verify()
+    for (let run = 1; run <= runs; run++) saves.push(await runLiveTextEditSave(fixture, run))
     checks.push("live-xai-native-save-dialog-new-document-text-match")
     console.log(JSON.stringify({ stage: checks.at(-1) }))
   }
@@ -168,15 +169,11 @@ try {
     checks.push("live-xai-vision-identifies-pixel-only-randomized-marker")
     console.log(JSON.stringify({ stage: checks.at(-1) }))
   }
-  await writeFile(
-    join(runtime.output, "live-result.json"),
-    JSON.stringify({ kind, checks, model: "xai/grok-4.7", scenario }, null, 2),
-  )
-  console.log(JSON.stringify({ kind, passed: checks.length, checks, output: runtime.output }))
+  console.log(JSON.stringify({ kind, passed: checks.length, checks, saves, output: runtime.output }))
 } finally {
   await writeFile(
     join(runtime.output, "live-result.json"),
-    JSON.stringify({ kind, checks, scenario, model: "xai/grok-4.7" }, null, 2),
+    JSON.stringify({ kind, checks, scenario, model: "xai/grok-4.7", saves }, null, 2),
   )
-  await Promise.all([saveDocument?.close(), runtime.close()])
+  await runtime.close()
 }

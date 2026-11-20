@@ -119,6 +119,22 @@ Run `bun script/computer-use-save.mjs cli` or `bun script/computer-use-save.mjs 
 
 The separate live-model follow-ups selected Downloads. One reached the nested directory, set the filename, and received an unverified Save click before the Session wait failed at the transport boundary. Another lost its exact window during the directory observation and returned `WINDOW_NOT_FOUND`. Neither live run independently verified a saved file. These attempts remain separate from the successful controlled regression.
 
+### Live-model follow-up in Computer Use 0.1.3
+
+On macOS arm64 with Agent Desktop 1.3.1 and `xai/grok-4.7`, the 0.1.2 baseline reproduced an empty TextEdit window list for an existing unsaved document. Snapshot and Find then returned `WINDOW_NOT_FOUND` with `not_delivered`. The WindowServer inventory showed the document offscreen while a different desktop space was active. Presenting TextEdit restored the same window to the MCP list. In a separate recorded run, the Save click arrived 238.337 seconds into the task and returned an unverified receipt. The fixture's 240-second Session wait expired before it could observe the renamed window or read the file. That trace establishes the timeout and the click, with the final disk state still unknown. The 503 in a manual baseline was preceded by a blocked sequence of denied tool calls and was separate from the 240-second timeout.
+
+The 0.1.3 follow-up also reproduced `ELEMENT_NOT_FOUND` on the standalone `menu` surface immediately after a successful File click. The scoped `menubar` snapshot still contained the File item and its nested Save command. A folder entry separately returned an uncertain `AXOpen` error, and the next sheet observation still showed Downloads. The Skill now reads the File subtree directly, refreshes scoped window discovery after a window lookup failure, and re-observes the exact directory entry when the location has stayed the same. It confirms the selected folder and exact name before the Save click, checks the same window ID for the saved name, and cancels unexpected replacement prompts. Both distributed permission profiles stay byte-identical to 0.1.2.
+
+From `packages/apexo`, run `bun script/computer-use-live.mjs cli save-dialog 3` or substitute `desktop` for the Electron backend, with `COMPUTER_USE_BUNDLE` pointing to the assembled or fetched release. Each repetition owns a fresh document, destination, and Session. The runner uses the bundle's `ask` profile and the Session's default manual review. It replies `once` to scoped fixture actions and can present the same fixture window if it goes offscreen before an approval. All directory and Save actions go through model-selected MCP tools. The runner requires the actual Skill and model, a confirmed destination, one Save click, a fresh observation of the renamed original window, normal Session completion, and an independent disk read with `textutil` that matches the full text including the final newline. Its Session observation and disk read use separate deadlines.
+
+The controlled CLI and Electron regressions each passed with 21 one-time approvals. The CLI live-model command completed three consecutive runs on the assembled 0.1.3 bundle. Each run verified the selected folder, the renamed original window, and the independently read text.
+
+| Run | Elapsed time | One-time approvals | Operator window restorations |
+| --- | ---: | ---: | ---: |
+| 1 | 57.222 s | 22 | 0 |
+| 2 | 68.393 s | 21 | 1 |
+| 3 | 55.900 s | 23 | 1 |
+
 ## BUG-20261119-016 — The packaged Desktop UI runner did not select the renderer
 
 - Scope covers the packaged macOS Desktop UI acceptance runner. Run `bun script/computer-use-ui.mjs desktop` with the rebuilt app and the catalog bundle. The browser-level CDP connection attempted `Target.createTarget` and received `Not supported` before it could interact with the existing window.

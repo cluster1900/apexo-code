@@ -135,6 +135,12 @@ Two runtime regressions were fixed during the audit. The compatibility backend n
 
 The existing-file TextEdit trial using AX value assignment alone showed the new element value but did not persist it. Using clear and type through the actual plugin, followed by Save and an independent byte check, succeeded. The 0.1.2 follow-up verified new RTF creation through the TextEdit sidebar and column view. These runs used existing macOS grants. The denied-grant transition matrix, a true incompatible-architecture host, and graphical Intel execution were outside this follow-up.
 
+### Computer Use 0.1.3 live Save retest
+
+Three consecutive `xai/grok-4.7` Sessions against the assembled bundle each selected a fresh Downloads subfolder, saved a new RTF, and verified the exact decoded text through a separate disk read. The CLI runs took 55.900 to 68.393 seconds with 21 to 23 one-time approvals under the distributed `ask` profile. The test operator restored TextEdit visibility in two runs. The model performed the complete Save flow in every run. The controlled CLI and Electron Save regressions also passed. [Reproduction and run details](../testing/test-fixtures/computer-use-acceptance.md#live-model-follow-up-in-computer-use-013)
+
+The packaged Desktop and Web Client passed seven and six native UI checks respectively, including a real TextEdit screenshot, Stop, and manual reject and accept. Promise, Effect, and legacy SDK clients passed the native CLI and Electron exercise, and the compatibility Client passed reconnect and saved-choice persistence. Fullscreen and Mini TUI rendered the real version tool result and passed both nine-check MCP layouts. Mini needed one unchanged replay. [Mini submission record](../testing/test-fixtures/computer-use-catalog-install.md#bug-20261118-005--mini-tui-acceptance-left-the-prompt-in-the-editor)
+
 ## Failures and fixes retained
 
 - [Bundle hashing](../testing/build/computer-use-bundle.md): fixed Bun byte-array compatibility and reverified assembly.
@@ -182,7 +188,7 @@ bun script/computer-use-live.mjs cli smoke
 bun script/computer-use-permissions.mjs
 ```
 
-Run `bun script/computer-use-save.mjs cli` and `bun script/computer-use-save.mjs desktop` for the controlled new-document Save regression. Both read the assembled bundle's distributed permission profile. `bun script/computer-use-live.mjs cli save-dialog` exercises the same dialog with the configured live model.
+Run `bun script/computer-use-save.mjs cli` and `bun script/computer-use-save.mjs desktop` for the controlled new-document Save regression. Run `bun script/computer-use-live.mjs cli save-dialog 3` to repeat the same task on three fresh documents with a live model. Both regressions load the assembled bundle's distributed `ask` profile and check the saved document independently on disk. The live regression records window readiness, one-time approvals, the selected directory, and the original window's saved name. [New-document Save follow-up](../testing/test-fixtures/computer-use-acceptance.md#live-model-follow-up-in-computer-use-013)
 
 The Desktop commands require the rebuilt V2-sidecar package; browser commands require the built App. Live commands use existing xAI credentials and incur provider usage. Desktop control scenarios must be run sequentially. Isolated child processes and created daemon PIDs are cleaned up by the harness; a pre-existing user app/server must not be stopped.
 
