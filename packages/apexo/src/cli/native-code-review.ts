@@ -1,9 +1,10 @@
 import path from "node:path"
+import { CodeReviewCapabilities, CodeReviewCapabilitiesEndpoint } from "@apexo/protocol/groups/code-review"
 import { CodeReview } from "@apexo/schema/code-review"
 import { Model } from "@apexo/schema/model"
 import { Provider } from "@apexo/schema/provider"
 import { SessionID } from "@apexo/schema/session-id"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import { createApexoClient } from "@apexo/sdk/v2/client"
 import { nativeSessionTransport } from "@apexo/tui/transport/native-session"
 import type { ReviewPromptInput } from "./cmd/review"
@@ -110,13 +111,7 @@ export async function runNativeCodeReview(args: Options, input: ReviewPromptInpu
         ...(args.agent ? ["agent"] : []),
         ...(Object.keys(limits).length ? ["limits"] : []),
       ]
-      const response = await fetcher(new URL("/openapi.json", baseUrl), { headers, signal: AbortSignal.timeout(10000) })
-      const doc =
-        response.status === 404
-          ? await fetcher(new URL("/doc", baseUrl), { headers, signal: AbortSignal.timeout(10000) })
-          : response
-      if (doc.status === 401 || doc.status === 403) throw new Error("Review server authentication failed")
-      const supported = doc.ok && reviewApiSupports(await doc.json(), fields)
+      const supported = await attachedReviewSupports(fetcher, baseUrl, headers, requests.signal, fields)
       if (!supported) {
         if (args["session-protocol"] === "native" || args["fail-on"] || Object.keys(limits).length)
           throw new Error("Attached server does not support the requested native review API/options")
@@ -263,4 +258,35 @@ export async function runNativeCodeReview(args: Options, input: ReviewPromptInpu
     process.off("SIGTERM", terminate)
     await host?.close()
   }
+}
+
+async function attachedReviewSupports(
+  fetcher: typeof globalThis.fetch,
+  baseUrl: string,
+  headers: HeadersInit | undefined,
+  signal: AbortSignal,
+  fields: readonly string[],
+) {
+  const get = async (pathname: string) => {
+    const deadline = AbortSignal.timeout(10_000)
+    const response = await fetcher(new URL(pathname, baseUrl), {
+      headers,
+      signal: AbortSignal.any([signal, deadline]),
+    }).catch((error) => {
+      if (!deadline.aborted || signal.aborted) throw error
+      throw new Error(`Review server request timed out (GET ${pathname})`, { cause: error })
+    })
+    if (response.status === 401 || response.status === 403) throw new Error("Review server authentication failed")
+    return response
+  }
+  const html = (response: Response) => response.headers.get("content-type")?.startsWith("text/html")
+  const capabilities = await get(CodeReviewCapabilitiesEndpoint.path)
+  if (capabilities.ok && !html(capabilities)) {
+    const decoded = Schema.decodeUnknownOption(CodeReviewCapabilities)(await capabilities.json())
+    return Option.isSome(decoded) && fields.every((field) => decoded.value.inputFields.includes(field))
+  }
+  if (capabilities.status !== 404 && !html(capabilities)) return false
+  const native = await get("/openapi.json")
+  const doc = native.status === 404 || html(native) ? await get("/doc") : native
+  return doc.ok && !html(doc) && reviewApiSupports(await doc.json(), fields)
 }

@@ -22293,6 +22293,38 @@ export type V2ProjectCopyRefreshResponses = {
 
 export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
 
+export type V2CodeReviewCapabilitiesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/review/capabilities"
+}
+
+export type V2CodeReviewCapabilitiesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CodeReviewCapabilitiesError = V2CodeReviewCapabilitiesErrors[keyof V2CodeReviewCapabilitiesErrors]
+
+export type V2CodeReviewCapabilitiesResponses = {
+  /**
+   * Success
+   */
+  200: {
+    inputFields: Array<string>
+  }
+}
+
+export type V2CodeReviewCapabilitiesResponse =
+  V2CodeReviewCapabilitiesResponses[keyof V2CodeReviewCapabilitiesResponses]
+
 export type PtyConnectData = {
   body?: never
   path: {

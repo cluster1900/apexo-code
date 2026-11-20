@@ -310,6 +310,7 @@ import type {
   ProjectCopiesRemoveOutput,
   ProjectCopiesRefreshInput,
   ProjectCopiesRefreshOutput,
+  ServerCodeReviewCapabilitiesCapabilitiesOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -2411,6 +2412,19 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [400, 401],
             empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    "server.codeReviewCapabilities": {
+      capabilities: (requestOptions?: RequestOptions) =>
+        request<ServerCodeReviewCapabilitiesCapabilitiesOutput>(
+          {
+            method: "GET",
+            path: `/api/review/capabilities`,
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
           },
           requestOptions,
         ),

@@ -1258,6 +1258,15 @@ const scenarios: Scenario[] = [
     object(body)
     check(body.healthy === true, "v2 server should report healthy")
   }),
+  http.protected.get("/api/review/capabilities", "v2.codeReview.capabilities").json(200, (body) => {
+    object(body)
+    const fields = body.inputFields
+    array(fields)
+    check(
+      ["target", "model", "variant", "agent", "limits"].every((field) => fields.includes(field)),
+      "review fields",
+    )
+  }),
   http.protected.get("/api/location", "v2.location.get").json(200, object),
   http.protected.get("/api/agent", "v2.agent.list").json(200, locationData(array)),
   http.protected.get("/api/model", "v2.model.list").json(200, locationData(array)),

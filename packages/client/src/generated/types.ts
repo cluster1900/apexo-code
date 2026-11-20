@@ -8203,3 +8203,5 @@ export type ProjectCopiesRefreshInput = {
 }
 
 export type ProjectCopiesRefreshOutput = void
+
+export type ServerCodeReviewCapabilitiesCapabilitiesOutput = { readonly inputFields: ReadonlyArray<string> }
