@@ -164,7 +164,7 @@ export async function runLiveTextEditSave(fixture, run) {
           const input = call.state.input
           const ref = refs.get(input.root ?? input.ref_id)
           assert.ok(
-            isFixtureAction(action, input, ref, initial.id, document.folder, exactName) &&
+            isFixtureAction(action, input, ref, initial.id, document, exactName) &&
               !(saveApproved && mutations.has(action)),
             `Model requested an action outside the save fixture: ${action ?? request.action} (${ref?.surface ?? "unscoped"}/${ref?.node.role ?? "no ref"})`,
           )
@@ -245,7 +245,7 @@ export async function runLiveTextEditSave(fixture, run) {
   }
 }
 
-function isFixtureAction(action, input, ref, windowID, folder, exactName) {
+function isFixtureAction(action, input, ref, windowID, document, exactName) {
   if (["status", "permissions", "version", "skills_get"].includes(action)) return true
   const app = input.app === "TextEdit" || input.app === "com.apple.TextEdit"
   if (input.app && !app) return false
@@ -264,14 +264,18 @@ function isFixtureAction(action, input, ref, windowID, folder, exactName) {
   if (action === "set_value")
     return ref.surface === "sheet" && ref.node.role === "textfield" && name === "Save As:" && exactName(input.value)
   if (action !== "click") return false
+  if (ref.surface === "window")
+    return (
+      ref.node.role === "textfield" && typeof ref.node.value === "string" && ref.node.value.startsWith(document.marker)
+    )
   if (ref.node.role === "menuitem") {
     if (ref.surface === "menubar" && name === "File") return true
     return (ref.fileMenu || ref.surface === "menu") && /^Save[.…]*$/.test(name)
   }
   if (ref.surface !== "sheet") return false
   if (name === "Cancel") return ref.node.role === "button"
-  if (name === "Save") return ref.node.role === "button" && ref.location === folder && exactName(ref.name)
-  return ["Downloads", "show more options", folder].includes(name) || clean(ref.node.value) === folder
+  if (name === "Save") return ref.node.role === "button" && ref.location === document.folder && exactName(ref.name)
+  return ["Downloads", "show more options", document.folder].includes(name) || clean(ref.node.value) === document.folder
 }
 
 function observedNodes(value, insideFileMenu = false) {

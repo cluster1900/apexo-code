@@ -143,6 +143,12 @@ The rebuilt packaged Desktop and Web Client passed seven and six native UI check
 
 The catalog verifier fetched `49d774693f277aa1048d8c497aec535f064556ee` and checked all 17 files. Both generated-source checks passed without changes. HttpApi passed 360 scenarios in each of its three modes. The aggregate unit run passed 17 of 18 Apexo batches, and the original 29-file MCP worker batch passed on replay. [Unit gate record](../testing/test-stability/f02-remediation-unit-gate.md)
 
+### Computer Use 0.1.4 Save-sheet follow-up
+
+The Save flow keeps the current panel layout after directory selection and uses a shallow sheet snapshot for the filename and Save button. The live fixture rejects mutations based on refs observed before the test operator last restored the window. It checks that the destination contains exactly the intended RTF. Two consecutive live CLI runs passed, and a third success was observed in a later series. The controlled CLI and Electron regressions passed. Window loss on the shared macOS desktop still interrupted an additional run before Save. [Run evidence](../testing/test-fixtures/computer-use-acceptance.md#bug-20261120-001-an-extra-save-sheet-disclosure-action-coincided-with-a-default-name-write)
+
+The verifier fetched the 0.1.4 bundle at `7fc8fb70aff5e0cabdbe1666b52bdfe17e82180b` and checked all 17 files. The two distributed permission profiles match 0.1.2 byte for byte. Fullscreen and Mini TUI, the native and compatibility Client runs, and 109 focused MCP tests passed.
+
 ## Failures and fixes retained
 
 - [Bundle hashing](../testing/build/computer-use-bundle.md): fixed Bun byte-array compatibility and reverified assembly.
